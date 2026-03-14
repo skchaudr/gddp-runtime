@@ -20,6 +20,7 @@ What it does:
 """
 
 import argparse
+import os
 import sqlite3
 from pathlib import Path
 
@@ -39,8 +40,11 @@ from .state_recorder import (
     mark_job_running,
 )
 
-DB_PATH = Path(__file__).parent.parent.parent.parent / "db" / "queue.db"
-OPCLAW_ROOT = Path(__file__).parent.parent.parent.parent
+# OPCLAW_ROOT: set OPCLAW_ROOT env var on Pi to point to ~/opclaw
+# Falls back to the repo root for local dev (Mac)
+_default_root = Path(__file__).parent.parent.parent.parent
+OPCLAW_ROOT = Path(os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH = OPCLAW_ROOT / "db" / "queue.db"
 
 
 def connect() -> sqlite3.Connection:
