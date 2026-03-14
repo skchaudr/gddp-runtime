@@ -72,6 +72,14 @@ class JulesActionAdapter:
 - Add or update tests
 - Open a PR with a clear summary of the implementation choice
 - Note any ambiguity or remaining risks
+- **Required: include the following metadata block verbatim at the end of the PR description:**
+
+```
+node: {job['node_id']}
+job: {job['job_id']}
+```
+
+This block is parsed by the GDAD return router to automatically advance the project graph when the PR merges. If it is missing or malformed, the merge will not be recorded and the graph will not advance.
 
 ---
 *Dispatched by GDAD control plane — job_id: {job['job_id']} — node: {job['node_id']}*
