@@ -17,6 +17,16 @@ import subprocess
 from dataclasses import dataclass
 
 
+def _flatten(item) -> str:
+    """Convert any YAML value (str, dict, list) to a readable string."""
+    if isinstance(item, dict):
+        # e.g. {'method returns a dict with': 'key1, key2'} → 'method returns a dict with: key1, key2'
+        return " — ".join(f"{k}: {v}" for k, v in item.items())
+    if isinstance(item, list):
+        return ", ".join(str(i) for i in item)
+    return str(item)
+
+
 @dataclass
 class DispatchResult:
     success: bool
@@ -42,8 +52,8 @@ class JulesActionAdapter:
         constraints = json.loads(job.get("constraints") or "[]")
         criteria    = json.loads(job.get("acceptance_criteria") or "[]")
 
-        constraints_text = "\n".join(f"- {c}" for c in constraints)
-        criteria_text    = "\n".join(f"- [ ] {c}" for c in criteria)
+        constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
+        criteria_text    = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
 
         return f"""## Goal
 {job['goal']}
