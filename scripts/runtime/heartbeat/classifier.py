@@ -5,6 +5,7 @@ v1 heuristic: issue.opened events are implementation signals.
 Future versions: NLP intent classification, PR analysis, etc.
 """
 
+import json
 import sqlite3
 from typing import Optional
 
@@ -20,7 +21,11 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     - If there are no ready nodes, event is ignored
     - If there is exactly one ready node, it wins automatically
     - If there are multiple ready nodes, priority ordering applies (high > normal > low)
+    - pull_request.closed events where merged=True are routed to the return router
     """
+    if event["event_type"] == "pull_request.closed":
+        return _classify_return(event)
+
     if event["event_type"] != "issue.opened":
         return None
 
@@ -40,6 +45,29 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
         "requires_code_execution": True,
         "requires_human_review":   False,
     }
+
+
+def _classify_return(event: sqlite3.Row) -> Optional[dict]:
+    """Checks if pull_request.closed is a merge event."""
+    raw_path = event["raw_payload_path"]
+    if not raw_path:
+        return None
+
+    try:
+        with open(raw_path) as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+
+    # Routing rule: merged PRs trigger the return router
+    if payload.get("pull_request", {}).get("merged"):
+        return {
+            "category": "return_signal",
+            "intent":   "complete_node",
+            "route":    "return",
+        }
+
+    return None
 
 
 def _pick_executor(node: NodeData) -> str:
