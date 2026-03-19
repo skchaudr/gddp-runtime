@@ -3,10 +3,11 @@ runner.py — Heartbeat vNext main loop.
 
 Replaces scripts/heartbeat.py with a graph-driven, config-aware event processor.
 
-Usage:
-    python3 scripts/runtime/heartbeat/runner.py \\
-        --project vault-doctor \\
-        --repo skchaudr/vault-doctor \\
+Usage (from Big Pi):
+    cd ~/opclaw/scripts
+    python3 -m runtime.heartbeat.runner \
+        --project vault-doctor \
+        --repo skchaudr/vault-doctor \
         [--config-path /path/to/gddp-config]  # optional, uses GDDP_CONFIG_PATH env or sibling dir
 
 What it does:
@@ -82,7 +83,10 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
     con = connect()
     cur = con.cursor()
 
-    cur.execute("SELECT * FROM events WHERE status = 'received'")
+    cur.execute(
+        "SELECT * FROM events WHERE status = 'received' AND project_id = ?",
+        (project_id,)
+    )
     events = cur.fetchall()
 
     if not events:

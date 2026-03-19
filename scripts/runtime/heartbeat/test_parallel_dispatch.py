@@ -295,3 +295,46 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(tmp_path, mon
     assert jobs["beta-node"]["queue_state"] == "failed"
     assert queue_records[jobs["alpha-node"]["job_id"]] == "running"
     assert queue_records[jobs["beta-node"]["job_id"]] == "failed"
+
+
+def test_cross_project_event_filtering(tmp_path, monkeypatch):
+    db_path = tmp_path / "queue.db"
+    opclaw_root = tmp_path / "opclaw"
+    opclaw_root.mkdir()
+    config_root = tmp_path / "config"
+
+    _init_db(db_path)
+    _insert_event(db_path, "evt-target")
+
+    con = sqlite3.connect(db_path)
+    con.execute(
+        """
+        INSERT INTO events (
+            event_id, received_at, source, event_type, project_id, status
+        ) VALUES (?, ?, 'github', 'issue.opened', 'other-project', 'received')
+        """,
+        ("evt-other", "2026-03-19T00:00:00+00:00"),
+    )
+    con.commit()
+    con.close()
+
+    _write_graph(config_root)
+
+    monkeypatch.setattr(runner, "DB_PATH", db_path)
+    monkeypatch.setattr(runner, "OPCLAW_ROOT", opclaw_root)
+
+    seen_events = []
+    def fake_classify(event, ready_nodes):
+        seen_events.append(event["event_id"])
+        return None
+
+    monkeypatch.setattr(runner, "classify", fake_classify)
+
+    runner.run_heartbeat(
+        project_id="parallel-test",
+        repo="owner/repo",
+        config_path=str(config_root),
+    )
+
+    assert "evt-target" in seen_events
+    assert "evt-other" not in seen_events
