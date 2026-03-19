@@ -12,16 +12,16 @@ Usage:
 What it does:
     1. Reads the project graph to find ready nodes (graph_reader)
     2. Fetches pending events from SQLite
-    3. Classifies each event against ready nodes (classifier)
-    4. Checks scope — active job guard + dependency check (scope_checker)
-    5. Builds a job payload (job_factory)
-    6. Dispatches to the correct executor (dispatcher)
-    7. Records all state changes to SQLite (state_recorder)
+    3. Plans dispatchable jobs sequentially on the main thread
+    4. Dispatches planned jobs in parallel worker threads
+    5. Records all state changes to SQLite on the main thread
 """
 
 import argparse
 import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 
 from .classifier import classify
@@ -45,6 +45,21 @@ from .state_recorder import (
 _default_root = Path(__file__).parent.parent.parent.parent
 OPCLAW_ROOT = Path(os.environ.get("OPCLAW_ROOT", _default_root))
 DB_PATH = OPCLAW_ROOT / "db" / "queue.db"
+
+
+@dataclass(frozen=True)
+class PlannedDispatch:
+    event_id: str
+    classification: dict
+    job: dict
+
+
+@dataclass(frozen=True)
+class DispatchOutcome:
+    planned: PlannedDispatch
+    success: bool
+    issue_url: str = ""
+    error: str = ""
 
 
 def connect() -> sqlite3.Connection:
@@ -77,11 +92,13 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
 
     print(f"Found {len(events)} pending event(s).\n")
 
+    planned_dispatches: list[PlannedDispatch] = []
+
     for event in events:
         event_id = event["event_id"]
         print(f"Processing: {event_id} ({event['event_type']})")
 
-        # 1. Classify
+        # Phase A: classify, scope-check, and reserve jobs on the main thread.
         classification = classify(event, ready_nodes)
         if classification is None:
             mark_event_ignored(con, event_id)
@@ -97,34 +114,80 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
 
         mark_event_classified(con, event_id, classification)
 
-        # 2. Scope check — active job guard + dependency check
+        # Scope checks continue to use the single main-thread SQLite connection.
         scope = check_scope(node, project_id, con, reader)
         if not scope:
             mark_event_scope_blocked(con, event_id, scope.reason)
             print(f"  → scope blocked: {scope.reason}\n")
             continue
 
-        # 3. Build job
+        # Reserve the job before dispatch so other heartbeats see it immediately.
         job = build_job(node, event, project_id, repo, OPCLAW_ROOT)
         job_id = job["job_id"]
 
         insert_job(con, job)
         insert_queue_record(con, job_id)
+        planned_dispatches.append(
+            PlannedDispatch(
+                event_id=event_id,
+                classification=classification,
+                job=job,
+            )
+        )
         print(f"  → job created: {job_id}")
+        print()
 
-        # 4. Dispatch
-        result = dispatch(job, repo)
+    # Phase A commit: make reservation rows durable before worker dispatch starts.
+    con.commit()
 
-        if result.success:
+    if not planned_dispatches:
+        con.close()
+        print("Heartbeat complete.")
+        return
+
+    print(f"Dispatching {len(planned_dispatches)} job(s) in parallel.\n")
+
+    # Phase B: worker threads execute dispatch(job, repo) only.
+    outcomes_by_job_id: dict[str, DispatchOutcome] = {}
+    max_workers = min(32, max(1, len(planned_dispatches)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_plan = {
+            executor.submit(dispatch, planned.job, repo): planned
+            for planned in planned_dispatches
+        }
+        for future in as_completed(future_to_plan):
+            planned = future_to_plan[future]
+            try:
+                result = future.result()
+                outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
+                    planned=planned,
+                    success=result.success,
+                    issue_url=result.issue_url,
+                    error=result.error,
+                )
+            except Exception as exc:
+                outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
+                    planned=planned,
+                    success=False,
+                    error=f"Dispatch raised exception: {exc}",
+                )
+
+    # Phase C: record results sequentially on the main thread.
+    for planned in planned_dispatches:
+        outcome = outcomes_by_job_id[planned.job["job_id"]]
+        event_id = planned.event_id
+        job_id = planned.job["job_id"]
+
+        print(f"Recording: {event_id} ({planned.job['node_id']})")
+        if outcome.success:
             mark_event_mapped(con, event_id)
             mark_job_running(con, job_id)
-            print(f"  → dispatched to {classification['executor_recommendation']}")
-            if result.issue_url:
-                print(f"  → issue: {result.issue_url}")
+            print(f"  → dispatched to {planned.classification['executor_recommendation']}")
+            if outcome.issue_url:
+                print(f"  → issue: {outcome.issue_url}")
         else:
             mark_job_failed(con, job_id)
-            print(f"  → DISPATCH FAILED: {result.error}")
-
+            print(f"  → DISPATCH FAILED: {outcome.error}")
         print()
 
     con.commit()

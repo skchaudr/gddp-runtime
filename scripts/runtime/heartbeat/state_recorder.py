@@ -106,3 +106,7 @@ def mark_job_failed(con: sqlite3.Connection, job_id: str) -> None:
            WHERE job_id = ?""",
         (job_id,),
     )
+    con.execute(
+        "UPDATE queue_records SET queue = 'failed' WHERE job_id = ?",
+        (job_id,),
+    )
