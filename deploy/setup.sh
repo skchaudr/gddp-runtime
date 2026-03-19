@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # setup.sh — Deploy gddp-runtime to Big Pi
-# Run once on a fresh Pi, or after pulling changes.
+# Run once on a fresh Pi.
+# For updates after install, use: bash deploy/deploy.sh --restart-intake
 # Usage: bash deploy/setup.sh
 
 set -euo pipefail
