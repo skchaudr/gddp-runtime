@@ -51,7 +51,21 @@ mkdir -p "$OPCLAW_DIR"
 
 COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 COMMIT_SHORT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
-BRANCH_NAME="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+INVOKED_BRANCH="$(git -C "$REPO_ROOT" branch --show-current || true)"
+if [ -z "$INVOKED_BRANCH" ]; then
+    INVOKED_BRANCH="detached"
+fi
+
+COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir)"
+if [[ "$COMMON_DIR" != /* ]]; then
+    COMMON_DIR="$REPO_ROOT/$COMMON_DIR"
+fi
+CANONICAL_REPO_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
+SOURCE_BRANCH="$(git -C "$CANONICAL_REPO_ROOT" branch --show-current || true)"
+if [ -z "$SOURCE_BRANCH" ]; then
+    SOURCE_BRANCH="detached"
+fi
+
 DEPLOYED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 TMP_SCRIPTS_DIR="$(mktemp -d "$OPCLAW_DIR/scripts.deploy.XXXXXX")"
@@ -66,10 +80,12 @@ rm -rf "$PREVIOUS_SCRIPTS_DIR"
 
 cat > "$MARKER_PATH" <<EOF
 {
-  "source_repo": "$REPO_ROOT",
-  "source_branch": "$BRANCH_NAME",
+  "source_repo": "$CANONICAL_REPO_ROOT",
+  "source_branch": "$SOURCE_BRANCH",
   "source_commit": "$COMMIT_SHA",
   "source_commit_short": "$COMMIT_SHORT",
+  "deploy_invoked_from": "$REPO_ROOT",
+  "deploy_invoked_branch": "$INVOKED_BRANCH",
   "deployed_at_utc": "$DEPLOYED_AT",
   "deployed_scripts_dir": "$TARGET_SCRIPTS_DIR"
 }
