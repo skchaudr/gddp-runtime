@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.1] - 2026-03-19
+
+### Added
+- `deploy/deploy.sh` — canonical Big Pi deploy command
+- `~/opclaw/.gddp-runtime-deploy.json` deploy marker written by `deploy/deploy.sh`
+
+### Changed
+- `deploy/setup.sh` now uses the canonical deploy command instead of ad hoc script copying
+- `README.md` now documents `~/repos/gddp-runtime` as source of truth and `~/opclaw/scripts` as deployed runtime surface
+
 ## [1.1.0] - 2026-03-13
 
 ### Added

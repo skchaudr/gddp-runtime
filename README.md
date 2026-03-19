@@ -19,6 +19,7 @@ It does NOT contain runtime data (DB, job artifacts, events) — those live in `
 | `scripts/adapters/jules_action_adapter.py` | Dispatches jobs via GitHub issue + jules label |
 | `scripts/adapters/jules_cli_adapter.py` | Jules CLI adapter (stub — Phase 4+) |
 | `deploy/opclaw-intake.service` | systemd service unit for persistent intake server |
+| `deploy/deploy.sh` | Canonical Big Pi deploy command; syncs scripts and writes deploy marker |
 | `deploy/setup.sh` | One-shot Pi deployment script |
 
 ---
@@ -31,6 +32,9 @@ cd gddp-runtime
 bash deploy/setup.sh
 ```
 
+`~/repos/gddp-runtime` is the source of truth.
+`~/opclaw/scripts` is the deployed execution surface.
+
 ---
 
 ## Updating the Pi
@@ -39,8 +43,26 @@ bash deploy/setup.sh
 # on the Pi
 cd ~/repos/gddp-runtime
 git pull
-cp -r scripts/* ~/opclaw/scripts/
-sudo systemctl restart opclaw-intake
+bash deploy/deploy.sh --restart-intake
+```
+
+This writes the deployed commit marker to:
+
+```bash
+~/opclaw/.gddp-runtime-deploy.json
+```
+
+Use it to verify what code is actually running:
+
+```bash
+cat ~/opclaw/.gddp-runtime-deploy.json
+```
+
+Heartbeat runner invocation on Big Pi:
+
+```bash
+cd ~/opclaw/scripts
+python3 -m runtime.heartbeat.runner --project <project-id> --repo <owner/repo>
 ```
 
 ---

@@ -3,7 +3,7 @@
 # Run once on a fresh Pi, or after pulling changes.
 # Usage: bash deploy/setup.sh
 
-set -e
+set -euo pipefail
 
 OPCLAW_DIR="$HOME/opclaw"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
@@ -14,9 +14,9 @@ echo "=== GDAD Runtime Setup ==="
 mkdir -p "$OPCLAW_DIR"/{db,events/{raw,normalized},jobs,scripts/adapters}
 echo "  directories: ok"
 
-# 2. Copy scripts
-cp -r "$SCRIPT_DIR"/scripts/* "$OPCLAW_DIR"/scripts/
-echo "  scripts: ok"
+# 2. Deploy the current repo snapshot into ~/opclaw/scripts
+bash "$SCRIPT_DIR/deploy/deploy.sh"
+echo "  scripts + marker: ok"
 
 # 3. Install systemd service
 sudo cp "$SCRIPT_DIR/deploy/opclaw-intake.service" /etc/systemd/system/
@@ -36,4 +36,5 @@ echo ""
 echo "=== Setup complete ==="
 echo "Start intake server: sudo systemctl start opclaw-intake"
 echo "Check status:        sudo systemctl status opclaw-intake"
+echo "Check deploy:        cat $OPCLAW_DIR/.gddp-runtime-deploy.json"
 echo "Expose tunnel:       cloudflared tunnel --url http://localhost:5050"
