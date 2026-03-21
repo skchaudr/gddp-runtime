@@ -9,7 +9,7 @@ import json
 import os
 import requests
 import yaml
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 # Use skchaudr/gddp-config as the source of truth for graphs
 CONFIG_REPO = "skchaudr/gddp-config"
