@@ -24,6 +24,21 @@ Never treat `~/repos/gddp-runtime` and `~/opclaw/scripts` as peers.
 - Intake server: `opclaw-intake.service`
 - Executable path: `/home/sab-ssd/opclaw/scripts/intake_server.py`
 
+## Session Discipline
+
+Before any long-running SSH work, start from the tmux protocol:
+
+```bash
+cd ~/repos/gddp-runtime
+bash deploy/tmux-remote.sh sab-ssd@ssd-big
+```
+
+Canonical protocol:
+
+```bash
+deploy/TMUX_PROTOCOL.md
+```
+
 Check status:
 
 ```bash

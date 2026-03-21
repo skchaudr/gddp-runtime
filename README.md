@@ -20,6 +20,8 @@ It does NOT contain runtime data (DB, job artifacts, events) — those live in `
 | `scripts/adapters/jules_action_adapter.py` | Dispatches jobs via GitHub issue + jules label |
 | `scripts/adapters/jules_cli_adapter.py` | Jules CLI adapter (stub — Phase 4+) |
 | `deploy/BIGPI_RUNBOOK.md` | Operator runbook for Big Pi paths, commands, and first dispatch |
+| `deploy/TMUX_PROTOCOL.md` | Canonical tmux workflow for persistent remote operator sessions |
+| `deploy/tmux-remote.sh` | Bootstrap or reattach the standard remote tmux session over SSH |
 | `deploy/opclaw-intake.service` | systemd service unit for persistent intake server |
 | `deploy/deploy.sh` | Canonical Big Pi deploy command; syncs scripts and writes deploy marker |
 | `deploy/setup.sh` | One-shot Pi deployment script |
