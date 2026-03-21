@@ -57,7 +57,13 @@ class GraphReader:
                 "Set GDDP_CONFIG_PATH env var or pass config_path explicitly."
             )
 
+        self._project_cache = {}
+        self._node_cache = {}
+
     def load_project(self, project_id: str) -> ProjectGraph:
+        if project_id in self._project_cache:
+            return self._project_cache[project_id]
+
         project_yaml = self.config_path / "graphs" / project_id / "project.yaml"
         if not project_yaml.exists():
             raise FileNotFoundError(f"No project graph found: {project_yaml}")
@@ -65,15 +71,21 @@ class GraphReader:
         with open(project_yaml) as f:
             data = yaml.safe_load(f)
 
-        return ProjectGraph(
+        project = ProjectGraph(
             project_id=data["project_id"],
             project_name=data["project_name"],
             repo=data["repo"],
             nodes=data.get("nodes", []),
             execution_policy=data.get("execution_policy", {}),
         )
+        self._project_cache[project_id] = project
+        return project
 
     def load_node(self, project_id: str, node_id: str) -> NodeData:
+        cache_key = (project_id, node_id)
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+
         node_file = self.config_path / "graphs" / project_id / "nodes" / f"{node_id}.yaml"
         if not node_file.exists():
             raise FileNotFoundError(f"No node file found: {node_file}")
@@ -81,7 +93,7 @@ class GraphReader:
         with open(node_file) as f:
             data = yaml.safe_load(f)
 
-        return NodeData(
+        node = NodeData(
             node_id=data["node_id"],
             title=data["title"],
             status=data.get("status", "pending"),
@@ -95,6 +107,8 @@ class GraphReader:
             priority=data.get("priority", "normal"),
             unlocks=data.get("unlocks", []),
         )
+        self._node_cache[cache_key] = node
+        return node
 
     def get_ready_nodes(self, project_id: str) -> list[NodeData]:
         """
