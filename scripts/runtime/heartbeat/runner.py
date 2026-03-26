@@ -81,8 +81,34 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
         print("No ready nodes in graph.")
 
     con = connect()
-    cur = con.cursor()
+    try:
+        planned_dispatches = _plan_dispatches(
+            con, project_id, repo, ready_nodes, reader
+        )
 
+        if not planned_dispatches:
+            print("Heartbeat complete.")
+            return
+
+        outcomes_by_job_id = _execute_dispatches(planned_dispatches, repo)
+        _record_outcomes(con, planned_dispatches, outcomes_by_job_id)
+
+        print("Heartbeat complete.")
+    finally:
+        con.close()
+
+
+def _plan_dispatches(
+    con: sqlite3.Connection,
+    project_id: str,
+    repo: str,
+    ready_nodes: list,
+    reader: GraphReader,
+) -> list[PlannedDispatch]:
+    """
+    Phase A: Fetch events, classify, scope-check, and reserve jobs on the main thread.
+    """
+    cur = con.cursor()
     cur.execute(
         "SELECT * FROM events WHERE status = 'received' AND project_id = ?",
         (project_id,)
@@ -91,8 +117,7 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
 
     if not events:
         print("No pending events.")
-        con.close()
-        return
+        return []
 
     print(f"Found {len(events)} pending event(s).\n")
 
@@ -102,7 +127,7 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
         event_id = event["event_id"]
         print(f"Processing: {event_id} ({event['event_type']})")
 
-        # Phase A: classify, scope-check, and reserve jobs on the main thread.
+        # Classify and reserve jobs on the main thread.
         classification = classify(event, ready_nodes)
         if classification is None:
             mark_event_ignored(con, event_id)
@@ -143,15 +168,18 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
 
     # Phase A commit: make reservation rows durable before worker dispatch starts.
     con.commit()
+    return planned_dispatches
 
-    if not planned_dispatches:
-        con.close()
-        print("Heartbeat complete.")
-        return
 
+def _execute_dispatches(
+    planned_dispatches: list[PlannedDispatch],
+    repo: str,
+) -> dict[str, DispatchOutcome]:
+    """
+    Phase B: Worker threads execute dispatch(job, repo) in parallel.
+    """
     print(f"Dispatching {len(planned_dispatches)} job(s) in parallel.\n")
 
-    # Phase B: worker threads execute dispatch(job, repo) only.
     outcomes_by_job_id: dict[str, DispatchOutcome] = {}
     max_workers = min(32, max(1, len(planned_dispatches)))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -175,8 +203,17 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
                     success=False,
                     error=f"Dispatch raised exception: {exc}",
                 )
+    return outcomes_by_job_id
 
-    # Phase C: record results sequentially on the main thread.
+
+def _record_outcomes(
+    con: sqlite3.Connection,
+    planned_dispatches: list[PlannedDispatch],
+    outcomes_by_job_id: dict[str, DispatchOutcome],
+) -> None:
+    """
+    Phase C: Record results sequentially on the main thread.
+    """
     for planned in planned_dispatches:
         outcome = outcomes_by_job_id[planned.job["job_id"]]
         event_id = planned.event_id
@@ -195,8 +232,6 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
         print()
 
     con.commit()
-    con.close()
-    print("Heartbeat complete.")
 
 
 def main():
