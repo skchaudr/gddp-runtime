@@ -137,7 +137,8 @@ def webhook():
     raw_dir = OPCLAW_ROOT / "events" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_ts   = now().replace(":", "").replace("-", "")[:19]
-    raw_file = raw_dir / f"{gh_event_type}_{raw_ts}.json"
+    safe_event_type = os.path.basename(gh_event_type)
+    raw_file = raw_dir / f"{safe_event_type}_{raw_ts}.json"
     raw_file.write_text(json.dumps(payload, indent=2))
     print(f"  [intake] raw payload saved → {raw_file.name}")
 
