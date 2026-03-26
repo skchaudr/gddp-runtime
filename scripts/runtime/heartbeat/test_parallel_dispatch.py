@@ -6,6 +6,8 @@ import sqlite3
 import sys
 import threading
 from itertools import count
+
+import pytest
 from pathlib import Path
 from textwrap import dedent
 
@@ -173,27 +175,83 @@ def _write_graph(config_root: Path) -> None:
     )
 
 
-def test_parallel_dispatch_records_results_and_blocks_dependencies(tmp_path, monkeypatch):
+@pytest.fixture
+def test_env(tmp_path, monkeypatch):
     db_path = tmp_path / "queue.db"
     opclaw_root = tmp_path / "opclaw"
     opclaw_root.mkdir()
     config_root = tmp_path / "config"
 
     _init_db(db_path)
-    _insert_event(db_path, "evt-alpha")
-    _insert_event(db_path, "evt-beta")
-    _insert_event(db_path, "evt-blocked")
-    _write_graph(config_root)
 
     monkeypatch.setattr(runner, "DB_PATH", db_path)
     monkeypatch.setattr(runner, "OPCLAW_ROOT", opclaw_root)
 
+    return {
+        "db_path": db_path,
+        "opclaw_root": opclaw_root,
+        "config_root": config_root,
+    }
+
+
+def _mock_id_generation(monkeypatch):
     job_ids = count(1)
     queue_ids = count(1)
     monkeypatch.setattr(job_factory, "now", lambda: "2026-03-19T00:00:00+00:00")
     monkeypatch.setattr(job_factory, "ts_id", lambda: f"{next(job_ids):017d}")
     monkeypatch.setattr(state_recorder, "now", lambda: "2026-03-19T00:00:00+00:00")
     monkeypatch.setattr(state_recorder, "ts_id", lambda: f"{next(queue_ids):017d}")
+
+
+def _verify_parallel_results(db_path, dispatched_nodes, dispatch_threads):
+    assert set(dispatched_nodes) == {"alpha-node", "beta-node"}
+    assert len(dispatch_threads) == 2
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+
+    events = {
+        row["event_id"]: row
+        for row in con.execute(
+            "SELECT event_id, status, scope_status, classification FROM events"
+        ).fetchall()
+    }
+    jobs = {
+        row["node_id"]: row
+        for row in con.execute(
+            "SELECT job_id, node_id, status, queue_state FROM jobs ORDER BY node_id"
+        ).fetchall()
+    }
+    queue_records = {
+        row["job_id"]: row["queue"]
+        for row in con.execute("SELECT job_id, queue FROM queue_records").fetchall()
+    }
+    con.close()
+
+    assert events["evt-alpha"]["status"] == "mapped"
+    assert events["evt-beta"]["status"] == "classified"
+    assert events["evt-blocked"]["status"] == "scope_blocked"
+    assert "prerequisite-node" in events["evt-blocked"]["classification"]
+
+    assert set(jobs) == {"alpha-node", "beta-node"}
+    assert jobs["alpha-node"]["status"] == "running"
+    assert jobs["alpha-node"]["queue_state"] == "running"
+    assert jobs["beta-node"]["status"] == "failed"
+    assert jobs["beta-node"]["queue_state"] == "failed"
+    assert queue_records[jobs["alpha-node"]["job_id"]] == "running"
+    assert queue_records[jobs["beta-node"]["job_id"]] == "failed"
+
+
+def test_parallel_dispatch_records_results_and_blocks_dependencies(test_env, monkeypatch):
+    db_path = test_env["db_path"]
+    config_root = test_env["config_root"]
+
+    _insert_event(db_path, "evt-alpha")
+    _insert_event(db_path, "evt-beta")
+    _insert_event(db_path, "evt-blocked")
+    _write_graph(config_root)
+
+    _mock_id_generation(monkeypatch)
 
     node_map = {
         "evt-alpha": "alpha-node",
@@ -259,51 +317,13 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(tmp_path, mon
         config_path=str(config_root),
     )
 
-    assert set(dispatched_nodes) == {"alpha-node", "beta-node"}
-    assert len(dispatch_threads) == 2
-
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
-
-    events = {
-        row["event_id"]: row
-        for row in con.execute(
-            "SELECT event_id, status, scope_status, classification FROM events"
-        ).fetchall()
-    }
-    jobs = {
-        row["node_id"]: row
-        for row in con.execute(
-            "SELECT job_id, node_id, status, queue_state FROM jobs ORDER BY node_id"
-        ).fetchall()
-    }
-    queue_records = {
-        row["job_id"]: row["queue"]
-        for row in con.execute("SELECT job_id, queue FROM queue_records").fetchall()
-    }
-    con.close()
-
-    assert events["evt-alpha"]["status"] == "mapped"
-    assert events["evt-beta"]["status"] == "classified"
-    assert events["evt-blocked"]["status"] == "scope_blocked"
-    assert "prerequisite-node" in events["evt-blocked"]["classification"]
-
-    assert set(jobs) == {"alpha-node", "beta-node"}
-    assert jobs["alpha-node"]["status"] == "running"
-    assert jobs["alpha-node"]["queue_state"] == "running"
-    assert jobs["beta-node"]["status"] == "failed"
-    assert jobs["beta-node"]["queue_state"] == "failed"
-    assert queue_records[jobs["alpha-node"]["job_id"]] == "running"
-    assert queue_records[jobs["beta-node"]["job_id"]] == "failed"
+    _verify_parallel_results(db_path, dispatched_nodes, dispatch_threads)
 
 
-def test_cross_project_event_filtering(tmp_path, monkeypatch):
-    db_path = tmp_path / "queue.db"
-    opclaw_root = tmp_path / "opclaw"
-    opclaw_root.mkdir()
-    config_root = tmp_path / "config"
+def test_cross_project_event_filtering(test_env, monkeypatch):
+    db_path = test_env["db_path"]
+    config_root = test_env["config_root"]
 
-    _init_db(db_path)
     _insert_event(db_path, "evt-target")
 
     con = sqlite3.connect(db_path)
@@ -319,9 +339,6 @@ def test_cross_project_event_filtering(tmp_path, monkeypatch):
     con.close()
 
     _write_graph(config_root)
-
-    monkeypatch.setattr(runner, "DB_PATH", db_path)
-    monkeypatch.setattr(runner, "OPCLAW_ROOT", opclaw_root)
 
     seen_events = []
     def fake_classify(event, ready_nodes):
