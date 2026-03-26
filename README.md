@@ -51,6 +51,29 @@ git pull
 bash deploy/deploy.sh --restart-intake
 ```
 
+### Replay Mechanics
+
+GDAD supports replaying failed or partial runtime steps without manual database surgery.
+
+- **Replay a Return Router failure:**
+  If graph advancement fails after a PR merge, use the `result_id` from the logs.
+  ```bash
+  python3 -m runtime.replay --result-id res_20260312T21053737
+  ```
+  This re-runs the return router logic for the original event.
+
+- **Replay a Job Dispatch failure:**
+  If a job fails to dispatch or needs a re-run, use the `job_id`.
+  ```bash
+  python3 -m runtime.replay --job-id job_20260312T21053737
+  ```
+  This re-dispatches the job. **Note:** This requires operator confirmation (`yes/no`) to prevent accidental re-dispatches.
+
+**Safeguards:**
+- Replay reads from persisted job/event/result context in SQLite.
+- Replay does NOT re-receive webhooks or re-classify events.
+- Job re-dispatch ALWAYS requires manual operator confirmation.
+
 This writes the deployed commit marker to:
 
 ```bash
