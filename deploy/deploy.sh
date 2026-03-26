@@ -47,7 +47,6 @@ MARKER_PATH="$OPCLAW_DIR/.gddp-runtime-deploy.json"
 PREVIOUS_SCRIPTS_DIR="$OPCLAW_DIR/scripts.previous"
 
 mkdir -p "$OPCLAW_DIR"/{db,events/{raw,normalized},jobs}
-mkdir -p "$OPCLAW_DIR"
 
 COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 COMMIT_SHORT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
@@ -69,6 +68,7 @@ fi
 DEPLOYED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 TMP_SCRIPTS_DIR="$(mktemp -d "$OPCLAW_DIR/scripts.deploy.XXXXXX")"
+trap 'rm -rf "$TMP_SCRIPTS_DIR"' EXIT
 cp -R "$REPO_ROOT/scripts/." "$TMP_SCRIPTS_DIR/"
 
 rm -rf "$PREVIOUS_SCRIPTS_DIR"
@@ -76,7 +76,6 @@ if [ -d "$TARGET_SCRIPTS_DIR" ]; then
     mv "$TARGET_SCRIPTS_DIR" "$PREVIOUS_SCRIPTS_DIR"
 fi
 mv "$TMP_SCRIPTS_DIR" "$TARGET_SCRIPTS_DIR"
-rm -rf "$PREVIOUS_SCRIPTS_DIR"
 
 cat > "$MARKER_PATH" <<EOF
 {
