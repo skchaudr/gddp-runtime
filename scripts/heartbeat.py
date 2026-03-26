@@ -96,13 +96,99 @@ def classify(event: sqlite3.Row) -> dict | None:
     }
 
 
+def _fetch_pending_events(cur: sqlite3.Cursor) -> list[sqlite3.Row]:
+    """Fetch all events with status 'received'."""
+    cur.execute("SELECT * FROM events WHERE status = 'received'")
+    return cur.fetchall()
+
+
+def _handle_classification(cur: sqlite3.Cursor, event: sqlite3.Row) -> dict | None:
+    """Classify the event and update the database status."""
+    event_id = event["event_id"]
+    classification = classify(event)
+    if classification is None:
+        cur.execute(
+            "UPDATE events SET status = 'ignored' WHERE event_id = ?", (event_id,)
+        )
+        print(f"  → ignored (no node mapping)\n")
+        return None
+
+    cur.execute(
+        "UPDATE events SET status = 'classified', classification = ?, scope_status = 'in_scope' WHERE event_id = ?",
+        (json.dumps(classification), event_id)
+    )
+    return classification
+
+
+def _create_job_and_queue_record(cur: sqlite3.Cursor, event_id: str, repo: str) -> str:
+    """Create a new job and its corresponding queue record in the database."""
+    job_id    = f"job_{ts_id()}"
+    artifacts = str(job_dir(job_id)) + "/"
+
+    cur.execute("""
+        INSERT INTO jobs (
+            job_id, created_at, event_id, project_id, repo, node_id,
+            job_type, executor, queue_state, title, goal, why,
+            constraints, acceptance_criteria,
+            priority, status, attempt, max_attempts, artifacts_dir
+        ) VALUES (?, ?, ?, 'phase3-project', ?, ?, 'implementation', 'jules', 'ready',
+                  ?, ?, ?, ?, ?, 'high', 'ready', 0, 3, ?)
+    """, (
+        job_id, now(), event_id, repo,
+        PHASE3_NODE["node_id"],
+        PHASE3_NODE["title"],
+        PHASE3_NODE["goal"],
+        PHASE3_NODE["why"],
+        json.dumps(PHASE3_NODE["constraints"]),
+        json.dumps(PHASE3_NODE["acceptance_criteria"]),
+        artifacts,
+    ))
+
+    cur.execute("""
+        INSERT INTO queue_records (queue_item_id, job_id, queue, available_at)
+        VALUES (?, ?, 'ready', ?)
+    """, (f"qi_{ts_id()}", job_id, now()))
+
+    print(f"  → job created: {job_id}")
+    return job_id
+
+
+def _dispatch_to_jules(cur: sqlite3.Cursor, event_id: str, repo: str, job_id: str) -> None:
+    """Dispatch the job to Jules using the JulesActionAdapter."""
+    node = dict(PHASE3_NODE)
+    node["job_id"]   = job_id
+    node["constraints"]          = json.dumps(node["constraints"])
+    node["acceptance_criteria"]  = json.dumps(node["acceptance_criteria"])
+
+    adapter = JulesActionAdapter(repo=repo)
+    result  = adapter.dispatch(node)
+
+    if result.success:
+        cur.execute(
+            "UPDATE events SET status = 'mapped' WHERE event_id = ?", (event_id,)
+        )
+        cur.execute(
+            "UPDATE jobs SET status = 'running', queue_state = 'running' WHERE job_id = ?",
+            (job_id,)
+        )
+        cur.execute(
+            "UPDATE queue_records SET queue = 'running' WHERE job_id = ?", (job_id,)
+        )
+        print(f"  → dispatched to Jules")
+        print(f"  → issue: {result.issue_url}")
+    else:
+        cur.execute(
+            "UPDATE jobs SET status = 'failed', queue_state = 'failed' WHERE job_id = ?",
+            (job_id,)
+        )
+        print(f"  → DISPATCH FAILED: {result.error}")
+
+
 def run_heartbeat(repo: str):
     con = connect()
     cur = con.cursor()
 
-    # Fetch all unprocessed events
-    cur.execute("SELECT * FROM events WHERE status = 'received'")
-    events = cur.fetchall()
+    events = _fetch_pending_events(cur)
 
     if not events:
         print("No pending events.")
@@ -116,77 +202,15 @@ def run_heartbeat(repo: str):
         print(f"Processing: {event_id} ({event['event_type']})")
 
         # 1. Classify
-        classification = classify(event)
+        classification = _handle_classification(cur, event)
         if classification is None:
-            cur.execute(
-                "UPDATE events SET status = 'ignored' WHERE event_id = ?", (event_id,)
-            )
-            print(f"  → ignored (no node mapping)\n")
             continue
 
-        cur.execute(
-            "UPDATE events SET status = 'classified', classification = ?, scope_status = 'in_scope' WHERE event_id = ?",
-            (json.dumps(classification), event_id)
-        )
-
         # 2. Create job
-        job_id    = f"job_{ts_id()}"
-        artifacts = str(job_dir(job_id)) + "/"
-
-        cur.execute("""
-            INSERT INTO jobs (
-                job_id, created_at, event_id, project_id, repo, node_id,
-                job_type, executor, queue_state, title, goal, why,
-                constraints, acceptance_criteria,
-                priority, status, attempt, max_attempts, artifacts_dir
-            ) VALUES (?, ?, ?, 'phase3-project', ?, ?, 'implementation', 'jules', 'ready',
-                      ?, ?, ?, ?, ?, 'high', 'ready', 0, 3, ?)
-        """, (
-            job_id, now(), event_id, repo,
-            PHASE3_NODE["node_id"],
-            PHASE3_NODE["title"],
-            PHASE3_NODE["goal"],
-            PHASE3_NODE["why"],
-            json.dumps(PHASE3_NODE["constraints"]),
-            json.dumps(PHASE3_NODE["acceptance_criteria"]),
-            artifacts,
-        ))
-
-        cur.execute("""
-            INSERT INTO queue_records (queue_item_id, job_id, queue, available_at)
-            VALUES (?, ?, 'ready', ?)
-        """, (f"qi_{ts_id()}", job_id, now()))
-
-        print(f"  → job created: {job_id}")
+        job_id = _create_job_and_queue_record(cur, event_id, repo)
 
         # 3. Dispatch to Jules via GitHub Action adapter
-        node = dict(PHASE3_NODE)
-        node["job_id"]   = job_id
-        node["constraints"]          = json.dumps(node["constraints"])
-        node["acceptance_criteria"]  = json.dumps(node["acceptance_criteria"])
-
-        adapter = JulesActionAdapter(repo=repo)
-        result  = adapter.dispatch(node)
-
-        if result.success:
-            cur.execute(
-                "UPDATE events SET status = 'mapped' WHERE event_id = ?", (event_id,)
-            )
-            cur.execute(
-                "UPDATE jobs SET status = 'running', queue_state = 'running' WHERE job_id = ?",
-                (job_id,)
-            )
-            cur.execute(
-                "UPDATE queue_records SET queue = 'running' WHERE job_id = ?", (job_id,)
-            )
-            print(f"  → dispatched to Jules")
-            print(f"  → issue: {result.issue_url}")
-        else:
-            cur.execute(
-                "UPDATE jobs SET status = 'failed', queue_state = 'failed' WHERE job_id = ?",
-                (job_id,)
-            )
-            print(f"  → DISPATCH FAILED: {result.error}")
+        _dispatch_to_jules(cur, event_id, repo, job_id)
 
         print()
 
