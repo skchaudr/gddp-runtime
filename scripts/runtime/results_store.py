@@ -1,10 +1,11 @@
 """
-results_store.py — Persistence for return router results.
+results_store.py — Persistence helpers for review receipts.
 
-Records every attempt to advance the graph from a merged PR.
-Uses a dedicated table in queue.db or a separate DB for isolation.
+Runtime return handling writes structured receipts into the existing `results`
+table and leaves graph truth untouched.
 """
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -14,88 +15,133 @@ from pathlib import Path
 _default_root = Path(__file__).parent.parent.parent
 DB_PATH = Path(os.environ.get("OPCLAW_ROOT", _default_root)) / "db" / "queue.db"
 
-def _now():
+
+def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-def init_db():
-    """Ensure the results table exists."""
+
+def _json_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
+def init_db() -> None:
+    """Ensure the canonical review-receipt table exists."""
     con = sqlite3.connect(DB_PATH)
     try:
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS return_results (
-                id          TEXT PRIMARY KEY,
-                repo_name   TEXT NOT NULL,
-                node_id     TEXT,
-                pr_number   INTEGER,
-                merged_at   TEXT,
-                status      TEXT NOT NULL, -- pending | completed | failed | rejected
-                reason      TEXT,
-                commit_sha  TEXT,
-                created_at  TEXT NOT NULL
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS results (
+                result_id                   TEXT PRIMARY KEY,
+                schema_version              TEXT NOT NULL DEFAULT '1.0',
+                job_id                      TEXT NOT NULL,
+                executor                    TEXT NOT NULL,
+                received_at                 TEXT NOT NULL,
+                execution_duration_seconds  INTEGER,
+                outcome                     TEXT NOT NULL,
+                status                      TEXT NOT NULL,
+                changed_files               TEXT,
+                patch_path                  TEXT,
+                summary_path                TEXT,
+                logs_path                   TEXT,
+                acceptance_check            TEXT,
+                risks                       TEXT,
+                followup_candidates         TEXT,
+                github_action               TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(job_id)
             )
-        """)
+            """
+        )
         con.commit()
     finally:
         con.close()
 
+
 def write_result(
     result_id: str,
-    repo_name: str,
+    job_id: str,
+    executor: str,
+    outcome: str,
     status: str,
-    node_id: str = None,
-    pr_number: int = None,
-    merged_at: str = None,
-    reason: str = None,
-    commit_sha: str = None,
-    created_at: str = None
+    received_at: str = None,
+    execution_duration_seconds: int = None,
+    changed_files=None,
+    patch_path: str = None,
+    summary_path: str = None,
+    logs_path: str = None,
+    acceptance_check=None,
+    risks=None,
+    followup_candidates=None,
+    github_action=None,
 ):
-    """Inserts or updates a result row."""
+    """Insert or update a structured review receipt in the canonical results table."""
     init_db()
     con = sqlite3.connect(DB_PATH)
     try:
-        # Check if record exists
         cur = con.cursor()
-        cur.execute("SELECT 1 FROM return_results WHERE id = ?", (result_id,))
+        cur.execute("SELECT 1 FROM results WHERE result_id = ?", (result_id,))
         exists = cur.fetchone()
 
-        if not exists:
-            con.execute("""
-                INSERT INTO return_results (
-                    id, repo_name, node_id, pr_number, merged_at,
-                    status, reason, commit_sha, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                result_id, repo_name, node_id, pr_number, merged_at,
-                status, reason, commit_sha, created_at or _now()
-            ))
-        else:
-            # Update existing record
-            # Build update query dynamically for non-None values
-            updates = []
-            params = []
-            if node_id is not None:
-                updates.append("node_id = ?")
-                params.append(node_id)
-            if pr_number is not None:
-                updates.append("pr_number = ?")
-                params.append(pr_number)
-            if merged_at is not None:
-                updates.append("merged_at = ?")
-                params.append(merged_at)
-            if status is not None:
-                updates.append("status = ?")
-                params.append(status)
-            if reason is not None:
-                updates.append("reason = ?")
-                params.append(reason)
-            if commit_sha is not None:
-                updates.append("commit_sha = ?")
-                params.append(commit_sha)
+        payload = {
+            "result_id": result_id,
+            "job_id": job_id,
+            "executor": executor,
+            "received_at": received_at or _now(),
+            "execution_duration_seconds": execution_duration_seconds,
+            "outcome": outcome,
+            "status": status,
+            "changed_files": _json_or_none(changed_files),
+            "patch_path": patch_path,
+            "summary_path": summary_path,
+            "logs_path": logs_path,
+            "acceptance_check": _json_or_none(acceptance_check),
+            "risks": _json_or_none(risks),
+            "followup_candidates": _json_or_none(followup_candidates),
+            "github_action": _json_or_none(github_action),
+        }
 
-            if updates:
-                sql = f"UPDATE return_results SET {', '.join(updates)} WHERE id = ?"
-                params.append(result_id)
-                con.execute(sql, params)
+        if not exists:
+            con.execute(
+                """
+                INSERT INTO results (
+                    result_id, job_id, executor, received_at,
+                    execution_duration_seconds, outcome, status,
+                    changed_files, patch_path, summary_path, logs_path,
+                    acceptance_check, risks, followup_candidates, github_action
+                ) VALUES (
+                    :result_id, :job_id, :executor, :received_at,
+                    :execution_duration_seconds, :outcome, :status,
+                    :changed_files, :patch_path, :summary_path, :logs_path,
+                    :acceptance_check, :risks, :followup_candidates, :github_action
+                )
+                """,
+                payload,
+            )
+        else:
+            con.execute(
+                """
+                UPDATE results
+                   SET job_id = :job_id,
+                       executor = :executor,
+                       received_at = :received_at,
+                       execution_duration_seconds = :execution_duration_seconds,
+                       outcome = :outcome,
+                       status = :status,
+                       changed_files = :changed_files,
+                       patch_path = :patch_path,
+                       summary_path = :summary_path,
+                       logs_path = :logs_path,
+                       acceptance_check = :acceptance_check,
+                       risks = :risks,
+                       followup_candidates = :followup_candidates,
+                       github_action = :github_action
+                 WHERE result_id = :result_id
+                """,
+                payload,
+            )
         con.commit()
     finally:
         con.close()

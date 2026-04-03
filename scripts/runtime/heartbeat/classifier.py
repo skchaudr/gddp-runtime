@@ -1,11 +1,10 @@
 """
-classifier.py — Maps an incoming event to a ready node.
+classifier.py — Maps implementation requests to ready nodes.
 
-v1 heuristic: issue.opened events are implementation signals.
-Future versions: NLP intent classification, PR analysis, etc.
+The heartbeat only plans forward-path execution work. Return/review handling is
+kept outside automatic dispatch.
 """
 
-import json
 import sqlite3
 from typing import Optional
 
@@ -17,15 +16,11 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     Returns a classification dict if the event maps to a dispatchable node, else None.
 
     Rules for v1:
-    - Only issue.opened events trigger dispatch (PRs are return signals, not requests)
+    - Only issue.opened events trigger dispatch
     - If there are no ready nodes, event is ignored
     - If there is exactly one ready node, it wins automatically
     - If there are multiple ready nodes, priority ordering applies (high > normal > low)
-    - pull_request.closed events where merged=True are routed to the return router
     """
-    if event["event_type"] == "pull_request.closed":
-        return _classify_return(event)
-
     if event["event_type"] != "issue.opened":
         return None
 
@@ -38,7 +33,7 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
 
     return {
         "category":                "implementation_request",
-        "intent":                  "advance_existing_node",
+        "intent":                  "implement_existing_node",
         "in_scope":                True,
         "matched_node_id":         target.node_id,
         "executor_recommendation": _pick_executor(target),
@@ -47,32 +42,7 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     }
 
 
-def _classify_return(event: sqlite3.Row) -> Optional[dict]:
-    """Checks if pull_request.closed is a merge event."""
-    raw_path = event["raw_payload_path"]
-    if not raw_path:
-        return None
-
-    try:
-        with open(raw_path) as f:
-            payload = json.load(f)
-    except Exception:
-        return None
-
-    # Routing rule: merged PRs trigger the return router
-    if payload.get("pull_request", {}).get("merged"):
-        return {
-            "category": "return_signal",
-            "intent":   "complete_node",
-            "route":    "return",
-        }
-
-    return None
-
-
 def _pick_executor(node: NodeData) -> str:
-    """Pick first allowed executor. Jules is always preferred if available."""
+    """Pick the first declared execution mode, preserving graph ordering."""
     modes = node.allowed_execution_modes
-    if "jules" in modes:
-        return "jules"
     return modes[0] if modes else "jules"

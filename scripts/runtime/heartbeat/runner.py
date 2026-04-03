@@ -151,7 +151,14 @@ def _plan_dispatches(
             continue
 
         # Reserve the job before dispatch so other heartbeats see it immediately.
-        job = build_job(node, event, project_id, repo, OPCLAW_ROOT)
+        job = build_job(
+            node,
+            event,
+            project_id,
+            repo,
+            OPCLAW_ROOT,
+            classification["executor_recommendation"],
+        )
         job_id = job["job_id"]
 
         insert_job(con, job)

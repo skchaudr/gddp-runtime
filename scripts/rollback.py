@@ -83,7 +83,7 @@ def rollback(job_id: str):
     print(f"  queue       → cancelled")
     print()
     print(f"  Node '{job['node_id']}' state: unchanged")
-    print(f"  If node was advanced by this job, manually reset it in the graph.")
+    print(f"  Graph truth is human-owned; review any related receipts before changing the graph.")
     print(f"  Re-run the heartbeat to dispatch a fresh job against the same node.")
     print()
     print("Rollback complete.")

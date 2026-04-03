@@ -22,7 +22,7 @@ class TestReplay(unittest.TestCase):
         mock_connect.return_value = mock_con
         mock_event = {'event_id': 'evt_123', 'event_type': 'pull_request.closed', 'project_id': 'test'}
         mock_con.execute.return_value.fetchone.return_value = mock_event
-        mock_handle.return_value = {"status": "completed"}
+        mock_handle.return_value = {"status": "needs_review"}
 
         # Run
         replay.replay_result("res_123")

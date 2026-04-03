@@ -79,7 +79,7 @@ node: {job['node_id']}
 job: {job['job_id']}
 ```
 
-This block is parsed by the GDAD return router to automatically advance the project graph when the PR merges. If it is missing or malformed, the merge will not be recorded and the graph will not advance.
+This block is parsed by the GDAD return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
 
 ---
 *Dispatched by GDAD control plane — job_id: {job['job_id']} — node: {job['node_id']}*

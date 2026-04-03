@@ -44,6 +44,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("- [ ] test 1, test 2", body)
         self.assertIn("node: node_456", body)
         self.assertIn("job: job_123", body)
+        self.assertIn("does not advance graph truth automatically", body)
 
     @patch("subprocess.run")
     def test_dispatch_success(self, mock_run):

@@ -55,7 +55,7 @@ def ts_id():
 PHASE3_NODE = {
     "node_id":   "scan-vault-core",
     "title":     "Implement VaultDoctor scan_vault foundation",
-    "goal":      "Move node scan-vault-core from ready to complete",
+    "goal":      "Produce a reviewable result for node scan-vault-core",
     "why":       "All other vault-doctor features depend on a working scan_vault() foundation",
     "constraints": [
         "implement in src/doctor.py only — do not modify triage.py",
@@ -72,7 +72,7 @@ PHASE3_NODE = {
         "at least 3 passing tests in tests/test_doctor.py covering scan output structure",
         "tests use the existing mock vault at vault_doctor/mock_vault/ as fixture",
     ],
-    "required_artifacts": ["decision.md", "result-summary.md", "patch.diff", "graph-update.yaml"],
+    "required_artifacts": ["decision.md", "result-summary.md", "patch.diff"],
 }
 
 
@@ -87,7 +87,7 @@ def classify(event: sqlite3.Row) -> dict | None:
 
     return {
         "category":                "implementation_request",
-        "intent":                  "advance_existing_node",
+        "intent":                  "implement_existing_node",
         "in_scope":                True,
         "matched_node_id":         PHASE3_NODE["node_id"],
         "executor_recommendation": "jules",

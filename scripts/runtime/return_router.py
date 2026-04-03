@@ -1,44 +1,87 @@
 """
-return_router.py — Core logic for processing merged PRs and advancing the graph.
+return_router.py — Convert merged PR events into review receipts.
 
-When a PR merges, this module:
-1. Validates the repo
-2. Parses the node_id from the PR body
-3. Records the attempt in results_store
-4. Updates the graph via graph_updater
+Runtime does not mutate graph truth on the return path. A merged PR may create a
+structured receipt in SQLite and move the matching job into `awaiting_review`.
 """
 
 import json
 import re
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
-from .graph_updater import update_graph_node_complete
-from .results_store import write_result
+from .results_store import DB_PATH, write_result
 
 ALLOWED_REPOS = ["skchaudr/vault-doctor"]
 
+
 def parse_node_id(pr_body: str) -> Optional[str]:
-    """
-    Extracts node id using regex matching "node: " on its own line.
-    Case-insensitive, multiline.
-    """
+    """Extract `node: <node_id>` from the PR body."""
     if not pr_body:
         return None
-    # Match "node: <node_id>" where <node_id> is the rest of the line
     match = re.search(r"(?mi)^node:\s*(.+)$", pr_body)
     if match:
         return match.group(1).strip()
     return None
 
+
+def parse_job_id(pr_body: str) -> Optional[str]:
+    """Extract `job: <job_id>` from the PR body."""
+    if not pr_body:
+        return None
+    match = re.search(r"(?mi)^job:\s*(.+)$", pr_body)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def validate_repo(repo_name: str) -> bool:
-    """Rejects repos not in ALLOWED_REPOS."""
+    """Reject repos not in ALLOWED_REPOS."""
     return repo_name in ALLOWED_REPOS
+
+
+def _connect() -> sqlite3.Connection:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys=ON")
+    return con
+
+
+def _load_job(job_id: str) -> Optional[dict]:
+    con = _connect()
+    try:
+        row = con.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        con.close()
+
+
+def _mark_job_awaiting_review(job_id: str) -> None:
+    con = _connect()
+    try:
+        con.execute(
+            """
+            UPDATE jobs
+               SET status = 'awaiting_review',
+                   queue_state = 'awaiting_review'
+             WHERE job_id = ?
+            """,
+            (job_id,),
+        )
+        con.execute(
+            "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
+            (job_id,),
+        )
+        con.commit()
+    finally:
+        con.close()
+
 
 def handle_merged_pr(event: sqlite3.Row) -> dict:
     """
-    Main entry point for the return loop.
-    Returns a result dict for the caller/runner.
+    Main entry point for merged PR handling.
+    Returns review-routing status only; it never advances graph truth.
     """
     raw_path = event["raw_payload_path"]
     with open(raw_path) as f:
@@ -52,67 +95,54 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     merged_at = pr.get("merged_at")
     merged_pr_url = pr.get("html_url")
 
-    # Generate a result_id based on event_id for tracking
     result_id = f"res_{event['event_id'][4:]}"
 
-    # 1. Validate repo
     if not validate_repo(repo_name):
-        write_result(
-            result_id=result_id,
-            repo_name=repo_name,
-            status="rejected",
-            reason=f"repo_not_allowed: {repo_name}",
-            pr_number=pr_number
-        )
         return {"status": "rejected", "reason": "repo_not_allowed"}
 
-    # 2. Parse node_id
     node_id = parse_node_id(pr_body)
     if not node_id:
-        write_result(
-            result_id=result_id,
-            repo_name=repo_name,
-            status="rejected",
-            reason="missing_node_tag",
-            pr_number=pr_number
-        )
         return {"status": "rejected", "reason": "missing_node_tag"}
 
-    # 3. Write initial "pending" row
+    job_id = parse_job_id(pr_body)
+    if not job_id:
+        return {"status": "rejected", "reason": "missing_job_tag"}
+
+    job = _load_job(job_id)
+    if job is None:
+        return {"status": "rejected", "reason": "job_not_found"}
+
+    if job["repo"] != repo_name:
+        return {"status": "rejected", "reason": "repo_job_mismatch"}
+
+    if job["node_id"] != node_id:
+        return {"status": "rejected", "reason": "node_job_mismatch"}
+
     write_result(
         result_id=result_id,
-        repo_name=repo_name,
-        node_id=node_id,
-        pr_number=pr_number,
-        merged_at=merged_at,
-        status="pending"
+        job_id=job_id,
+        executor=job["executor"],
+        outcome="success",
+        status="needs_review",
+        received_at=merged_at,
+        github_action={
+            "source": "merged_pr",
+            "event_id": event["event_id"],
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "merged_at": merged_at,
+            "merged_pr_url": merged_pr_url,
+            "node_id": node_id,
+            "review_required": True,
+            "raw_payload_path": str(Path(raw_path)),
+        },
     )
 
-    # 4. Update graph
-    # We need project_id. For now, assume it can be derived or is the same as repo name (last part)
-    # The requirement doesn't specify how to get project_id, but vault-doctor repo usually maps to vault-doctor project
-    project_id = repo_name.split("/")[-1]
+    _mark_job_awaiting_review(job_id)
 
-    update_res = update_graph_node_complete(
-        project_id=project_id,
-        node_id=node_id,
-        merged_pr=merged_pr_url,
-        merged_at=merged_at
-    )
-
-    if update_res["ok"]:
-        write_result(
-            result_id=result_id,
-            repo_name=repo_name,
-            status="completed",
-            commit_sha=update_res["commit_sha"]
-        )
-        return {"status": "completed", "commit_sha": update_res["commit_sha"]}
-    else:
-        write_result(
-            result_id=result_id,
-            repo_name=repo_name,
-            status="failed",
-            reason=update_res["reason"]
-        )
-        return {"status": "failed", "reason": update_res["reason"]}
+    return {
+        "status": "needs_review",
+        "result_id": result_id,
+        "job_id": job_id,
+        "node_id": node_id,
+    }

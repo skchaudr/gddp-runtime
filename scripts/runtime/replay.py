@@ -7,7 +7,7 @@ Usage:
 
 What is replayed:
     - For --result-id: Re-runs the return router logic (handle_merged_pr) for the event
-      associated with the result. This re-attempts graph advancement.
+      associated with the result. This recreates the review receipt/state routing.
     - For --job-id: Re-dispatches the specific job to its assigned executor (e.g., Jules).
 
 What is NOT replayed:
@@ -123,7 +123,7 @@ def replay_job(job_id: str):
 def main():
     parser = argparse.ArgumentParser(description="GDAD Replay Mechanics")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--result-id", help="Replay a return router result (advancement failure)")
+    group.add_argument("--result-id", help="Replay a return router result (receipt/state routing)")
     group.add_argument("--job-id", help="Re-dispatch a failed or partial job")
 
     args = parser.parse_args()

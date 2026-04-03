@@ -6,7 +6,6 @@ Keeps all job construction logic in one place.
 """
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +25,7 @@ def build_job(
     project_id: str,
     repo: str,
     opclaw_root: Path,
+    executor: str,
 ) -> dict:
     job_id = f"job_{ts_id()}"
     artifacts_dir = opclaw_root / "jobs" / job_id
@@ -39,10 +39,10 @@ def build_job(
         "repo":                repo,
         "node_id":             node.node_id,
         "job_type":            "implementation",
-        "executor":            "jules",
+        "executor":            executor,
         "queue_state":         "ready",
         "title":               node.title,
-        "goal":                f"Move node {node.node_id} from ready to complete",
+        "goal":                f"Produce a reviewable result for node {node.node_id}",
         "why":                 node.why.strip(),
         "constraints":         json.dumps(node.constraints),
         "acceptance_criteria": json.dumps(node.acceptance),

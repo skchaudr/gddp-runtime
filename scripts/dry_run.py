@@ -3,7 +3,7 @@ dry_run.py — Fake end-to-end flow for Phase 2 verification.
 
 Walks one mock GitHub PR event through the full pipeline:
   inject event → classify → scope check → create job → queue →
-  simulate result → write artifacts → verify artifacts → print graph update
+  simulate result → write artifacts → verify artifacts → route to review
 
 No real executors are called. No GitHub API. SQLite only.
 """
@@ -113,7 +113,7 @@ def classify_and_scope(cur, event_id):
     # Simulate: classifier maps event to node auth-boundary
     classification = {
         "category":                 "implementation_request",
-        "intent":                   "advance_existing_node",
+        "intent":                   "implement_existing_node",
         "in_scope":                 True,
         "matched_node_id":          "auth-boundary",
         "executor_recommendation":  "jules",
@@ -161,7 +161,7 @@ def create_job(cur, event_id):
         "executor":             "jules",
         "queue_state":          "ready",
         "title":                "Implement authenticated request boundary",
-        "goal":                 "Move node auth-boundary from ready to complete",
+        "goal":                 "Produce a reviewable result for node auth-boundary",
         "why":                  "Protected actions must only execute for verified users",
         "source_context":       json.dumps({
             "starting_branch": "feature/auth-boundary",
@@ -262,11 +262,6 @@ def simulate_result(cur, job_id):
         "--- a/middleware.ts\n+++ b/middleware.ts\n@@ -0,0 +1,12 @@\n"
         "+// auth middleware stub (dry run)\n"
     )
-    (d / "graph-update.yaml").write_text(
-        "node_id: auth-boundary\nprevious_status: ready\nnew_status: complete\n"
-        "completed_by_job: job_dry_001\nunlocked_nodes:\n  - role-permission-layer\n"
-    )
-
     acceptance_check = {
         "protected_routes_reject_unauthenticated": "pass",
         "authenticated_users_can_access":          "pass",
@@ -279,7 +274,7 @@ def simulate_result(cur, job_id):
             execution_duration_seconds, outcome, status,
             changed_files, patch_path, summary_path, logs_path,
             acceptance_check, risks, followup_candidates
-        ) VALUES (?, ?, 'jules', ?, 12, 'success', 'completed', ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'jules', ?, 12, 'success', 'needs_review', ?, ?, ?, ?, ?, ?, ?)
     """, (
         result_id, job_id, now(),
         json.dumps(["middleware.ts", "tests/auth-boundary.test.ts"]),
@@ -311,7 +306,7 @@ def verify_artifacts(cur, job_id):
     step("STEP 6 — Artifact verification gate")
 
     d = job_dir(job_id)
-    required = ["decision.md", "result-summary.md", "patch.diff", "graph-update.yaml"]
+    required = ["decision.md", "result-summary.md", "patch.diff"]
     all_verified = True
 
     for i, artifact_type in enumerate(required):
@@ -340,35 +335,27 @@ def verify_artifacts(cur, job_id):
 
 
 # ---------------------------------------------------------------------------
-# Step 7: Advance node (print what would happen)
+# Step 7: Route to review
 # ---------------------------------------------------------------------------
 
-def advance_node(cur, job_id, all_verified):
-    step("STEP 7 — Graph update")
+def route_to_review(cur, job_id, all_verified):
+    step("STEP 7 — Route receipt to review")
+
+    cur.execute("""
+        UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review'
+        WHERE job_id = ?
+    """, (job_id,))
+    cur.execute("""
+        UPDATE queue_records SET queue = 'awaiting_review'
+        WHERE job_id = ?
+    """, (job_id,))
 
     if all_verified:
-        cur.execute("""
-            UPDATE jobs SET status = 'complete', queue_state = 'complete'
-            WHERE job_id = ?
-        """, (job_id,))
-        cur.execute("""
-            UPDATE queue_records SET queue = 'complete'
-            WHERE job_id = ?
-        """, (job_id,))
-        print("  All artifacts verified.")
-        print("  Node auth-boundary: ready → complete")
-        print("  Unlocked: role-permission-layer")
-        print()
-        print("  [would write graph-update.yaml to graph store]")
-        print("  [would post PR comment to GitHub #42]")
-        print("  [would enqueue role-permission-layer as next ready node]")
+        print("  All review artifacts verified.")
     else:
-        cur.execute("""
-            UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review'
-            WHERE job_id = ?
-        """, (job_id,))
-        print("  BLOCKED — artifact verification failed.")
-        print("  Node NOT advanced. Job set to awaiting_review.")
+        print("  Review artifacts incomplete.")
+    print("  Job routed to awaiting_review.")
+    print("  Node truth remains unchanged in the graph.")
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +376,7 @@ def main():
     enqueue(cur, job_id)
     simulate_result(cur, job_id)
     all_verified = verify_artifacts(cur, job_id)
-    advance_node(cur, job_id, all_verified)
+    route_to_review(cur, job_id, all_verified)
 
     con.commit()
     con.close()

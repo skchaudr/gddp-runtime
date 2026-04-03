@@ -264,7 +264,7 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(test_env, mon
         assert any(node.node_id == node_id for node in ready_nodes)
         return {
             "category": "implementation_request",
-            "intent": "advance_existing_node",
+            "intent": "implement_existing_node",
             "in_scope": True,
             "matched_node_id": node_id,
             "executor_recommendation": "jules",
