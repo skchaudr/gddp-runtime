@@ -56,11 +56,11 @@ bash deploy/deploy.sh --restart-intake
 GDAD supports replaying failed or partial runtime steps without manual database surgery.
 
 - **Replay a Return Router failure:**
-  If graph advancement fails after a PR merge, use the `result_id` from the logs.
+  If review receipt routing needs to be recreated after a PR merge, use the `result_id` from the logs.
   ```bash
   python3 -m runtime.replay --result-id res_20260312T21053737
   ```
-  This re-runs the return router logic for the original event.
+  This re-runs the return router logic for the original event and recreates the review receipt / `awaiting_review` job state.
 
 - **Replay a Job Dispatch failure:**
   If a job fails to dispatch or needs a re-run, use the `job_id`.
@@ -102,6 +102,18 @@ For the full operator procedure, see:
 deploy/BIGPI_RUNBOOK.md
 ```
 
+## Manual Review Workflow
+
+Runtime stops at receipts. When a job lands in `awaiting_review`, the operator reviews the `results` row plus job artifacts and then takes exactly one manual action:
+
+- `accept`: graph truth is updated by a human in `gddp-config`; runtime does nothing further.
+- `retry`: re-dispatch the job from persisted state.
+- `block`: leave graph truth unchanged and record the blocker outside runtime.
+- `defer`: leave the receipt/job in review-needed state for later.
+- `reopen` or `supersede`: a human reopens or replaces the work later if downstream evidence shows the earlier local result was not globally correct.
+
+There is no automatic node advancement, automatic review, or automatic graph writeback in this phase.
+
 ---
 
 ## Related repos
@@ -118,3 +130,11 @@ deploy/BIGPI_RUNBOOK.md
 
 Runtime data never goes in this repo.
 `~/opclaw/db/`, `~/opclaw/jobs/`, `~/opclaw/events/` stay on the Pi only.
+
+Graph truth is not mutated by runtime.
+Merged PRs and executor outputs create structured DB receipts and route jobs to human review; they do not mark nodes complete in `gddp-config`.
+
+## Phase Freeze
+
+This phase is intentionally frozen at receipt routing plus human review.
+Do not add richer graph states, auto-review logic, or smart return routing as follow-on work from this patch.

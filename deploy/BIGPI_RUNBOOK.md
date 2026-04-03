@@ -99,6 +99,27 @@ PY
 
 6. Run heartbeat once, inspect output, then stop.
 
+## Review Workflow
+
+When runtime creates a receipt and moves a job to `awaiting_review`, stop automation there.
+
+Review inputs:
+
+- the `results` row in `~/opclaw/db/queue.db`
+- the matching job row and queue state
+- the artifacts under `~/opclaw/jobs/<job-id>/`
+- the merged PR or executor output that produced the receipt
+
+Choose exactly one manual action:
+
+1. `accept` — update graph truth manually in `~/repos/gddp-config`
+2. `retry` — re-dispatch the job from persisted runtime state
+3. `block` — leave graph truth unchanged and record the blocker
+4. `defer` — leave the job in review-needed state for later
+5. `reopen` or `supersede` — revisit or replace the work later if downstream evidence invalidates it
+
+Do not treat merged PRs or runtime receipts as automatic graph advancement.
+
 ## Troubleshooting Notes
 
 - If `~/repos/gddp-runtime` and `~/opclaw/scripts` disagree, the deploy marker is authoritative for what is actually running.
@@ -112,3 +133,4 @@ PY
 - Do not commit, push, or redeploy as part of a read-only audit.
 - Prefer inspection and reporting over mutation.
 - If branch or deploy state is ambiguous, report it plainly instead of fixing it ad hoc.
+- Do not add richer graph states, auto-review logic, or automatic return routing in this phase.
