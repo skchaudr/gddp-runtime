@@ -46,6 +46,17 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("job: job_123", body)
         self.assertIn("does not advance graph truth automatically", body)
 
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("subprocess.run")
+    def test_dispatch_requires_explicit_token(self, mock_run):
+        result = self.adapter.dispatch(self.sample_job)
+
+        self.assertFalse(result.success)
+        self.assertIsNone(result.issue_url)
+        self.assertEqual(result.error, "Missing GitHub token: set GITHUB_TOKEN or GH_TOKEN")
+        mock_run.assert_not_called()
+
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "github-token-value"}, clear=True)
     @patch("subprocess.run")
     def test_dispatch_success(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -69,7 +80,9 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn(self.repo, cmd)
         self.assertIn("--label", cmd)
         self.assertIn("jules", cmd)
+        self.assertEqual(kwargs["env"]["GH_TOKEN"], "github-token-value")
 
+    @patch.dict("os.environ", {"GH_TOKEN": "gh-token-value"}, clear=True)
     @patch("subprocess.run")
     def test_dispatch_failure(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -84,6 +97,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIsNone(result.issue_url)
         self.assertEqual(result.error, "Error: repository not found")
 
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "github-token-value"}, clear=True)
     @patch("subprocess.run")
     def test_dispatch_timeout(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
@@ -93,6 +107,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertEqual(result.error, "gh CLI timed out")
 
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "github-token-value"}, clear=True)
     @patch("subprocess.run")
     def test_dispatch_exception(self, mock_run):
         mock_run.side_effect = Exception("Unexpected error")

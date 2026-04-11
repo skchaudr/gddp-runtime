@@ -9,6 +9,10 @@ This is the operator runbook for the live Big Pi control plane.
 - `~/repos/gddp-config` is the source of truth for project graphs.
 - `~/opclaw/db`, `~/opclaw/events`, and `~/opclaw/jobs` are live runtime state only.
 
+`~/opclaw/` is retained as the Big Pi deploy/state root for now. Treat it as an
+operational path, not as endorsement of the archived `opclaw` repo as current
+architecture authority.
+
 Never treat `~/repos/gddp-runtime` and `~/opclaw/scripts` as peers.
 
 ## Active Paths

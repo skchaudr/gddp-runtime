@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.2] - 2026-04-07
+
+### Changed
+- `scripts/runtime/return_router.py` now converts merged PRs into structured review receipts only; it no longer mutates graph truth or calls `graph_updater.py`
+- `scripts/runtime/results_store.py` now writes return receipts into the canonical `results` table and preserves the existing `needs_review` receipt status
+- merged PR handling now routes matching jobs and queue records to `awaiting_review` instead of implying automatic node completion
+- `scripts/runtime/heartbeat/job_factory.py` now builds jobs with the classifier-selected executor and frames the goal as producing a reviewable result
+- `scripts/runtime/heartbeat/dispatcher.py` now routes through an executor registry keyed by the persisted job executor instead of hardcoded Jules-only branching
+- `scripts/runtime/heartbeat/classifier.py` no longer advertises automatic return-path routing through the heartbeat runner
+- `scripts/adapters/jules_action_adapter.py`, `README.md`, and `scripts/dry_run.py` now document the review-receipt boundary instead of automatic graph advancement
+
+### Removed
+- `scripts/runtime/graph_updater.py` is no longer an active runtime graph mutation mechanism; it remains only as a disabled compatibility stub
+- runtime return flow no longer depends on `return_results`-style persistence or `graph-update.yaml` mutation artifacts
+
 ## [1.1.1] - 2026-03-19
 
 ### Added

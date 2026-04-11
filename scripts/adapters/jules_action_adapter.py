@@ -4,7 +4,9 @@ jules_action_adapter.py — Option A dispatch adapter.
 Dispatches a job to Jules by creating a GitHub issue with the `jules` label.
 The jules-action in the target repo detects the label and triggers Jules.
 
-Requires: gh CLI authenticated (gh auth status)
+Requires:
+    - gh CLI installed
+    - GITHUB_TOKEN or GH_TOKEN set to a GitHub PAT with issue write access
 
 Usage:
     from adapters.jules_action_adapter import JulesActionAdapter
@@ -13,6 +15,7 @@ Usage:
 """
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -43,6 +46,10 @@ class JulesActionAdapter:
 
     def __init__(self, repo: str):
         self.repo = repo
+
+    @staticmethod
+    def _github_token() -> str | None:
+        return os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
 
     def build_issue_body(self, job: dict) -> str:
         """
@@ -86,6 +93,15 @@ This block is parsed by the GDAD return router to create a structured review rec
 """
 
     def dispatch(self, job: dict) -> DispatchResult:
+        token = self._github_token()
+        if not token:
+            return DispatchResult(
+                success=False,
+                issue_url=None,
+                issue_number=None,
+                error="Missing GitHub token: set GITHUB_TOKEN or GH_TOKEN",
+            )
+
         title = f"[GDAD] {job['title']}"
         body  = self.build_issue_body(job)
 
@@ -98,7 +114,16 @@ This block is parsed by the GDAD return router to create a structured review rec
         ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            env = os.environ.copy()
+            # Pass auth explicitly so dispatch does not depend on ambient gh login state.
+            env["GH_TOKEN"] = token
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
             if result.returncode != 0:
                 return DispatchResult(
                     success=False,
