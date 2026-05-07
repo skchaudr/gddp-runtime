@@ -3,12 +3,22 @@ db/
 jobs/
 events/
 *.db
+*.sqlite
+*.sqlite3
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
+venv/
+.coverage
+coverage/
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
 
 # OS
 .DS_Store
@@ -16,5 +26,9 @@ Thumbs.db
 
 # Secrets
 .env
+.env.*
 *.key
 *.token
+
+# Logs
+*.log
