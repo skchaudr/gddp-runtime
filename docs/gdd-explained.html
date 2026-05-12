@@ -512,19 +512,6 @@
     margin-bottom: 8px;
     font-weight: 600;
   }
-  .intro-note .demo-term {
-    display: inline-block;
-    border-bottom: 1px dotted var(--accent);
-    color: var(--ink);
-    padding: 0 2px;
-  }
-  .intro-note .demo-term::after {
-    content: " ›";
-    color: var(--accent);
-    font-family: 'Fraunces', serif;
-    font-style: italic;
-  }
-
   /* ─── Chapter ────────────────────────────────────────────────── */
   .chapter { position: relative; z-index: 2; }
 
@@ -1221,7 +1208,11 @@
 
     <div class="intro-note rise">
       <span class="label">How to read this</span>
-      <p>Underlined italic phrases like <span class="demo-term">this one</span> have a plain-language definition waiting underneath. Click to expand. Press <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">/</kbd> any time to open the index, <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">[</kbd> / <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">]</kbd> to jump between chapters.</p>
+      <p>Underlined italic phrases like <button class="term" aria-expanded="false" aria-controls="def-demo">this one</button> have a plain-language definition waiting underneath. Click to expand. Press <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">/</kbd> any time to open the index, <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">[</kbd> / <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">]</kbd> to jump between chapters.</p>
+      <aside class="def" id="def-demo" data-open="false"><div class="def-inner"><div class="def-card">
+        <span class="def-label">Example</span>
+        <p>Like this. Clicking any underlined italic phrase opens a short, plain-language definition right where it appears in the text. Click the term again to close.</p>
+      </div></div></aside>
     </div>
   </div>
 </section>
