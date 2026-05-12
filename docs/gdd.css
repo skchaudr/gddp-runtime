@@ -369,16 +369,9 @@
     padding: 0 32px;
     scroll-margin-top: 64px;
   }
-  .scene.readwidth { max-width: var(--read); }
-  .frame { padding-block: 14vh; }
-  .frame.tight  { padding-block: 8vh; }
-  .frame.loose  { padding-block: 22vh; }
-
   @media (max-width: 720px) {
     body { font-size: 19px; }
     .scene { padding: 0 22px; }
-    .frame { padding-block: 9vh; }
-    .frame.loose { padding-block: 13vh; }
   }
 
   /* ─── Reveal-on-scroll ───────────────────────────────────────── */
@@ -393,166 +386,80 @@
     .rise { opacity: 1; transform: none; transition: none; }
   }
 
-  /* ─── Cover scene ────────────────────────────────────────────── */
+  /* ─── Cover ──────────────────────────────────────────────────── */
   .cover {
-    min-height: 100vh;
+    min-height: 50vh;
     display: grid;
-    place-items: center;
-    padding-block: 120px 60px;
-    text-align: left;
+    align-content: end;
+    padding: 96px 32px 48px;
   }
-  .cover-inner { max-width: 880px; width: 100%; }
-  .cover-meta {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px 32px;
-    border-top: 1px solid var(--ink);
-    border-bottom: 1px solid var(--ink);
-    padding: 12px 0;
-    margin-bottom: 56px;
-  }
-  .cover-meta span strong { color: var(--ink); margin-right: 8px; }
-
-  h1.cover-title {
+  .cover-head { max-width: var(--read); }
+  .cover-head h1 {
     font-family: 'Fraunces', serif;
     font-weight: 400;
-    font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 0;
-    font-size: clamp(64px, 12vw, 168px);
-    line-height: 0.86;
-    letter-spacing: -0.04em;
+    font-variation-settings: "opsz" 96, "SOFT" 20, "WONK" 0;
+    font-size: clamp(36px, 5vw, 56px);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
     color: var(--ink);
-    margin-bottom: 44px;
+    margin-bottom: 18px;
   }
-  h1.cover-title em {
-    font-style: italic;
-    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
-    color: var(--accent);
-  }
-
   .cover-thesis {
     font-family: 'Fraunces', serif;
     font-variation-settings: "opsz" 36, "SOFT" 30, "WONK" 0;
-    font-size: clamp(20px, 2.2vw, 26px);
-    line-height: 1.36;
+    font-size: clamp(18px, 1.8vw, 22px);
+    line-height: 1.4;
     color: var(--ink-soft);
     font-style: italic;
     border-left: 2px solid var(--accent);
-    padding: 6px 0 6px 20px;
-    max-width: 46ch;
+    padding: 4px 0 4px 18px;
+    max-width: 52ch;
   }
-
-  .cover-scroll-cue {
-    margin-top: 80px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .cover-scroll-cue .line {
-    flex: 0 0 60px;
-    height: 1px;
-    background: var(--ink-mute);
-    animation: pulse 2.4s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 0.35; transform: scaleX(0.6); } 50% { opacity: 1; transform: scaleX(1); } }
-  @media (prefers-reduced-motion: reduce) {
-    .cover-scroll-cue .line { animation: none; opacity: 1; transform: none; }
-  }
-
-  /* ─── Intro / TOC ────────────────────────────────────────────── */
-  .intro-lede {
-    font-family: 'Fraunces', serif;
-    font-variation-settings: "opsz" 48, "SOFT" 20, "WONK" 0;
-    font-size: clamp(24px, 3.2vw, 38px);
-    line-height: 1.28;
-    color: var(--ink);
-    letter-spacing: -0.012em;
-    margin-bottom: 44px;
-    text-wrap: balance;
-  }
-  .intro-lede em {
+  .cover-thesis em {
+    color: var(--accent);
     font-style: italic;
-    color: var(--accent);
-    font-variation-settings: "opsz" 48, "SOFT" 80, "WONK" 1;
   }
 
-  .intro-note {
-    border-top: 1px solid var(--rule);
-    padding-top: 22px;
-    margin-top: 56px;
-    color: var(--ink-soft);
-    max-width: 56ch;
-  }
-  .intro-note .label {
-    display: block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 8px;
-    font-weight: 600;
-  }
   /* ─── Chapter ────────────────────────────────────────────────── */
   .chapter { position: relative; z-index: 2; }
 
-  .chapter-mark {
-    max-width: var(--wide);
+  .chapter-head {
+    max-width: var(--read);
     margin: 0 auto;
-    padding: 22vh 32px 8vh;
-    display: flex;
+    padding: 12vh 32px 4vh;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 20px;
     align-items: baseline;
-    gap: 22px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 5vh;
+    scroll-margin-top: 64px;
   }
-  .chapter-mark .num {
+  .chapter-head .num {
     font-family: 'Fraunces', serif;
-    font-variation-settings: "opsz" 96, "SOFT" 40, "WONK" 1;
+    font-variation-settings: "opsz" 72, "SOFT" 40, "WONK" 1;
     font-style: italic;
     font-weight: 400;
-    font-size: clamp(64px, 8vw, 104px);
+    font-size: clamp(32px, 3.6vw, 48px);
     line-height: 1;
     color: var(--accent);
   }
-  .chapter-mark .label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--rule);
-    flex: 1;
-  }
-
-  h2.chapter-title {
-    max-width: var(--wide);
-    margin: 0 auto;
-    padding: 0 32px 14vh;
+  .chapter-head h2 {
     font-family: 'Fraunces', serif;
     font-weight: 400;
-    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
-    font-size: clamp(40px, 6.2vw, 84px);
-    line-height: 0.96;
-    letter-spacing: -0.028em;
+    font-variation-settings: "opsz" 96, "SOFT" 30, "WONK" 0;
+    font-size: clamp(26px, 3.4vw, 40px);
+    line-height: 1.04;
+    letter-spacing: -0.02em;
     text-wrap: balance;
   }
-  h2.chapter-title em {
+  .chapter-head h2 em {
     font-style: italic;
     color: var(--accent);
-    font-variation-settings: "opsz" 144, "SOFT" 90, "WONK" 1;
+    font-variation-settings: "opsz" 96, "SOFT" 80, "WONK" 1;
   }
   @media (max-width: 720px) {
-    .chapter-mark { padding-top: 14vh; padding-bottom: 5vh; gap: 14px; }
-    h2.chapter-title { padding-bottom: 9vh; }
+    .chapter-head { padding-top: 8vh; padding-bottom: 3vh; gap: 14px; margin-bottom: 3vh; }
   }
 
   /* ─── Prose ──────────────────────────────────────────────────── */
@@ -720,38 +627,21 @@
   }
   .footnote strong { color: var(--ink); font-style: normal; }
 
-  /* ─── Pull quote ─────────────────────────────────────────────── */
-  .pull-scene {
-    min-height: 70vh;
-    display: grid;
-    place-items: center;
-    padding: 10vh 32px;
-  }
-  .pull-scene blockquote {
+  /* ─── Pull quote (inline) ────────────────────────────────────── */
+  blockquote.pull {
     font-family: 'Fraunces', serif;
-    font-variation-settings: "opsz" 144, "SOFT" 70, "WONK" 1;
+    font-variation-settings: "opsz" 72, "SOFT" 60, "WONK" 1;
     font-style: italic;
     font-weight: 400;
-    font-size: clamp(34px, 5vw, 62px);
-    line-height: 1.06;
+    font-size: clamp(22px, 2.6vw, 30px);
+    line-height: 1.22;
     color: var(--ink);
-    max-width: 18ch;
-    text-wrap: balance;
-    letter-spacing: -0.018em;
-    position: relative;
-    padding-left: 28px;
+    margin: 2em 0;
+    padding: 6px 0 6px 22px;
     border-left: 3px solid var(--accent);
-  }
-  .pull-scene blockquote::before {
-    content: "\201C";
-    position: absolute;
-    left: -2px;
-    top: -38px;
-    font-size: 80px;
-    color: var(--accent);
-    font-style: normal;
-    line-height: 1;
-    opacity: 0.45;
+    max-width: 36ch;
+    text-wrap: balance;
+    letter-spacing: -0.012em;
   }
 
   /* ─── Diagram ────────────────────────────────────────────────── */
@@ -975,93 +865,6 @@
   @media (max-width: 600px) {
     .stage { grid-template-columns: 1fr; gap: 6px; }
   }
-
-  /* ─── Stamp ──────────────────────────────────────────────────── */
-  .stamp-row {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    margin-top: 2.4em;
-    flex-wrap: wrap;
-  }
-  .stamp {
-    display: inline-block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--stamp);
-    border: 2px solid var(--stamp);
-    padding: 8px 14px;
-    transform: rotate(-3deg);
-    background: var(--accent-dim);
-    font-weight: 600;
-  }
-  .stamp-aside {
-    font-style: italic;
-    color: var(--ink-mute);
-    font-family: 'Newsreader', serif;
-    font-size: 16px;
-    flex: 1;
-    min-width: 220px;
-  }
-
-  /* ─── Next chapter affordance ────────────────────────────────── */
-  .next-chapter {
-    display: flex;
-    align-items: baseline;
-    gap: 18px;
-    margin: 5vh 0 3vh;
-    padding: 24px 0;
-    border-top: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
-    text-decoration: none;
-    color: var(--ink);
-    transition: padding-left 0.3s ease, color 0.2s ease, border-color 0.2s ease;
-  }
-  .next-chapter:hover { color: var(--accent); padding-left: 14px; border-color: var(--accent-soft); }
-  .next-chapter .cue {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-    flex: 0 0 auto;
-  }
-  .next-chapter .ch {
-    font-family: 'Fraunces', serif;
-    font-variation-settings: "opsz" 36, "SOFT" 30, "WONK" 0;
-    font-style: italic;
-    font-size: clamp(20px, 2.2vw, 26px);
-    flex: 1;
-    line-height: 1.2;
-  }
-  .next-chapter .arr {
-    font-family: 'Fraunces', serif;
-    font-size: 26px;
-    color: var(--accent);
-    transition: transform 0.3s ease;
-  }
-  .next-chapter:hover .arr { transform: translateX(8px); }
-
-  /* ─── Divider ────────────────────────────────────────────────── */
-  .divider {
-    max-width: 240px;
-    margin: 0 auto;
-    padding: 10vh 0;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    justify-content: center;
-  }
-  .divider .glyph {
-    font-family: 'Fraunces', serif;
-    font-style: italic;
-    color: var(--accent);
-    font-size: 28px;
-    line-height: 1;
-  }
-  .divider .rule { flex: 1; height: 1px; background: var(--rule); }
 
   /* ─── Footer ─────────────────────────────────────────────────── */
   footer {

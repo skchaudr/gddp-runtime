@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Graph-Driven Development — A Field Manual</title>
+<title>Graph-Driven Development — Field Manual</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=JetBrains+Mono:wght@300..700&display=swap" rel="stylesheet" />
@@ -24,7 +24,6 @@
       <span class="moon">☾</span>
       <span class="sun">☀</span>
     </button>
-    <span class="ver" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--ink-mute); padding-left: 8px; border-left: 1px solid var(--rule);">v1 · 2026.05</span>
   </div>
 </nav>
 <div class="progress"><span id="pbar"></span></div>
@@ -39,7 +38,6 @@
   </header>
   <nav class="drawer-nav" id="drawer-nav">
     <a class="ch-link" href="#cover" data-target="cover"><span class="n">▸</span><span class="t">Cover</span></a>
-    <a class="ch-link" href="#intro" data-target="intro"><span class="n">▸</span><span class="t">How to read</span></a>
 
     <a class="ch-link" href="#s01" data-target="s01"><span class="n">§ 01</span><span class="t">The Premise</span></a>
     <div class="ch-subs" data-for="s01" data-open="false"><div class="ch-subs-inner"></div></div>
@@ -80,11 +78,6 @@
       <a href="#s07-stages">The scaling stages</a>
       <a href="#s07-rule">The non-negotiable thing</a>
     </div></div>
-
-    <a class="ch-link" href="#s08" data-target="s08"><span class="n">§ 08</span><span class="t">Colophon</span></a>
-    <div class="ch-subs" data-for="s08" data-open="false"><div class="ch-subs-inner">
-      <a href="#s08-files">Files this manual reads from</a>
-    </div></div>
   </nav>
   <footer class="drawer-foot">
     <span><kbd>/</kbd>open</span>
@@ -96,54 +89,19 @@
 
 <!-- ─── COVER ──────────────────────────────────────────────────── -->
 <section class="scene cover" id="cover" data-title="Cover">
-  <div class="cover-inner">
-    <div class="cover-meta rise">
-      <span><strong>Edition</strong>One</span>
-      <span><strong>Filed</strong>2026.05.11</span>
-      <span><strong>Operator</strong>Saboor K. Chaudry</span>
-      <span><strong>Plant</strong>gddp-runtime</span>
-    </div>
-
-    <h1 class="cover-title rise" style="--d:60ms;">Graph<br/>Driven<br/><em>Development.</em></h1>
-
-    <p class="cover-thesis rise" style="--d:180ms;">A field manual for the apparatus of bounded agent autonomy.</p>
-
-    <div class="cover-scroll-cue rise" style="--d:340ms;">
-      <span class="line"></span>
-      <span>Scroll to begin · or press <kbd style="font-family:inherit;border:1px solid var(--rule);padding:1px 6px;color:var(--ink);">/</kbd> for index</span>
-    </div>
-  </div>
+  <header class="cover-head rise">
+    <h1>Graph-Driven Development</h1>
+    <p class="cover-thesis">The human owns intent. The agent owns labor. A <em>graph of dependencies</em> sits between them as the contract.</p>
+  </header>
 </section>
-
-
-<!-- ─── INTRO + TOC ────────────────────────────────────────────── -->
-<section class="scene readwidth frame" id="intro" data-title="How to read">
-  <p class="intro-lede rise">The human owns intent. The agent owns labor. A <em>graph of dependencies</em> sits between them as the contract.</p>
-
-  <div class="prose" style="padding: 0;">
-    <p class="rise">Technical terms expand inline when you click them — you don't need to know them yet.</p>
-
-    <div class="intro-note rise">
-      <span class="label">How to read this</span>
-      <p>Underlined italic phrases like <button class="term" aria-expanded="false" aria-controls="def-demo">this one</button> have a plain-language definition waiting underneath. Click to expand. Press <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">/</kbd> any time to open the index, <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">[</kbd> / <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">]</kbd> to jump between chapters.</p>
-      <aside class="def" id="def-demo" data-open="false"><div class="def-inner"><div class="def-card">
-        <span class="def-label">Example</span>
-        <p>Like this. Clicking any underlined italic phrase opens a short, plain-language definition right where it appears in the text. Click the term again to close.</p>
-      </div></div></aside>
-    </div>
-  </div>
-</section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 01 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s01" data-title="§ 01 · The Premise">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 01</span>
-    <span class="label">The Premise · page 01 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">The agent does not get to decide <em>what.</em></h2>
+    <h2>The agent does not get to decide <em>what.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">Two pictures dominate the conversation about AI writing software. Both hide the same question.</p>
@@ -161,13 +119,9 @@
     </div></div></aside>
 
     <p class="rise">Both share an assumption: <strong>the agent is in charge of scope.</strong> It decides what files to touch, what to call done. Even the assistant picks the diagnosis the moment you say "fix it."</p>
-  </div>
 
-  <div class="pull-scene rise">
-    <blockquote>Scope is not a thing an agent is qualified to own.</blockquote>
-  </div>
+    <blockquote class="pull rise">Scope is not a thing an agent is qualified to own.</blockquote>
 
-  <div class="prose">
     <p class="rise">GDD inverts this. The human declares the <em>what</em>. The agent figures out the <em>how</em>. The relationship is structurally asymmetric — what beats how.</p>
 
     <p class="rise">The mechanism is a <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> — a map of every unit of work, with prerequisites and a per-node definition of done.</p>
@@ -177,30 +131,21 @@
     </div></div></aside>
 
     <p class="rise">The agent doesn't invent the map. It receives one node, executes it, reports back. A human decides if truth has changed.</p>
-
-    <a class="next-chapter rise" href="#s02">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 02 — The Apparatus</span>
-      <span class="arr">→</span>
-    </a>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 02 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s02" data-title="§ 02 · The Apparatus">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 02</span>
-    <span class="label">The Apparatus · page 02 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">Two repositories, one <em>doctrine.</em></h2>
+    <h2>Two repositories, one <em>doctrine.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">The cast: two git repositories, one external agent, one human who alone can change the map.</p>
 
-    <p class="rise"><code>gddp-config</code> holds project truth — nodes, schemas, templates. Nothing runs here. Humans write; agents read. No exceptions. The first is a <button class="term" aria-expanded="false" aria-controls="def-repo">repository</button>, which is just a directory tracked by git.</p>
+    <p class="rise"><code>gddp-config</code> holds project truth — nodes, schemas, templates. Nothing runs here. Humans write; agents read. The first is a <button class="term" aria-expanded="false" aria-controls="def-repo">repository</button>, which is just a directory tracked by git.</p>
     <aside class="def" id="def-repo" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">What is a repository?</span>
       <p>A <strong>repository</strong>, or "repo," is a directory of files tracked by <code>git</code>. Splitting GDD into two repos puts a wall between things humans edit (truth) and things machines edit (state).</p>
@@ -288,28 +233,19 @@
       <p>A <strong>schema</strong> is the rulebook for what a file is allowed to contain. <code>gddp-config/schemas/v1/</code> holds one for every kind of object — node, job, result, event.</p>
     </div></div></aside>
 
-    <div class="footnote rise" data-mark="note · 02">
+    <div class="footnote rise" data-mark="note">
       <strong>Acceptance vs. tests.</strong> Tests prove the code runs. Acceptance proves the code did what was asked. A function can pass tests while completing the wrong objective.
     </div>
-
-    <a class="next-chapter rise" href="#s03">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 03 — The Forward Lane</span>
-      <span class="arr">→</span>
-    </a>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 03 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s03" data-title="§ 03 · The Forward Lane">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 03</span>
-    <span class="label">The Forward Lane · page 03 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">How a node becomes a <em>job.</em></h2>
+    <h2>How a node becomes a <em>job.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">The forward lane turns a written-down node into a unit of agent labor.</p>
@@ -404,28 +340,19 @@
 
     <p class="rise">Reason: auditability. The graph tells you what <em>should</em> happen. The database tells you what <em>did</em>.</p>
 
-    <div class="footnote rise" data-mark="note · 03">
+    <div class="footnote rise" data-mark="note">
       <strong>Pull request?</strong> A PR is the standard way to propose changes in git — push a branch, ask to merge. In GDD, every successful job returns as a PR.
     </div>
-
-    <a class="next-chapter rise" href="#s04">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 04 — The Return Lane</span>
-      <span class="arr">→</span>
-    </a>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 04 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s04" data-title="§ 04 · The Return Lane">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 04</span>
-    <span class="label">The Return Lane · page 04 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">How a merged PR becomes a <em>receipt.</em></h2>
+    <h2>How a merged PR becomes a <em>receipt.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">Forward lane sends work out; return lane receives evidence back.</p>
@@ -492,41 +419,23 @@
     </div></div></aside>
 
     <p class="rise">The receipt is not a verdict. The runtime never makes verdicts. The receipt exists to be readable by the human who will.</p>
-  </div>
 
-  <div class="pull-scene rise">
-    <blockquote>Merging proves the code merged. Not that it did what was wanted.</blockquote>
-  </div>
+    <blockquote class="pull rise">Merging proves the code merged. Not that it did what was wanted.</blockquote>
 
-  <div class="prose">
     <h3 id="s04-stop" class="rise">The deliberate stop</h3>
     <p class="rise">An earlier version of this system treated a merged PR as proof of completion and auto-updated the graph. Wrong. Conflating merge with completion is the slip that fails agentic systems over time.</p>
 
-    <p class="rise">The return lane was severed from graph truth. The runtime stops at <code>awaiting_review</code>. Next move belongs to a human.</p>
-
-    <div class="stamp-row rise">
-      <span class="stamp">Frozen by design</span>
-      <span class="stamp-aside">— receipts only; no auto-completion in this phase.</span>
-    </div>
-
-    <a class="next-chapter rise" href="#s05">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 05 — The Truth Boundary</span>
-      <span class="arr">→</span>
-    </a>
+    <p class="rise">The return lane was severed from graph truth. The runtime stops at <code>awaiting_review</code>. Next move belongs to a human. Receipts only; no auto-completion in this phase.</p>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 05 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s05" data-title="§ 05 · The Truth Boundary">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 05</span>
-    <span class="label">The Truth Boundary · page 05 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">Five hands the operator can <em>play.</em></h2>
+    <h2>Five hands the operator can <em>play.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">When a job lands in <code>awaiting_review</code>, the runtime is finished with it.</p>
@@ -552,13 +461,9 @@
     <p class="rise">The smallest vocabulary that covers every realistic review outcome without smuggling decisions into the runtime. None of these verbs is "the runtime decided." Accept, reject, defer — all belong to a person.</p>
 
     <p class="rise">"Ignore" is not on the list. Doing nothing is <em>defer</em> — a real decision on a real desk.</p>
-  </div>
 
-  <div class="pull-scene rise">
-    <blockquote>The runtime is allowed to know what happened. Not what it means.</blockquote>
-  </div>
+    <blockquote class="pull rise">The runtime is allowed to know what happened. Not what it means.</blockquote>
 
-  <div class="prose">
     <h3 id="s05-practice" class="rise">Reading a receipt in practice</h3>
     <p class="rise">Open the PR and read the diff. Read the receipt row in <code>results</code>. Walk through the node's <code>acceptance</code> list, one item at a time, checking each against the PR. Read the required artifacts.</p>
 
@@ -566,33 +471,24 @@
 
     <p class="rise">Slower than automatic acceptance. That's the point — slowness is where judgment lives, and judgment is the load-bearing thing the agent cannot supply.</p>
 
-    <div class="footnote rise" data-mark="note · 05">
+    <div class="footnote rise" data-mark="note">
       <strong>Known limit.</strong> The current return router has a hardcoded allowlist for <code>skchaudr/vault-doctor</code>. A scaling step is to lift that into config.
     </div>
-
-    <a class="next-chapter rise" href="#s06">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 06 — The Operator's Drill</span>
-      <span class="arr">→</span>
-    </a>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 06 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s06" data-title="§ 06 · The Operator's Drill">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 06</span>
-    <span class="label">The Operator's Drill · page 06 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">You learn the boundary by <em>practicing</em> it.</h2>
+    <h2>You learn the boundary by <em>practicing</em> it.</h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">Reading tells you a system's shape. Practicing tells you what it feels like to be wrong about it.</p>
 
-    <p class="rise">Do these at a real terminal on a small real project. Answers come from files, rows, and receipts — not intuition. They're sequenced; later ones depend on earlier ones. None should take more than an evening.</p>
+    <p class="rise">Do these at a real terminal on a small real project. Answers come from files, rows, and receipts — not intuition. They're sequenced; later ones depend on earlier ones.</p>
 
     <ol class="steps">
       <li class="rise"><strong>Synthetic Receipt Drill</strong>Run <code>python3 scripts/init_db.py</code>, then <code>python3 scripts/dry_run.py</code>. No real repo, no real agent. Inspect <code>events</code>, <code>jobs</code>, and <code>results</code>. Confirm the synthetic job ends in <code>awaiting_review</code> and no graph file changed.</li>
@@ -614,39 +510,26 @@
     </ul>
 
     <p class="rise">If you can't answer all seven from files and rows — not memory — the drill isn't done. Repeat with a different tiny task. A fuzzy mental model becomes a system you can read.</p>
-
-    <div class="footnote rise" data-mark="note · 06">
-      <strong>Practice targets:</strong> one-file CLIs, tiny FastAPI apps, script repos. Avoid auth, migrations, payments. The drill is about the loop, not the change. Inspection is mostly one <code>sqlite3</code> query or one <code>find</code> — keep <code>deploy/BIGPI_RUNBOOK.md</code> open in a scratch pane.
-    </div>
-
-    <a class="next-chapter rise" href="#s07">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 07 — What Comes Next</span>
-      <span class="arr">→</span>
-    </a>
   </div>
 </section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
 <!-- ─── § 07 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s07" data-title="§ 07 · What Comes Next">
-  <div class="chapter-mark rise">
+  <header class="chapter-head rise">
     <span class="num">§ 07</span>
-    <span class="label">What Comes Next · page 07 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">From local correctness to <em>systemic meaning.</em></h2>
+    <h2>From local correctness to <em>systemic meaning.</em></h2>
+  </header>
 
   <div class="prose">
     <p class="lede rise">The next phase makes the graph not just the scheduler of work but the validator of meaning.</p>
 
-    <p class="rise">Treat this section as a road map, not a release.</p>
+    <p class="rise">Treat this as a road map, not a release.</p>
 
     <p class="rise">The pivot: <button class="term" aria-expanded="false" aria-controls="def-unit">unit tests</button> prove a function behaves. Acceptance proves a node delivered. Neither proves the project is still coherent.</p>
     <aside class="def" id="def-unit" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Unit test, plainly</span>
-      <p>A <strong>unit test</strong> is a small piece of code that checks one function does what it claims. It is the cheapest signal that a single brick is square. It says nothing about the wall.</p>
+      <p>A <strong>unit test</strong> is a small piece of code that checks one function does what it claims. The cheapest signal that a single brick is square. It says nothing about the wall.</p>
     </div></div></aside>
 
     <p class="rise">A node can pass its acceptance while quietly violating a <button class="term" aria-expanded="false" aria-controls="def-contract">contract</button> that a downstream node was counting on. The next-generation runtime adds a stack of verifiers whose only job is to notice this drift.</p>
@@ -710,70 +593,18 @@
       <div class="stage rise"><span class="stage-tag">Stage 2</span><div><h4>Multiple agents, one graph</h4><p>Independent ready nodes dispatched in parallel. The graph says who owns which path.</p></div></div>
       <div class="stage rise"><span class="stage-tag">Stage 3</span><div><h4>Verifier agent added</h4><p>A read-only agent reviews the diff, tests, and spec. Returns pass / fail / uncertain. Cannot edit code.</p></div></div>
       <div class="stage rise"><span class="stage-tag">Stage 4</span><div><h4>Dispatcher expansion</h4><p>A scheduler reads the graph, opens panes in a multi-pane terminal like <button class="term" aria-expanded="false" aria-controls="def-cmux">CMUX</button>, injects prompts, watches reports, updates state.</p></div></div>
-      <div class="stage rise"><span class="stage-tag">Stage 5</span><div><h4>Semantic graph gate</h4><p>The project cannot be called done until a graph-level verifier confirms every completed node still satisfies upstream and downstream contracts. The gate turns "shipping" into a property of the system.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Stage 5</span><div><h4>Semantic graph gate</h4><p>The project cannot be called done until a graph-level verifier confirms every completed node still satisfies upstream and downstream contracts.</p></div></div>
       <div class="stage rise"><span class="stage-tag">Beyond</span><div><h4>OpenClaw &amp; CI for meaning</h4><p>A reasoning layer that surfaces uncertainty earlier and more legibly. CI/CD where the build target is a graph of meaning.</p></div></div>
     </div>
     <aside class="def" id="def-cmux" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">CMUX, briefly</span>
       <p><strong>CMUX</strong> is a multi-pane terminal built for running several agents side by side. In the next-phase sketch, it is the cockpit the dispatcher uses. The graph remains the source of truth.</p>
     </div></div></aside>
-  </div>
 
-  <div class="pull-scene rise">
-    <blockquote>Builders build. Verifiers verify. The graph decides what done means.</blockquote>
-  </div>
+    <blockquote class="pull rise">Builders build. Verifiers verify. The graph decides what done means.</blockquote>
 
-  <div class="prose">
     <h3 id="s07-rule" class="rise">The non-negotiable thing</h3>
     <p class="rise">One rule doesn't move across stages: <strong>the agent doesn't decide if its own work passes.</strong> Verifiers make the human judgment cheaper and faster — they don't replace it.</p>
-
-    <a class="next-chapter rise" href="#s08">
-      <span class="cue">Continue</span>
-      <span class="ch">§ 08 — Colophon</span>
-      <span class="arr">→</span>
-    </a>
-  </div>
-</section>
-
-<div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
-
-
-<!-- ─── § 08 ───────────────────────────────────────────────────── -->
-<section class="chapter" id="s08" data-title="§ 08 · Colophon">
-  <div class="chapter-mark rise">
-    <span class="num">§ 08</span>
-    <span class="label">Colophon · page 08 / 08</span>
-  </div>
-  <h2 class="chapter-title rise">How this manual was <em>made.</em></h2>
-
-  <div class="prose">
-    <p class="lede rise">One HTML file. Three typefaces. Inline SVG diagrams.</p>
-
-    <p class="rise">Body type is <strong>Newsreader</strong>. Display is <strong>Fraunces</strong>. Code is <strong>JetBrains Mono</strong>. Paper grain is a noise filter; diagrams are hand-tuned SVG, not generated.</p>
-
-    <h3 id="s08-files" class="rise">Files this manual reads from</h3>
-    <table class="ledger rise">
-      <thead><tr><th>Source</th><th>Where</th></tr></thead>
-      <tbody>
-        <tr><td>Runtime overview</td><td><code>gddp-runtime/README.md</code></td></tr>
-        <tr><td>Operator runbook</td><td><code>gddp-runtime/deploy/BIGPI_RUNBOOK.md</code></td></tr>
-        <tr><td>Next-phase sketch</td><td><code>gddp-runtime/gdd-next.md</code></td></tr>
-        <tr><td>Project truth</td><td><code>gddp-config/graphs/&lt;project&gt;/</code></td></tr>
-        <tr><td>Schemas</td><td><code>gddp-config/schemas/v1/</code></td></tr>
-      </tbody>
-    </table>
-
-    <p class="rise">If you want to operate this system, the entry point is Run 1 in §06. Open a terminal, initialize the database, watch what happens.</p>
-
-    <div class="footnote rise" data-mark="errata">
-      Found something wrong about the live system? Fix lives in <code>docs/gdd-explained.html</code>.
-    </div>
-
-    <a class="next-chapter rise" href="#cover">
-      <span class="cue">Back to top</span>
-      <span class="ch">§ 01 — The Premise</span>
-      <span class="arr">↑</span>
-    </a>
   </div>
 </section>
 
