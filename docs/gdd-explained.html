@@ -120,13 +120,15 @@
 
     <blockquote class="pull rise">The question isn't who picks scope. It's when forward motion is safe.</blockquote>
 
-    <p class="rise">GDD's answer is a written-down <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> that <em>encodes</em> what's clear. When the graph says node X is <code>complete</code> and node Y is <code>pending</code> with X as its only prerequisite, the agent has explicit permission to take Y. When the graph is silent or contradictory, the agent waits.</p>
+    <p class="rise">Think about how a video game gates its world. Large regions of the map start locked. The game requires you to fully explore and prove competence in your current area before the next region unlocks — and when you do, it unlocks automatically. You don't get a popup asking if you're ready. You literally proved it.</p>
+
+    <p class="rise">GDD is the engineering discipline behind that pattern. The map is a written-down <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button>. Acceptance criteria are the competence demonstrations. When a node is marked complete, the runtime sees its dependents as ready and dispatches them — automatically, no human typing "go." When the graph is silent or contradictory, the agent waits.</p>
     <aside class="def" id="def-graph" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">What is a graph?</span>
       <p>A <strong>dependency graph</strong> is a project plan drawn as boxes and arrows. Each box is a unit of work — a <strong>node</strong>. An arrow from A to B means "B can't start until A is done."</p>
     </div></div></aside>
 
-    <p class="rise">The agent doesn't invent the map. It receives one ready node, executes it, reports back. A human reviews completed work, accepts what counts, and writes new nodes when new clarity emerges. Forward motion is autonomous <em>within</em> a well-formed graph — not arbitrary, not gated by typing "go."</p>
+    <p class="rise">The agent doesn't draw the map. It receives one ready node, executes it, reports back. A human reviews completed work, accepts what counts, and writes new nodes when new clarity emerges. Forward motion is autonomous <em>within</em> a well-formed graph.</p>
   </div>
 </section>
 
@@ -326,6 +328,10 @@
     </div></div></aside>
 
     <p class="rise">Adding Codex or a local harness means a new adapter and nothing else.</p>
+
+    <div class="footnote rise" data-mark="origin">
+      <strong>Origin.</strong> GDD started as a coordination question — how do Jules and OpenClaw work together without stepping on each other? The graph-as-shared-contract answer generalized past those two specific agents, and the adapter abstraction is what made it agent-agnostic. Anything that can read a packet and return a PR can dispatch. Claude's scheduling layer joined later under the same interface.
+    </div>
 
     <h3 id="s03-db" class="rise">Why state goes to a database</h3>
     <p class="rise">Every event, job, queue record, and result is written to a small <button class="term" aria-expanded="false" aria-controls="def-sqlite">SQLite</button> file — <code>db/queue.db</code>.</p>
