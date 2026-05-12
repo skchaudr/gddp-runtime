@@ -100,37 +100,33 @@
 <section class="chapter" id="s01" data-title="§ 01 · The Premise">
   <header class="chapter-head rise">
     <span class="num">§ 01</span>
-    <h2>The agent does not get to decide <em>what.</em></h2>
+    <h2>Forward motion needs the <em>graph.</em></h2>
   </header>
 
   <div class="prose">
-    <p class="lede rise">Two pictures dominate the conversation about AI writing software. Both hide the same question.</p>
+    <p class="lede rise">Every prompt to an AI seeds scope, even weakly. The hard question shows up later — after the agent finishes a unit of work and looks for the next one.</p>
 
-    <p class="rise">The first is the <button class="term" aria-expanded="false" aria-controls="def-inline">inline assistant</button> — a sidebar that completes lines and suggests refactors. You drive. It whispers. Copilot, IDE chat panels.</p>
-    <aside class="def" id="def-inline" data-open="false"><div class="def-inner"><div class="def-card">
-      <span class="def-label">Plain version</span>
-      <p>An <strong>inline assistant</strong> lives inside your editor and only acts when you ask. It autocompletes, suggests refactors, answers questions about code you point at. It never opens files on its own.</p>
-    </div></div></aside>
-
-    <p class="rise">The second is the <button class="term" aria-expanded="false" aria-controls="def-auto">autonomous agent</button> — Jules, Devin, the various background coders. You hand it a prompt and walk away; later a PR appears. It decides a great deal of what to do.</p>
+    <p class="rise">An <button class="term" aria-expanded="false" aria-controls="def-auto">autonomous agent</button> gets handed a task, does it, opens a PR. Good work. Now what?</p>
     <aside class="def" id="def-auto" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Plain version</span>
-      <p>An <strong>autonomous agent</strong> is an AI worker you assign a task to and leave running. It picks its own files, writes its own code, opens its own pull request.</p>
+      <p>An <strong>autonomous agent</strong> is an AI worker you assign a task to and leave running. It picks its own files, writes its own code, opens its own pull request. Jules, Devin, OpenHands, and similar tools.</p>
     </div></div></aside>
 
-    <p class="rise">Both share an assumption: <strong>the agent is in charge of scope.</strong> It decides what files to touch, what to call done. Even the assistant picks the diagnosis the moment you say "fix it."</p>
+    <p class="rise">Two failure modes show up at that decision point.</p>
 
-    <blockquote class="pull rise">Scope is not a thing an agent is qualified to own.</blockquote>
+    <p class="rise"><strong>Invent.</strong> Scope was actually unclear — a client tool, ambiguous priorities, unwritten constraints. The agent fills the gap by guessing what comes next. The new PR is technically fine and conceptually wrong. Loud failure.</p>
 
-    <p class="rise">GDD inverts this. The human declares the <em>what</em>. The agent figures out the <em>how</em>. The relationship is structurally asymmetric — what beats how.</p>
+    <p class="rise"><strong>Idle.</strong> Scope was actually clear — well-defined project, obvious next ten steps, a human who would be perfectly happy with autonomous forward motion. But the agent stops and waits, because nothing told it whether proceeding is safe. Quiet failure — wasted context, momentum, cycles.</p>
 
-    <p class="rise">The mechanism is a <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> — a map of every unit of work, with prerequisites and a per-node definition of done.</p>
+    <blockquote class="pull rise">The question isn't who picks scope. It's when forward motion is safe.</blockquote>
+
+    <p class="rise">GDD's answer is a written-down <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> that <em>encodes</em> what's clear. When the graph says node X is <code>complete</code> and node Y is <code>pending</code> with X as its only prerequisite, the agent has explicit permission to take Y. When the graph is silent or contradictory, the agent waits.</p>
     <aside class="def" id="def-graph" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">What is a graph?</span>
       <p>A <strong>dependency graph</strong> is a project plan drawn as boxes and arrows. Each box is a unit of work — a <strong>node</strong>. An arrow from A to B means "B can't start until A is done."</p>
     </div></div></aside>
 
-    <p class="rise">The agent doesn't invent the map. It receives one node, executes it, reports back. A human decides if truth has changed.</p>
+    <p class="rise">The agent doesn't invent the map. It receives one ready node, executes it, reports back. A human reviews completed work, accepts what counts, and writes new nodes when new clarity emerges. Forward motion is autonomous <em>within</em> a well-formed graph — not arbitrary, not gated by typing "go."</p>
   </div>
 </section>
 
