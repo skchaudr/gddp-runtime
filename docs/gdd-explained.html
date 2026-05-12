@@ -8,7 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=JetBrains+Mono:wght@300..700&display=swap" rel="stylesheet" />
 <style>
-  :root {
+  /* ─── Theme tokens ───────────────────────────────────────────── */
+  :root, html[data-theme="light"] {
     --paper:        #f3e9d4;
     --paper-deep:   #ecdfc4;
     --paper-shadow: #d9c9a3;
@@ -23,14 +24,68 @@
     --margin:       #ebdebd;
     --highlight:    #f8e9b8;
     --stamp:        #a93219;
+    --shadow:       rgba(60, 40, 20, 0.16);
+    --grain-blend:  multiply;
+    --grain-opacity: 0.32;
+    --drawer-bg:    #f3e9d4;
+    --backdrop:     rgba(26, 22, 17, 0.4);
 
     --read:         640px;
     --wide:         880px;
   }
 
+  html[data-theme="dark"] {
+    --paper:        #14110b;
+    --paper-deep:   #1c1810;
+    --paper-shadow: #0a0805;
+    --ink:          #e8dcc0;
+    --ink-soft:     #c4b896;
+    --ink-mute:     #8a7e62;
+    --rule:         #4a3f2e;
+    --rule-soft:    #38301f;
+    --accent:       #e8704a;
+    --accent-soft:  #f08868;
+    --accent-dim:   rgba(232, 112, 74, 0.14);
+    --margin:       #221d12;
+    --highlight:    #3a2f1a;
+    --stamp:        #f08868;
+    --shadow:       rgba(0, 0, 0, 0.55);
+    --grain-blend:  overlay;
+    --grain-opacity: 0.14;
+    --drawer-bg:    #14110b;
+    --backdrop:     rgba(0, 0, 0, 0.6);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) {
+      --paper:        #14110b;
+      --paper-deep:   #1c1810;
+      --paper-shadow: #0a0805;
+      --ink:          #e8dcc0;
+      --ink-soft:     #c4b896;
+      --ink-mute:     #8a7e62;
+      --rule:         #4a3f2e;
+      --rule-soft:    #38301f;
+      --accent:       #e8704a;
+      --accent-soft:  #f08868;
+      --accent-dim:   rgba(232, 112, 74, 0.14);
+      --margin:       #221d12;
+      --highlight:    #3a2f1a;
+      --stamp:        #f08868;
+      --shadow:       rgba(0, 0, 0, 0.55);
+      --grain-blend:  overlay;
+      --grain-opacity: 0.14;
+      --drawer-bg:    #14110b;
+      --backdrop:     rgba(0, 0, 0, 0.6);
+    }
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html { scroll-behavior: smooth; }
+  html {
+    scroll-behavior: smooth;
+    background: var(--paper);
+  }
 
   body {
     background: var(--paper);
@@ -40,18 +95,19 @@
     line-height: 1.58;
     font-feature-settings: "onum" 1, "kern" 1, "liga" 1;
     overflow-x: hidden;
+    transition: background-color 0.4s ease, color 0.4s ease;
   }
 
-  /* ─── Paper grain + vignette ──────────────────────────────────── */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 1;
-    opacity: 0.32;
-    mix-blend-mode: multiply;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: var(--grain-blend);
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.10  0 0 0 0 0.06  0 0 0 0.42 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    transition: opacity 0.4s ease;
   }
   body::after {
     content: "";
@@ -59,10 +115,11 @@
     inset: 0;
     pointer-events: none;
     z-index: 1;
-    background: radial-gradient(ellipse at center, transparent 55%, rgba(60, 40, 20, 0.16) 100%);
+    background: radial-gradient(ellipse at center, transparent 55%, var(--shadow) 100%);
+    transition: background 0.4s ease;
   }
 
-  /* ─── Top navigation ─────────────────────────────────────────── */
+  /* ─── Topnav ──────────────────────────────────────────────────── */
   nav.topnav {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -70,8 +127,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 28px;
-    background: rgba(243, 233, 212, 0.84);
+    padding: 12px 22px;
+    background: color-mix(in srgb, var(--paper) 85%, transparent);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--rule-soft);
@@ -79,20 +136,64 @@
     font-size: 11px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
+    transition: background 0.4s ease, border-color 0.4s ease;
   }
-  nav.topnav .tn-left { color: var(--ink); display: flex; align-items: center; gap: 10px; }
+  nav.topnav .tn-left { color: var(--ink); display: flex; align-items: center; gap: 10px; min-width: 0; }
   nav.topnav .tn-left .acc { color: var(--accent); }
   nav.topnav .tn-here {
     color: var(--ink-mute);
     border-left: 1px solid var(--rule);
     padding-left: 10px;
     margin-left: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     transition: color 0.3s ease;
   }
   nav.topnav .tn-here.active { color: var(--accent); }
-  nav.topnav .tn-right { color: var(--ink-mute); font-size: 10px; }
+  nav.topnav .tn-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 
-  /* Progress bar threaded under the nav */
+  /* Topnav buttons */
+  .icon-btn {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    padding: 6px 10px;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .icon-btn:hover { color: var(--accent); border-color: var(--rule-soft); }
+  .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .icon-btn .glyph {
+    font-family: 'Fraunces', serif;
+    font-size: 14px;
+    line-height: 1;
+    font-style: italic;
+  }
+  .icon-btn .ver { font-size: 10px; color: var(--ink-mute); }
+
+  .theme-toggle .moon { display: inline; }
+  .theme-toggle .sun  { display: none; }
+  [data-theme="dark"] .theme-toggle .moon { display: none; }
+  [data-theme="dark"] .theme-toggle .sun  { display: inline; }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) .theme-toggle .moon { display: none; }
+    html:not([data-theme]) .theme-toggle .sun  { display: inline; }
+  }
+
+  /* Progress bar */
   .progress {
     position: fixed;
     top: 47px;
@@ -110,6 +211,165 @@
     transition: width 80ms linear;
   }
 
+  /* ─── Drawer ──────────────────────────────────────────────────── */
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: var(--backdrop);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.32s ease;
+  }
+  .drawer-backdrop[data-open="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  aside.drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(380px, 88vw);
+    z-index: 80;
+    background: var(--drawer-bg);
+    border-right: 1px solid var(--rule);
+    transform: translateX(-100%);
+    transition: transform 0.4s cubic-bezier(0.2, 0.85, 0.2, 1),
+                background 0.4s ease;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 6px 0 24px var(--shadow);
+  }
+  aside.drawer[data-open="true"] { transform: translateX(0); }
+
+  .drawer-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--rule);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .drawer-head .title { color: var(--ink); }
+  .drawer-head .title .acc { color: var(--accent); }
+  .drawer-close {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--ink-mute);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-family: 'Fraunces', serif;
+    transition: color 0.2s ease;
+  }
+  .drawer-close:hover { color: var(--accent); }
+
+  nav.drawer-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 0;
+  }
+  .ch-link {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    align-items: baseline;
+    gap: 12px;
+    padding: 12px 24px;
+    text-decoration: none;
+    color: var(--ink-soft);
+    font-family: 'Newsreader', serif;
+    border-left: 2px solid transparent;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  }
+  .ch-link:hover {
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .ch-link.active {
+    color: var(--ink);
+    border-left-color: var(--accent);
+  }
+  .ch-link .n {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .ch-link .t {
+    font-size: 18px;
+    font-variation-settings: "opsz" 24;
+  }
+  .ch-link.active .t {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 24, "SOFT" 40, "WONK" 0;
+    font-style: italic;
+  }
+
+  .ch-subs {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.4s cubic-bezier(0.2, 0.85, 0.2, 1);
+  }
+  .ch-subs[data-open="true"] { grid-template-rows: 1fr; }
+  .ch-subs-inner { overflow: hidden; }
+  .ch-subs a {
+    display: block;
+    padding: 7px 24px 7px 100px;
+    text-decoration: none;
+    color: var(--ink-mute);
+    font-size: 14px;
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    border-left: 2px solid transparent;
+    transition: color 0.2s ease, border-color 0.2s ease;
+    position: relative;
+  }
+  .ch-subs a::before {
+    content: "·";
+    position: absolute;
+    left: 80px;
+    color: var(--rule);
+  }
+  .ch-subs a:hover { color: var(--accent); }
+  .ch-subs a.active {
+    color: var(--accent);
+    border-left-color: var(--accent-soft);
+  }
+  .ch-subs a.active::before { color: var(--accent); }
+
+  .drawer-foot {
+    padding: 14px 24px 18px;
+    border-top: 1px solid var(--rule);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .drawer-foot kbd {
+    display: inline-block;
+    border: 1px solid var(--rule);
+    border-bottom-width: 2px;
+    padding: 1px 6px;
+    margin-right: 4px;
+    font-family: inherit;
+    font-size: 10px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--paper-deep) 60%, transparent);
+    border-radius: 2px;
+  }
+
   /* ─── Scene primitive ────────────────────────────────────────── */
   .scene {
     position: relative;
@@ -120,7 +380,6 @@
     scroll-margin-top: 64px;
   }
   .scene.readwidth { max-width: var(--read); }
-
   .frame { padding-block: 14vh; }
   .frame.tight  { padding-block: 8vh; }
   .frame.loose  { padding-block: 22vh; }
@@ -139,10 +398,7 @@
     transition: opacity 0.85s ease, transform 0.85s ease;
     transition-delay: var(--d, 0ms);
   }
-  .rise.in {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  .rise.in { opacity: 1; transform: translateY(0); }
   @media (prefers-reduced-motion: reduce) {
     .rise { opacity: 1; transform: none; transition: none; }
   }
@@ -155,10 +411,7 @@
     padding-block: 120px 60px;
     text-align: left;
   }
-  .cover-inner {
-    max-width: 880px;
-    width: 100%;
-  }
+  .cover-inner { max-width: 880px; width: 100%; }
   .cover-meta {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
@@ -225,7 +478,7 @@
     .cover-scroll-cue .line { animation: none; opacity: 1; transform: none; }
   }
 
-  /* ─── Intro / TOC scene ──────────────────────────────────────── */
+  /* ─── Intro / TOC ────────────────────────────────────────────── */
   .intro-lede {
     font-family: 'Fraunces', serif;
     font-variation-settings: "opsz" 48, "SOFT" 20, "WONK" 0;
@@ -272,54 +525,8 @@
     font-style: italic;
   }
 
-  /* TOC */
-  nav.toc {
-    margin-top: 72px;
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-    border-top: 1px solid var(--ink);
-  }
-  nav.toc a {
-    display: grid;
-    grid-template-columns: 80px 1fr auto;
-    align-items: baseline;
-    gap: 16px;
-    padding: 18px 6px;
-    text-decoration: none;
-    color: var(--ink);
-    border-bottom: 1px dotted var(--rule);
-    font-family: 'Newsreader', serif;
-    transition: padding-left 0.35s ease, color 0.2s ease, background 0.2s ease;
-  }
-  nav.toc a:hover {
-    color: var(--accent);
-    background: var(--accent-dim);
-    padding-left: 16px;
-  }
-  nav.toc a .n {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--accent);
-    letter-spacing: 0.1em;
-  }
-  nav.toc a .t {
-    font-size: 19px;
-    font-variation-settings: "opsz" 24;
-  }
-  nav.toc a .meta {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--ink-mute);
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-  }
-
-  /* ─── Chapter scene ──────────────────────────────────────────── */
-  .chapter {
-    position: relative;
-    z-index: 2;
-  }
+  /* ─── Chapter ────────────────────────────────────────────────── */
+  .chapter { position: relative; z-index: 2; }
 
   .chapter-mark {
     max-width: var(--wide);
@@ -366,13 +573,12 @@
     color: var(--accent);
     font-variation-settings: "opsz" 144, "SOFT" 90, "WONK" 1;
   }
-
   @media (max-width: 720px) {
     .chapter-mark { padding-top: 14vh; padding-bottom: 5vh; gap: 14px; }
     h2.chapter-title { padding-bottom: 9vh; }
   }
 
-  /* ─── Prose flow ─────────────────────────────────────────────── */
+  /* ─── Prose ──────────────────────────────────────────────────── */
   .prose {
     max-width: var(--read);
     margin: 0 auto;
@@ -417,6 +623,7 @@
     color: var(--ink);
     position: relative;
     padding-top: 22px;
+    scroll-margin-top: 70px;
   }
   .prose h3::before {
     content: "";
@@ -467,16 +674,9 @@
     font-size: 0.9em;
   }
   button.term[aria-expanded="true"]::after { transform: translateY(-1px) rotate(180deg); }
-  button.term:hover {
-    background: var(--accent-dim);
-    color: var(--accent);
-  }
-  button.term:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-  }
+  button.term:hover { background: var(--accent-dim); color: var(--accent); }
+  button.term:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-  /* The expanding definition card */
   .def {
     display: grid;
     grid-template-rows: 0fr;
@@ -488,9 +688,7 @@
     grid-template-rows: 1fr;
     margin: 18px 0 22px;
   }
-  .def-inner {
-    overflow: hidden;
-  }
+  .def-inner { overflow: hidden; }
   .def-card {
     background: var(--margin);
     border-left: 3px solid var(--accent);
@@ -499,7 +697,6 @@
     color: var(--ink-soft);
     font-size: 17px;
     line-height: 1.5;
-    box-shadow: 1px 1px 0 var(--rule-soft);
   }
   .def-card .def-label {
     display: block;
@@ -513,13 +710,11 @@
   }
   .def-card p { margin-bottom: 8px; max-width: none; }
   .def-card p:last-child { margin-bottom: 0; }
-  .def-card code { background: rgba(255,255,255,0.45); font-size: 0.86em; }
+  .def-card code { background: color-mix(in srgb, var(--paper) 50%, transparent); font-size: 0.86em; }
   .def-card strong { color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) {
-    .def { transition: none; }
-  }
+  @media (prefers-reduced-motion: reduce) { .def { transition: none; } }
 
-  /* ─── Footnote-style aside (the philosophical ones) ──────────── */
+  /* ─── Footnote ───────────────────────────────────────────────── */
   .footnote {
     margin: 2.8em 0 1.4em;
     padding: 14px 18px;
@@ -548,12 +743,12 @@
   }
   .footnote strong { color: var(--ink); font-style: normal; }
 
-  /* ─── Pull quote: full-viewport scene ────────────────────────── */
+  /* ─── Pull quote ─────────────────────────────────────────────── */
   .pull-scene {
-    min-height: 80vh;
+    min-height: 70vh;
     display: grid;
     place-items: center;
-    padding: 12vh 32px;
+    padding: 10vh 32px;
   }
   .pull-scene blockquote {
     font-family: 'Fraunces', serif;
@@ -571,7 +766,7 @@
     border-left: 3px solid var(--accent);
   }
   .pull-scene blockquote::before {
-    content: "“";
+    content: "\201C";
     position: absolute;
     left: -2px;
     top: -38px;
@@ -582,7 +777,7 @@
     opacity: 0.45;
   }
 
-  /* ─── Diagram scene ──────────────────────────────────────────── */
+  /* ─── Diagram ────────────────────────────────────────────────── */
   .diagram-scene {
     max-width: var(--wide);
     margin: 4vh auto;
@@ -593,7 +788,6 @@
     background: var(--paper-deep);
     border: 1px solid var(--rule);
     position: relative;
-    box-shadow: 2px 2px 0 var(--rule-soft);
   }
   figure.diagram::before {
     content: attr(data-fig);
@@ -620,6 +814,28 @@
     text-align: center;
   }
 
+  /* SVG recolor for dark theme */
+  [data-theme="dark"] figure.diagram svg [stroke="#1a1611"],
+  [data-theme="dark"] figure.diagram svg line[stroke="#1a1611"] { stroke: var(--ink); }
+  [data-theme="dark"] figure.diagram svg [fill="#1a1611"] { fill: var(--ink); }
+  [data-theme="dark"] figure.diagram svg [fill="#7a6c55"] { fill: var(--ink-mute); }
+  [data-theme="dark"] figure.diagram svg [fill="#4a3f33"] { fill: var(--ink-soft); }
+  [data-theme="dark"] figure.diagram svg [fill="#ecdfc4"] { fill: var(--paper-shadow); }
+  [data-theme="dark"] figure.diagram svg [fill="#b73e26"] { fill: var(--accent); }
+  [data-theme="dark"] figure.diagram svg [fill="#a93219"] { fill: var(--accent); }
+  [data-theme="dark"] figure.diagram svg [stroke="#a93219"] { stroke: var(--accent); }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) figure.diagram svg [stroke="#1a1611"],
+    html:not([data-theme]) figure.diagram svg line[stroke="#1a1611"] { stroke: var(--ink); }
+    html:not([data-theme]) figure.diagram svg [fill="#1a1611"] { fill: var(--ink); }
+    html:not([data-theme]) figure.diagram svg [fill="#7a6c55"] { fill: var(--ink-mute); }
+    html:not([data-theme]) figure.diagram svg [fill="#4a3f33"] { fill: var(--ink-soft); }
+    html:not([data-theme]) figure.diagram svg [fill="#ecdfc4"] { fill: var(--paper-shadow); }
+    html:not([data-theme]) figure.diagram svg [fill="#b73e26"] { fill: var(--accent); }
+    html:not([data-theme]) figure.diagram svg [fill="#a93219"] { fill: var(--accent); }
+    html:not([data-theme]) figure.diagram svg [stroke="#a93219"] { stroke: var(--accent); }
+  }
+
   /* ─── Code listing ───────────────────────────────────────────── */
   pre.listing {
     font-family: 'JetBrains Mono', monospace;
@@ -633,7 +849,6 @@
     overflow-x: auto;
     color: var(--ink);
     position: relative;
-    box-shadow: 1px 1px 0 var(--rule-soft);
   }
   pre.listing::before {
     content: attr(data-label);
@@ -648,9 +863,9 @@
   }
   pre.listing .c { color: var(--ink-mute); font-style: italic; }
   pre.listing .k { color: var(--accent); }
-  pre.listing .s { color: #6a4a1e; }
+  pre.listing .s { color: var(--accent-soft); }
 
-  /* ─── Action ledger (§05) ────────────────────────────────────── */
+  /* ─── Action ledger ──────────────────────────────────────────── */
   table.ledger {
     width: 100%;
     border-collapse: collapse;
@@ -685,7 +900,7 @@
   }
   table.ledger td strong { color: var(--ink); }
 
-  /* ─── Step list (§06) ────────────────────────────────────────── */
+  /* ─── Step list ──────────────────────────────────────────────── */
   ol.steps {
     list-style: none;
     counter-reset: step;
@@ -724,11 +939,8 @@
     font-weight: 500;
   }
 
-  /* ─── Bare list (§06 questions) ──────────────────────────────── */
-  ul.bare {
-    list-style: none;
-    margin: 1.4em 0;
-  }
+  /* ─── Bare list ──────────────────────────────────────────────── */
+  ul.bare { list-style: none; margin: 1.4em 0; }
   ul.bare li {
     position: relative;
     padding: 10px 0 10px 26px;
@@ -750,7 +962,7 @@
     font-size: 16px;
   }
 
-  /* ─── Stage cards (§07) ──────────────────────────────────────── */
+  /* ─── Stage cards ────────────────────────────────────────────── */
   .stages {
     display: grid;
     grid-template-columns: 1fr;
@@ -782,11 +994,7 @@
     color: var(--ink);
     margin-bottom: 6px;
   }
-  .stage p {
-    color: var(--ink-soft);
-    font-size: 17px;
-    line-height: 1.5;
-  }
+  .stage p { color: var(--ink-soft); font-size: 17px; line-height: 1.5; }
   @media (max-width: 600px) {
     .stage { grid-template-columns: 1fr; gap: 6px; }
   }
@@ -809,7 +1017,7 @@
     border: 2px solid var(--stamp);
     padding: 8px 14px;
     transform: rotate(-3deg);
-    background: rgba(183, 62, 38, 0.04);
+    background: var(--accent-dim);
     font-weight: 600;
   }
   .stamp-aside {
@@ -821,11 +1029,49 @@
     min-width: 220px;
   }
 
-  /* ─── Section divider between chapters ──────────────────────── */
+  /* ─── Next chapter affordance ────────────────────────────────── */
+  .next-chapter {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    margin: 5vh 0 3vh;
+    padding: 24px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    text-decoration: none;
+    color: var(--ink);
+    transition: padding-left 0.3s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  .next-chapter:hover { color: var(--accent); padding-left: 14px; border-color: var(--accent-soft); }
+  .next-chapter .cue {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    flex: 0 0 auto;
+  }
+  .next-chapter .ch {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 36, "SOFT" 30, "WONK" 0;
+    font-style: italic;
+    font-size: clamp(20px, 2.2vw, 26px);
+    flex: 1;
+    line-height: 1.2;
+  }
+  .next-chapter .arr {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    color: var(--accent);
+    transition: transform 0.3s ease;
+  }
+  .next-chapter:hover .arr { transform: translateX(8px); }
+
+  /* ─── Divider ────────────────────────────────────────────────── */
   .divider {
     max-width: 240px;
     margin: 0 auto;
-    padding: 12vh 0;
+    padding: 10vh 0;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -838,33 +1084,17 @@
     font-size: 28px;
     line-height: 1;
   }
-  .divider .rule {
-    flex: 1;
-    height: 1px;
-    background: var(--rule);
-  }
+  .divider .rule { flex: 1; height: 1px; background: var(--rule); }
 
   /* ─── Footer ─────────────────────────────────────────────────── */
   footer {
-    padding: 14vh 32px 16vh;
+    padding: 12vh 32px 14vh;
     text-align: center;
     border-top: 1px solid var(--rule);
-    margin-top: 8vh;
+    margin: 6vh auto 0;
     max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
     position: relative;
     z-index: 2;
-  }
-  footer .colophon {
-    font-family: 'Fraunces', serif;
-    font-variation-settings: "opsz" 48, "SOFT" 60, "WONK" 1;
-    font-style: italic;
-    font-size: clamp(20px, 2.4vw, 28px);
-    line-height: 1.36;
-    color: var(--ink-soft);
-    margin-bottom: 44px;
-    text-wrap: balance;
   }
   footer .filed {
     font-family: 'JetBrains Mono', monospace;
@@ -879,19 +1109,89 @@
 
 <nav class="topnav">
   <div class="tn-left">
-    <span class="acc">§</span>
-    <span>Graph-Driven Development</span>
+    <button class="icon-btn nav-trigger" id="nav-trigger" aria-controls="drawer" aria-expanded="false" aria-label="Open index">
+      <span class="glyph">§</span>
+      <span>Index</span>
+    </button>
     <span class="tn-here" id="here">Field Manual</span>
   </div>
-  <div class="tn-right">v1 · 2026.05</div>
+  <div class="tn-right">
+    <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+      <span class="moon">☾</span>
+      <span class="sun">☀</span>
+    </button>
+    <span class="ver" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--ink-mute); padding-left: 8px; border-left: 1px solid var(--rule);">v1 · 2026.05</span>
+  </div>
 </nav>
 <div class="progress"><span id="pbar"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     COVER
-────────────────────────────────────────────────────────────────── -->
-<section class="scene cover" id="cover">
+<!-- ─── DRAWER ─────────────────────────────────────────────────── -->
+<div class="drawer-backdrop" id="backdrop" data-open="false"></div>
+<aside class="drawer" id="drawer" data-open="false" aria-hidden="true">
+  <header class="drawer-head">
+    <span class="title"><span class="acc">§</span>&nbsp; Index</span>
+    <button class="drawer-close" id="drawer-close" aria-label="Close index">×</button>
+  </header>
+  <nav class="drawer-nav" id="drawer-nav">
+    <a class="ch-link" href="#cover" data-target="cover"><span class="n">▸</span><span class="t">Cover</span></a>
+    <a class="ch-link" href="#intro" data-target="intro"><span class="n">▸</span><span class="t">How to read</span></a>
+
+    <a class="ch-link" href="#s01" data-target="s01"><span class="n">§ 01</span><span class="t">The Premise</span></a>
+    <div class="ch-subs" data-for="s01" data-open="false"><div class="ch-subs-inner"></div></div>
+
+    <a class="ch-link" href="#s02" data-target="s02"><span class="n">§ 02</span><span class="t">The Apparatus</span></a>
+    <div class="ch-subs" data-for="s02" data-open="false"><div class="ch-subs-inner">
+      <a href="#s02-node">What a "node" looks like on disk</a>
+    </div></div>
+
+    <a class="ch-link" href="#s03" data-target="s03"><span class="n">§ 03</span><span class="t">The Forward Lane</span></a>
+    <div class="ch-subs" data-for="s03" data-open="false"><div class="ch-subs-inner">
+      <a href="#s03-ready">What "ready" means</a>
+      <a href="#s03-dispatch">What gets dispatched</a>
+      <a href="#s03-db">Why state goes to a database</a>
+    </div></div>
+
+    <a class="ch-link" href="#s04" data-target="s04"><span class="n">§ 04</span><span class="t">The Return Lane</span></a>
+    <div class="ch-subs" data-for="s04" data-open="false"><div class="ch-subs-inner">
+      <a href="#s04-path">The path, traced</a>
+      <a href="#s04-receipt">What lives in a receipt</a>
+      <a href="#s04-stop">The deliberate stop</a>
+    </div></div>
+
+    <a class="ch-link" href="#s05" data-target="s05"><span class="n">§ 05</span><span class="t">The Truth Boundary</span></a>
+    <div class="ch-subs" data-for="s05" data-open="false"><div class="ch-subs-inner">
+      <a href="#s05-five">Why exactly five</a>
+      <a href="#s05-practice">Reading a receipt in practice</a>
+    </div></div>
+
+    <a class="ch-link" href="#s06" data-target="s06"><span class="n">§ 06</span><span class="t">The Operator's Drill</span></a>
+    <div class="ch-subs" data-for="s06" data-open="false"><div class="ch-subs-inner">
+      <a href="#s06-questions">Questions every run must answer</a>
+    </div></div>
+
+    <a class="ch-link" href="#s07" data-target="s07"><span class="n">§ 07</span><span class="t">What Comes Next</span></a>
+    <div class="ch-subs" data-for="s07" data-open="false"><div class="ch-subs-inner">
+      <a href="#s07-why">Why one verifier is not enough</a>
+      <a href="#s07-stages">The scaling stages</a>
+      <a href="#s07-rule">The non-negotiable thing</a>
+    </div></div>
+
+    <a class="ch-link" href="#s08" data-target="s08"><span class="n">§ 08</span><span class="t">Colophon</span></a>
+    <div class="ch-subs" data-for="s08" data-open="false"><div class="ch-subs-inner">
+      <a href="#s08-files">Files this manual reads from</a>
+    </div></div>
+  </nav>
+  <footer class="drawer-foot">
+    <span><kbd>/</kbd>open</span>
+    <span><kbd>[</kbd><kbd>]</kbd>prev/next</span>
+    <span><kbd>Esc</kbd>close</span>
+  </footer>
+</aside>
+
+
+<!-- ─── COVER ──────────────────────────────────────────────────── -->
+<section class="scene cover" id="cover" data-title="Cover">
   <div class="cover-inner">
     <div class="cover-meta rise">
       <span><strong>Edition</strong>One</span>
@@ -902,50 +1202,34 @@
 
     <h1 class="cover-title rise" style="--d:60ms;">Graph<br/>Driven<br/><em>Development.</em></h1>
 
-    <p class="cover-thesis rise" style="--d:180ms;">A field manual for the apparatus of bounded agent autonomy — written for the operator who would like to stop guessing.</p>
+    <p class="cover-thesis rise" style="--d:180ms;">A field manual for the apparatus of bounded agent autonomy.</p>
 
     <div class="cover-scroll-cue rise" style="--d:340ms;">
       <span class="line"></span>
-      <span>Scroll to begin</span>
+      <span>Scroll to begin · or press <kbd style="font-family:inherit;border:1px solid var(--rule);padding:1px 6px;color:var(--ink);">/</kbd> for index</span>
     </div>
   </div>
 </section>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     INTRO + TOC
-────────────────────────────────────────────────────────────────── -->
-<section class="scene readwidth frame loose" id="intro">
-  <p class="intro-lede rise">There is a quiet revolution happening at the seam between humans and coding agents. This pamphlet is a teaching map of one attempt to make that seam <em>load-bearing.</em></p>
+<!-- ─── INTRO + TOC ────────────────────────────────────────────── -->
+<section class="scene readwidth frame" id="intro" data-title="How to read">
+  <p class="intro-lede rise">The human owns intent. The agent owns labor. A <em>graph of dependencies</em> sits between them as the contract.</p>
 
   <div class="prose" style="padding: 0;">
-    <p class="rise">A system where the human owns intent, the agent owns labor, and a graph of dependencies sits between them as the contract.</p>
-    <p class="rise">Nothing in these pages is taken as understood. Words that sound technical can be expanded right where they appear — you don't need to know them yet.</p>
+    <p class="rise">Technical terms expand inline when you click them — you don't need to know them yet.</p>
 
     <div class="intro-note rise">
       <span class="label">How to read this</span>
-      <p>When you see an underlined italic phrase like <span class="demo-term">this one</span>, it means there is a plain-language definition waiting underneath. Click it. The page will not leave you behind.</p>
+      <p>Underlined italic phrases like <span class="demo-term">this one</span> have a plain-language definition waiting underneath. Click to expand. Press <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">/</kbd> any time to open the index, <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">[</kbd> / <kbd style="font-family:inherit;font-size:11px;border:1px solid var(--rule);padding:1px 5px;background:var(--paper-deep);">]</kbd> to jump between chapters.</p>
     </div>
   </div>
-
-  <nav class="toc rise" style="--d:120ms;">
-    <a href="#s01"><span class="n">§ 01</span><span class="t">The Premise</span><span class="meta">essay</span></a>
-    <a href="#s02"><span class="n">§ 02</span><span class="t">The Apparatus</span><span class="meta">map</span></a>
-    <a href="#s03"><span class="n">§ 03</span><span class="t">The Forward Lane</span><span class="meta">mechanics</span></a>
-    <a href="#s04"><span class="n">§ 04</span><span class="t">The Return Lane</span><span class="meta">mechanics</span></a>
-    <a href="#s05"><span class="n">§ 05</span><span class="t">The Truth Boundary</span><span class="meta">doctrine</span></a>
-    <a href="#s06"><span class="n">§ 06</span><span class="t">The Operator's Drill</span><span class="meta">practice</span></a>
-    <a href="#s07"><span class="n">§ 07</span><span class="t">What Comes Next</span><span class="meta">roadmap</span></a>
-    <a href="#s08"><span class="n">§ 08</span><span class="t">Colophon</span><span class="meta">notes</span></a>
-  </nav>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 01  THE PREMISE
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 01 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s01" data-title="§ 01 · The Premise">
   <div class="chapter-mark rise">
     <span class="num">§ 01</span>
@@ -954,25 +1238,21 @@
   <h2 class="chapter-title rise">The agent does not get to decide <em>what.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">When people say "AI is writing software now," they usually mean one of two pictures — and the two pictures, taken together, hide the question this manual is built around.</p>
+    <p class="lede rise">Two pictures dominate the conversation about AI writing software. Both hide the same question.</p>
 
-    <p class="rise">The first picture is the <button class="term" aria-expanded="false" aria-controls="def-inline">inline assistant</button>: a sidebar in your editor that completes lines and suggests refactors. You drive. It whispers. Copilot, the chat panel in your IDE — these are inline assistants. They never decide what file to open; you do.</p>
+    <p class="rise">The first is the <button class="term" aria-expanded="false" aria-controls="def-inline">inline assistant</button> — a sidebar that completes lines and suggests refactors. You drive. It whispers. Copilot, IDE chat panels.</p>
     <aside class="def" id="def-inline" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Plain version</span>
-      <p>An <strong>inline assistant</strong> is an AI helper that lives inside your editor and only acts when you ask it to. It autocompletes lines, suggests refactors, answers questions about code you point at. It never opens files on its own. Copilot, Cursor's tab autocomplete, the chat sidebar — these are inline assistants.</p>
+      <p>An <strong>inline assistant</strong> lives inside your editor and only acts when you ask. It autocompletes, suggests refactors, answers questions about code you point at. It never opens files on its own.</p>
     </div></div></aside>
 
-    <p class="rise">The second picture is the <button class="term" aria-expanded="false" aria-controls="def-auto">autonomous agent</button>: a service you hand a prompt to ("add user authentication to the marketing site") and walk away from. Some minutes or hours later, a pull request appears. Jules, Devin, the various background coders — these are autonomous agents. They decide a great deal of what to do.</p>
+    <p class="rise">The second is the <button class="term" aria-expanded="false" aria-controls="def-auto">autonomous agent</button> — Jules, Devin, the various background coders. You hand it a prompt and walk away; later a PR appears. It decides a great deal of what to do.</p>
     <aside class="def" id="def-auto" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Plain version</span>
-      <p>An <strong>autonomous agent</strong> is an AI worker you assign a task to and leave running. It picks its own files, writes its own code, opens its own pull request. Jules, Devin, OpenHands and similar tools — these all sit somewhere on this side of the line.</p>
+      <p>An <strong>autonomous agent</strong> is an AI worker you assign a task to and leave running. It picks its own files, writes its own code, opens its own pull request.</p>
     </div></div></aside>
 
-    <p class="rise">Both pictures share an assumption so quiet you can miss it: <strong>the agent is in charge of scope.</strong> The agent looks at the prompt, decides what files to touch, what to call done, what to leave for later. Even in the assistant case, the moment you say "fix it," the agent picks the diagnosis.</p>
-
-    <div class="footnote rise" data-mark="margin · 01">
-      If an agent decides its own scope, it also gets to decide when it's done. That is a quiet conflict of interest. The whole design pressure of GDD is to take that authority away — gently, with paperwork.
-    </div>
+    <p class="rise">Both share an assumption: <strong>the agent is in charge of scope.</strong> It decides what files to touch, what to call done. Even the assistant picks the diagnosis the moment you say "fix it."</p>
   </div>
 
   <div class="pull-scene rise">
@@ -980,26 +1260,28 @@
   </div>
 
   <div class="prose">
-    <p class="rise">Graph-driven development — GDD — starts from a different posture. The human declares the <em>what</em>. The agent figures out the <em>how</em>. The relationship is not negotiated; it is structurally asymmetric. What always beats how.</p>
+    <p class="rise">GDD inverts this. The human declares the <em>what</em>. The agent figures out the <em>how</em>. The relationship is structurally asymmetric — what beats how.</p>
 
-    <p class="rise">The way this is made real is a <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> — a written-down map of every meaningful unit of work in the project, with the prerequisites between them spelled out, and with each unit carrying its own definition of done.</p>
+    <p class="rise">The mechanism is a <button class="term" aria-expanded="false" aria-controls="def-graph">dependency graph</button> — a map of every unit of work, with prerequisites and a per-node definition of done.</p>
     <aside class="def" id="def-graph" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">What is a graph?</span>
-      <p>A <strong>dependency graph</strong> is a project plan drawn as boxes and arrows. Each box is a unit of work — here we call them <strong>nodes</strong>. An arrow from A to B means "B can't start until A is done." This is the same shape your build system or your kitchen routine has; we are just writing it down on purpose.</p>
+      <p>A <strong>dependency graph</strong> is a project plan drawn as boxes and arrows. Each box is a unit of work — a <strong>node</strong>. An arrow from A to B means "B can't start until A is done."</p>
     </div></div></aside>
 
-    <p class="rise">The agent does not invent the map. It receives one node at a time, executes it, and reports back. A human reads the report and decides whether truth has changed.</p>
+    <p class="rise">The agent doesn't invent the map. It receives one node, executes it, reports back. A human decides if truth has changed.</p>
 
-    <p class="rise">This pamphlet teaches the apparatus that makes that picture work, the boundary it refuses to cross, and the shape it is trying to grow into.</p>
+    <a class="next-chapter rise" href="#s02">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 02 — The Apparatus</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 02  THE APPARATUS
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 02 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s02" data-title="§ 02 · The Apparatus">
   <div class="chapter-mark rise">
     <span class="num">§ 02</span>
@@ -1008,17 +1290,17 @@
   <h2 class="chapter-title rise">Two repositories, one <em>doctrine.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">The apparatus has a deliberately small footprint. Two git repositories sit at its center, plus an external agent that does the labor, plus a human who alone has the authority to change the map. That is the entire cast.</p>
+    <p class="lede rise">The cast: two git repositories, one external agent, one human who alone can change the map.</p>
 
-    <p class="rise">The first <button class="term" aria-expanded="false" aria-controls="def-repo">repository</button> is called <code>gddp-config</code>. It holds the <em>project truth</em> — the graph of nodes, the schemas that describe what a node is, and the templates for writing new ones. Nothing in here runs. It is paperwork. Humans edit it. Agents read it but are not permitted to write to it.</p>
+    <p class="rise"><code>gddp-config</code> holds project truth — nodes, schemas, templates. Nothing runs here. Humans write; agents read. No exceptions. The first is a <button class="term" aria-expanded="false" aria-controls="def-repo">repository</button>, which is just a directory tracked by git.</p>
     <aside class="def" id="def-repo" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">What is a repository?</span>
-      <p>A <strong>repository</strong>, or "repo," is a directory of files tracked by <code>git</code> — a version-control tool that records every change. Splitting GDD into two repos is a way of putting a wall between things humans edit (truth) and things machines edit (state).</p>
+      <p>A <strong>repository</strong>, or "repo," is a directory of files tracked by <code>git</code>. Splitting GDD into two repos puts a wall between things humans edit (truth) and things machines edit (state).</p>
     </div></div></aside>
 
-    <p class="rise">The second repository is called <code>gddp-runtime</code>. It is the moving machinery: a script that wakes up periodically, reads the graph, finds work, dispatches it to an agent, and writes down what comes back. It is the engine room. It never edits the project truth.</p>
+    <p class="rise"><code>gddp-runtime</code> is the machinery: a script that wakes on a schedule, reads the graph, finds work, dispatches it, records what comes back. It never edits project truth.</p>
 
-    <p class="rise">This separation is the whole game. <em>Truth</em> lives in one place. <em>Activity</em> lives in another. The activity never silently rewrites the truth.</p>
+    <p class="rise">This separation is the whole game. Truth and activity live apart; activity never rewrites truth.</p>
   </div>
 
   <div class="diagram-scene rise">
@@ -1061,16 +1343,16 @@
           <text x="70" y="20" font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="3" fill="#a93219" text-anchor="middle" font-weight="600">HUMAN REVIEW</text>
         </g>
       </svg>
-      <figcaption>Truth and machinery are physically separated repositories. The executor is external; the human reviewer is the only writer to truth.</figcaption>
+      <figcaption>The executor is external; the human reviewer is the only writer to truth.</figcaption>
     </figure>
   </div>
 
   <div class="prose">
-    <h3 class="rise">What a "node" looks like on disk</h3>
-    <p class="rise">A node is a <button class="term" aria-expanded="false" aria-controls="def-yaml">YAML</button> file — a human-readable plain-text format with key/value pairs. Inside a node you find the things you would expect of a well-written ticket, and a few you might not.</p>
+    <h3 id="s02-node" class="rise">What a "node" looks like on disk</h3>
+    <p class="rise">A node is a <button class="term" aria-expanded="false" aria-controls="def-yaml">YAML</button> file. Inside you find what a well-written ticket would have, plus a few things it wouldn't.</p>
     <aside class="def" id="def-yaml" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">YAML, briefly</span>
-      <p><strong>YAML</strong> is one of the most readable plain-text formats for structured data. Indentation matters. Keys end in a colon. Lists start with a dash. It is what most modern config files use because both humans and programs can read it without ceremony.</p>
+      <p><strong>YAML</strong> is a readable plain-text format for structured data. Indentation matters. Keys end in a colon. Lists start with a dash.</p>
     </div></div></aside>
 
     <pre class="listing rise" data-label="excerpt · gddp-config/graphs/&lt;project&gt;/nodes/lead-intake.yaml"><span class="k">node_id</span>: lead-intake
@@ -1090,26 +1372,30 @@
     - write directly to QuickBooks
     - create LMN proposal before consultation status</pre>
 
-    <p class="rise">Two things are worth noticing. First, the node is not just a task description — it is a small <strong>contract</strong>. It states what must hold true if the work is to count. Second, the contract is written by a person before any agent reads it. The agent inherits the contract; it does not author it.</p>
+    <p class="rise">Two things matter. The node is a <strong>contract</strong> — it states what must hold true for the work to count. And the contract is written by a person before any agent reads it. Inheritance, not authorship.</p>
 
-    <p class="rise">The shape of every node is policed by a <button class="term" aria-expanded="false" aria-controls="def-schema">schema</button> that lives alongside it in the config repo.</p>
+    <p class="rise">The shape of every node is policed by a <button class="term" aria-expanded="false" aria-controls="def-schema">schema</button> in the config repo.</p>
     <aside class="def" id="def-schema" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Why a schema?</span>
-      <p>A <strong>schema</strong> is the rulebook for what a file is allowed to contain. <code>gddp-config/schemas/v1/</code> holds one for every kind of object — node, job, result, event. Without schemas, every node would drift into its own shape and the runtime could not safely read them.</p>
+      <p>A <strong>schema</strong> is the rulebook for what a file is allowed to contain. <code>gddp-config/schemas/v1/</code> holds one for every kind of object — node, job, result, event.</p>
     </div></div></aside>
 
-    <div class="footnote rise" data-mark="margin · 02">
-      <strong>Acceptance vs. tests.</strong> Tests prove the code runs correctly. Acceptance criteria prove the code did what the project wanted. They are not the same. A function can pass tests while completing the wrong objective — this is the whole reason humans stay in the loop.
+    <div class="footnote rise" data-mark="note · 02">
+      <strong>Acceptance vs. tests.</strong> Tests prove the code runs. Acceptance proves the code did what was asked. A function can pass tests while completing the wrong objective.
     </div>
+
+    <a class="next-chapter rise" href="#s03">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 03 — The Forward Lane</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 03  THE FORWARD LANE
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 03 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s03" data-title="§ 03 · The Forward Lane">
   <div class="chapter-mark rise">
     <span class="num">§ 03</span>
@@ -1118,9 +1404,9 @@
   <h2 class="chapter-title rise">How a node becomes a <em>job.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">The forward lane is the part of the system that takes a written-down node and turns it into a unit of agent labor.</p>
+    <p class="lede rise">The forward lane turns a written-down node into a unit of agent labor.</p>
 
-    <p class="rise">There is no magic here — it is a script that runs on a schedule, reads files, writes rows in a database, and posts an issue on GitHub. We will follow it step by step.</p>
+    <p class="rise">A script runs on a schedule, reads files, writes rows in a database, posts a GitHub issue. That's it.</p>
   </div>
 
   <div class="diagram-scene rise">
@@ -1132,108 +1418,100 @@
           </marker>
         </defs>
         <g font-family="Newsreader, serif" font-size="13" fill="#1a1611">
-          <g transform="translate(20,60)">
-            <rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(20,60)"><rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">01 · WAKE</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Read graph</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">load every</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">node yaml</text>
-          </g>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">node yaml</text></g>
           <line x1="130" y1="110" x2="155" y2="110" stroke="#1a1611" marker-end="url(#arr3)"/>
-          <g transform="translate(160,60)">
-            <rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(160,60)"><rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">02 · SELECT</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Find ready</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">status=pending</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">deps complete</text>
-          </g>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">deps complete</text></g>
           <line x1="270" y1="110" x2="295" y2="110" stroke="#1a1611" marker-end="url(#arr3)"/>
-          <g transform="translate(300,60)">
-            <rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(300,60)"><rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">03 · CHECK</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Scope guard</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">no active job</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">already?</text>
-          </g>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">already?</text></g>
           <line x1="410" y1="110" x2="435" y2="110" stroke="#1a1611" marker-end="url(#arr3)"/>
-          <g transform="translate(440,60)">
-            <rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(440,60)"><rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">04 · BUILD</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Job packet</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">from node</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">+ template</text>
-          </g>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">+ template</text></g>
           <line x1="550" y1="110" x2="575" y2="110" stroke="#1a1611" marker-end="url(#arr3)"/>
-          <g transform="translate(580,60)">
-            <rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(580,60)"><rect width="110" height="100" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">05 · RECORD</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Write rows</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">events, jobs,</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">queue (sqlite)</text>
-          </g>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">queue (sqlite)</text></g>
           <line x1="690" y1="110" x2="715" y2="110" stroke="#1a1611" marker-end="url(#arr3)"/>
-          <g transform="translate(720,60)">
-            <rect width="90" height="100" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(720,60)"><rect width="90" height="100" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
             <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#b73e26">06 · DISPATCH</text>
             <text x="10" y="44" font-family="Fraunces, serif" font-size="15" font-weight="500">Adapter</text>
             <text x="10" y="64" font-size="11" fill="#4a3f33">to Jules,</text>
-            <text x="10" y="78" font-size="11" fill="#4a3f33">Codex, …</text>
-          </g>
-          <text x="410" y="200" text-anchor="middle" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#7a6c55">one heartbeat tick — runs every n seconds, walks left to right, then sleeps until next tick</text>
+            <text x="10" y="78" font-size="11" fill="#4a3f33">Codex, …</text></g>
+          <text x="410" y="200" text-anchor="middle" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#7a6c55">one tick — runs every n seconds, walks left to right, sleeps</text>
         </g>
       </svg>
-      <figcaption>The heartbeat is a six-step march. Each step is small enough to read in one sitting. The whole loop lives in <code>scripts/runtime/heartbeat/runner.py</code>.</figcaption>
+      <figcaption>Six steps. The loop lives in <code>scripts/runtime/heartbeat/runner.py</code>.</figcaption>
     </figure>
   </div>
 
   <div class="prose">
-    <p class="rise">At the center of the forward lane is what the system calls the <button class="term" aria-expanded="false" aria-controls="def-heart">heartbeat</button>. Each tick asks the same small questions and acts on the answers.</p>
+    <p class="rise">At the center is the <button class="term" aria-expanded="false" aria-controls="def-heart">heartbeat</button>. Each tick asks the same questions.</p>
     <aside class="def" id="def-heart" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Heartbeat, plainly</span>
-      <p>A <strong>heartbeat</strong> is a script that runs on a timer — say, every five minutes — and does the same checks each time. It is the opposite of an always-on, event-driven service: it doesn't react instantly, it just visits the system regularly. Cadence is a knob; the rhythm is the point.</p>
+      <p>A <strong>heartbeat</strong> is a script that runs on a timer — say, every five minutes — and does the same checks each time. Cadence is a knob; the rhythm is the point.</p>
     </div></div></aside>
 
-    <h3 class="rise">What a "ready node" actually means</h3>
-    <p class="rise">A node is <em>ready</em> when two conditions hold at the same time. Condition one: its own <code>status</code> is <code>pending</code> — nobody has marked it done yet. Condition two: every node it <button class="term" aria-expanded="false" aria-controls="def-deps">depends on</button> has <code>status: complete</code>. If both are true, it is fair game for dispatch. If either fails, it sits.</p>
+    <h3 id="s03-ready" class="rise">What "ready" means</h3>
+    <p class="rise">A node is ready when two conditions hold. Its own <code>status</code> is <code>pending</code>, and every node it <button class="term" aria-expanded="false" aria-controls="def-deps">depends on</button> has <code>status: complete</code>. If both are true, it is fair game for dispatch. If either fails, it sits.</p>
     <aside class="def" id="def-deps" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Dependencies, plainly</span>
-      <p>A node's <strong>dependencies</strong> are the other nodes it lists as prerequisites. If node B says "depends on: A," then A must be marked complete before B can be picked up. This is what makes the graph a graph instead of a list.</p>
+      <p>A node's <strong>dependencies</strong> are the other nodes it lists as prerequisites. If B says "depends on: A," then A must be complete before B can be picked up.</p>
     </div></div></aside>
 
-    <p class="rise">This is the same logic a build system like <code>make</code> uses, and the same logic a kitchen uses: the sauce can simmer once the stock is reduced; the plating can happen once the sauce is on. You cannot skip ahead.</p>
+    <p class="rise">Same logic as <code>make</code>. You cannot skip ahead.</p>
 
-    <h3 class="rise">What gets dispatched</h3>
-    <p class="rise">The runtime does not ship the entire node to the agent. It builds a smaller object — a <em>job packet</em> — that contains the node's purpose, its acceptance criteria, its required artifacts, the target repository, and a fresh job identifier.</p>
+    <h3 id="s03-dispatch" class="rise">What gets dispatched</h3>
+    <p class="rise">The runtime builds a <em>job packet</em> — purpose, acceptance criteria, required artifacts, target repository, fresh job identifier.</p>
 
-    <p class="rise">An <button class="term" aria-expanded="false" aria-controls="def-adapt">adapter</button> then translates that packet into something the chosen executor understands. Today the only working adapter is <code>jules_action_adapter.py</code>, which opens a GitHub issue with the <code>jules</code> label — that label is what wakes Jules up.</p>
+    <p class="rise">An <button class="term" aria-expanded="false" aria-controls="def-adapt">adapter</button> translates the packet into something the chosen executor understands. Today the only working adapter is <code>jules_action_adapter.py</code>, which opens a GitHub issue with the <code>jules</code> label.</p>
     <aside class="def" id="def-adapt" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Adapter, plainly</span>
-      <p>An <strong>adapter</strong> is a thin file whose only job is to make Agent X think the runtime is talking to it the way Agent X expects to be talked to. New executor = new adapter, same core machinery. This is the seam that keeps the design portable.</p>
+      <p>An <strong>adapter</strong> makes Agent X think the runtime is talking to it the way Agent X expects. New executor = new adapter, same core machinery.</p>
     </div></div></aside>
 
-    <p class="rise">If tomorrow you wanted to dispatch to Codex, or to a local terminal harness, or to a yet-to-exist agent, you would write a new adapter and the rest of the system would not change.</p>
+    <p class="rise">Adding Codex or a local harness means a new adapter and nothing else.</p>
 
-    <h3 class="rise">Why state goes to a database</h3>
-    <p class="rise">Every event, every job, every queue record, every result is also written to a small <button class="term" aria-expanded="false" aria-controls="def-sqlite">SQLite</button> database file — <code>db/queue.db</code>.</p>
+    <h3 id="s03-db" class="rise">Why state goes to a database</h3>
+    <p class="rise">Every event, job, queue record, and result is written to a small <button class="term" aria-expanded="false" aria-controls="def-sqlite">SQLite</button> file — <code>db/queue.db</code>.</p>
     <aside class="def" id="def-sqlite" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">SQLite, plainly</span>
-      <p><strong>SQLite</strong> is a database whose entire contents live in a single file on disk. No server. No login. You can inspect it from the command line. It is the right size for a system meant to be readable by one person sitting at a laptop.</p>
+      <p><strong>SQLite</strong> is a database whose entire contents live in a single file on disk. No server, no login. You inspect it with <code>sqlite3</code> at the terminal.</p>
     </div></div></aside>
 
-    <p class="rise">The reason it exists is auditability. Six weeks from now, if someone asks "why did this job exist at all?", the answer is one query away. The graph tells you what <em>should</em> happen. The database tells you what <em>did</em>.</p>
+    <p class="rise">Reason: auditability. The graph tells you what <em>should</em> happen. The database tells you what <em>did</em>.</p>
 
-    <div class="footnote rise" data-mark="margin · 03">
-      <strong>Pull request?</strong> A pull request (PR) is the standard way to propose changes to a git repository: you push a branch and ask the maintainer to merge it. In GDD, every job that succeeds shows up as a PR — there is no other return surface.
+    <div class="footnote rise" data-mark="note · 03">
+      <strong>Pull request?</strong> A PR is the standard way to propose changes in git — push a branch, ask to merge. In GDD, every successful job returns as a PR.
     </div>
+
+    <a class="next-chapter rise" href="#s04">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 04 — The Return Lane</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 04  THE RETURN LANE
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 04 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s04" data-title="§ 04 · The Return Lane">
   <div class="chapter-mark rise">
     <span class="num">§ 04</span>
@@ -1242,11 +1520,9 @@
   <h2 class="chapter-title rise">How a merged PR becomes a <em>receipt.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">If the forward lane is "the system sending work out," the return lane is "the system receiving evidence back."</p>
+    <p class="lede rise">Forward lane sends work out; return lane receives evidence back.</p>
 
-    <p class="rise">This is the part of GDD that took the longest to get right — and the part that the rest of the design now leans on. The whole point of this lane is that it stops on purpose, well before declaring anything complete.</p>
-
-    <p class="rise">Here is what happens, end to end, when an agent finishes a job and the resulting pull request is merged in the project's repository.</p>
+    <p class="rise">This lane stops on purpose, well before declaring anything complete.</p>
   </div>
 
   <div class="diagram-scene rise">
@@ -1257,96 +1533,86 @@
             <path d="M0,0 L0,6 L9,3 z" fill="#1a1611"/>
           </marker>
         </defs>
-        <g transform="translate(20,40)">
-          <rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(20,40)"><rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">GITHUB</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">PR merged</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">in project repo</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">in project repo</text></g>
         <line x1="170" y1="74" x2="200" y2="74" stroke="#1a1611" marker-end="url(#arr4)"/>
-        <g transform="translate(205,40)">
-          <rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(205,40)"><rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">INTAKE SERVER</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">webhook hits</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">signature verified</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">signature verified</text></g>
         <line x1="355" y1="74" x2="385" y2="74" stroke="#1a1611" marker-end="url(#arr4)"/>
-        <g transform="translate(390,40)">
-          <rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(390,40)"><rect width="150" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">CLASSIFIER</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">parse PR body</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">extract node, job</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">extract node, job</text></g>
         <line x1="540" y1="74" x2="570" y2="74" stroke="#1a1611" marker-end="url(#arr4)"/>
-        <g transform="translate(575,40)">
-          <rect width="160" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(575,40)"><rect width="160" height="68" fill="none" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">RETURN ROUTER</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">build receipt</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">+ artifact refs</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">+ artifact refs</text></g>
         <line x1="655" y1="108" x2="655" y2="170" stroke="#1a1611" stroke-dasharray="3 3"/>
-        <g transform="translate(575,170)">
-          <rect width="160" height="68" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(575,170)"><rect width="160" height="68" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">SQLITE · results</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">row written</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">status=needs_review</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">status=needs_review</text></g>
         <line x1="575" y1="204" x2="280" y2="204" stroke="#1a1611" marker-end="url(#arr4)"/>
-        <g transform="translate(120,170)">
-          <rect width="160" height="68" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
+        <g transform="translate(120,170)"><rect width="160" height="68" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
           <text x="10" y="20" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5" fill="#7a6c55">SQLITE · jobs</text>
           <text x="10" y="42" font-family="Fraunces, serif" font-size="17" font-weight="500">job → awaiting_review</text>
-          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">queue updated too</text>
-        </g>
-        <g transform="translate(60,255)">
-          <text font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="2" fill="#b73e26" font-weight="600">▌ STOP — runtime is done. graph truth has not changed. a human reads next.</text>
-        </g>
+          <text x="10" y="58" font-family="Newsreader, serif" font-style="italic" font-size="11" fill="#4a3f33">queue updated too</text></g>
+        <g transform="translate(60,255)"><text font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="2" fill="#b73e26" font-weight="600">▌ STOP — runtime is done. graph truth has not changed.</text></g>
       </svg>
-      <figcaption>The return lane writes a receipt and updates job state. It does not — by design — update the project graph in <code>gddp-config</code>.</figcaption>
+      <figcaption>The lane writes a receipt and updates job state. It does not update the graph.</figcaption>
     </figure>
   </div>
 
   <div class="prose">
-    <h3 class="rise">The path, traced</h3>
+    <h3 id="s04-path" class="rise">The path, traced</h3>
     <p class="rise">A PR is merged. A <button class="term" aria-expanded="false" aria-controls="def-webhook">webhook</button> hits the intake server and is signature-verified. A classifier parses the PR body and extracts the node and job identifiers. A return router builds a receipt with artifact references and writes a row to the <code>results</code> table.</p>
     <aside class="def" id="def-webhook" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Webhook, plainly</span>
-      <p>A <strong>webhook</strong> is a URL that another service (here, GitHub) will hit with a JSON payload when something happens (here, a PR merging). It is how external events get into the system. The intake server verifies the signature so it can trust the payload came from GitHub and not from a stranger on the internet.</p>
+      <p>A <strong>webhook</strong> is a URL that another service (here, GitHub) hits with a JSON payload when something happens (here, a PR merging). Signature verification keeps strangers out.</p>
     </div></div></aside>
 
-    <h3 class="rise">What lives in a receipt</h3>
-    <p class="rise">A <button class="term" aria-expanded="false" aria-controls="def-receipt">receipt</button> is a row in the <code>results</code> table of the SQLite database. It is the structured memory of "an agent finished something and these are its links." A receipt holds the job identifier, the node identifier, the PR URL, paths to artifacts the agent produced (test files, screenshots, reports), and a status that — at this point in the system — is always <code>needs_review</code>.</p>
+    <h3 id="s04-receipt" class="rise">What lives in a receipt</h3>
+    <p class="rise">A <button class="term" aria-expanded="false" aria-controls="def-receipt">receipt</button> is a row in the <code>results</code> table. It holds the job and node identifiers, the PR URL, paths to artifacts the agent produced, and a status — always <code>needs_review</code> at this stage.</p>
     <aside class="def" id="def-receipt" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Receipt vs. completion</span>
-      <p>A <strong>receipt</strong> says "the agent claims it did the work, here is the evidence." It is the input to a review. <strong>Completion</strong> is the output of that review, and only a human can produce it. Confusing the two is the slip that takes agentic systems down.</p>
+      <p>A <strong>receipt</strong> says "the agent claims it did the work, here is the evidence." <strong>Completion</strong> is the output of a review, and only a human produces it.</p>
     </div></div></aside>
 
-    <p class="rise">The receipt is not a verdict. The runtime never makes verdicts. The receipt's whole job is to be readable by the human who is about to make one.</p>
+    <p class="rise">The receipt is not a verdict. The runtime never makes verdicts. The receipt exists to be readable by the human who will.</p>
   </div>
 
   <div class="pull-scene rise">
-    <blockquote>Merging a PR proves the code merged. It does not prove the code did what the project wanted.</blockquote>
+    <blockquote>Merging proves the code merged. Not that it did what was wanted.</blockquote>
   </div>
 
   <div class="prose">
-    <h3 class="rise">The deliberate stop</h3>
-    <p class="rise">In an earlier version of this system, a merged PR was treated as proof that a node was complete, and the runtime would obligingly update the project graph in <code>gddp-config</code> to mark it so. That turned out to be wrong, in a quiet and lasting way. The two are not the same, and treating them as the same is exactly the slip that makes agentic systems fall over in the long run.</p>
+    <h3 id="s04-stop" class="rise">The deliberate stop</h3>
+    <p class="rise">An earlier version of this system treated a merged PR as proof of completion and auto-updated the graph. Wrong. Conflating merge with completion is the slip that fails agentic systems over time.</p>
 
-    <p class="rise">So the return lane was severed from graph truth. The runtime now stops at <code>awaiting_review</code>. The next move belongs to a human.</p>
+    <p class="rise">The return lane was severed from graph truth. The runtime stops at <code>awaiting_review</code>. Next move belongs to a human.</p>
 
     <div class="stamp-row rise">
       <span class="stamp">Frozen by design</span>
-      <span class="stamp-aside">— this is the part of the contract that does not change in the current phase. Receipts, no auto-completion. Restraint as load-bearing infrastructure.</span>
+      <span class="stamp-aside">— receipts only; no auto-completion in this phase.</span>
     </div>
+
+    <a class="next-chapter rise" href="#s05">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 05 — The Truth Boundary</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 05  THE TRUTH BOUNDARY
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 05 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s05" data-title="§ 05 · The Truth Boundary">
   <div class="chapter-mark rise">
     <span class="num">§ 05</span>
@@ -1357,70 +1623,57 @@
   <div class="prose">
     <p class="lede rise">When a job lands in <code>awaiting_review</code>, the runtime is finished with it.</p>
 
-    <p class="rise">The operator now sits down with the PR, the receipt, and the node's acceptance criteria, and chooses exactly one of five named actions. None of these is automatic; all of them are explicit. The boundary between activity and truth is drawn here, in human hands.</p>
+    <p class="rise">The operator opens the PR, the receipt, and the node's acceptance criteria, and chooses exactly one of five named actions. All explicit. The boundary between activity and truth is drawn here.</p>
 
     <table class="ledger rise">
-      <thead>
-        <tr><th>Action</th><th>What it means</th></tr>
-      </thead>
+      <thead><tr><th>Action</th><th>What it means</th></tr></thead>
       <tbody>
-        <tr>
-          <td>accept</td>
-          <td>The work meets acceptance. The operator <button class="term" aria-expanded="false" aria-controls="def-edit">edits the node's YAML in <code>gddp-config</code> by hand</button> and commits the status change. This is the only path that moves the graph forward.</td>
-        </tr>
-        <tr>
-          <td>retry</td>
-          <td>Something failed but the work is salvageable. The job is re-dispatched from its persisted state, often with a sharper instruction.</td>
-        </tr>
-        <tr>
-          <td>block</td>
-          <td>The work cannot move forward right now. Graph truth stays unchanged; the blocker is recorded outside the runtime so future operators understand the stall.</td>
-        </tr>
-        <tr>
-          <td>defer</td>
-          <td>The receipt is fine, but acceptance is not the right move yet — perhaps a sibling node needs to land first. The job sits in <code>awaiting_review</code> deliberately.</td>
-        </tr>
-        <tr>
-          <td>reopen</td>
-          <td>Later evidence — a downstream failure, a new constraint — invalidates earlier work. The node is revisited or replaced, the graph edited accordingly.</td>
-        </tr>
+        <tr><td>accept</td><td>The work meets acceptance. The operator <button class="term" aria-expanded="false" aria-controls="def-edit">edits the node's YAML</button> in <code>gddp-config</code> by hand and commits. Only path that moves the graph forward.</td></tr>
+        <tr><td>retry</td><td>Something failed but is salvageable. The job is re-dispatched, often with a sharper instruction.</td></tr>
+        <tr><td>block</td><td>The work cannot move forward right now. Graph truth stays unchanged; blocker is recorded outside the runtime.</td></tr>
+        <tr><td>defer</td><td>Receipt is fine, but acceptance isn't the right move yet — perhaps a sibling node needs to land first.</td></tr>
+        <tr><td>reopen</td><td>Later evidence invalidates earlier work. The node is revisited or replaced; the graph is edited accordingly.</td></tr>
       </tbody>
     </table>
     <aside class="def" id="def-edit" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Why edit YAML by hand?</span>
-      <p>Because the act of editing the project graph is the act of saying "I accept this as truth." Removing that gesture would smuggle authority back into the runtime. The friction is the feature.</p>
+      <p>Editing the project graph is the act of saying "I accept this as truth." Removing that gesture would smuggle authority back into the runtime. The friction is the feature.</p>
     </div></div></aside>
 
-    <h3 class="rise">Why exactly five</h3>
-    <p class="rise">The five-action set is not arbitrary. It is the smallest vocabulary that lets an operator describe every realistic outcome of a review without sneaking decisions into the runtime. Notice that none of them is "the runtime decided to accept." That option does not exist in this phase. The runtime cannot accept, cannot reject, cannot defer — those verbs belong to a person.</p>
+    <h3 id="s05-five" class="rise">Why exactly five</h3>
+    <p class="rise">The smallest vocabulary that covers every realistic review outcome without smuggling decisions into the runtime. None of these verbs is "the runtime decided." Accept, reject, defer — all belong to a person.</p>
 
-    <p class="rise">Notice also that "ignore" is not on the list. Once a job is in <code>awaiting_review</code>, doing nothing is itself a decision: it is <em>defer</em>. Naming it matters, because deferred work is real work — it is still on the operator's desk.</p>
+    <p class="rise">"Ignore" is not on the list. Doing nothing is <em>defer</em> — a real decision on a real desk.</p>
   </div>
 
   <div class="pull-scene rise">
-    <blockquote>The runtime is allowed to know what happened. It is not allowed to know what it means.</blockquote>
+    <blockquote>The runtime is allowed to know what happened. Not what it means.</blockquote>
   </div>
 
   <div class="prose">
-    <h3 class="rise">Reading a receipt in practice</h3>
-    <p class="rise">The operator's actual workflow looks like this: open the PR and read the diff. Read the receipt row in <code>results</code> to see what the agent claims it did. Walk through the node's <code>acceptance</code> list, one item at a time, and check each one against the PR. Read the required artifacts the agent was supposed to produce.</p>
+    <h3 id="s05-practice" class="rise">Reading a receipt in practice</h3>
+    <p class="rise">Open the PR and read the diff. Read the receipt row in <code>results</code>. Walk through the node's <code>acceptance</code> list, one item at a time, checking each against the PR. Read the required artifacts.</p>
 
     <p class="rise">If everything lines up — and only then — open the node's YAML and edit the status to <code>complete</code> in a hand-written commit.</p>
 
-    <p class="rise">This is slower than letting the runtime do it automatically. That is the entire point. The slowness is where judgment lives, and judgment is the load-bearing thing the agent cannot supply.</p>
+    <p class="rise">Slower than automatic acceptance. That's the point — slowness is where judgment lives, and judgment is the load-bearing thing the agent cannot supply.</p>
 
-    <div class="footnote rise" data-mark="margin · 05">
-      <strong>A known limit.</strong> The current return router has a hardcoded allowlist for one project repository, <code>skchaudr/vault-doctor</code>. A scaling step is to lift that allowlist into config. Documented openly so nobody is surprised by it.
+    <div class="footnote rise" data-mark="note · 05">
+      <strong>Known limit.</strong> The current return router has a hardcoded allowlist for <code>skchaudr/vault-doctor</code>. A scaling step is to lift that into config.
     </div>
+
+    <a class="next-chapter rise" href="#s06">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 06 — The Operator's Drill</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 06  THE OPERATOR'S DRILL
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 06 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s06" data-title="§ 06 · The Operator's Drill">
   <div class="chapter-mark rise">
     <span class="num">§ 06</span>
@@ -1429,34 +1682,19 @@
   <h2 class="chapter-title rise">You learn the boundary by <em>practicing</em> it.</h2>
 
   <div class="prose">
-    <p class="lede rise">Reading about a system tells you its shape. Practicing the system tells you what it actually feels like to be wrong about it.</p>
+    <p class="lede rise">Reading tells you a system's shape. Practicing tells you what it feels like to be wrong about it.</p>
 
-    <p class="rise">The drills below are designed to be done at a real terminal, on a small real project, with the intent of producing answers from files, database rows, and receipts — not from intuition. They are sequenced; later ones depend on earlier ones. None of them should take more than an evening.</p>
+    <p class="rise">Do these at a real terminal on a small real project. Answers come from files, rows, and receipts — not intuition. They're sequenced; later ones depend on earlier ones. None should take more than an evening.</p>
 
     <ol class="steps">
-      <li class="rise">
-        <strong>Synthetic Receipt Drill</strong>
-        Run <code>python3 scripts/init_db.py</code> and then <code>python3 scripts/dry_run.py</code>. No real repo, no real agent — just the system pretending. Inspect the <code>events</code>, <code>jobs</code>, and <code>results</code> tables. Confirm the synthetic job ends in <code>awaiting_review</code> and no graph file changed. The goal is to learn the filesystem and database shape with the lights on.
-      </li>
-      <li class="rise">
-        <strong>Forward Dispatch on a Tiny Real Repo</strong>
-        Add a small ready node to <code>gddp-config</code> for a low-stakes side project — a <code>--dry-run</code> flag, a missing unit test, a healthcheck endpoint. Run the heartbeat against it. Watch a real job get created and a real GitHub issue appear. Be able to explain, in words, why <em>that</em> node was chosen and what was inside the packet.
-      </li>
-      <li class="rise">
-        <strong>Receipt From a Merged PR</strong>
-        Take the job from Run 2 to completion: the agent opens a PR, you merge it, the webhook fires, the receipt lands. Inspect the <code>results</code> row. Confirm receipt status is <code>needs_review</code>, the job is <code>awaiting_review</code>, and no file in <code>gddp-config</code> has changed. This is the moment the deliberate stop becomes tangible.
-      </li>
-      <li class="rise">
-        <strong>Human Accept Drill</strong>
-        Walk through the acceptance criteria of the node, one item at a time, against the merged PR. If everything matches, open the node's YAML and update its status to <code>complete</code> by hand. Commit. Then write down: what evidence made you comfortable accepting? This question is the drill.
-      </li>
-      <li class="rise">
-        <strong>Human Reject or Defer Drill</strong>
-        Run the full lane with a PR that is intentionally incomplete or weakly tested — your call. Receive the receipt, then choose one of <em>retry</em>, <em>block</em>, <em>defer</em>, or <em>reopen</em>. Do not touch the graph. Write down the exact condition that blocked acceptance and the minimum next action that would unblock it.
-      </li>
+      <li class="rise"><strong>Synthetic Receipt Drill</strong>Run <code>python3 scripts/init_db.py</code>, then <code>python3 scripts/dry_run.py</code>. No real repo, no real agent. Inspect <code>events</code>, <code>jobs</code>, and <code>results</code>. Confirm the synthetic job ends in <code>awaiting_review</code> and no graph file changed.</li>
+      <li class="rise"><strong>Forward Dispatch, Tiny Real Repo</strong>Add a ready node to <code>gddp-config</code> for a low-stakes side project — a <code>--dry-run</code> flag, a missing unit test, a healthcheck endpoint. Run the heartbeat. Explain in words why <em>that</em> node was chosen and what was inside the packet.</li>
+      <li class="rise"><strong>Receipt From a Merged PR</strong>Take the Run 2 job to completion: the agent opens a PR, you merge, the webhook fires, the receipt lands. Inspect the <code>results</code> row. Confirm receipt is <code>needs_review</code>, job is <code>awaiting_review</code>, no file in <code>gddp-config</code> changed.</li>
+      <li class="rise"><strong>Human Accept Drill</strong>Walk through the acceptance criteria, one item at a time, against the merged PR. If everything matches, open the YAML and update status to <code>complete</code> by hand. Commit. Write down: what evidence made you comfortable accepting?</li>
+      <li class="rise"><strong>Human Reject or Defer Drill</strong>Run the full lane with a PR that is intentionally incomplete. Receive the receipt, then choose one of <em>retry</em>, <em>block</em>, <em>defer</em>, or <em>reopen</em>. Do not touch the graph. Write down the exact condition that blocked acceptance.</li>
     </ol>
 
-    <h3 class="rise">The questions every run must answer</h3>
+    <h3 id="s06-questions" class="rise">Questions every run must answer</h3>
     <ul class="bare">
       <li class="rise">What created this job?</li>
       <li class="rise">Why was this node selected?</li>
@@ -1467,20 +1705,24 @@
       <li class="rise">What exact human action would change graph truth next?</li>
     </ul>
 
-    <p class="rise">If you cannot answer all seven from files and rows — not from memory — the drill is not yet done. Repeat with a different tiny task until the answers come quickly. The point of the drill is to replace a fuzzy mental model with a system you can read.</p>
+    <p class="rise">If you can't answer all seven from files and rows — not memory — the drill isn't done. Repeat with a different tiny task. A fuzzy mental model becomes a system you can read.</p>
 
-    <div class="footnote rise" data-mark="margin · 06">
-      <strong>Practice targets:</strong> one-file CLIs, tiny FastAPI apps, a script repo. Avoid auth, database migrations, payment APIs, anything you would regret breaking. The drill is about the loop, not the change. Most inspection is one <code>sqlite3</code> query or one <code>find</code> — keep the runbook (<code>deploy/BIGPI_RUNBOOK.md</code>) open in a scratch pane while you drill.
+    <div class="footnote rise" data-mark="note · 06">
+      <strong>Practice targets:</strong> one-file CLIs, tiny FastAPI apps, script repos. Avoid auth, migrations, payments. The drill is about the loop, not the change. Inspection is mostly one <code>sqlite3</code> query or one <code>find</code> — keep <code>deploy/BIGPI_RUNBOOK.md</code> open in a scratch pane.
     </div>
+
+    <a class="next-chapter rise" href="#s07">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 07 — What Comes Next</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 07  WHAT COMES NEXT
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 07 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s07" data-title="§ 07 · What Comes Next">
   <div class="chapter-mark rise">
     <span class="num">§ 07</span>
@@ -1489,20 +1731,20 @@
   <h2 class="chapter-title rise">From local correctness to <em>systemic meaning.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">The system as described stops at the truth boundary on purpose. The next phase, drafted but not yet built, tries to do something more ambitious — to make the graph not only the scheduler of work, but also the validator of meaning.</p>
+    <p class="lede rise">The next phase makes the graph not just the scheduler of work but the validator of meaning.</p>
 
     <p class="rise">Treat this section as a road map, not a release.</p>
 
-    <p class="rise">The pivot is simple to state and large to execute: <button class="term" aria-expanded="false" aria-controls="def-unit">unit tests</button> tell you a single function behaves. Acceptance criteria tell you a single node delivered what was asked. But neither tells you the whole project is still coherent.</p>
+    <p class="rise">The pivot: <button class="term" aria-expanded="false" aria-controls="def-unit">unit tests</button> prove a function behaves. Acceptance proves a node delivered. Neither proves the project is still coherent.</p>
     <aside class="def" id="def-unit" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Unit test, plainly</span>
       <p>A <strong>unit test</strong> is a small piece of code that checks one function does what it claims. It is the cheapest signal that a single brick is square. It says nothing about the wall.</p>
     </div></div></aside>
 
-    <p class="rise">A node can pass its acceptance while quietly violating a <button class="term" aria-expanded="false" aria-controls="def-contract">contract</button> that a downstream node was counting on. The next-generation runtime adds a stack of verifiers whose only job is to notice this drift before it accumulates.</p>
+    <p class="rise">A node can pass its acceptance while quietly violating a <button class="term" aria-expanded="false" aria-controls="def-contract">contract</button> that a downstream node was counting on. The next-generation runtime adds a stack of verifiers whose only job is to notice this drift.</p>
     <aside class="def" id="def-contract" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Contract, plainly</span>
-      <p>A <strong>contract</strong> between two nodes is the promise the upstream one makes about its outputs and the downstream one makes about its inputs. When the contract is written down, an edge verifier can check it.</p>
+      <p>A <strong>contract</strong> between two nodes is the promise the upstream one makes about its outputs and the downstream one makes about its inputs. When written down, an edge verifier can check it.</p>
     </div></div></aside>
   </div>
 
@@ -1515,124 +1757,80 @@
           </marker>
         </defs>
         <g font-family="Newsreader, serif" font-size="13">
-          <g transform="translate(80,30)">
-            <rect width="660" height="42" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(80,30)"><rect width="660" height="42" fill="#ecdfc4" stroke="#1a1611" stroke-width="1.2"/>
             <text x="14" y="27" font-family="Fraunces, serif" font-size="17" font-weight="500">Builder agent</text>
-            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">writes code, runs unit tests, produces artifacts</text>
-          </g>
+            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">writes code, runs unit tests, produces artifacts</text></g>
           <line x1="410" y1="72" x2="410" y2="92" stroke="#1a1611" marker-end="url(#arr7)"/>
-          <g transform="translate(80,95)">
-            <rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(80,95)"><rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="14" y="27" font-family="Fraunces, serif" font-size="17" font-weight="500">Node verifier</text>
-            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">does this node's acceptance hold? read-only; no edits.</text>
-          </g>
+            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">does this node's acceptance hold? read-only.</text></g>
           <line x1="410" y1="137" x2="410" y2="157" stroke="#1a1611" marker-end="url(#arr7)"/>
-          <g transform="translate(80,160)">
-            <rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(80,160)"><rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="14" y="27" font-family="Fraunces, serif" font-size="17" font-weight="500">Edge verifier</text>
-            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">do the contracts between this node and its neighbors still hold?</text>
-          </g>
+            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">do contracts between this node and neighbors still hold?</text></g>
           <line x1="410" y1="202" x2="410" y2="222" stroke="#1a1611" marker-end="url(#arr7)"/>
-          <g transform="translate(80,225)">
-            <rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
+          <g transform="translate(80,225)"><rect width="660" height="42" fill="none" stroke="#1a1611" stroke-width="1.2"/>
             <text x="14" y="27" font-family="Fraunces, serif" font-size="17" font-weight="500">Graph-invariant verifier</text>
-            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">do the rules the project promised to hold globally still hold?</text>
-          </g>
+            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">do project-global rules still hold?</text></g>
           <line x1="410" y1="267" x2="410" y2="287" stroke="#1a1611" marker-end="url(#arr7)"/>
-          <g transform="translate(80,290)">
-            <rect width="660" height="42" fill="rgba(183,62,38,0.06)" stroke="#a93219" stroke-width="2"/>
+          <g transform="translate(80,290)"><rect width="660" height="42" fill="rgba(183,62,38,0.06)" stroke="#a93219" stroke-width="2"/>
             <text x="14" y="27" font-family="Fraunces, serif" font-size="17" font-weight="500" fill="#a93219">Human escalation</text>
-            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">— still the only writer of truth. always.</text>
-          </g>
+            <text x="260" y="27" font-family="Newsreader, serif" font-style="italic" font-size="13" fill="#4a3f33">— still the only writer of truth.</text></g>
         </g>
       </svg>
-      <figcaption>Each layer can only return <em>pass</em>, <em>fail</em>, or <em>uncertain</em>. None of them can edit code. They are read-only judges, in a hierarchy of widening scope.</figcaption>
+      <figcaption>Each layer returns <em>pass</em>, <em>fail</em>, or <em>uncertain</em>. None edit code.</figcaption>
     </figure>
   </div>
 
   <div class="prose">
-    <h3 class="rise">Why one verifier is not enough</h3>
-    <p class="rise">Imagine a node that adds a "send invoice" button. The builder writes the button. The unit tests pass. The node's acceptance says "user can send an invoice"; it passes. But two nodes upstream, the graph promised an <button class="term" aria-expanded="false" aria-controls="def-invariant">invariant</button>: <em>no direct writes to QuickBooks before the consultation phase is complete.</em></p>
+    <h3 id="s07-why" class="rise">Why one verifier is not enough</h3>
+    <p class="rise">A node adds a "send invoice" button. The builder writes it. Unit tests pass. Acceptance says "user can send an invoice"; it passes. But two nodes upstream, the graph promised an <button class="term" aria-expanded="false" aria-controls="def-invariant">invariant</button>: <em>no direct writes to QuickBooks before consultation.</em></p>
     <aside class="def" id="def-invariant" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Invariant, plainly</span>
-      <p>An <strong>invariant</strong> is a rule that is always supposed to be true, no matter what else changes. "Every user has exactly one primary email." "No node may write to QuickBooks before consultation." Invariants are what make a system feel coherent over time.</p>
+      <p>An <strong>invariant</strong> is a rule always supposed to be true, no matter what changes. "Every user has one primary email." Invariants are what make a system feel coherent over time.</p>
     </div></div></aside>
 
-    <p class="rise">The button writes directly to QuickBooks. A node verifier would clear this. Only a verifier that knows about the <em>edges</em> and <em>graph invariants</em> would notice. This is what the manifesto means when it says, "Traditional pipelines prove component correctness. Graph-driven development attempts to prove <button class="term" aria-expanded="false" aria-controls="def-sem">systemic correctness</button>."</p>
+    <p class="rise">The button writes directly to QuickBooks. A node verifier clears it. Only an edge or graph-invariant verifier notices. Traditional pipelines prove component correctness. GDD attempts <button class="term" aria-expanded="false" aria-controls="def-sem">systemic correctness</button>.</p>
     <aside class="def" id="def-sem" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">Semantic correctness, plainly</span>
       <p><strong>Semantic correctness</strong> means the system did what it meant to do, not just what it was technically asked to do. A retrieval system returning "a discussion of the truth" instead of "the truth" is semantically incorrect — and passes every unit test.</p>
     </div></div></aside>
 
-    <h3 class="rise">The scaling stages, plainly</h3>
+    <h3 id="s07-stages" class="rise">The scaling stages</h3>
     <div class="stages">
-      <div class="stage rise">
-        <span class="stage-tag">Stage 1</span>
-        <div>
-          <h4>Single node, single agent</h4>
-          <p>Where the system is now. One node picked manually. One agent. The operator runs the practice drills against it.</p>
-        </div>
-      </div>
-      <div class="stage rise">
-        <span class="stage-tag">Stage 2</span>
-        <div>
-          <h4>Multiple agents, one graph</h4>
-          <p>Independent ready nodes are dispatched in parallel. Agents do not overlap because the graph says who owns which path.</p>
-        </div>
-      </div>
-      <div class="stage rise">
-        <span class="stage-tag">Stage 3</span>
-        <div>
-          <h4>Verifier agent added</h4>
-          <p>A separate read-only agent reviews the diff, the tests, the node spec, and returns pass / fail / uncertain. It cannot edit code; it can only judge.</p>
-        </div>
-      </div>
-      <div class="stage rise">
-        <span class="stage-tag">Stage 4</span>
-        <div>
-          <h4>Dispatcher / runtime expansion</h4>
-          <p>A scheduler reads the graph, finds ready nodes, opens panes (in a multi-pane terminal like <button class="term" aria-expanded="false" aria-controls="def-cmux">CMUX</button>), injects prompts, watches reports, updates state.</p>
-        </div>
-      </div>
-      <div class="stage rise">
-        <span class="stage-tag">Stage 5</span>
-        <div>
-          <h4>Semantic graph gate</h4>
-          <p>The project cannot be called "done" until a graph-level verifier confirms every completed node still satisfies its upstream and downstream contracts. This is the gate that turns "shipping" into a property of the system, not a vibe.</p>
-        </div>
-      </div>
-      <div class="stage rise">
-        <span class="stage-tag">Beyond</span>
-        <div>
-          <h4>OpenClaw &amp; CI for meaning</h4>
-          <p>A reasoning layer that surfaces uncertainty to the human earlier and more legibly. CI/CD for agentic systems, where the build target is a graph of meaning, not just compiled bytes.</p>
-        </div>
-      </div>
+      <div class="stage rise"><span class="stage-tag">Stage 1</span><div><h4>Single node, single agent</h4><p>Where the system is now. One node picked manually. One agent. The operator runs the drills against it.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Stage 2</span><div><h4>Multiple agents, one graph</h4><p>Independent ready nodes dispatched in parallel. The graph says who owns which path.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Stage 3</span><div><h4>Verifier agent added</h4><p>A read-only agent reviews the diff, tests, and spec. Returns pass / fail / uncertain. Cannot edit code.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Stage 4</span><div><h4>Dispatcher expansion</h4><p>A scheduler reads the graph, opens panes in a multi-pane terminal like <button class="term" aria-expanded="false" aria-controls="def-cmux">CMUX</button>, injects prompts, watches reports, updates state.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Stage 5</span><div><h4>Semantic graph gate</h4><p>The project cannot be called done until a graph-level verifier confirms every completed node still satisfies upstream and downstream contracts. The gate turns "shipping" into a property of the system.</p></div></div>
+      <div class="stage rise"><span class="stage-tag">Beyond</span><div><h4>OpenClaw &amp; CI for meaning</h4><p>A reasoning layer that surfaces uncertainty earlier and more legibly. CI/CD where the build target is a graph of meaning.</p></div></div>
     </div>
     <aside class="def" id="def-cmux" data-open="false"><div class="def-inner"><div class="def-card">
       <span class="def-label">CMUX, briefly</span>
-      <p><strong>CMUX</strong> is a multi-pane terminal built for running several agents side by side, with workspace and notification hooks. In the next-phase sketch, it is the cockpit the dispatcher uses to open and watch agent panes. The graph remains the source of truth; CMUX is just the surface.</p>
+      <p><strong>CMUX</strong> is a multi-pane terminal built for running several agents side by side. In the next-phase sketch, it is the cockpit the dispatcher uses. The graph remains the source of truth.</p>
     </div></div></aside>
   </div>
 
   <div class="pull-scene rise">
-    <blockquote>Builders build. Verifiers verify. The graph decides what done means. You decide what the graph means.</blockquote>
+    <blockquote>Builders build. Verifiers verify. The graph decides what done means.</blockquote>
   </div>
 
   <div class="prose">
-    <h3 class="rise">The non-negotiable thing</h3>
-    <p class="rise">Across every stage, one rule does not move: <strong>the agent does not decide if its own work passes.</strong> Every additional verifier is a way of making the final human judgment cheaper, faster, and easier to escalate to — not a way of replacing it.</p>
+    <h3 id="s07-rule" class="rise">The non-negotiable thing</h3>
+    <p class="rise">One rule doesn't move across stages: <strong>the agent doesn't decide if its own work passes.</strong> Verifiers make the human judgment cheaper and faster — they don't replace it.</p>
 
-    <p class="rise">That is the bet of the next phase: that with the right ladder of read-only verifiers under it, the human review at the top becomes the strongest version of itself — the only place where systemic intent actually lives.</p>
+    <a class="next-chapter rise" href="#s08">
+      <span class="cue">Continue</span>
+      <span class="ch">§ 08 — Colophon</span>
+      <span class="arr">→</span>
+    </a>
   </div>
 </section>
 
 <div class="divider"><span class="rule"></span><span class="glyph">§</span><span class="rule"></span></div>
 
 
-<!-- ─────────────────────────────────────────────────────────────────
-     § 08  COLOPHON
-────────────────────────────────────────────────────────────────── -->
+<!-- ─── § 08 ───────────────────────────────────────────────────── -->
 <section class="chapter" id="s08" data-title="§ 08 · Colophon">
   <div class="chapter-mark rise">
     <span class="num">§ 08</span>
@@ -1641,41 +1839,38 @@
   <h2 class="chapter-title rise">How this manual was <em>made.</em></h2>
 
   <div class="prose">
-    <p class="lede rise">A short note on the apparatus that produced the apparatus.</p>
+    <p class="lede rise">One HTML file. Three typefaces. Inline SVG diagrams.</p>
 
-    <p class="rise">This pamphlet was written in a single HTML file. The body type is <strong>Newsreader</strong>, designed by Production Type for long-form reading on screens. The display type is <strong>Fraunces</strong>, whose variable axes — optical size, softness, wonk — let headlines do something unusual without becoming illegible. Code is set in <strong>JetBrains Mono</strong>.</p>
+    <p class="rise">Body type is <strong>Newsreader</strong>. Display is <strong>Fraunces</strong>. Code is <strong>JetBrains Mono</strong>. Paper grain is a noise filter; diagrams are hand-tuned SVG, not generated.</p>
 
-    <p class="rise">The colour palette is one warm cream paper, one warm-black ink, and one rust-cinnabar stamp red used sparingly for emphasis and authority. Diagrams are inline SVG, hand-tuned, not generated. Paper grain is a noise filter painted into a fixed overlay. There is nothing here that does not also work on disk.</p>
-
-    <h3 class="rise">Files this manual reads from</h3>
+    <h3 id="s08-files" class="rise">Files this manual reads from</h3>
     <table class="ledger rise">
-      <thead>
-        <tr><th>Source</th><th>Where</th></tr>
-      </thead>
+      <thead><tr><th>Source</th><th>Where</th></tr></thead>
       <tbody>
         <tr><td>Runtime overview</td><td><code>gddp-runtime/README.md</code></td></tr>
         <tr><td>Operator runbook</td><td><code>gddp-runtime/deploy/BIGPI_RUNBOOK.md</code></td></tr>
-        <tr><td>Practice checklist</td><td>Obsidian · GDDO — operator practice manual run checklist</td></tr>
         <tr><td>Next-phase sketch</td><td><code>gddp-runtime/gdd-next.md</code></td></tr>
         <tr><td>Project truth</td><td><code>gddp-config/graphs/&lt;project&gt;/</code></td></tr>
         <tr><td>Schemas</td><td><code>gddp-config/schemas/v1/</code></td></tr>
       </tbody>
     </table>
 
-    <h3 class="rise">How to read on</h3>
-    <p class="rise">If a section here felt incomplete, the canonical place to go is the file it cites. The README in the runtime repo is the closest thing to a single-page reference; the runbook is the closest thing to a hands-on guide; the next-phase draft is the closest thing to the design's interior monologue.</p>
+    <p class="rise">If you want to operate this system, the entry point is Run 1 in §06. Open a terminal, initialize the database, watch what happens.</p>
 
-    <p class="rise">If you would like to operate this system yourself, the entry point is Run 1 in §06. Open a terminal, change into the runtime directory, initialize the database, and watch what happens. Everything else is downstream of that single, small first run.</p>
-
-    <div class="footnote rise" data-mark="margin · 08">
-      <strong>Errata.</strong> Found something this manual gets wrong about the live system? The fix lives in <code>docs/gdd-explained.html</code>. The system is small enough that the truth is one edit away. <em>Print-friendly?</em> Not yet — this page uses screen-only effects (grain, vignette, sticky nav, animated reveals). A <code>@media print</code> stylesheet is noted, not done.
+    <div class="footnote rise" data-mark="errata">
+      Found something wrong about the live system? Fix lives in <code>docs/gdd-explained.html</code>.
     </div>
+
+    <a class="next-chapter rise" href="#cover">
+      <span class="cue">Back to top</span>
+      <span class="ch">§ 01 — The Premise</span>
+      <span class="arr">↑</span>
+    </a>
   </div>
 </section>
 
 
 <footer>
-  <p class="colophon">Filed at the seam between intent and labor — where someone has to be the human, and someone has to be the agent, and neither one is allowed to forget which.</p>
   <div class="filed">Graph-Driven Development · Field Manual · v1 · 2026</div>
 </footer>
 
@@ -1683,6 +1878,35 @@
 <script>
 (function () {
   'use strict';
+
+  // ─── Theme toggle ──────────────────────────────────────────────
+  var root = document.documentElement;
+  var STORAGE_KEY = 'gdd-theme';
+
+  function applyTheme(theme) {
+    if (theme === 'dark' || theme === 'light') {
+      root.setAttribute('data-theme', theme);
+    } else {
+      root.removeAttribute('data-theme');
+    }
+  }
+
+  try {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') applyTheme(saved);
+  } catch (e) { /* localStorage unavailable */ }
+
+  var themeBtn = document.getElementById('theme-toggle');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function () {
+      var current = root.getAttribute('data-theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var effective = current || (prefersDark ? 'dark' : 'light');
+      var next = effective === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* ignore */ }
+    });
+  }
 
   // ─── Inline term reveal ────────────────────────────────────────
   document.querySelectorAll('button.term').forEach(function (btn) {
@@ -1727,25 +1951,117 @@
     document.querySelectorAll('.rise').forEach(function (el) { el.classList.add('in'); });
   }
 
-  // ─── Chapter indicator in topnav ───────────────────────────────
+  // ─── Chapter list + drawer state ───────────────────────────────
+  var chapters = Array.prototype.slice.call(
+    document.querySelectorAll('.chapter, .cover, #intro')
+  );
+  var chapterIds = chapters.map(function (c) { return c.id; });
+  var drawerLinks = Array.prototype.slice.call(document.querySelectorAll('.ch-link'));
+  var subGroups = Array.prototype.slice.call(document.querySelectorAll('.ch-subs'));
+  var subLinks = Array.prototype.slice.call(document.querySelectorAll('.ch-subs a'));
   var here = document.getElementById('here');
-  var chapters = Array.prototype.slice.call(document.querySelectorAll('.chapter, .cover, #intro'));
-  function pickCurrent() {
-    if (!here) return;
-    var y = window.scrollY + 80;
-    var current = null;
+
+  function getCurrentChapter() {
+    var y = window.scrollY + 100;
+    var current = chapters[0];
     for (var i = 0; i < chapters.length; i++) {
-      var top = chapters[i].offsetTop;
-      if (top <= y) current = chapters[i];
+      if (chapters[i].offsetTop <= y) current = chapters[i];
       else break;
     }
-    if (!current) { here.textContent = 'Field Manual'; here.classList.remove('active'); return; }
-    var title = current.getAttribute('data-title');
-    if (title) { here.textContent = title; here.classList.add('active'); }
-    else { here.textContent = 'Field Manual'; here.classList.remove('active'); }
+    return current;
   }
-  window.addEventListener('scroll', pickCurrent, { passive: true });
-  pickCurrent();
+
+  function updateHighlights() {
+    var current = getCurrentChapter();
+    if (!current) return;
+    var id = current.id;
+
+    drawerLinks.forEach(function (a) {
+      a.classList.toggle('active', a.getAttribute('data-target') === id);
+    });
+    subGroups.forEach(function (g) {
+      g.setAttribute('data-open', g.getAttribute('data-for') === id ? 'true' : 'false');
+    });
+
+    if (here) {
+      var title = current.getAttribute('data-title');
+      if (title) { here.textContent = title; here.classList.add('active'); }
+      else { here.textContent = 'Field Manual'; here.classList.remove('active'); }
+    }
+
+    // active sub-link (closest h3 above current scroll)
+    var y = window.scrollY + 120;
+    var currentSubId = null;
+    subLinks.forEach(function (a) {
+      var hash = a.getAttribute('href');
+      if (!hash || hash[0] !== '#') return;
+      var target = document.getElementById(hash.slice(1));
+      if (!target) return;
+      if (target.getBoundingClientRect().top + window.scrollY <= y) currentSubId = hash;
+    });
+    subLinks.forEach(function (a) {
+      a.classList.toggle('active', a.getAttribute('href') === currentSubId);
+    });
+  }
+  window.addEventListener('scroll', updateHighlights, { passive: true });
+  updateHighlights();
+
+  // ─── Drawer open/close ─────────────────────────────────────────
+  var drawer = document.getElementById('drawer');
+  var backdrop = document.getElementById('backdrop');
+  var navTrigger = document.getElementById('nav-trigger');
+  var drawerClose = document.getElementById('drawer-close');
+
+  function openDrawer() {
+    if (!drawer) return;
+    drawer.setAttribute('data-open', 'true');
+    drawer.setAttribute('aria-hidden', 'false');
+    if (backdrop) backdrop.setAttribute('data-open', 'true');
+    if (navTrigger) navTrigger.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.setAttribute('data-open', 'false');
+    drawer.setAttribute('aria-hidden', 'true');
+    if (backdrop) backdrop.setAttribute('data-open', 'false');
+    if (navTrigger) navTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  if (navTrigger) navTrigger.addEventListener('click', openDrawer);
+  if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+  if (backdrop) backdrop.addEventListener('click', closeDrawer);
+
+  // Close drawer when a link inside it is clicked
+  document.querySelectorAll('.drawer-nav a').forEach(function (a) {
+    a.addEventListener('click', function () { setTimeout(closeDrawer, 80); });
+  });
+
+  // ─── Keyboard navigation ───────────────────────────────────────
+  function jumpChapter(direction) {
+    var current = getCurrentChapter();
+    if (!current) return;
+    var idx = chapterIds.indexOf(current.id);
+    var nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= chapters.length) return;
+    chapters[nextIdx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === '/' || e.key === '?') {
+      e.preventDefault();
+      var isOpen = drawer && drawer.getAttribute('data-open') === 'true';
+      if (isOpen) closeDrawer(); else openDrawer();
+    } else if (e.key === 'Escape') {
+      closeDrawer();
+    } else if (e.key === '[') {
+      jumpChapter(-1);
+    } else if (e.key === ']') {
+      jumpChapter(1);
+    }
+  });
 })();
 </script>
 
