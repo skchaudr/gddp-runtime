@@ -81,10 +81,6 @@ def write_result(
     init_db()
     con = sqlite3.connect(DB_PATH)
     try:
-        cur = con.cursor()
-        cur.execute("SELECT 1 FROM results WHERE result_id = ?", (result_id,))
-        exists = cur.fetchone()
-
         payload = {
             "result_id": result_id,
             "job_id": job_id,
@@ -103,45 +99,39 @@ def write_result(
             "github_action": _json_or_none(github_action),
         }
 
-        if not exists:
-            con.execute(
-                """
-                INSERT INTO results (
-                    result_id, job_id, executor, received_at,
-                    execution_duration_seconds, outcome, status,
-                    changed_files, patch_path, summary_path, logs_path,
-                    acceptance_check, risks, followup_candidates, github_action
-                ) VALUES (
-                    :result_id, :job_id, :executor, :received_at,
-                    :execution_duration_seconds, :outcome, :status,
-                    :changed_files, :patch_path, :summary_path, :logs_path,
-                    :acceptance_check, :risks, :followup_candidates, :github_action
-                )
-                """,
-                payload,
+        # Optimization: Use SQLite native ON CONFLICT DO UPDATE to avoid
+        # the read-then-write overhead of manual UPSERT.
+        con.execute(
+            """
+            INSERT INTO results (
+                result_id, job_id, executor, received_at,
+                execution_duration_seconds, outcome, status,
+                changed_files, patch_path, summary_path, logs_path,
+                acceptance_check, risks, followup_candidates, github_action
+            ) VALUES (
+                :result_id, :job_id, :executor, :received_at,
+                :execution_duration_seconds, :outcome, :status,
+                :changed_files, :patch_path, :summary_path, :logs_path,
+                :acceptance_check, :risks, :followup_candidates, :github_action
             )
-        else:
-            con.execute(
-                """
-                UPDATE results
-                   SET job_id = :job_id,
-                       executor = :executor,
-                       received_at = :received_at,
-                       execution_duration_seconds = :execution_duration_seconds,
-                       outcome = :outcome,
-                       status = :status,
-                       changed_files = :changed_files,
-                       patch_path = :patch_path,
-                       summary_path = :summary_path,
-                       logs_path = :logs_path,
-                       acceptance_check = :acceptance_check,
-                       risks = :risks,
-                       followup_candidates = :followup_candidates,
-                       github_action = :github_action
-                 WHERE result_id = :result_id
-                """,
-                payload,
-            )
+            ON CONFLICT(result_id) DO UPDATE SET
+                job_id = excluded.job_id,
+                executor = excluded.executor,
+                received_at = excluded.received_at,
+                execution_duration_seconds = excluded.execution_duration_seconds,
+                outcome = excluded.outcome,
+                status = excluded.status,
+                changed_files = excluded.changed_files,
+                patch_path = excluded.patch_path,
+                summary_path = excluded.summary_path,
+                logs_path = excluded.logs_path,
+                acceptance_check = excluded.acceptance_check,
+                risks = excluded.risks,
+                followup_candidates = excluded.followup_candidates,
+                github_action = excluded.github_action
+            """,
+            payload,
+        )
         con.commit()
     finally:
         con.close()
