@@ -131,7 +131,11 @@ def webhook():
         print("  [intake] REJECTED — invalid signature")
         return jsonify({"error": "invalid signature"}), 401
 
-    payload = json.loads(payload_bytes)
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        print("  [intake] REJECTED — invalid json")
+        return jsonify({"error": "invalid json"}), 400
 
     # 2. Save raw payload to disk (always, regardless of type)
     raw_dir = OPCLAW_ROOT / "events" / "raw"
@@ -154,28 +158,32 @@ def webhook():
     )
 
     # 4. Insert into events table
-    con = connect()
     try:
-        con.execute("""
-            INSERT INTO events (
-                event_id, received_at, source, event_type, actor,
-                branch, base_branch, pr_number, issue_number, commit_sha, url,
-                project_id, project_node_candidates,
-                scope_status, priority, risk_level,
-                raw_payload_path, normalized_payload_path,
-                classification, routing, status
-            ) VALUES (
-                :event_id, :received_at, :source, :event_type, :actor,
-                :branch, :base_branch, :pr_number, :issue_number, :commit_sha, :url,
-                :project_id, :project_node_candidates,
-                :scope_status, :priority, :risk_level,
-                :raw_payload_path, :normalized_payload_path,
-                :classification, :routing, :status
-            )
-        """, event)
-        con.commit()
-    finally:
-        con.close()
+        con = connect()
+        try:
+            con.execute("""
+                INSERT INTO events (
+                    event_id, received_at, source, event_type, actor,
+                    branch, base_branch, pr_number, issue_number, commit_sha, url,
+                    project_id, project_node_candidates,
+                    scope_status, priority, risk_level,
+                    raw_payload_path, normalized_payload_path,
+                    classification, routing, status
+                ) VALUES (
+                    :event_id, :received_at, :source, :event_type, :actor,
+                    :branch, :base_branch, :pr_number, :issue_number, :commit_sha, :url,
+                    :project_id, :project_node_candidates,
+                    :scope_status, :priority, :risk_level,
+                    :raw_payload_path, :normalized_payload_path,
+                    :classification, :routing, :status
+                )
+            """, event)
+            con.commit()
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        print(f"  [intake] REJECTED — database error")
+        return jsonify({"error": "database error"}), 500
 
     print(f"  [intake] event inserted → {event['event_id']} ({event['event_type']})")
     return jsonify({"status": "accepted", "event_id": event["event_id"]}), 200
