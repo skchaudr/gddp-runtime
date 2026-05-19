@@ -82,6 +82,7 @@ class TestReturnRouter(unittest.TestCase):
                 "node_id": "auth-node",
             },
         )
+        from unittest.mock import ANY
         mock_write.assert_called_once_with(
             result_id="res_123456",
             job_id="job_123",
@@ -100,8 +101,9 @@ class TestReturnRouter(unittest.TestCase):
                 "review_required": True,
                 "raw_payload_path": "payload.json",
             },
+            con=ANY,
         )
-        mock_mark_review.assert_called_once_with("job_123")
+        mock_mark_review.assert_called_once_with("job_123", ANY)
 
     @patch("scripts.runtime.return_router.write_result")
     def test_handle_merged_pr_invalid_repo(self, mock_write):
