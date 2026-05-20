@@ -308,18 +308,14 @@ def verify_artifacts(cur, job_id):
     d = job_dir(job_id)
     required = ["decision.md", "result-summary.md", "patch.diff"]
     all_verified = True
+    rows = []
 
     for i, artifact_type in enumerate(required):
         path = d / artifact_type
         exists = path.exists() and path.stat().st_size > 0
         ver_id = f"ver_dry_00{i+1}"
 
-        cur.execute("""
-            INSERT INTO artifact_verifications (
-                verification_id, job_id, node_id, artifact_type,
-                validation_method, verified, verified_at, verified_by, notes
-            ) VALUES (?, ?, 'auth-boundary', ?, 'file_exists', ?, ?, 'openclaw_validator', ?)
-        """, (
+        rows.append((
             ver_id, job_id, artifact_type,
             1 if exists else 0,
             now() if exists else None,
@@ -330,6 +326,13 @@ def verify_artifacts(cur, job_id):
         print(f"  {status}  {artifact_type}")
         if not exists:
             all_verified = False
+
+    cur.executemany("""
+        INSERT INTO artifact_verifications (
+            verification_id, job_id, node_id, artifact_type,
+            validation_method, verified, verified_at, verified_by, notes
+        ) VALUES (?, ?, 'auth-boundary', ?, 'file_exists', ?, ?, 'openclaw_validator', ?)
+    """, rows)
 
     return all_verified
 
