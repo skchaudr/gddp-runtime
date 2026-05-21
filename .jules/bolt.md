@@ -1,0 +1,3 @@
+## 2024-05-21 - Optimize O(N) list lookups in heartbeat event loop
+**Learning:** In `scripts/runtime/heartbeat/runner.py`, retrieving the matched node via `next((n for n in ready_nodes if n.node_id == node_id), None)` causes an O(N) lookup for every event. With many events and nodes, this is a significant bottleneck. Similarly, in `scripts/runtime/heartbeat/classifier.py`, using `sorted(ready_nodes)[0]` is O(N log N).
+**Action:** When working inside loops processing multiple events (like `_plan_dispatches`), convert static lists into dictionaries keyed by ID before the loop for O(1) lookups. For finding minimums/maximums, always prefer `min()`/`max()` over `sorted()[0]` to reduce complexity from O(N log N) to O(N).
