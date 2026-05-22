@@ -1,0 +1,4 @@
+## 2024-05-18 - Missing Webhook Authentication Fallback
+**Vulnerability:** The webhook intake server (`scripts/intake_server.py`) would "fail open" and return `True` (bypassing validation) if the `GITHUB_WEBHOOK_SECRET` environment variable was not configured. It also leaked sensitive information on invalid payloads by returning stack traces on `json.JSONDecodeError` or `sqlite3.Error`.
+**Learning:** Security controls like signature verification should default to "fail closed" (deny access). Any external input parsing or database interaction must gracefully handle exceptions to avoid leaking internal system states.
+**Prevention:** Always implement `False`/deny by default for missing security configurations. Wrap external inputs in defensive `try/except` blocks that return generic HTTP error codes (e.g., 400 for bad input, 500 for internal errors) without tracebacks.
