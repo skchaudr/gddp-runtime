@@ -1,0 +1,3 @@
+## 2025-02-28 - Optimize Event Processing O(N) Traps in Heartbeat
+**Learning:** Found two O(N) hidden traps inside loops: sorting lists simply to extract min values, and repeatedly searching lists using next((... for ... in ...)). With 1000 events and 1000 nodes, replacing sorted(...)[0] with min(...) and replacing linear scans with a pre-computed dictionary lookup produced measureable speedups, effectively dropping an O(E*N) bottleneck loop to O(1).
+**Action:** Always watch for list lookups inside event loops; convert constraint and lookup arrays to dicts ahead of looping whenever you have nested event iteration. Use `min()` over `sorted()` when only the extrema is needed.
