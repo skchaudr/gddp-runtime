@@ -1,0 +1,4 @@
+## 2024-05-23 - Missing Webhook Authentication Enforcement
+**Vulnerability:** The `/webhook` endpoint in `scripts/intake_server.py` bypassed signature verification when the `GITHUB_WEBHOOK_SECRET` environment variable was not configured. It defaulted to returning `True` for signature validation, allowing unauthenticated forged payloads to be inserted into the system.
+**Learning:** Security controls like authentication and signature verification must fail securely by default. Relying on an environment variable's presence to enforce a security mechanism can lead to bypass if the environment is misconfigured or intentionally left blank.
+**Prevention:** Always design authentication checks to be mandatory and return `False` or explicitly raise an exception when required configuration (like a secret) is missing, unless in explicitly mocked test environments.
