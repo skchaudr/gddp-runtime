@@ -1,0 +1,3 @@
+## 2024-05-19 - Using `min()` vs `sorted()` for Priority Nodes
+**Learning:** In Python, finding the minimum element by a key using `min()` is an $O(N)$ operation, while `sorted()[0]` is $O(N \log N)$. In `classifier.py`, optimizing priority node lookup to `min()` yields a small speedup. Interestingly, for arrays where many elements share identical priority keys, Python's Timsort algorithm makes `sorted()` unexpectedly fast (sometimes faster than `min()`), but on average/randomized data, `min()` is consistently better.
+**Action:** Use `min()` for finding extremes instead of `sorted()[0]`, but keep Timsort's efficiency in mind for partially sorted or heavily duplicated data.

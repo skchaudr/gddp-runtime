@@ -29,7 +29,8 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
 
     # Pick highest-priority ready node
     priority_order = {"high": 0, "normal": 1, "low": 2}
-    target = sorted(ready_nodes, key=lambda n: priority_order.get(n.priority, 1))[0]
+    # Bolt: Replaced O(N log N) sorted()[0] with O(N) min() for faster node priority lookup
+    target = min(ready_nodes, key=lambda n: priority_order.get(n.priority, 1))
 
     return {
         "category":                "implementation_request",
