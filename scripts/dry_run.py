@@ -9,13 +9,15 @@ No real executors are called. No GitHub API. SQLite only.
 """
 
 import json
+import os
 import sqlite3
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH     = Path(__file__).parent.parent / "db" / "queue.db"
-OPCLAW_ROOT = Path(__file__).parent.parent
+_default_root = Path(__file__).parent.parent
+RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -25,7 +27,7 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 def job_dir(job_id):
-    d = OPCLAW_ROOT / "jobs" / job_id
+    d = RUNTIME_ROOT / "jobs" / job_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -66,15 +68,16 @@ def inject_event(cur):
         "scope_status":             "pending",
         "priority":                 "pending",
         "risk_level":               "pending",
-        "raw_payload_path":         str(OPCLAW_ROOT / "events/raw/evt_dry_001.json"),
-        "normalized_payload_path":  str(OPCLAW_ROOT / "events/normalized/evt_dry_001.yaml"),
+        "raw_payload_path":         str(RUNTIME_ROOT / "events/raw/evt_dry_001.json"),
+        "normalized_payload_path":  str(RUNTIME_ROOT / "events/normalized/evt_dry_001.yaml"),
         "classification":           json.dumps({}),
         "routing":                  json.dumps({"selected_queue": "intake"}),
         "status":                   "received",
     }
 
     # Write raw payload stub
-    raw_path = OPCLAW_ROOT / "events/raw/evt_dry_001.json"
+    raw_path = RUNTIME_ROOT / "events/raw/evt_dry_001.json"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(json.dumps({"stub": "raw github webhook payload"}, indent=2))
 
     cur.execute("""
@@ -147,7 +150,7 @@ def create_job(cur, event_id):
     step("STEP 3 — Create job from node auth-boundary")
 
     job_id = "job_dry_001"
-    artifacts = str(OPCLAW_ROOT / "jobs" / job_id) + "/"
+    artifacts = str(RUNTIME_ROOT / "jobs" / job_id) + "/"
     job_dir(job_id)  # create folder
 
     job = {
@@ -209,7 +212,7 @@ def create_job(cur, event_id):
     cur.execute("UPDATE events SET status = 'mapped' WHERE event_id = ?", (event_id,))
 
     # Write job.yaml to artifact folder
-    (OPCLAW_ROOT / "jobs" / job_id / "job.yaml").write_text(
+    (RUNTIME_ROOT / "jobs" / job_id / "job.yaml").write_text(
         f"# Job artifact\njob_id: {job_id}\nnode_id: auth-boundary\nexecutor: jules\n"
     )
 
@@ -318,7 +321,7 @@ def verify_artifacts(cur, job_id):
             INSERT INTO artifact_verifications (
                 verification_id, job_id, node_id, artifact_type,
                 validation_method, verified, verified_at, verified_by, notes
-            ) VALUES (?, ?, 'auth-boundary', ?, 'file_exists', ?, ?, 'openclaw_validator', ?)
+            ) VALUES (?, ?, 'auth-boundary', ?, 'file_exists', ?, ?, 'runtime_validator', ?)
         """, (
             ver_id, job_id, artifact_type,
             1 if exists else 0,
@@ -385,7 +388,7 @@ def main():
     print("  DRY RUN COMPLETE")
     print("=" * 60)
     print(f"\n  DB    : {DB_PATH}")
-    print(f"  Jobs  : {OPCLAW_ROOT / 'jobs'}")
+    print(f"  Jobs  : {RUNTIME_ROOT / 'jobs'}")
     print()
 
 

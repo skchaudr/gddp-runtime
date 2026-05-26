@@ -208,6 +208,7 @@ python3 -m runtime.replay --job-id <job-id>
 | Variable | Purpose | Required |
 |---|---|---|
 | `GDDP_CONFIG_PATH` | Path to the sibling `gddp-config` repo for graph reads | Optional for local dev if sibling; required in deployment |
+| `GDDP_RUNTIME_ROOT` | Runtime state root for SQLite, events, and jobs; defaults to the repo root locally and `~/opclaw` in deployment | Optional for local dev; set by deployed service |
 | `GITHUB_TOKEN` or `GH_TOKEN` | GitHub API access for the Jules adapter (issue dispatch) | Required for Jules adapter |
 | `GITHUB_WEBHOOK_SECRET` | Webhook signature validation secret for `scripts/intake_server.py` | Optional |
 

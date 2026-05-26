@@ -23,6 +23,9 @@ Never treat `~/repos/gddp-runtime` and `~/opclaw/scripts` as peers.
 - Deployed scripts: `~/opclaw/scripts`
 - Deploy marker: `~/opclaw/.gddp-runtime-deploy.json`
 
+`GDDP_RUNTIME_ROOT` is the current environment variable for the runtime root.
+`OPCLAW_ROOT` remains a compatibility fallback for older local scripts.
+
 ## Active Service
 
 - Intake server: `opclaw-intake.service`

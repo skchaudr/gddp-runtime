@@ -41,11 +41,10 @@ from .state_recorder import (
     mark_job_running,
 )
 
-# OPCLAW_ROOT: set OPCLAW_ROOT env var on Pi to point to ~/opclaw
-# Falls back to the repo root for local dev (Mac)
+# GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
 _default_root = Path(__file__).parent.parent.parent.parent
-OPCLAW_ROOT = Path(os.environ.get("OPCLAW_ROOT", _default_root))
-DB_PATH = OPCLAW_ROOT / "db" / "queue.db"
+RUNTIME_ROOT = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH = RUNTIME_ROOT / "db" / "queue.db"
 
 
 @dataclass(frozen=True)
@@ -156,7 +155,7 @@ def _plan_dispatches(
             event,
             project_id,
             repo,
-            OPCLAW_ROOT,
+            RUNTIME_ROOT,
             classification["executor_recommendation"],
         )
         job_id = job["job_id"]

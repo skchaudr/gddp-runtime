@@ -1,34 +1,34 @@
-# OpenClaw v0 Spec
+# Runtime Decision Loop v0 Spec
 
 **Status:** Draft — v0
 **Last updated:** 2026-03-15
-**Module location:** `scripts/runtime/openclaw/`
+**Module location:** `scripts/runtime/decision_loop/`
 
 ---
 
 ## Purpose
 
-OpenClaw is the reasoning and control layer for the GDAD system. It is the part of the system that wakes up, reads the current state of the world, decides what to do next, acts, and goes back to sleep.
+The decision loop is the reasoning and control layer for the GDAD system. It is the part of the system that wakes up, reads the current state of the world, decides what to do next, acts, and goes back to sleep.
 
-Without OpenClaw, the GDAD system has no persistent intelligence. Jules executes work. The gddp-runtime dispatches jobs and records results. But nothing is deciding *what to do next* or *whether the work was good enough*. OpenClaw fills that gap.
+Without the decision loop, the GDAD system has no persistent intelligence. Jules executes work. The gddp-runtime dispatches jobs and records results. But nothing is deciding *what to do next* or *whether the work was good enough*. The decision loop fills that gap.
 
 **System roles:**
 - Jules = hands (executes coding work, cannot run in a loop)
-- gddp-runtime = nervous system (dispatch, webhook intake, SQLite, graph reads/writes)
-- OpenClaw = brain (reads state, reasons, decides, acts, escalates)
+- gddp-runtime = nervous system (dispatch, webhook intake, SQLite, graph reads, receipt writes)
+- decision loop = brain (reads state, reasons, decides, acts, escalates)
 
 ---
 
 ## Trigger Model
 
-OpenClaw is **event-driven, not always-on**. It wakes up, makes a decision, acts, and exits.
+The decision loop is **event-driven, not always-on**. It wakes up, makes a decision, acts, and exits.
 
 Two trigger sources:
 
 1. **Webhook trigger** — fires immediately when Jules opens or merges a PR
    - Event type: `pull_request.opened` or `pull_request.closed` (merged)
-   - Routed by the classifier with `route="openclaw"`
-   - Fastest path: OpenClaw responds to Jules's actions in near-real-time
+   - Routed by the classifier with `route="decision_loop"`
+   - Fastest path: The decision loop responds to Jules's actions in near-real-time
 
 2. **Cron fallback** — runs every 15–30 minutes
    - Detects stuck or stalled Jules sessions
@@ -41,7 +41,7 @@ Two trigger sources:
 
 ## Context Window
 
-When OpenClaw wakes, it reads three sources to build its context:
+When the decision loop wakes, it reads three sources to build its context:
 
 ### 1. gddp-config graph YAML
 
@@ -69,7 +69,7 @@ The trigger itself — either:
 
 ## Decision Logic
 
-OpenClaw reads context and selects exactly one action per cycle. The decision follows this priority order:
+The decision loop reads context and selects exactly one action per cycle. The decision follows this priority order:
 
 1. **Is there a stale state to clean up?** (jobs showing "running" for > 6 hours, events showing "received" for > 6 hours) → mark them failed/expired in SQLite, then re-evaluate
 2. **Did a PR just merge?** → run `review_pr` to validate it, then `accept_node` if it passes
@@ -77,7 +77,7 @@ OpenClaw reads context and selects exactly one action per cycle. The decision fo
 4. **Is there a node that has been in_progress too long?** (> 24 hours with no result) → run `escalate`
 5. **Is everything either complete or blocked with no obvious action?** → run `escalate` or exit cleanly
 
-OpenClaw must not dispatch if a Jules job is already in_progress for that project (one active job per project at a time).
+The decision loop must not dispatch if a Jules job is already in_progress for that project (one active job per project at a time).
 
 ---
 
@@ -120,23 +120,23 @@ Reads Jules's submitted PR via GitHub API and evaluates whether it meets the nod
 {"action": "review_pr", "node_id": "...", "pr": 51, "verdict": "pass"|"fail", "reason": "...", "ok": true}
 ```
 
-If verdict is `pass`, OpenClaw proceeds to `accept_node`.
-If verdict is `fail`, OpenClaw posts a review comment on the PR with specific feedback and writes a result row with `status=review_failed`.
+If verdict is `pass`, the decision loop proceeds to `accept_node`.
+If verdict is `fail`, the decision loop posts a review comment on the PR with specific feedback and writes a result row with `status=review_failed`.
 
 ### 3. `accept_node`
 
-Marks a node complete after validating the PR met expectations.
+Creates a review receipt after validating the PR met expectations.
 
 **Prerequisite:** `review_pr` returned `verdict: pass`
 
 **Action:**
-- Call `graph_updater.update_graph_node_complete()` — sets status=complete in the graph YAML via GitHub Contents API
-- Write a result row to SQLite with `status=completed`
-- Optionally trigger the next dispatch cycle immediately (within same wake cycle)
+- Write a result row to SQLite with `status=acceptance_candidate`
+- Include the node id, PR number, commit SHA, and review evidence needed by the operator
+- Stop before mutating graph truth; human review decides whether `gddp-config` changes
 
 **Output:**
 ```json
-{"action": "accept_node", "node_id": "...", "commit_sha": "...", "ok": true}
+{"action": "accept_node", "node_id": "...", "commit_sha": "...", "status": "acceptance_candidate", "ok": true}
 ```
 
 ### 4. `escalate`
@@ -147,7 +147,7 @@ Flags a blocked or unexpected state. Notifies the human and writes a record.
 - A node has been in_progress > 24 hours with no PR
 - `review_pr` failed twice for the same node
 - No eligible nodes exist but the project is not complete
-- OpenClaw cannot parse the graph or context (data integrity issue)
+- The decision loop cannot parse the graph or context (data integrity issue)
 - Unexpected error during any action
 
 **Action (v0):**
@@ -164,7 +164,7 @@ Flags a blocked or unexpected state. Notifies the human and writes a record.
 
 ## Output Format
 
-Every OpenClaw decision is written as a structured JSON object. This is the contract between OpenClaw and gddp-runtime.
+Every decision loop result is written as a structured JSON object. This is the contract between the decision loop and gddp-runtime.
 
 ```json
 {
@@ -185,7 +185,7 @@ The result is:
 
 ## Failure Modes
 
-| Failure | OpenClaw behavior |
+| Failure | Decision loop behavior |
 |---|---|
 | Cannot read graph YAML | `escalate` with reason: graph_read_failed |
 | Graph YAML malformed | `escalate` with reason: graph_parse_failed |
@@ -196,7 +196,7 @@ The result is:
 | Two jobs dispatched simultaneously | Should not happen — checked before dispatch. If detected: `escalate` |
 | Unexpected exception | Catch at top level, `escalate` with traceback in reason |
 
-OpenClaw must never silently swallow errors. Every failure writes a result row and a log line.
+The decision loop must never silently swallow errors. Every failure writes a result row and a log line.
 
 ---
 
@@ -208,7 +208,7 @@ Escalate immediately (do not attempt recovery) when:
 2. SQLite is inaccessible
 3. The same node has failed review more than once
 4. A job has been in_progress for more than 24 hours
-5. OpenClaw detects conflicting state (e.g., a node marked complete but a job still in_progress for it)
+5. The decision loop detects conflicting state (e.g., a node marked complete but a job still in_progress for it)
 6. Any unhandled exception in the decision loop
 
 Escalate after retry when:
@@ -225,7 +225,7 @@ The SQLite database may contain stale rows from before the webhook was live:
 - Jobs with `status=running` that were never completed
 - Events with `status=received` that were never processed
 
-On first wake, OpenClaw should:
+On first wake, the decision loop should:
 1. Query for any jobs with `status=running` and `created_at < now - 6 hours`
 2. Mark them `status=expired` with `reason=stale_on_boot`
 3. Query for any events with `status=received` and `created_at < now - 6 hours`
@@ -238,10 +238,10 @@ This ensures stale state doesn't trigger false dispatches or reviews.
 
 ## Runtime Architecture
 
-**Module location:** `scripts/runtime/openclaw/`
+**Module location:** `scripts/runtime/decision_loop/`
 
 ```
-scripts/runtime/openclaw/
+scripts/runtime/decision_loop/
   __init__.py
   engine.py          — main decision loop: read context, decide, act
   context_reader.py  — reads graph YAML + SQLite state + current event
@@ -249,17 +249,17 @@ scripts/runtime/openclaw/
     __init__.py
     dispatch_next.py  — creates GitHub issue for Jules
     review_pr.py      — reads PR via GitHub API, evaluates acceptance
-    accept_node.py    — calls graph_updater, writes result row
+    accept_node.py    — writes receipt/proposed acceptance result
     escalate.py       — writes escalation record, logs
 ```
 
 **Entry points:**
-- Called by webhook router: `from runtime.openclaw.engine import handle_event; handle_event(event_payload)`
-- Called by cron handler: `from runtime.openclaw.engine import handle_cron; handle_cron()`
+- Called by webhook router: `from runtime.decision_loop.engine import handle_event; handle_event(event_payload)`
+- Called by cron handler: `from runtime.decision_loop.engine import handle_cron; handle_cron()`
 
 **Environment variables required:**
-- `GITHUB_TOKEN` — PAT scoped to gddp-config contents:write
-- `OPCLAW_ROOT` — path to SQLite DB and jobs directory (~/opclaw/ on Pi)
+- `GITHUB_TOKEN` — token used for GitHub issue/PR APIs
+- `GDDP_RUNTIME_ROOT` — path to SQLite DB and jobs directory; legacy `OPCLAW_ROOT` is accepted as a compatibility fallback
 - `GDDP_CONFIG_PATH` — path to gddp-config repo clone on Pi
 
 ---
@@ -270,6 +270,6 @@ scripts/runtime/openclaw/
 - **One active job per project.** No parallel dispatch.
 - **One PR closes one node.** No multi-node PR handling.
 - **No retries inside a power.** Retry logic belongs in escalate at the engine level only.
-- **No always-on loop.** OpenClaw wakes, decides, acts, exits.
+- **No always-on loop.** The decision loop wakes, decides, acts, exits.
 - **No UI.** Output is JSON + logs only.
 - **No Telegram/WhatsApp in v0.** Escalate writes to SQLite and logs. Notifications are future scope.
