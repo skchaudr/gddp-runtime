@@ -47,7 +47,7 @@ Top-level structure:
 
 What works:
 
-- Runtime tests pass locally: `python3 -m pytest -q` -> `40 passed`.
+- Runtime tests pass locally: `python3 -m pytest -q` -> `42 passed`.
 - `scripts/init_db.py` initializes the SQLite schema.
 - `scripts/intake_server.py` handles GitHub webhook intake and optional `GITHUB_WEBHOOK_SECRET` signature validation.
 - `scripts/runtime/heartbeat/runner.py` is the canonical graph-driven heartbeat entrypoint.
@@ -177,5 +177,5 @@ Files/dirs to skip:
 
 Verification already run during this handoff:
 
-- `gddp-runtime`: `python3 -m pytest -q` -> `40 passed`.
+- `gddp-runtime`: `python3 -m pytest -q` -> `42 passed`.
 - `gddp-config`: Python/YAML parse pass over graphs, schemas, and templates -> `parsed 24 yaml files`.

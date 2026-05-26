@@ -58,7 +58,7 @@ This is not a demo. It runs on a live Raspberry Pi control plane, managing work 
 - **Schema-driven architecture**: Project graphs, nodes, jobs, and results follow explicit YAML schemas in the config repository. The runtime reads those schemas; it does not invent its own structure.
 - **Frozen boundaries**: This phase is intentionally frozen at receipt routing plus human review. The system does not attempt richer graph states, auto-review logic, or fully autonomous graph state machines. It stops at a stable contract and documents what is incomplete.
 - **Replay and rollback**: Runtime state is replayable. `python3 -m runtime.replay --result-id <id>` recreates receipt/state routing for a recorded return event. `python3 -m runtime.replay --job-id <id>` re-dispatches a specific job after explicit operator confirmation.
-- **Test coverage**: 40 passing tests covering intake, heartbeat modules, state recording, executor adapters, and return routing.
+- **Test coverage**: 42 passing tests covering intake, heartbeat modules, state recording, executor adapters, return routing, and runtime-root configuration.
 - **Operational hardening**: The live deployment has systemd service units, GitHub webhook signature validation (`GITHUB_WEBHOOK_SECRET`), and a documented review workflow. This is not a prototype running in a tmux session.
 
 ---
@@ -169,7 +169,7 @@ The `--config-path` flag is optional for local development if `gddp-config` is a
 python3 -m pytest -q
 ```
 
-Expected: 40 passing tests.
+Expected: 42 passing tests.
 
 ---
 
@@ -252,7 +252,7 @@ This phase is intentionally frozen at receipt routing plus human review.
 
 ## Status
 
-- **Tests**: 40 passing (`python3 -m pytest -q`)
+- **Tests**: 42 passing (`python3 -m pytest -q`)
 - **Live deployment**: Running on a Raspberry Pi control plane with systemd service units, webhook intake, and manual review workflow
 - **Graph projects**: `vault-doctor` (7/7 nodes complete), `gddp-runtime` (1/1 nodes complete)
 - **Current phase**: Frozen at receipt routing plus human review

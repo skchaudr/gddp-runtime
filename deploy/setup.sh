@@ -15,7 +15,7 @@ echo "=== GDAD Runtime Setup ==="
 mkdir -p "$RUNTIME_ROOT"/{db,events/{raw,normalized},jobs,scripts/adapters}
 echo "  directories: ok"
 
-# 2. Deploy the current repo snapshot into ~/opclaw/scripts
+# 2. Deploy the current repo snapshot into the runtime scripts dir
 bash "$SCRIPT_DIR/deploy/deploy.sh"
 echo "  scripts + marker: ok"
 
