@@ -1,0 +1,291 @@
+diff --git a/scripts/runtime/decision_loop/context_reader.py b/scripts/runtime/decision_loop/context_reader.py
+index 01ab9b4..6ece5b3 100644
+--- a/scripts/runtime/decision_loop/context_reader.py
++++ b/scripts/runtime/decision_loop/context_reader.py
+@@ -78,11 +78,14 @@ def read_recent_activity(con: sqlite3.Connection, project_id: str) -> RecentActi
+     )
+     active_jobs = [dict(row) for row in cur.fetchall()]
+ 
+-    # Recent results (last 20)
+-    cur.execute(
+-        "SELECT * FROM return_results ORDER BY created_at DESC LIMIT 20"
+-    )
+-    recent_results = [dict(row) for row in cur.fetchall()]
++    # Recent results (last 20) — read from results table (executor return receipts)
++    try:
++        cur.execute(
++            "SELECT * FROM results ORDER BY received_at DESC LIMIT 20"
++        )
++        recent_results = [dict(row) for row in cur.fetchall()]
++    except Exception:
++        recent_results = []
+ 
+     # Stale jobs: running for more than 6 hours
+     cur.execute("""
+diff --git a/scripts/runtime/decision_loop/engine.py b/scripts/runtime/decision_loop/engine.py
+index c820ce2..68eb7d9 100644
+--- a/scripts/runtime/decision_loop/engine.py
++++ b/scripts/runtime/decision_loop/engine.py
+@@ -22,7 +22,7 @@ from ..results_store import write_result
+ from .context_reader import read_context, DecisionContext
+ from .powers import dispatch_next
+ from .powers.escalate import run as escalate
+-from .schema import DecisionResult, NoOpResult
++from .schema import DecisionResult, DispatchResult, NoOpResult
+ 
+ logger = logging.getLogger("decision_loop.engine")
+ 
+@@ -82,18 +82,16 @@ def _check_stuck_jobs(ctx: DecisionContext) -> bool:
+     return False
+ 
+ 
+-def _write_decision_result(result: DecisionResult, project_id: str) -> None:
+-    """Persist the decision to SQLite results table."""
++def _write_dispatch_result(result: DispatchResult) -> None:
++    """Persist a successful dispatch to the results table (job_id required by schema)."""
+     import uuid
+     result_id = f"dl_{uuid.uuid4().hex[:8]}"
+-    result_dict = result.model_dump()
+-
+     write_result(
+         result_id=result_id,
+-        repo_name=project_id,
+-        node_id=result_dict.get("node_id"),
+-        status=result_dict["action"],
+-        reason=result_dict.get("reason"),
++        job_id=result.job_id,
++        executor="jules",
++        outcome="dispatched",
++        status="dispatched",
+     )
+ 
+ 
+@@ -111,9 +109,7 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
+     try:
+         reader = GraphReader(config_path=config_path)
+     except FileNotFoundError as e:
+-        result = escalate(reason=f"graph_read_failed: {e}", project_id=project_id)
+-        _write_decision_result(result, project_id)
+-        return result
++        return escalate(reason=f"graph_read_failed: {e}", project_id=project_id)
+ 
+     con = _connect()
+ 
+@@ -125,13 +121,19 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
+         try:
+             ctx = read_context(reader, con, project_id, trigger)
+         except Exception as e:
+-            result = escalate(reason=f"context_read_failed: {e}", project_id=project_id)
+-            _write_decision_result(result, project_id)
++            return escalate(reason=f"context_read_failed: {e}", project_id=project_id)
++
++        # Step 3: Decision logic — priority order per spec:
++        # stale cleanup (done above) → dispatch next → stuck job → escalate
++
++        # 3a. Eligible node to dispatch?
++        if ctx.project.pending_nodes:
++            result = dispatch_next.run(ctx, con)
++            if isinstance(result, DispatchResult):
++                _write_dispatch_result(result)
+             return result
+ 
+-        # Step 3: Decision logic (priority order from spec)
+-
+-        # 3a. Stuck job?
++        # 3b. Stuck job?
+         if _check_stuck_jobs(ctx):
+             stuck_job = ctx.activity.active_jobs[0]
+             result = escalate(
+@@ -139,13 +141,6 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
+                 node_id=stuck_job.get("node_id"),
+                 project_id=project_id,
+             )
+-            _write_decision_result(result, project_id)
+-            return result
+-
+-        # 3b. Eligible node to dispatch?
+-        if ctx.project.pending_nodes:
+-            result = dispatch_next.run(ctx)
+-            _write_decision_result(result, project_id)
+             return result
+ 
+         # 3c. All nodes complete?
+@@ -157,7 +152,6 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
+                 reason=f"project_complete: all {total} nodes are complete",
+                 ok=True,
+             )
+-            _write_decision_result(result, project_id)
+             return result
+ 
+         # 3d. Nothing actionable
+@@ -166,14 +160,11 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
+             reason="nothing_actionable: no pending nodes with met dependencies",
+             ok=True,
+         )
+-        _write_decision_result(result, project_id)
+         return result
+ 
+     except Exception as e:
+         logger.exception("Unhandled exception in decision loop")
+-        result = escalate(reason=f"unhandled_exception: {e}", project_id=project_id)
+-        _write_decision_result(result, project_id)
+-        return result
++        return escalate(reason=f"unhandled_exception: {e}", project_id=project_id)
+     finally:
+         con.close()
+ 
+diff --git a/scripts/runtime/decision_loop/powers/dispatch_next.py b/scripts/runtime/decision_loop/powers/dispatch_next.py
+index 38f74e5..b0cede9 100644
+--- a/scripts/runtime/decision_loop/powers/dispatch_next.py
++++ b/scripts/runtime/decision_loop/powers/dispatch_next.py
+@@ -5,9 +5,12 @@ Eligible = status pending + all depends_on complete + no active job for this pro
+ """
+ 
+ import json
++import sqlite3
+ import subprocess
++from datetime import datetime, timezone
+ from typing import Optional
+ 
++from ...heartbeat.state_recorder import insert_job, insert_queue_record
+ from ..context_reader import DecisionContext
+ from ..schema import DispatchResult, EscalateResult
+ 
+@@ -71,11 +74,12 @@ This block is parsed by the GDAD return router to create a review receipt when t
+ """
+ 
+ 
+-def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
++def run(ctx: DecisionContext, con: sqlite3.Connection) -> DispatchResult | EscalateResult:
+     """
+     Decide whether to dispatch and do it.
+ 
+     Returns DispatchResult on success, EscalateResult if blocked or failed.
++    Writes a job row to SQLite on successful dispatch.
+     """
+     # Guard: no dispatch if a job is already active
+     if _has_active_job(ctx):
+@@ -129,10 +133,38 @@ def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
+         issue_url = result.stdout.strip()
+         issue_number = int(issue_url.rstrip("/").split("/")[-1])
+ 
++        # Write job row so return_router can find it and active-job guard stays valid
++        now = datetime.now(timezone.utc).isoformat()
++        job_row = {
++            "job_id": job_id,
++            "created_at": now,
++            "event_id": None,
++            "project_id": ctx.project.project_id,
++            "repo": ctx.project.repo,
++            "node_id": node_id,
++            "job_type": "implementation",
++            "executor": "jules",
++            "queue_state": "dispatched",
++            "title": title,
++            "goal": node.why,
++            "why": node.why,
++            "constraints": json.dumps(node.constraints),
++            "acceptance_criteria": json.dumps(node.acceptance),
++            "priority": node.priority,
++            "status": "dispatched",
++            "attempt": 1,
++            "max_attempts": 3,
++            "artifacts_dir": None,
++        }
++        insert_job(con, job_row)
++        insert_queue_record(con, job_id)
++        con.commit()
++
+         return DispatchResult(
+             action="dispatch_next",
+             node_id=node_id,
+             project_id=ctx.project.project_id,
++            job_id=job_id,
+             issue_number=issue_number,
+             issue_url=issue_url,
+             ok=True,
+diff --git a/scripts/runtime/decision_loop/schema.py b/scripts/runtime/decision_loop/schema.py
+index 920fb99..7543b7c 100644
+--- a/scripts/runtime/decision_loop/schema.py
++++ b/scripts/runtime/decision_loop/schema.py
+@@ -14,6 +14,7 @@ class DispatchResult(BaseModel):
+     action: Literal["dispatch_next"]
+     node_id: str
+     project_id: str
++    job_id: str
+     issue_number: int
+     issue_url: str
+     ok: Literal[True]
+diff --git a/scripts/runtime/decision_loop/test_decision_loop.py b/scripts/runtime/decision_loop/test_decision_loop.py
+index 28f1f18..7be8f52 100644
+--- a/scripts/runtime/decision_loop/test_decision_loop.py
++++ b/scripts/runtime/decision_loop/test_decision_loop.py
+@@ -85,16 +85,36 @@ def in_memory_db():
+         )
+     """)
+     con.execute("""
+-        CREATE TABLE return_results (
+-            id TEXT PRIMARY KEY,
+-            repo_name TEXT NOT NULL,
+-            node_id TEXT,
+-            pr_number INTEGER,
+-            merged_at TEXT,
++        CREATE TABLE results (
++            result_id TEXT PRIMARY KEY,
++            schema_version TEXT NOT NULL DEFAULT '1.0',
++            job_id TEXT NOT NULL,
++            executor TEXT NOT NULL,
++            received_at TEXT NOT NULL,
++            execution_duration_seconds INTEGER,
++            outcome TEXT NOT NULL,
+             status TEXT NOT NULL,
+-            reason TEXT,
+-            commit_sha TEXT,
+-            created_at TEXT NOT NULL
++            changed_files TEXT,
++            patch_path TEXT,
++            summary_path TEXT,
++            logs_path TEXT,
++            acceptance_check TEXT,
++            risks TEXT,
++            followup_candidates TEXT,
++            github_action TEXT
++        )
++    """)
++    con.execute("""
++        CREATE TABLE queue_records (
++            queue_item_id TEXT PRIMARY KEY,
++            schema_version TEXT NOT NULL DEFAULT '1.0',
++            job_id TEXT NOT NULL,
++            queue TEXT NOT NULL,
++            available_at TEXT NOT NULL,
++            lease_owner TEXT,
++            lease_expires_at TEXT,
++            retry_count INTEGER DEFAULT 0,
++            last_error TEXT
+         )
+     """)
+     con.commit()
+@@ -150,7 +170,7 @@ def test_dispatch_blocked_when_job_active(mock_graph_reader, in_memory_db):
+     ctx = read_context(mock_graph_reader, in_memory_db, "test-project", {"event": "cron"})
+ 
+     from .powers.dispatch_next import run as dispatch_run
+-    result = dispatch_run(ctx)
++    result = dispatch_run(ctx, in_memory_db)
+ 
+     assert isinstance(result, EscalateResult)
+     assert "active job" in result.reason
+@@ -181,11 +201,13 @@ def test_dispatch_result_accepts_good_data():
+         action="dispatch_next",
+         node_id="node-b",
+         project_id="test-project",
++        job_id="job_abc12345",
+         issue_number=42,
+         issue_url="https://github.com/skchaudr/test-project/issues/42",
+         ok=True,
+     )
+     assert result.issue_number == 42
++    assert result.job_id == "job_abc12345"
+     assert result.model_dump()["action"] == "dispatch_next"
+ 
+ 
