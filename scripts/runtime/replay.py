@@ -39,10 +39,10 @@ except ImportError:
     from runtime import return_router
     from runtime.heartbeat import dispatcher, state_recorder
 
-# OPCLAW_ROOT: set env var on Pi to ~/opclaw, falls back to repo root for local dev
+# GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
 _default_root = Path(__file__).parent.parent.parent
-OPCLAW_ROOT = Path(os.environ.get("OPCLAW_ROOT", _default_root))
-DB_PATH = OPCLAW_ROOT / "db" / "queue.db"
+RUNTIME_ROOT = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH = RUNTIME_ROOT / "db" / "queue.db"
 
 def connect():
     con = sqlite3.connect(DB_PATH)

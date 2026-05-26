@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=sab-ssd
 WorkingDirectory=/home/sab-ssd/opclaw
+Environment=GDDP_RUNTIME_ROOT=/home/sab-ssd/opclaw
 ExecStart=/usr/bin/python3 /home/sab-ssd/opclaw/scripts/intake_server.py
 Restart=always
 RestartSec=5

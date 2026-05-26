@@ -17,6 +17,7 @@ What it does:
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -25,15 +26,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from adapters.jules_action_adapter import JulesActionAdapter
 
-DB_PATH     = Path(__file__).parent.parent / "db" / "queue.db"
-OPCLAW_ROOT = Path(__file__).parent.parent
+_default_root = Path(__file__).parent.parent
+RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 
 def now():
     return datetime.now(timezone.utc).isoformat()
 
 def job_dir(job_id: str) -> Path:
-    d = OPCLAW_ROOT / "jobs" / job_id
+    d = RUNTIME_ROOT / "jobs" / job_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 

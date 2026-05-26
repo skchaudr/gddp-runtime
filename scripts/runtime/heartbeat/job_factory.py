@@ -24,11 +24,11 @@ def build_job(
     event: sqlite3.Row,
     project_id: str,
     repo: str,
-    opclaw_root: Path,
+    runtime_root: Path,
     executor: str,
 ) -> dict:
     job_id = f"job_{ts_id()}"
-    artifacts_dir = opclaw_root / "jobs" / job_id
+    artifacts_dir = runtime_root / "jobs" / job_id
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     return {

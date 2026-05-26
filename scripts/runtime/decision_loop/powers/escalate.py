@@ -11,7 +11,7 @@ from typing import Optional
 
 from ..schema import EscalateResult
 
-logger = logging.getLogger("openclaw.escalate")
+logger = logging.getLogger("decision_loop.escalate")
 
 
 def run(

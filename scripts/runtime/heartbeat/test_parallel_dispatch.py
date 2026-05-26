@@ -178,18 +178,18 @@ def _write_graph(config_root: Path) -> None:
 @pytest.fixture
 def test_env(tmp_path, monkeypatch):
     db_path = tmp_path / "queue.db"
-    opclaw_root = tmp_path / "opclaw"
-    opclaw_root.mkdir()
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
     config_root = tmp_path / "config"
 
     _init_db(db_path)
 
     monkeypatch.setattr(runner, "DB_PATH", db_path)
-    monkeypatch.setattr(runner, "OPCLAW_ROOT", opclaw_root)
+    monkeypatch.setattr(runner, "RUNTIME_ROOT", runtime_root)
 
     return {
         "db_path": db_path,
-        "opclaw_root": opclaw_root,
+        "runtime_root": runtime_root,
         "config_root": config_root,
     }
 

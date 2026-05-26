@@ -2,7 +2,7 @@
 intake_server.py — Webhook intake server for Phase 3.
 
 Receives raw GitHub webhooks, normalizes them, writes to events table.
-Raw payloads are saved to ~/opclaw-test/events/raw/ for auditing.
+Raw payloads are saved under the runtime state root for auditing.
 
 Run:
     python3 scripts/intake_server.py
@@ -23,8 +23,9 @@ from pathlib import Path
 
 from flask import Flask, request, jsonify
 
-DB_PATH     = Path(__file__).parent.parent / "db" / "queue.db"
-OPCLAW_ROOT = Path(__file__).parent.parent
+_default_root = Path(__file__).parent.parent
+RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 # Optional: set GITHUB_WEBHOOK_SECRET env var to validate signatures
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -134,7 +135,7 @@ def webhook():
     payload = json.loads(payload_bytes)
 
     # 2. Save raw payload to disk (always, regardless of type)
-    raw_dir = OPCLAW_ROOT / "events" / "raw"
+    raw_dir = RUNTIME_ROOT / "events" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_ts   = now().replace(":", "").replace("-", "")[:19]
     safe_event_type = os.path.basename(gh_event_type)
@@ -150,7 +151,7 @@ def webhook():
 
     event["raw_payload_path"]        = str(raw_file)
     event["normalized_payload_path"] = str(
-        OPCLAW_ROOT / "events" / "normalized" / f"{event['event_id']}.yaml"
+        RUNTIME_ROOT / "events" / "normalized" / f"{event['event_id']}.yaml"
     )
 
     # 4. Insert into events table

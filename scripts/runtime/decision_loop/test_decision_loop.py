@@ -1,6 +1,4 @@
-"""
-Tests for OpenClaw v0 — context reader, dispatch blocking, and escalation.
-"""
+"""Tests for the runtime decision loop."""
 
 import sqlite3
 import tempfile
@@ -11,7 +9,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from .context_reader import read_project_state, read_recent_activity, ProjectState, RecentActivity
-from .schema import DispatchResult, EscalateResult, NoOpResult, OpenClawResult
+from .schema import DispatchResult, EscalateResult, NoOpResult, DecisionResult
 from .powers.escalate import run as escalate
 
 
@@ -63,7 +61,7 @@ def mock_graph_reader():
 
 @pytest.fixture
 def in_memory_db():
-    """SQLite in-memory DB with the tables OpenClaw needs."""
+    """SQLite in-memory DB with the tables the decision loop needs."""
     con = sqlite3.connect(":memory:")
     con.row_factory = sqlite3.Row
 

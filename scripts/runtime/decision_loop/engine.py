@@ -1,5 +1,5 @@
 """
-engine.py — OpenClaw v0 decision loop.
+engine.py - runtime decision loop.
 
 Wake → read context → decide → act → write result → exit.
 
@@ -19,17 +19,17 @@ from pathlib import Path
 
 from ..heartbeat.graph_reader import GraphReader
 from ..results_store import write_result
-from .context_reader import read_context, OpenClawContext
+from .context_reader import read_context, DecisionContext
 from .powers import dispatch_next
 from .powers.escalate import run as escalate
-from .schema import OpenClawResult, NoOpResult
+from .schema import DecisionResult, NoOpResult
 
-logger = logging.getLogger("openclaw.engine")
+logger = logging.getLogger("decision_loop.engine")
 
 # Environment
 _default_root = Path(__file__).parent.parent.parent.parent
-OPCLAW_ROOT = Path(os.environ.get("OPCLAW_ROOT", _default_root))
-DB_PATH = OPCLAW_ROOT / "db" / "queue.db"
+RUNTIME_ROOT = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH = RUNTIME_ROOT / "db" / "queue.db"
 
 
 def _connect() -> sqlite3.Connection:
@@ -66,7 +66,7 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
     return cleaned
 
 
-def _check_stuck_jobs(ctx: OpenClawContext) -> bool:
+def _check_stuck_jobs(ctx: DecisionContext) -> bool:
     """Check if any active job has been running > 24 hours."""
     for job in ctx.activity.active_jobs:
         created = job.get("created_at", "")
@@ -82,10 +82,10 @@ def _check_stuck_jobs(ctx: OpenClawContext) -> bool:
     return False
 
 
-def _write_openclaw_result(result: OpenClawResult, project_id: str) -> None:
+def _write_decision_result(result: DecisionResult, project_id: str) -> None:
     """Persist the decision to SQLite results table."""
     import uuid
-    result_id = f"oc_{uuid.uuid4().hex[:8]}"
+    result_id = f"dl_{uuid.uuid4().hex[:8]}"
     result_dict = result.model_dump()
 
     write_result(
@@ -97,22 +97,22 @@ def _write_openclaw_result(result: OpenClawResult, project_id: str) -> None:
     )
 
 
-def handle_event(trigger: dict, project_id: str, config_path: str = None) -> OpenClawResult:
+def handle_event(trigger: dict, project_id: str, config_path: str = None) -> DecisionResult:
     """
     Main entry point — called by webhook router or cron.
 
     Args:
-        trigger: The event that woke OpenClaw (webhook payload summary or cron signal)
+        trigger: The event that woke the decision loop
         project_id: Which project graph to read
         config_path: Override path to gddp-config (uses env var otherwise)
     """
-    logger.info("OpenClaw woke: trigger=%s project=%s", trigger.get("event", "unknown"), project_id)
+    logger.info("Decision loop woke: trigger=%s project=%s", trigger.get("event", "unknown"), project_id)
 
     try:
         reader = GraphReader(config_path=config_path)
     except FileNotFoundError as e:
         result = escalate(reason=f"graph_read_failed: {e}", project_id=project_id)
-        _write_openclaw_result(result, project_id)
+        _write_decision_result(result, project_id)
         return result
 
     con = _connect()
@@ -126,7 +126,7 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Ope
             ctx = read_context(reader, con, project_id, trigger)
         except Exception as e:
             result = escalate(reason=f"context_read_failed: {e}", project_id=project_id)
-            _write_openclaw_result(result, project_id)
+            _write_decision_result(result, project_id)
             return result
 
         # Step 3: Decision logic (priority order from spec)
@@ -139,13 +139,13 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Ope
                 node_id=stuck_job.get("node_id"),
                 project_id=project_id,
             )
-            _write_openclaw_result(result, project_id)
+            _write_decision_result(result, project_id)
             return result
 
         # 3b. Eligible node to dispatch?
         if ctx.project.pending_nodes:
             result = dispatch_next.run(ctx)
-            _write_openclaw_result(result, project_id)
+            _write_decision_result(result, project_id)
             return result
 
         # 3c. All nodes complete?
@@ -157,7 +157,7 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Ope
                 reason=f"project_complete: all {total} nodes are complete",
                 ok=True,
             )
-            _write_openclaw_result(result, project_id)
+            _write_decision_result(result, project_id)
             return result
 
         # 3d. Nothing actionable
@@ -166,19 +166,19 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Ope
             reason="nothing_actionable: no pending nodes with met dependencies",
             ok=True,
         )
-        _write_openclaw_result(result, project_id)
+        _write_decision_result(result, project_id)
         return result
 
     except Exception as e:
-        logger.exception("Unhandled exception in OpenClaw engine")
+        logger.exception("Unhandled exception in decision loop")
         result = escalate(reason=f"unhandled_exception: {e}", project_id=project_id)
-        _write_openclaw_result(result, project_id)
+        _write_decision_result(result, project_id)
         return result
     finally:
         con.close()
 
 
-def handle_cron(project_id: str, config_path: str = None) -> OpenClawResult:
+def handle_cron(project_id: str, config_path: str = None) -> DecisionResult:
     """Cron entry point — same logic, cron trigger."""
     trigger = {
         "event": "cron",

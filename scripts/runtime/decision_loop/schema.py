@@ -1,7 +1,7 @@
 """
-schema.py — Pydantic models enforcing OpenClaw's output contract.
+schema.py - Pydantic models enforcing the decision loop output contract.
 
-Every decision OpenClaw makes passes through one of these models.
+Every decision loop result passes through one of these models.
 If the shape is wrong, Pydantic raises immediately — no bad data reaches
 SQLite or the graph.
 """
@@ -28,7 +28,7 @@ class EscalateResult(BaseModel):
 
 
 class ReviewResult(BaseModel):
-    """v0 placeholder — review_pr power ships in openclaw-v0-review-gate."""
+    """v0 placeholder - review_pr ships in the review-gate node."""
     action: Literal["review_pr"]
     node_id: str
     pr_number: int
@@ -38,7 +38,7 @@ class ReviewResult(BaseModel):
 
 
 class AcceptResult(BaseModel):
-    """v0 placeholder — accept_node power ships in openclaw-v0-review-gate."""
+    """v0 placeholder - accept_node ships in the review-gate node."""
     action: Literal["accept_node"]
     node_id: str
     commit_sha: str
@@ -52,5 +52,5 @@ class NoOpResult(BaseModel):
     ok: Literal[True]
 
 
-# Union of all valid OpenClaw outputs
-OpenClawResult = DispatchResult | EscalateResult | ReviewResult | AcceptResult | NoOpResult
+# Union of all valid decision loop outputs
+DecisionResult = DispatchResult | EscalateResult | ReviewResult | AcceptResult | NoOpResult

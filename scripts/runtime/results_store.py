@@ -11,9 +11,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# OPCLAW_ROOT: set env var on Pi to ~/opclaw, falls back to repo root for local dev
+# GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
 _default_root = Path(__file__).parent.parent.parent
-DB_PATH = Path(os.environ.get("OPCLAW_ROOT", _default_root)) / "db" / "queue.db"
+RUNTIME_ROOT = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH = RUNTIME_ROOT / "db" / "queue.db"
 
 
 def _now() -> str:
