@@ -1,0 +1,4 @@
+## 2024-05-26 - [CRITICAL] Prevented Unauthenticated Webhook Access & Info Exposure
+**Vulnerability:** The webhook intake server (`scripts/intake_server.py`) was failing open and bypassing signature verification if `GITHUB_WEBHOOK_SECRET` was not configured. Additionally, invalid JSON and database exceptions were unhandled, potentially leaking stack traces or crashing the server on bad input.
+**Learning:** Defaulting to 'allow' for missing authentication configuration is a severe security misconfiguration, enabling unauthenticated attackers to spoof webhooks. Unhandled exceptions in web routes can lead to information disclosure or Denial of Service (DoS).
+**Prevention:** Always fail securely by enforcing authentication verification unconditionally. Catch specific exceptions (e.g., `json.JSONDecodeError`, `sqlite3.Error`) at the route boundary to return standardized error responses without exposing internal application state.
