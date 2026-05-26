@@ -9,7 +9,10 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from .context_reader import read_project_state, read_recent_activity, ProjectState, RecentActivity
-from .schema import DispatchResult, EscalateResult, NoOpResult, DecisionResult
+from .schema import (
+    DispatchResult, EscalateResult, NoOpResult, AcceptResult,
+    EvidencePacket, DecisionResult,
+)
 from .powers.escalate import run as escalate
 
 
@@ -184,3 +187,86 @@ def test_dispatch_result_accepts_good_data():
     )
     assert result.issue_number == 42
     assert result.model_dump()["action"] == "dispatch_next"
+
+
+# --- Test accept_node schema (proposal model) ---
+
+def test_evidence_packet_accepts_full_data():
+    evidence = EvidencePacket(
+        acceptance_check=[
+            {"criterion": "form accepts name", "passed": True},
+            {"criterion": "no duplicate records", "passed": True},
+        ],
+        scope_verification={"in_scope": ["src/auth.py"], "out_of_scope": []},
+        test_status={"passed": True, "checks": [{"name": "pytest", "conclusion": "success"}]},
+        risks="No risks identified",
+        followup_candidates="node-c",
+    )
+    data = evidence.model_dump()
+    assert len(data["acceptance_check"]) == 2
+    assert data["scope_verification"]["in_scope"] == ["src/auth.py"]
+    assert data["risks"] == "No risks identified"
+
+
+def test_evidence_packet_accepts_minimal_data():
+    evidence = EvidencePacket()
+    data = evidence.model_dump()
+    assert data["acceptance_check"] == []
+    assert data["scope_verification"] == {}
+    assert data["test_status"] == {}
+    assert data["risks"] is None
+
+
+def test_accept_result_rejects_missing_evidence():
+    """AcceptResult must include the evidence packet."""
+    with pytest.raises(Exception):
+        AcceptResult(
+            action="accept_node",
+            node_id="n1",
+            project_id="p1",
+            source_pr_number=1,
+            source_pr_url="https://x.com",
+            evidence_pr_url="https://x.com",
+            status="acceptance_proposed",
+            ok=True,
+            # missing evidence field
+        )
+
+
+def test_accept_result_accepts_full_data():
+    result = AcceptResult(
+        action="accept_node",
+        node_id="auth-boundary",
+        project_id="vault-doctor",
+        source_pr_number=51,
+        source_pr_url="https://github.com/skchaudr/vault-doctor/pull/51",
+        evidence_pr_url="https://github.com/skchaudr/gddp-config/pull/12",
+        evidence=EvidencePacket(
+            acceptance_check=[{"criterion": "form accepts name", "passed": True}],
+            scope_verification={"in_scope": ["src/auth.py"], "out_of_scope": []},
+            test_status={"passed": True},
+        ),
+        status="acceptance_proposed",
+        ok=True,
+    )
+    data = result.model_dump()
+    assert data["action"] == "accept_node"
+    assert data["source_pr_number"] == 51
+    assert data["status"] == "acceptance_proposed"
+    assert "evidence" in data
+
+
+def test_accept_result_status_must_be_acceptance_proposed():
+    """The status literal enforces the correct value."""
+    with pytest.raises(Exception):
+        AcceptResult(
+            action="accept_node",
+            node_id="n1",
+            project_id="p1",
+            source_pr_number=1,
+            source_pr_url="https://x.com",
+            evidence_pr_url="https://x.com",
+            evidence=EvidencePacket(),
+            status="acceptance_candidate",  # old status — now rejected
+            ok=True,
+        )

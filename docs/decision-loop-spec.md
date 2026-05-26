@@ -14,8 +14,10 @@ Without the decision loop, the GDAD system has no persistent intelligence. Jules
 
 **System roles:**
 - Jules = hands (executes coding work, cannot run in a loop)
-- gddp-runtime = nervous system (dispatch, webhook intake, SQLite, graph reads, receipt writes)
+- gddp-runtime = nervous system (dispatch, webhook intake, SQLite, graph reads, evidence PRs)
 - decision loop = brain (reads state, reasons, decides, acts, escalates)
+- gddp-config = source of truth (graph state advances only via human-merged PRs)
+- Human = merge authority (approves or declines evidence-packaged PRs)
 
 ---
 
@@ -125,19 +127,34 @@ If verdict is `fail`, the decision loop posts a review comment on the PR with sp
 
 ### 3. `accept_node`
 
-Creates a review receipt after validating the PR met expectations.
+Proposes a graph truth change to `gddp-config` by opening an evidence-packaged PR. The decision loop never mutates graph truth directly — it only proposes. A human merges, or doesn't.
 
 **Prerequisite:** `review_pr` returned `verdict: pass`
 
 **Action:**
-- Write a result row to SQLite with `status=acceptance_candidate`
-- Include the node id, PR number, commit SHA, and review evidence needed by the operator
-- Stop before mutating graph truth; human review decides whether `gddp-config` changes
+- Assemble the evidence packet: source PR reference, acceptance criteria verdicts, scope verification result, test status, review metadata
+- Call `graph_updater.open_evidence_pr()` which opens a PR against `gddp-config` proposing to mark the node `status: complete`
+- The PR body contains the full evidence packet so the human can rubber-stamp or scrutinize
+- Write a result row to SQLite with `status=acceptance_proposed` and a link to the evidence PR
+- The system never writes truth. It only proposes truth. Graph mutations happen only via human-merged PRs.
 
 **Output:**
 ```json
-{"action": "accept_node", "node_id": "...", "commit_sha": "...", "status": "acceptance_candidate", "ok": true}
+{
+  "action": "accept_node",
+  "node_id": "...",
+  "source_pr": 51,
+  "evidence_pr_url": "https://github.com/skchaudr/gddp-config/pull/12",
+  "status": "acceptance_proposed",
+  "ok": true
+}
 ```
+
+**Why this matters:**
+- A decision-loop bug can't corrupt the graph. Worst case: a bad PR is opened, you decline.
+- AUTO_ACCEPT preserves momentum without preserving trust. Merging a fully-green evidence PR is a 3-second rubber stamp.
+- Aligns with GitOps patterns (Argo CD, Flux): git is source of truth, machines propose, humans approve.
+- No shadow mode needed. The proposal model goes live from day one.
 
 ### 4. `escalate`
 
@@ -175,6 +192,8 @@ Every decision loop result is written as a structured JSON object. This is the c
   "<action-specific fields>": "..."
 }
 ```
+
+`accept_node` additionally includes `source_pr`, `evidence_pr_url`, and `evidence` fields documenting the full review packet.
 
 The result is:
 1. Written to the `results` table in SQLite (always)
@@ -249,8 +268,12 @@ scripts/runtime/decision_loop/
     __init__.py
     dispatch_next.py  — creates GitHub issue for Jules
     review_pr.py      — reads PR via GitHub API, evaluates acceptance
-    accept_node.py    — writes receipt/proposed acceptance result
+    accept_node.py    — assembles evidence packet, opens PR to gddp-config
     escalate.py       — writes escalation record, logs
+
+scripts/runtime/
+  graph_updater.py   — opens evidence-packaged PRs against gddp-config;
+                       runtime proposes graph truth, human merges
 ```
 
 **Entry points:**

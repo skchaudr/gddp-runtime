@@ -6,7 +6,7 @@ If the shape is wrong, Pydantic raises immediately — no bad data reaches
 SQLite or the graph.
 """
 
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel
 
 
@@ -37,11 +37,25 @@ class ReviewResult(BaseModel):
     ok: Literal[True]
 
 
+class EvidencePacket(BaseModel):
+    """Structured evidence attached to an accept_node decision."""
+    acceptance_check: List[Dict[str, Any]] = []
+    scope_verification: Dict[str, Any] = {}
+    test_status: Dict[str, Any] = {}
+    risks: Optional[str] = None
+    followup_candidates: Optional[str] = None
+
+
 class AcceptResult(BaseModel):
-    """v0 placeholder - accept_node ships in the review-gate node."""
+    """Proposes a graph truth change by opening an evidence PR against gddp-config."""
     action: Literal["accept_node"]
     node_id: str
-    commit_sha: str
+    project_id: str
+    source_pr_number: int
+    source_pr_url: str
+    evidence_pr_url: str
+    evidence: EvidencePacket
+    status: Literal["acceptance_proposed"]
     ok: Literal[True]
 
 
