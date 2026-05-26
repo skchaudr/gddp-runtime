@@ -5,6 +5,15 @@ Runtime does not mutate graph truth on the return path. A merged PR may create a
 structured receipt in SQLite and move the matching job into `awaiting_review`.
 """
 
+# ADR (pre-work item 4, verification parallel build) — graph_updater write model
+# -----------------------------------------------------------------------------
+# Decision: PR-PROPOSAL model. Runtime PROPOSES graph / source-of-truth mutations
+# via an evidence PR; it never silently writes the graph (no direct Contents API
+# write). Rationale: preserves reviewability and graph integrity over raw speed.
+# Already implemented in graph_updater.open_evidence_pr() (see commit 8dfee5c).
+# Task 3 (conductor wiring) depends on this: write_verdict -> graph_updater creates
+# a reviewable PR-proposal, it does not mutate the graph directly.
+
 import json
 import re
 import sqlite3
