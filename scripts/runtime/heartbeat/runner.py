@@ -122,6 +122,10 @@ def _plan_dispatches(
 
     planned_dispatches: list[PlannedDispatch] = []
 
+    # ⚡ Bolt: Optimize lookup by converting the list to a dictionary keyed by node_id
+    # Reduces lookup complexity from O(E * N) to O(E), where E is events and N is ready nodes.
+    ready_nodes_dict = {n.node_id: n for n in ready_nodes}
+
     for event in events:
         event_id = event["event_id"]
         print(f"Processing: {event_id} ({event['event_type']})")
@@ -134,7 +138,7 @@ def _plan_dispatches(
             continue
 
         node_id = classification["matched_node_id"]
-        node = next((n for n in ready_nodes if n.node_id == node_id), None)
+        node = ready_nodes_dict.get(node_id)
         if node is None:
             mark_event_ignored(con, event_id)
             print(f"  → ignored (matched node {node_id} not in ready list)\n")
