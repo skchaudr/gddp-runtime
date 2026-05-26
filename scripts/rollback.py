@@ -13,12 +13,14 @@ What it does:
 """
 
 import argparse
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH     = Path(__file__).parent.parent / "db" / "queue.db"
-OPCLAW_ROOT = Path(__file__).parent.parent
+_default_root = Path(__file__).parent.parent
+RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 
 def now():
@@ -70,7 +72,7 @@ def rollback(job_id: str):
         )
 
     # Append rollback note to decision.md if it exists
-    decision_path = OPCLAW_ROOT / "jobs" / job_id / "decision.md"
+    decision_path = RUNTIME_ROOT / "jobs" / job_id / "decision.md"
     if decision_path.exists():
         with open(decision_path, "a") as f:
             f.write(f"\n\n---\n## Rollback\nRolled back at {now()}\nJob status set to: failed\nQueue set to: cancelled\n")

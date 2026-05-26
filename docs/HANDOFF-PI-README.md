@@ -40,9 +40,9 @@ Top-level structure:
 
 - `README.md`: current operational README; accurate but too technical/closed-door for a mixed portfolio audience.
 - `CHANGELOG.md`: recent runtime milestones and boundary changes.
-- `scripts/`: runtime code, tests, adapters, heartbeat modules, return routing, replay, and OpenClaw draft pieces.
+- `scripts/`: runtime code, tests, adapters, heartbeat modules, return routing, replay, and decision-loop draft pieces.
 - `deploy/`: Big Pi setup/deploy scripts, systemd unit, and operator runbook.
-- `docs/`: host roles, OpenClaw draft spec, and operator-practice notes.
+- `docs/`: host roles, decision-loop draft spec, and operator-practice notes.
 - `.vscode/gddp-runtime.code-workspace`: kept because it is the useful multi-root workspace pointer.
 
 What works:
@@ -65,9 +65,9 @@ What is intentionally incomplete or frozen:
 - `scripts/runtime/graph_updater.py` remains only as a disabled compatibility stub.
 - No auto-review, richer graph state machine, or automatic return-path completion in the frozen phase.
 - `scripts/adapters/jules_cli_adapter.py` is a stub.
-- OpenClaw review/accept powers are draft/future, not the current stable contract.
+- Decision-loop review/accept powers are draft/future, not the current stable contract.
 - `docs/host-roles.md` says Small Pi worker cutover is still pending.
-- Some OpenClaw draft code appears ahead of the frozen runtime contract; treat it as experimental until verified on Pi.
+- Some decision-loop draft code appears ahead of the frozen runtime contract; treat it as experimental until verified on Pi.
 - `return_router.py` still has a hardcoded allowlist for `skchaudr/vault-doctor`.
 
 Existing README assessment:
@@ -75,19 +75,19 @@ Existing README assessment:
 - Keep the factual boundary language: config truth vs runtime machinery vs executors vs human review.
 - Keep the concrete structure table and local commands, but move them below a clearer human-readable opening.
 - Replace the first impression. The current README starts like an internal operations memo; a portfolio README should open with what was built, why it matters, and why this is technically serious.
-- Layer docs explicitly: `README.md` for portfolio + current operating contract, `deploy/BIGPI_RUNBOOK.md` for Big Pi ops, `docs/operator-practice/` for learning/manual-run drills, and `docs/openclaw-spec.md` as draft/future design.
+- Layer docs explicitly: `README.md` for portfolio + current operating contract, `deploy/BIGPI_RUNBOOK.md` for Big Pi ops, `docs/operator-practice/` for learning/manual-run drills, and `docs/decision-loop-spec.md` as draft/future design.
 - Fix later nit: the current runbook link is absolute (`/work/repos/...`) and should become relative.
 
 ### gddp-config
 
-Current branch: `feat/openclaw-nodes`, clean and pushed to `origin/feat/openclaw-nodes`.
+Current branch name: `feat/openclaw-nodes`. The active graph objects now use decision-loop naming; the branch name is historical.
 
 Recent commit arc:
 
 - `c7287fc chore: ignore local agent artifacts`
 - `201d5bc docs: archive april update transcript`
 - `d91b38d git ignore`
-- `cbdf8d2 feat: add OpenClaw nodes to gddp-runtime graph`
+- `cbdf8d2 feat: add decision-loop nodes to gddp-runtime graph`
 - `fd50333 feat: triage-cli-core -> complete - vault-doctor 7/7 nodes done (#6)` on `origin/main`
 
 Top-level structure:
@@ -107,9 +107,9 @@ What works:
 - `graphs/vault-doctor` is complete with 7/7 nodes complete.
 - `graphs/gddp-runtime/project.yaml` currently maps:
   - `return-router`: complete
-  - `openclaw-spec`: complete
-  - `openclaw-v0-runtime`: pending
-  - `openclaw-v0-review-gate`: pending
+  - `decision-loop-spec`: complete
+  - `decision-loop-runtime`: pending
+  - `decision-loop-review-gate`: pending
 - Node files under `graphs/gddp-runtime/nodes/` hold the real acceptance criteria, constraints, allowed execution modes, and required artifacts.
 - The repo's operating rule is clear: agents read it; they do not write to it.
 
@@ -118,8 +118,8 @@ What is intentionally incomplete or future:
 - No executable validation/utility scripts yet.
 - No rule configs yet.
 - No workflow configs yet.
-- `openclaw-v0-runtime` is the next real build node and expects implementation in `gddp-runtime`.
-- `openclaw-v0-review-gate` follows `openclaw-v0-runtime`; do not pull it forward.
+- `decision-loop-runtime` is the next real build node and expects implementation in `gddp-runtime`.
+- `decision-loop-review-gate` follows `decision-loop-runtime`; do not pull it forward.
 
 Existing README assessment:
 
@@ -145,8 +145,8 @@ Suggested README shape:
 3. A concrete "what exists today" section that is honest about the frozen receipt-review boundary.
 4. A "why this matters" section aimed at mixed readers: visible systems thinking, bounded autonomy, traceable agent work, human-in-the-loop control.
 5. A technical depth section for engineers: SQLite receipts/jobs/results, graph-driven heartbeat, config schemas, executor adapters, Big Pi deployment.
-6. A "current limits / next hardening" section that does not hide the incomplete OpenClaw pieces.
-7. Links to `gddp-config`, `deploy/BIGPI_RUNBOOK.md`, `docs/operator-practice/`, and `docs/openclaw-spec.md`.
+6. A "current limits / next hardening" section that does not hide the incomplete decision-loop pieces.
+7. Links to `gddp-config`, `deploy/BIGPI_RUNBOOK.md`, `docs/operator-practice/`, and `docs/decision-loop-spec.md`.
 
 ## Gotchas
 
@@ -162,7 +162,7 @@ Paths:
 Environment variables:
 
 - `GDDP_CONFIG_PATH`: path to the sibling `gddp-config` repo for graph reads.
-- `OPCLAW_ROOT`: runtime state root, normally `~/opclaw` on Big Pi.
+- `GDDP_RUNTIME_ROOT`: runtime state root. Legacy `OPCLAW_ROOT` may still be accepted by older scripts as a compatibility fallback.
 - `GITHUB_TOKEN` or `GH_TOKEN`: required for Jules GitHub issue dispatch.
 - `GITHUB_WEBHOOK_SECRET`: optional webhook signature validation secret for `scripts/intake_server.py`.
 
@@ -172,7 +172,7 @@ Files/dirs to skip:
 - Do not treat `.claude/`, `.aider*`, `.DS_Store`, `.pytest_cache/`, or `__pycache__/` as source material.
 - Do not draft into `gddp-config` unless Saboor explicitly asks for a technical README update there.
 - Do not mutate graph truth from runtime. The current contract is receipt creation plus human review.
-- Do not make `docs/openclaw-spec.md` the main README. It is useful design context, but it includes future/draft ideas that can contradict the frozen runtime boundary.
+- Do not make `docs/decision-loop-spec.md` the main README. It is useful design context, but it includes future/draft ideas that can contradict the frozen runtime boundary.
 - Do not assume `rules/`, `scripts/`, or `workflows/` in `gddp-config` are implemented because the README mentions them as future surfaces.
 
 Verification already run during this handoff:

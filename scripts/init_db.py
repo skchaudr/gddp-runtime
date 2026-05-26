@@ -139,7 +139,7 @@ def init_db():
         validation_method   TEXT NOT NULL,              -- file_exists | content_check | github_api_check | human_audit
         verified            INTEGER NOT NULL DEFAULT 0, -- 0 | 1
         verified_at         TEXT,
-        verified_by         TEXT,                       -- openclaw_validator | human | codex_reviewer
+        verified_by         TEXT,                       -- runtime_validator | human | codex_reviewer
         notes               TEXT,
         FOREIGN KEY(job_id) REFERENCES jobs(job_id)
     );

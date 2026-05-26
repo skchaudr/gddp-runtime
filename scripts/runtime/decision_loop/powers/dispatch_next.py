@@ -8,11 +8,11 @@ import json
 import subprocess
 from typing import Optional
 
-from ..context_reader import OpenClawContext
+from ..context_reader import DecisionContext
 from ..schema import DispatchResult, EscalateResult
 
 
-def _find_eligible_node(ctx: OpenClawContext) -> Optional[str]:
+def _find_eligible_node(ctx: DecisionContext) -> Optional[str]:
     """Find the highest-priority pending node whose dependencies are all complete."""
     complete_ids = {n.node_id for n in ctx.project.complete_nodes}
 
@@ -30,7 +30,7 @@ def _find_eligible_node(ctx: OpenClawContext) -> Optional[str]:
     return eligible[0].node_id
 
 
-def _has_active_job(ctx: OpenClawContext) -> bool:
+def _has_active_job(ctx: DecisionContext) -> bool:
     """Check if there's already a dispatched/running job for this project."""
     return len(ctx.activity.active_jobs) > 0
 
@@ -64,14 +64,14 @@ node: {node.node_id}
 job: {job_id}
 ```
 
-This block is parsed by the GDAD return router to automatically advance the project graph when the PR merges. If it is missing or malformed, the merge will not be recorded and the graph will not advance.
+This block is parsed by the GDAD return router to create a review receipt when the PR merges. If it is missing or malformed, the merge will not be recorded for review.
 
 ---
-*Dispatched by OpenClaw v0 — job_id: {job_id} — node: {node.node_id}*
+*Dispatched by the GDAD decision loop - job_id: {job_id} - node: {node.node_id}*
 """
 
 
-def run(ctx: OpenClawContext) -> DispatchResult | EscalateResult:
+def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
     """
     Decide whether to dispatch and do it.
 

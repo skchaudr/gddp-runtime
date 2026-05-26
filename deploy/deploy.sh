@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy.sh — Canonical runtime deploy command for Big Pi.
-# Copies a committed gddp-runtime snapshot into ~/opclaw/scripts and writes
+# Copies a committed gddp-runtime snapshot into the runtime scripts dir and writes
 # a deploy marker showing exactly which git commit is running there.
 #
 # Usage:
@@ -41,12 +41,12 @@ while (($# > 0)); do
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OPCLAW_DIR="${OPCLAW_ROOT:-$HOME/opclaw}"
-TARGET_SCRIPTS_DIR="$OPCLAW_DIR/scripts"
-MARKER_PATH="$OPCLAW_DIR/.gddp-runtime-deploy.json"
-PREVIOUS_SCRIPTS_DIR="$OPCLAW_DIR/scripts.previous"
+RUNTIME_ROOT="${GDDP_RUNTIME_ROOT:-${OPCLAW_ROOT:-$HOME/opclaw}}"
+TARGET_SCRIPTS_DIR="$RUNTIME_ROOT/scripts"
+MARKER_PATH="$RUNTIME_ROOT/.gddp-runtime-deploy.json"
+PREVIOUS_SCRIPTS_DIR="$RUNTIME_ROOT/scripts.previous"
 
-mkdir -p "$OPCLAW_DIR"/{db,events/{raw,normalized},jobs}
+mkdir -p "$RUNTIME_ROOT"/{db,events/{raw,normalized},jobs}
 
 COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 COMMIT_SHORT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
@@ -67,7 +67,7 @@ fi
 
 DEPLOYED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-TMP_SCRIPTS_DIR="$(mktemp -d "$OPCLAW_DIR/scripts.deploy.XXXXXX")"
+TMP_SCRIPTS_DIR="$(mktemp -d "$RUNTIME_ROOT/scripts.deploy.XXXXXX")"
 trap 'rm -rf "$TMP_SCRIPTS_DIR"' EXIT
 cp -R "$REPO_ROOT/scripts/." "$TMP_SCRIPTS_DIR/"
 
@@ -83,6 +83,7 @@ cat > "$MARKER_PATH" <<EOF
   "source_branch": "$SOURCE_BRANCH",
   "source_commit": "$COMMIT_SHA",
   "source_commit_short": "$COMMIT_SHORT",
+  "runtime_root": "$RUNTIME_ROOT",
   "deploy_invoked_from": "$REPO_ROOT",
   "deploy_invoked_branch": "$INVOKED_BRANCH",
   "deployed_at_utc": "$DEPLOYED_AT",

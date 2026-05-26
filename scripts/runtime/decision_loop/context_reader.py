@@ -1,5 +1,5 @@
 """
-context_reader.py — Builds the context payload OpenClaw needs to make decisions.
+context_reader.py - builds the context payload the runtime decision loop needs.
 
 Reads three sources:
 1. gddp-config graph YAML (via GraphReader)
@@ -34,10 +34,10 @@ class RecentActivity:
 
 
 @dataclass
-class OpenClawContext:
+class DecisionContext:
     project: ProjectState
     activity: RecentActivity
-    trigger: dict                  # the event that woke OpenClaw
+    trigger: dict                  # the event that woke the decision loop
 
 
 def read_project_state(reader: GraphReader, project_id: str) -> ProjectState:
@@ -113,12 +113,12 @@ def read_context(
     con: sqlite3.Connection,
     project_id: str,
     trigger: dict,
-) -> OpenClawContext:
-    """Build the full context payload for one OpenClaw decision cycle."""
+) -> DecisionContext:
+    """Build the full context payload for one decision cycle."""
     project = read_project_state(reader, project_id)
     activity = read_recent_activity(con, project_id)
 
-    return OpenClawContext(
+    return DecisionContext(
         project=project,
         activity=activity,
         trigger=trigger,
