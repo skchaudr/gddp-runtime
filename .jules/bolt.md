@@ -1,0 +1,3 @@
+## 2024-05-27 - [Optimize return router DB queries]
+**Learning:** SQLite connection overhead can bottleneck high-frequency webhook/event handlers, like the return router, when connections are opened and closed per helper function (e.g., `_load_job`, `write_result`). Additionally, explicit read-then-update logic for idempotency (e.g., checking if `result_id` exists before `INSERT`/`UPDATE`) adds redundant querying.
+**Action:** Consolidate connection lifecycle logic inside top-level handlers and pass `sqlite3.Connection` instances into downstream helpers to reuse them. Use SQLite's native `ON CONFLICT DO UPDATE` capabilities for `upsert` logic to combine read and write into a single statement.
