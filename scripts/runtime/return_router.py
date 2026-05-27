@@ -48,17 +48,24 @@ def _connect() -> sqlite3.Connection:
     return con
 
 
-def _load_job(job_id: str) -> Optional[dict]:
-    con = _connect()
+def _load_job(job_id: str, con: sqlite3.Connection = None) -> Optional[dict]:
+    we_opened_con = False
+    if con is None:
+        con = _connect()
+        we_opened_con = True
     try:
         row = con.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         return dict(row) if row is not None else None
     finally:
-        con.close()
+        if we_opened_con:
+            con.close()
 
 
-def _mark_job_awaiting_review(job_id: str) -> None:
-    con = _connect()
+def _mark_job_awaiting_review(job_id: str, con: sqlite3.Connection = None) -> None:
+    we_opened_con = False
+    if con is None:
+        con = _connect()
+        we_opened_con = True
     try:
         con.execute(
             """
@@ -73,9 +80,11 @@ def _mark_job_awaiting_review(job_id: str) -> None:
             "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
             (job_id,),
         )
-        con.commit()
+        if we_opened_con:
+            con.commit()
     finally:
-        con.close()
+        if we_opened_con:
+            con.close()
 
 
 def handle_merged_pr(event: sqlite3.Row) -> dict:
@@ -108,19 +117,21 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     if not job_id:
         return {"status": "rejected", "reason": "missing_job_tag"}
 
-    job = _load_job(job_id)
-    if job is None:
-        return {"status": "rejected", "reason": "job_not_found"}
+    con = _connect()
+    try:
+        job = _load_job(job_id, con=con)
+        if job is None:
+            return {"status": "rejected", "reason": "job_not_found"}
 
-    if job["repo"] != repo_name:
-        return {"status": "rejected", "reason": "repo_job_mismatch"}
+        if job["repo"] != repo_name:
+            return {"status": "rejected", "reason": "repo_job_mismatch"}
 
-    if job["node_id"] != node_id:
-        return {"status": "rejected", "reason": "node_job_mismatch"}
+        if job["node_id"] != node_id:
+            return {"status": "rejected", "reason": "node_job_mismatch"}
 
-    write_result(
-        result_id=result_id,
-        job_id=job_id,
+        write_result(
+            result_id=result_id,
+            job_id=job_id,
         executor=job["executor"],
         outcome="success",
         status="needs_review",
@@ -136,9 +147,13 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
             "review_required": True,
             "raw_payload_path": str(Path(raw_path)),
         },
+        con=con,
     )
 
-    _mark_job_awaiting_review(job_id)
+        _mark_job_awaiting_review(job_id, con=con)
+        con.commit()
+    finally:
+        con.close()
 
     return {
         "status": "needs_review",
