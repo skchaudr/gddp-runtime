@@ -1,7 +1,7 @@
 """
-conductor.py — Main verification orchestration.
+run_verification.py — verification pipeline.
 
-The conductor wires the verification module into the runtime loop.
+Verification pipeline: receipt in, verdict out. No state, no persistence between calls.
 It discovers jobs awaiting review, gathers data, runs structural
 validation, derives a verdict, and proposes graph advancement when
 the verdict is ACCEPT.
@@ -31,7 +31,7 @@ from .verification.structural import run_structural_validator
 # ---------------------------------------------------------------------------
 
 def run_verification(result_id: str, config_path: str | None = None) -> dict:
-    """Main conductor entry point. Run verification for one result.
+    """Main entry point. Run verification for one result.
 
     Returns {"ok": True, "verdict": ..., ...} on success.
     Returns {"ok": False, "error": str} on any failure.
@@ -294,8 +294,8 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(
-        prog="runtime.conductor",
-        description="GDDP verification conductor — run structural verification on review receipts.",
+        prog="runtime.run_verification",
+        description="GDDP verification pipeline — run structural verification on review receipts.",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

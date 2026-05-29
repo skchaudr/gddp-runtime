@@ -2,7 +2,7 @@
 review_queue.py — Discover, claim, and complete verification jobs.
 
 The review queue sits between the return router (which creates receipts)
-and the conductor (which runs verification). It provides:
+and run_verification() (which runs verification). It provides:
 - poll: find jobs awaiting review
 - claim: atomically mark a job as being verified (prevents concurrent processing)
 - complete: write the verification verdict and update job status

@@ -1,8 +1,8 @@
 """
-test_conductor.py — Tests for the verification conductor.
+test_run_verification.py — Tests for the verification pipeline.
 
 All external calls (gh CLI, gddp-config reads, graph_updater) are mocked.
-The conductor's own logic is tested through run_verification().
+The pipeline's logic is tested through run_verification().
 """
 
 import json
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.runtime import conductor, results_store, review_queue
+from scripts.runtime import run_verification as rv, results_store, review_queue
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def tmp_db(tmp_path, monkeypatch):
     db_file = tmp_path / "test.db"
     monkeypatch.setattr(results_store, "DB_PATH", db_file)
     monkeypatch.setattr(review_queue, "DB_PATH", db_file)
-    monkeypatch.setattr(conductor, "DB_PATH", db_file)
+    monkeypatch.setattr(rv, "DB_PATH", db_file)
     results_store.init_db()
     return db_file
 
@@ -90,9 +90,9 @@ class TestRunVerification:
         """ACCEPT: verdict stored, graph_updater.open_evidence_pr called."""
         _seed_result(tmp_db)
 
-        with patch.object(conductor, "gather_changed_files", return_value=["src/main.py"]), \
-             patch.object(conductor, "open_evidence_pr") as mock_pr:
-            result = conductor.run_verification("res_001", config_path=str(tmp_config))
+        with patch.object(rv, "gather_changed_files", return_value=["src/main.py"]), \
+             patch.object(rv, "open_evidence_pr") as mock_pr:
+            result = rv.run_verification("res_001", config_path=str(tmp_config))
 
         assert result["ok"] is True
         assert result["verdict"] == "ACCEPT"
@@ -113,9 +113,9 @@ class TestRunVerification:
         _seed_result(tmp_db)
 
         # Use changed_files that are out of scope to force structural failure
-        with patch.object(conductor, "gather_changed_files", return_value=["secret.env"]), \
-             patch.object(conductor, "open_evidence_pr") as mock_pr:
-            result = conductor.run_verification("res_001", config_path=str(tmp_config))
+        with patch.object(rv, "gather_changed_files", return_value=["secret.env"]), \
+             patch.object(rv, "open_evidence_pr") as mock_pr:
+            result = rv.run_verification("res_001", config_path=str(tmp_config))
 
         assert result["ok"] is True
         assert result["verdict"] == "FAIL"
@@ -127,15 +127,15 @@ class TestRunVerification:
         _seed_result(tmp_db)
 
         # Structural passes with in-scope files, but we mock decide to return NEEDS_REVIEW
-        with patch.object(conductor, "gather_changed_files", return_value=["src/main.py"]), \
-             patch.object(conductor, "open_evidence_pr") as mock_pr, \
-             patch("scripts.runtime.conductor.decide") as mock_decide:
+        with patch.object(rv, "gather_changed_files", return_value=["src/main.py"]), \
+             patch.object(rv, "open_evidence_pr") as mock_pr, \
+             patch("scripts.runtime.run_verification.decide") as mock_decide:
             from scripts.runtime.verification.verdict_schema import DecisionOutput
             mock_decide.return_value = DecisionOutput(
                 verdict="NEEDS_REVIEW", reason="operator_review_flagged",
                 severity="warning", matrix_row=8,
             )
-            result = conductor.run_verification("res_001", config_path=str(tmp_config))
+            result = rv.run_verification("res_001", config_path=str(tmp_config))
 
         assert result["ok"] is True
         assert result["verdict"] == "NEEDS_REVIEW"
@@ -151,15 +151,15 @@ class TestRunVerification:
         """INVALID: verdict stored, NO graph mutation."""
         _seed_result(tmp_db)
 
-        with patch.object(conductor, "gather_changed_files", return_value=["src/main.py"]), \
-             patch.object(conductor, "open_evidence_pr") as mock_pr, \
-             patch("scripts.runtime.conductor.decide") as mock_decide:
+        with patch.object(rv, "gather_changed_files", return_value=["src/main.py"]), \
+             patch.object(rv, "open_evidence_pr") as mock_pr, \
+             patch("scripts.runtime.run_verification.decide") as mock_decide:
             from scripts.runtime.verification.verdict_schema import DecisionOutput
             mock_decide.return_value = DecisionOutput(
                 verdict="INVALID", reason="contradicted",
                 severity="blocking", matrix_row=6,
             )
-            result = conductor.run_verification("res_001", config_path=str(tmp_config))
+            result = rv.run_verification("res_001", config_path=str(tmp_config))
 
         assert result["ok"] is True
         assert result["verdict"] == "INVALID"
@@ -169,15 +169,15 @@ class TestRunVerification:
         """INCOMPLETE: verdict stored, verified_incomplete status."""
         _seed_result(tmp_db)
 
-        with patch.object(conductor, "gather_changed_files", return_value=["src/main.py"]), \
-             patch.object(conductor, "open_evidence_pr") as mock_pr, \
-             patch("scripts.runtime.conductor.decide") as mock_decide:
+        with patch.object(rv, "gather_changed_files", return_value=["src/main.py"]), \
+             patch.object(rv, "open_evidence_pr") as mock_pr, \
+             patch("scripts.runtime.run_verification.decide") as mock_decide:
             from scripts.runtime.verification.verdict_schema import DecisionOutput
             mock_decide.return_value = DecisionOutput(
                 verdict="INCOMPLETE", reason="insufficient",
                 severity="warning", matrix_row=7,
             )
-            result = conductor.run_verification("res_001", config_path=str(tmp_config))
+            result = rv.run_verification("res_001", config_path=str(tmp_config))
 
         assert result["ok"] is True
         assert result["verdict"] == "INCOMPLETE"
@@ -190,7 +190,7 @@ class TestRunVerification:
 
     def test_missing_result(self, tmp_db, tmp_config):
         """Nonexistent result_id -> ok=False."""
-        result = conductor.run_verification("res_nonexistent", config_path=str(tmp_config))
+        result = rv.run_verification("res_nonexistent", config_path=str(tmp_config))
 
         assert result["ok"] is False
         assert "Result not found" in result["error"]
@@ -206,7 +206,7 @@ class TestRunVerification:
         con.commit()
         con.close()
 
-        result = conductor.run_verification("res_empty", config_path=str(tmp_config))
+        result = rv.run_verification("res_empty", config_path=str(tmp_config))
 
         assert result["ok"] is False
         assert "No github_action" in result["error"]
@@ -217,8 +217,8 @@ class TestRunVerification:
         # Remove env var and ensure no sibling
         monkeypatch.delenv("GDDP_CONFIG_PATH", raising=False)
 
-        with patch.object(conductor, "_resolve_config_path", return_value=None):
-            result = conductor.run_verification("res_001", config_path=None)
+        with patch.object(rv, "_resolve_config_path", return_value=None):
+            result = rv.run_verification("res_001", config_path=None)
 
         assert result["ok"] is False
         assert "gddp-config path not resolved" in result["error"]
@@ -238,21 +238,21 @@ class TestLoadNodeSpec:
             "artifacts": ["src/foo.py"],
         }))
 
-        spec = conductor.load_node_spec("test-project", "my-node", str(tmp_config))
+        spec = rv.load_node_spec("test-project", "my-node", str(tmp_config))
 
         assert spec["id"] == "my-node"
         assert "tests pass" in spec["acceptance"]
 
     def test_load_from_project_yaml_inline(self, tmp_config):
         """Load node spec from inline node in project.yaml."""
-        spec = conductor.load_node_spec("test-project", "node-1", str(tmp_config))
+        spec = rv.load_node_spec("test-project", "node-1", str(tmp_config))
 
         assert spec["id"] == "node-1"
         assert spec["acceptance"] == ["tests pass", "code works"]
 
     def test_load_missing_returns_empty(self, tmp_config):
         """Missing node -> returns empty dict."""
-        spec = conductor.load_node_spec("test-project", "nonexistent", str(tmp_config))
+        spec = rv.load_node_spec("test-project", "nonexistent", str(tmp_config))
 
         assert spec == {}
 
@@ -265,8 +265,8 @@ class TestGatherChangedFiles:
         mock_result.returncode = 0
         mock_result.stdout = "src/main.py\nsrc/utils.py\n"
 
-        with patch("scripts.runtime.conductor.subprocess.run", return_value=mock_result):
-            files = conductor.gather_changed_files("owner/repo", "42")
+        with patch("scripts.runtime.run_verification.subprocess.run", return_value=mock_result):
+            files = rv.gather_changed_files("owner/repo", "42")
 
         assert files == ["src/main.py", "src/utils.py"]
 
@@ -276,8 +276,8 @@ class TestGatherChangedFiles:
         mock_result.returncode = 1
         mock_result.stderr = "not found"
 
-        with patch("scripts.runtime.conductor.subprocess.run", return_value=mock_result):
-            files = conductor.gather_changed_files("owner/repo", "42")
+        with patch("scripts.runtime.run_verification.subprocess.run", return_value=mock_result):
+            files = rv.gather_changed_files("owner/repo", "42")
 
         assert files == []
 
@@ -285,8 +285,8 @@ class TestGatherChangedFiles:
         """gh CLI times out -> returns empty list."""
         import subprocess
 
-        with patch("scripts.runtime.conductor.subprocess.run",
+        with patch("scripts.runtime.run_verification.subprocess.run",
                    side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30)):
-            files = conductor.gather_changed_files("owner/repo", "42")
+            files = rv.gather_changed_files("owner/repo", "42")
 
         assert files == []
