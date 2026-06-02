@@ -57,10 +57,11 @@ def _load_job(job_id: str) -> Optional[dict]:
         con.close()
 
 
-def _mark_job_awaiting_review(job_id: str) -> None:
-    con = _connect()
+def _mark_job_awaiting_review(job_id: str, con: sqlite3.Connection = None) -> None:
+    # ⚡ Bolt: Allow connection reuse to avoid multiple open/close cycles
+    my_con = con or _connect()
     try:
-        con.execute(
+        my_con.execute(
             """
             UPDATE jobs
                SET status = 'awaiting_review',
@@ -69,13 +70,14 @@ def _mark_job_awaiting_review(job_id: str) -> None:
             """,
             (job_id,),
         )
-        con.execute(
+        my_con.execute(
             "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
             (job_id,),
         )
-        con.commit()
+        my_con.commit()
     finally:
-        con.close()
+        if con is None:
+            my_con.close()
 
 
 def handle_merged_pr(event: sqlite3.Row) -> dict:
@@ -118,27 +120,32 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     if job["node_id"] != node_id:
         return {"status": "rejected", "reason": "node_job_mismatch"}
 
-    write_result(
-        result_id=result_id,
-        job_id=job_id,
-        executor=job["executor"],
-        outcome="success",
-        status="needs_review",
-        received_at=merged_at,
-        github_action={
-            "source": "merged_pr",
-            "event_id": event["event_id"],
-            "repo_name": repo_name,
-            "pr_number": pr_number,
-            "merged_at": merged_at,
-            "merged_pr_url": merged_pr_url,
-            "node_id": node_id,
-            "review_required": True,
-            "raw_payload_path": str(Path(raw_path)),
-        },
-    )
+    con = _connect()
+    try:
+        write_result(
+            result_id=result_id,
+            job_id=job_id,
+            executor=job["executor"],
+            outcome="success",
+            status="needs_review",
+            received_at=merged_at,
+            github_action={
+                "source": "merged_pr",
+                "event_id": event["event_id"],
+                "repo_name": repo_name,
+                "pr_number": pr_number,
+                "merged_at": merged_at,
+                "merged_pr_url": merged_pr_url,
+                "node_id": node_id,
+                "review_required": True,
+                "raw_payload_path": str(Path(raw_path)),
+            },
+            con=con,
+        )
 
-    _mark_job_awaiting_review(job_id)
+        _mark_job_awaiting_review(job_id, con=con)
+    finally:
+        con.close()
 
     return {
         "status": "needs_review",

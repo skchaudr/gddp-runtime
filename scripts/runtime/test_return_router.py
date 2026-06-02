@@ -50,9 +50,10 @@ class TestReturnRouter(unittest.TestCase):
         self.assertFalse(validate_repo("other/repo"))
 
     @patch("scripts.runtime.return_router._mark_job_awaiting_review")
+    @patch("scripts.runtime.return_router._connect")
     @patch("scripts.runtime.return_router.write_result")
     @patch("scripts.runtime.return_router._load_job")
-    def test_handle_merged_pr_success(self, mock_load_job, mock_write, mock_mark_review):
+    def test_handle_merged_pr_success(self, mock_load_job, mock_write, mock_connect, mock_mark_review):
         event = {"raw_payload_path": "payload.json", "event_id": "evt_123456"}
         payload = {
             "repository": {"full_name": "skchaudr/vault-doctor"},
@@ -100,8 +101,10 @@ class TestReturnRouter(unittest.TestCase):
                 "review_required": True,
                 "raw_payload_path": "payload.json",
             },
+            con=mock_connect.return_value,
         )
-        mock_mark_review.assert_called_once_with("job_123")
+        mock_mark_review.assert_called_once_with("job_123", con=mock_connect.return_value)
+        mock_connect.return_value.close.assert_called_once()
 
     @patch("scripts.runtime.return_router.write_result")
     def test_handle_merged_pr_invalid_repo(self, mock_write):
