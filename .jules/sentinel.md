@@ -1,0 +1,7 @@
+## 2024-05-24 - Fail-Closed Webhook Verification and Error Handling
+
+**Vulnerability:** The `/webhook` endpoint in `scripts/intake_server.py` was unconditionally bypassing signature verification if the `GITHUB_WEBHOOK_SECRET` environment variable was empty/unconfigured. This allowed unauthenticated attackers to submit arbitrary payloads. Furthermore, the endpoint leaked internal system information via uncaught `json.JSONDecodeError` and `sqlite3.Error` exceptions.
+
+**Learning:** Implicitly trusting unauthenticated payloads during configuration missteps represents a critical fail-open vulnerability. Insecure error handling further compounded the risk by potentially leaking stack traces or internal logic flow to attackers. It is crucial to always fail closed on security validations and sanitize error messages before they reach external systems.
+
+**Prevention:** Always implement fail-closed logic for authentication/authorization checks. E.g., if a secret is missing, deny access (`return False`) rather than skipping the check. Additionally, always wrap risky operations (like parsing user input or interacting with databases) in robust try-except blocks, ensuring that external API consumers only receive generic, non-revealing error messages (e.g., 400 Bad Request, 500 Internal Server Error) instead of internal application state.
