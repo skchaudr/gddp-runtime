@@ -1,0 +1,4 @@
+## 2024-05-15 - [Webhook Authentication Bypass & Error Leakage]
+**Vulnerability:** The webhook verification logic in `scripts/intake_server.py` previously skipped validation if `GITHUB_WEBHOOK_SECRET` was empty (returning True). It also lacked proper try/except blocks around JSON parsing and database interactions, which could potentially crash the server or leak tracebacks on invalid input.
+**Learning:** Returning True on an empty secret created a fail-open authentication bypass, undermining mandatory webhook verification.
+**Prevention:** Webhook signatures MUST be mandatory. A missing secret should result in denying access (returning False). Always wrap operations that may raise exceptions (like `json.loads` or `sqlite3.connect`) with explicit try/except handlers to return safe HTTP error status codes (400/500) and avoid exposing stack traces.
