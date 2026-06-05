@@ -1,0 +1,4 @@
+## 2025-02-28 - Fail-closed Webhook Verification
+**Vulnerability:** The webhook verification logic in `scripts/intake_server.py` was implemented with a fail-open default (`if not WEBHOOK_SECRET: return True`). Additionally, the route conditionally checked the secret before verifying (`if WEBHOOK_SECRET and not verify_signature(...)`), meaning that if the configuration was missing in production, unauthenticated payloads would be accepted.
+**Learning:** Security controls like signature verification should always fail-closed. If authentication is required but cannot be performed (e.g., due to missing configuration secrets), the system must reject the request rather than bypassing the check.
+**Prevention:** Unconditionally call verification functions in route handlers. Inside the verification function, explicitly return `False` if required configuration secrets are absent. Ensure tests explicitly assert this secure failure state.
