@@ -29,9 +29,12 @@ def _json_or_none(value):
     return json.dumps(value)
 
 
-def init_db() -> None:
+def init_db(con: sqlite3.Connection = None) -> None:
     """Ensure the canonical review-receipt table exists."""
-    con = sqlite3.connect(DB_PATH)
+    owns_con = False
+    if con is None:
+        con = sqlite3.connect(DB_PATH)
+        owns_con = True
     try:
         con.execute(
             """
@@ -56,9 +59,11 @@ def init_db() -> None:
             )
             """
         )
-        con.commit()
+        if owns_con:
+            con.commit()
     finally:
-        con.close()
+        if owns_con:
+            con.close()
 
 
 def write_result(
@@ -77,10 +82,14 @@ def write_result(
     risks=None,
     followup_candidates=None,
     github_action=None,
+    con: sqlite3.Connection = None,
 ):
     """Insert or update a structured review receipt in the canonical results table."""
-    init_db()
-    con = sqlite3.connect(DB_PATH)
+    owns_con = False
+    if con is None:
+        con = sqlite3.connect(DB_PATH)
+        owns_con = True
+    init_db(con)
     try:
         cur = con.cursor()
         cur.execute("SELECT 1 FROM results WHERE result_id = ?", (result_id,))
@@ -143,6 +152,8 @@ def write_result(
                 """,
                 payload,
             )
-        con.commit()
+        if owns_con:
+            con.commit()
     finally:
-        con.close()
+        if owns_con:
+            con.close()

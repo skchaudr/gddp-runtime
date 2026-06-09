@@ -51,8 +51,9 @@ class TestReturnRouter(unittest.TestCase):
 
     @patch("scripts.runtime.return_router._mark_job_awaiting_review")
     @patch("scripts.runtime.return_router.write_result")
+    @patch("scripts.runtime.return_router._connect")
     @patch("scripts.runtime.return_router._load_job")
-    def test_handle_merged_pr_success(self, mock_load_job, mock_write, mock_mark_review):
+    def test_handle_merged_pr_success(self, mock_load_job, mock_connect, mock_write, mock_mark_review):
         event = {"raw_payload_path": "payload.json", "event_id": "evt_123456"}
         payload = {
             "repository": {"full_name": "skchaudr/vault-doctor"},
@@ -82,7 +83,9 @@ class TestReturnRouter(unittest.TestCase):
                 "node_id": "auth-node",
             },
         )
+        import unittest
         mock_write.assert_called_once_with(
+            con=unittest.mock.ANY,
             result_id="res_123456",
             job_id="job_123",
             executor="jules",
@@ -101,7 +104,7 @@ class TestReturnRouter(unittest.TestCase):
                 "raw_payload_path": "payload.json",
             },
         )
-        mock_mark_review.assert_called_once_with("job_123")
+        mock_mark_review.assert_called_once_with("job_123", unittest.mock.ANY)
 
     @patch("scripts.runtime.return_router.write_result")
     def test_handle_merged_pr_invalid_repo(self, mock_write):
@@ -152,8 +155,9 @@ class TestReturnRouter(unittest.TestCase):
         mock_write.assert_not_called()
 
     @patch("scripts.runtime.return_router.write_result")
+    @patch("scripts.runtime.return_router._connect")
     @patch("scripts.runtime.return_router._load_job")
-    def test_handle_merged_pr_rejects_unknown_job(self, mock_load_job, mock_write):
+    def test_handle_merged_pr_rejects_unknown_job(self, mock_load_job, mock_connect, mock_write):
         event = {"raw_payload_path": "payload.json", "event_id": "evt_123456"}
         payload = {
             "repository": {"full_name": "skchaudr/vault-doctor"},
@@ -171,8 +175,9 @@ class TestReturnRouter(unittest.TestCase):
         mock_write.assert_not_called()
 
     @patch("scripts.runtime.return_router.write_result")
+    @patch("scripts.runtime.return_router._connect")
     @patch("scripts.runtime.return_router._load_job")
-    def test_handle_merged_pr_rejects_mismatched_job_metadata(self, mock_load_job, mock_write):
+    def test_handle_merged_pr_rejects_mismatched_job_metadata(self, mock_load_job, mock_connect, mock_write):
         event = {"raw_payload_path": "payload.json", "event_id": "evt_123456"}
         payload = {
             "repository": {"full_name": "skchaudr/vault-doctor"},
