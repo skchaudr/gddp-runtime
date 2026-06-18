@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..heartbeat.graph_reader import GraphReader
-from ..results_store import write_result
+from ..results_store import write_decision_result
 from .context_reader import read_context, DecisionContext
 from .powers import dispatch_next
 from .powers.escalate import run as escalate
@@ -51,16 +51,17 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
     """)
     cleaned += cur.rowcount
 
-    # Expire stale events
+    # Expire stale events (events table uses received_at, not created_at)
     cur.execute("""
         UPDATE events SET status = 'expired'
         WHERE status = 'received'
-        AND created_at < datetime('now', '-6 hours')
+        AND received_at < datetime('now', '-6 hours')
     """)
     cleaned += cur.rowcount
 
+    con.commit()
+
     if cleaned > 0:
-        con.commit()
         logger.info("Cleaned %d stale rows (jobs + events older than 6 hours)", cleaned)
 
     return cleaned
@@ -83,16 +84,16 @@ def _check_stuck_jobs(ctx: DecisionContext) -> bool:
 
 
 def _write_decision_result(result: DecisionResult, project_id: str) -> None:
-    """Persist the decision to SQLite results table."""
+    """Persist the decision to the decision_results table."""
     import uuid
     result_id = f"dl_{uuid.uuid4().hex[:8]}"
     result_dict = result.model_dump()
 
-    write_result(
+    write_decision_result(
         result_id=result_id,
-        repo_name=project_id,
+        action=result_dict["action"],
         node_id=result_dict.get("node_id"),
-        status=result_dict["action"],
+        project_id=project_id,
         reason=result_dict.get("reason"),
     )
 
