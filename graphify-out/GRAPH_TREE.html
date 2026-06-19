@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>gddp-runtime — graphify tree viewer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      margin: 20px 0 0 24px;
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: #1e3a56;
+    }
+    .controls {
+      margin: 20px 0 15px 24px;
+    }
+    button {
+      margin-right: 10px;
+      padding: 8px 18px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease-in-out;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    button:active {
+      background: #004085;
+    }
+    #tree-container {
+      width: calc(100vw - 48px); /* Adjust for body margin/padding */
+      height: 85vh;
+      overflow: auto;
+      border-radius: 8px;
+      background: #fff;
+      margin-left: 24px;
+      margin-right: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border: 1px solid #ddd;
+    }
+    svg {
+      background: #fff;
+      border-radius: 8px;
+      display: block; /* Important for D3 */
+    }
+    .node circle {
+      stroke-width: 2.5px;
+    }
+    .node text { /* Base style for the <text> container */
+      font: 13px 'Segoe UI', sans-serif;
+      paint-order: stroke fill; /* Ensures text is readable over lines */
+      stroke: #fff; /* White halo */
+      stroke-width: 3px; /* Halo thickness */
+      stroke-linejoin: round;
+      stroke-opacity: 0.85; /* Halo opacity */
+    }
+    .link {
+      fill: none;
+      stroke-opacity: 0.7;
+      stroke-width: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>gddp-runtime — Knowledge Graph</h1>
+  <div class="controls">
+    <button onclick="expandAll()">Expand All</button>
+    <button onclick="collapseAll()">Collapse All</button>
+    <button onclick="resetView()">Reset View</button>
+  </div>
+  <div id="tree-container">
+    <svg id="tree-svg" width="6000" height="8000"></svg>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const initialJsonData = {"name":"gddp-runtime","total_count":500,"children":[{"name":".agents","total_count":57,"children":[{"name":"hooks","total_count":50,"children":[{"name":"ag_natural_guard.py","total_count":37,"children":[{"name":"_checkpoint_marker()","total_count":1,"children":[]},{"name":"_contains_auth_verb()","total_count":1,"children":[]},{"name":"_contains_negation()","total_count":1,"children":[]},{"name":"_decision()","total_count":1,"children":[]},{"name":"_ensure_git_safety()","total_count":1,"children":[]},{"name":"_git_is_dirty()","total_count":1,"children":[]},{"name":"_git_repo_root()","total_count":1,"children":[]},{"name":"_has_sequence()","total_count":1,"children":[]},{"name":"_in_workspace_or_artifact()","total_count":1,"children":[]},{"name":"_is_artifact_write()","total_count":1,"children":[]},{"name":"_json_stdout()","total_count":1,"children":[]},{"name":"_message_text()","total_count":1,"children":[]},{"name":"_path_under()","total_count":1,"children":[]},{"name":"_read_stdin_json()","total_count":1,"children":[]},{"name":"_redact()","total_count":1,"children":[]},{"name":"_role_is_user()","total_count":1,"children":[]},{"name":"_target_path()","total_count":1,"children":[]},{"name":"_text_from_content()","total_count":1,"children":[]},{"name":"_tool_command()","total_count":1,"children":[]},{"name":"_tool_cwd()","total_count":1,"children":[]},{"name":"_words()","total_count":1,"children":[]},{"name":"_workspace_roots()","total_count":1,"children":[]},{"name":"Any","total_count":1,"children":[]},{"name":"audit()","total_count":1,"children":[]},{"name":"classify_command()","total_count":1,"children":[]},{"name":"evaluate_pre_tool_use()","total_count":1,"children":[]},{"name":"has_authorization()","total_count":1,"children":[]},{"name":"latest_user_text()","total_count":1,"children":[]},{"name":"main()","total_count":1,"children":[]},{"name":"operator_segments()","total_count":1,"children":[]},{"name":"operator_text()","total_count":1,"children":[]},{"name":"Path","total_count":1,"children":[]},{"name":"pre_invocation()","total_count":1,"children":[]},{"name":"Return (kind, text, start_line) segments where kind is operator|paste.","total_count":1,"children":[]},{"name":"Return a short-circuit decision if the write is unsafe, else None to proceed.","total_count":1,"children":[]},{"name":"Return the git toplevel for path's directory, or None if not in a repo.","total_count":1,"children":[]},{"name":"split_paste_marked_user_turn()","total_count":1,"children":[]}]},{"name":"test_ag_natural_guard.py","total_count":13,"children":[{"name":".payload()","total_count":1,"children":[]},{"name":".test_allows_naturally_authorized_in_scope_write()","total_count":1,"children":[]},{"name":".test_allows_read_only_command_without_action_authorization()","total_count":1,"children":[]},{"name":".test_auto_checkpoints_dirty_repo_before_authorized_write()","total_count":1,"children":[]},{"name":".test_blocks_pasted_update_from_authorizing_write()","total_count":1,"children":[]},{"name":".test_bottom_no_changes_overrides_top_action_language()","total_count":1,"children":[]},{"name":".test_denies_authorized_write_outside_git_repo()","total_count":1,"children":[]},{"name":".test_denies_out_of_scope_write_even_when_action_is_authorized()","total_count":1,"children":[]},{"name":".test_denies_remove_without_operator_delete_authorization()","total_count":1,"children":[]},{"name":".test_pasted_action_text_does_not_authorize_mutation()","total_count":1,"children":[]},{"name":"_init_repo()","total_count":1,"children":[]},{"name":"PasteMarkerTests","total_count":1,"children":[]},{"name":"ToolGateTests","total_count":1,"children":[]}]}]},{"name":"rules","total_count":7,"children":[{"name":"natural-bounded-autonomy.md","total_count":7,"children":[{"name":"Autonomous Chunks","total_count":1,"children":[]},{"name":"Natural Bounded Autonomy","total_count":1,"children":[]},{"name":"natural-bounded-autonomy.md","total_count":1,"children":[]},{"name":"Paste Markers","total_count":1,"children":[]},{"name":"Planning","total_count":1,"children":[]},{"name":"Receipts","total_count":1,"children":[]},{"name":"Version Control as the Safety Net","total_count":1,"children":[]}]}]}]},{"name":".remember","total_count":8,"children":[{"name":"now.md","total_count":3,"children":[{"name":"09:54 | main","total_count":1,"children":[]},{"name":"10:23 | main","total_count":1,"children":[]},{"name":"now.md","total_count":1,"children":[]}]},{"name":"tmp","total_count":1,"children":[{"name":"last-ndc.ts","total_count":1,"children":[]}]},{"name":"today-2026-05-11.md","total_count":2,"children":[{"name":"11:40 | main","total_count":1,"children":[]},{"name":"today-2026-05-11.md","total_count":1,"children":[]}]},{"name":"today-2026-05-12.md","total_count":2,"children":[{"name":"09:41 | main","total_count":1,"children":[]},{"name":"today-2026-05-12.md","total_count":1,"children":[]}]}]},{"name":"AGENTS.md","total_count":6,"children":[{"name":"AGENTS.md","total_count":1,"children":[]},{"name":"AGENTS.md — gddp-runtime","total_count":1,"children":[]},{"name":"Environment","total_count":1,"children":[]},{"name":"Message envelope","total_count":1,"children":[]},{"name":"Operator relay","total_count":1,"children":[]},{"name":"Project snapshot","total_count":1,"children":[]}]},{"name":"deploy","total_count":13,"children":[{"name":"BIGPI_RUNBOOK.md","total_count":10,"children":[{"name":"Active Paths","total_count":1,"children":[]},{"name":"Active Service","total_count":1,"children":[]},{"name":"Big Pi Runbook","total_count":1,"children":[]},{"name":"BIGPI_RUNBOOK.md","total_count":1,"children":[]},{"name":"Canonical Commands","total_count":1,"children":[]},{"name":"First Real Dispatch Preflight","total_count":1,"children":[]},{"name":"Mutation Boundaries","total_count":1,"children":[]},{"name":"Review Workflow","total_count":1,"children":[]},{"name":"Source Of Truth","total_count":1,"children":[]},{"name":"Troubleshooting Notes","total_count":1,"children":[]}]},{"name":"deploy.sh","total_count":2,"children":[{"name":"deploy.sh script","total_count":1,"children":[]},{"name":"usage()","total_count":1,"children":[]}]},{"name":"setup.sh","total_count":1,"children":[{"name":"setup.sh script","total_count":1,"children":[]}]}]},{"name":"docs","total_count":107,"children":[{"name":".remember","total_count":4,"children":[{"name":"now.md","total_count":1,"children":[{"name":"now.md","total_count":1,"children":[]}]},{"name":"tmp","total_count":1,"children":[{"name":"last-ndc.ts","total_count":1,"children":[]}]},{"name":"today-2026-05-13.md","total_count":2,"children":[{"name":"10:59 | main","total_count":1,"children":[]},{"name":"today-2026-05-13.md","total_count":1,"children":[]}]}]},{"name":"CHANGELOG.md","total_count":13,"children":[{"name":"[1.0.0] - 2026-03-13","total_count":1,"children":[]},{"name":"[1.1.0] - 2026-03-13","total_count":1,"children":[]},{"name":"[1.1.1] - 2026-03-19","total_count":1,"children":[]},{"name":"[1.1.2] - 2026-04-07","total_count":1,"children":[]},{"name":"Added","total_count":1,"children":[]},{"name":"Added","total_count":1,"children":[]},{"name":"Added","total_count":1,"children":[]},{"name":"Changed","total_count":1,"children":[]},{"name":"Changed","total_count":1,"children":[]},{"name":"Changelog","total_count":1,"children":[]},{"name":"CHANGELOG.md","total_count":1,"children":[]},{"name":"Fixed","total_count":1,"children":[]},{"name":"Removed","total_count":1,"children":[]}]},{"name":"decision-loop-spec.md","total_count":20,"children":[{"name":"1. `dispatch_next`","total_count":1,"children":[]},{"name":"1. gddp-config graph YAML","total_count":1,"children":[]},{"name":"2. `review_pr`","total_count":1,"children":[]},{"name":"2. SQLite recent rows","total_count":1,"children":[]},{"name":"3. `accept_node`","total_count":1,"children":[]},{"name":"3. Current event","total_count":1,"children":[]},{"name":"4. `escalate`","total_count":1,"children":[]},{"name":"Context Window","total_count":1,"children":[]},{"name":"Decision Logic","total_count":1,"children":[]},{"name":"decision-loop-spec.md","total_count":1,"children":[]},{"name":"Failure Modes","total_count":1,"children":[]},{"name":"Human Escalation Rules","total_count":1,"children":[]},{"name":"Output Format","total_count":1,"children":[]},{"name":"Powers (v0 scope — exactly 4)","total_count":1,"children":[]},{"name":"Purpose","total_count":1,"children":[]},{"name":"Runtime Architecture","total_count":1,"children":[]},{"name":"Runtime Decision Loop v0 Spec","total_count":1,"children":[]},{"name":"Scope Discipline (v0 hard limits)","total_count":1,"children":[]},{"name":"Stale State Handling (First Boot)","total_count":1,"children":[]},{"name":"Trigger Model","total_count":1,"children":[]}]},{"name":"gdd-next.md","total_count":1,"children":[{"name":"gdd-next.md","total_count":1,"children":[]}]},{"name":"gdd.js","total_count":7,"children":[{"name":"applyTheme()","total_count":1,"children":[]},{"name":"closeDrawer()","total_count":1,"children":[]},{"name":"getCurrentChapter()","total_count":1,"children":[]},{"name":"jumpChapter()","total_count":1,"children":[]},{"name":"openDrawer()","total_count":1,"children":[]},{"name":"updateHighlights()","total_count":1,"children":[]},{"name":"updateProgress()","total_count":1,"children":[]}]},{"name":"HANDOFF-PI-README.md","total_count":10,"children":[{"name":"Current state (post-hygiene)","total_count":1,"children":[]},{"name":"gddp-config","total_count":1,"children":[]},{"name":"gddp-runtime","total_count":1,"children":[]},{"name":"Gotchas","total_count":1,"children":[]},{"name":"Handoff for Pi README Agent","total_count":1,"children":[]},{"name":"HANDOFF-PI-README.md","total_count":1,"children":[]},{"name":"Pi agent deliverables","total_count":1,"children":[]},{"name":"Portfolio framing (Pi agent voice — quote verbatim)","total_count":1,"children":[]},{"name":"Project identity","total_count":1,"children":[]},{"name":"Repo topology","total_count":1,"children":[]}]},{"name":"handoffs","total_count":11,"children":[{"name":"001-gddp-reality-check-portfolio-push.md","total_count":4,"children":[{"name":"001 — Repo Hygeine and Sanity Checking README","total_count":1,"children":[]},{"name":"001-gddp-reality-check-portfolio-push.md","total_count":1,"children":[]},{"name":"Empirical Reality (AGENT ONLY)","total_count":1,"children":[]},{"name":"Narrative / Trajectory (SAB ONLY)","total_count":1,"children":[]}]},{"name":"002-gddp-return-path-vocabulary-lock.md","total_count":7,"children":[{"name":"002 — Return-path model + vocabulary lock (conductor → verification loop)","total_count":1,"children":[]},{"name":"002-gddp-return-path-vocabulary-lock.md","total_count":1,"children":[]},{"name":"Canonical Model & Vocabulary (from Sab's vault notes — AUTHORITATIVE)","total_count":1,"children":[]},{"name":"Empirical Reality (AGENT ONLY) — confirmed against code this session","total_count":1,"children":[]},{"name":"How to work with Sab next session (guardrails — earned the hard way this session)","total_count":1,"children":[]},{"name":"Narrative / Trajectory (SAB ONLY)","total_count":1,"children":[]},{"name":"Where Sab is now + the goal","total_count":1,"children":[]}]}]},{"name":"host-roles.md","total_count":9,"children":[{"name":"Host Roles — OpenClaw Topology","total_count":1,"children":[]},{"name":"host-roles.md","total_count":1,"children":[]},{"name":"Intended Roles","total_count":1,"children":[]},{"name":"mac — Operator Host","total_count":1,"children":[]},{"name":"Pre-Cutover Blockers","total_count":1,"children":[]},{"name":"Remote Access Path","total_count":1,"children":[]},{"name":"ssd-big — Sole Gateway","total_count":1,"children":[]},{"name":"ssd-small — Worker Node","total_count":1,"children":[]},{"name":"Topology Rules","total_count":1,"children":[]}]},{"name":"operator-practice","total_count":3,"children":[{"name":"run-checklist.md","total_count":1,"children":[{"name":"run-checklist.md","total_count":1,"children":[]}]},{"name":"task-ideas.md","total_count":2,"children":[{"name":"[[GDDO - operator practice manual run checklist]]","total_count":1,"children":[]},{"name":"task-ideas.md","total_count":1,"children":[]}]}]},{"name":"README-v2.md","total_count":25,"children":[{"name":"Architecture","total_count":1,"children":[]},{"name":"Current Limits","total_count":1,"children":[]},{"name":"Environment Variables","total_count":1,"children":[]},{"name":"For Engineers","total_count":1,"children":[]},{"name":"For Operators & Reviewers","total_count":1,"children":[]},{"name":"GDDP Runtime","total_count":1,"children":[]},{"name":"Initialize the DB","total_count":1,"children":[]},{"name":"License","total_count":1,"children":[]},{"name":"Local Development","total_count":1,"children":[]},{"name":"Manual Review Workflow","total_count":1,"children":[]},{"name":"Prerequisites","total_count":1,"children":[]},{"name":"README-v2.md","total_count":1,"children":[]},{"name":"Related Documentation","total_count":1,"children":[]},{"name":"Related Repos","total_count":1,"children":[]},{"name":"Replay","total_count":1,"children":[]},{"name":"Run tests","total_count":1,"children":[]},{"name":"Run the dry run","total_count":1,"children":[]},{"name":"Run the heartbeat","total_count":1,"children":[]},{"name":"Status","total_count":1,"children":[]},{"name":"Structure","total_count":1,"children":[]},{"name":"Topology","total_count":1,"children":[]},{"name":"What Exists Today","total_count":1,"children":[]},{"name":"What This Is","total_count":1,"children":[]},{"name":"Why It's Technically Serious","total_count":1,"children":[]},{"name":"Why This Matters","total_count":1,"children":[]}]},{"name":"README.md","total_count":4,"children":[{"name":"For Engineers","total_count":1,"children":[]},{"name":"README.md","total_count":1,"children":[]},{"name":"What This Is","total_count":1,"children":[]},{"name":"Why This Matters","total_count":1,"children":[]}]}]},{"name":"scripts","total_count":283,"children":[{"name":"adapters","total_count":31,"children":[{"name":"jules_action_adapter.py","total_count":11,"children":[{"name":".__init__()","total_count":1,"children":[]},{"name":"._github_token()","total_count":1,"children":[]},{"name":".build_issue_body()","total_count":1,"children":[]},{"name":".dispatch()","total_count":1,"children":[]},{"name":"_flatten()","total_count":1,"children":[]},{"name":"Convert any YAML value (str, dict, list) to a readable string.","total_count":1,"children":[]},{"name":"Dispatches a job to Jules via a GitHub issue labeled 'jules'.     Jules's GitHub","total_count":1,"children":[]},{"name":"DispatchResult","total_count":1,"children":[]},{"name":"Format the job packet as a structured issue body.         Jules reads this as it","total_count":1,"children":[]},{"name":"jules_action_adapter.py — Option A dispatch adapter.  Dispatches a job to Jules","total_count":1,"children":[]},{"name":"JulesActionAdapter","total_count":1,"children":[]}]},{"name":"jules_cli_adapter.py","total_count":8,"children":[{"name":".__init__()","total_count":1,"children":[]},{"name":".collect_result()","total_count":1,"children":[]},{"name":".dispatch()","total_count":1,"children":[]},{"name":".poll()","total_count":1,"children":[]},{"name":"Dispatches a job to Jules via the Jules CLI.     More GDAD-pure than Option A: t","total_count":1,"children":[]},{"name":"DispatchResult","total_count":1,"children":[]},{"name":"jules_cli_adapter.py — Option B dispatch adapter (stub).  Dispatches a job to Ju","total_count":1,"children":[]},{"name":"JulesCliAdapter","total_count":1,"children":[]}]},{"name":"test_jules_action_adapter.py","total_count":11,"children":[{"name":".setUp()","total_count":1,"children":[]},{"name":".test_build_issue_body()","total_count":1,"children":[]},{"name":".test_dispatch_exception()","total_count":1,"children":[]},{"name":".test_dispatch_failure()","total_count":1,"children":[]},{"name":".test_dispatch_requires_explicit_token()","total_count":1,"children":[]},{"name":".test_dispatch_success()","total_count":1,"children":[]},{"name":".test_dispatch_timeout()","total_count":1,"children":[]},{"name":".test_flatten_dict()","total_count":1,"children":[]},{"name":".test_flatten_list()","total_count":1,"children":[]},{"name":".test_flatten_string()","total_count":1,"children":[]},{"name":"TestJulesActionAdapter","total_count":1,"children":[]}]},{"name":"__init__.py","total_count":1,"children":[]}]},{"name":"dry_run.py","total_count":13,"children":[{"name":"classify_and_scope()","total_count":1,"children":[]},{"name":"connect()","total_count":1,"children":[]},{"name":"create_job()","total_count":1,"children":[]},{"name":"dry_run.py — Fake end-to-end flow for Phase 2 verification.  Walks one mock GitH","total_count":1,"children":[]},{"name":"enqueue()","total_count":1,"children":[]},{"name":"inject_event()","total_count":1,"children":[]},{"name":"job_dir()","total_count":1,"children":[]},{"name":"main()","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"route_to_review()","total_count":1,"children":[]},{"name":"simulate_result()","total_count":1,"children":[]},{"name":"step()","total_count":1,"children":[]},{"name":"verify_artifacts()","total_count":1,"children":[]}]},{"name":"heartbeat.py","total_count":10,"children":[{"name":"classify()","total_count":1,"children":[]},{"name":"connect()","total_count":1,"children":[]},{"name":"heartbeat.py — Polls for pending events, creates jobs, dispatches to Jules.  Run","total_count":1,"children":[]},{"name":"job_dir()","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"Path","total_count":1,"children":[]},{"name":"Returns classification dict if the event maps to a known node, else None.     On","total_count":1,"children":[]},{"name":"Row","total_count":1,"children":[]},{"name":"run_heartbeat()","total_count":1,"children":[]},{"name":"ts_id()","total_count":1,"children":[]}]},{"name":"init_db.py","total_count":2,"children":[{"name":"init_db()","total_count":1,"children":[]},{"name":"init_db.py — Initialize queue.db with tables matching Phase 0 schemas.  Tables m","total_count":1,"children":[]}]},{"name":"intake_server.py","total_count":8,"children":[{"name":"connect()","total_count":1,"children":[]},{"name":"health()","total_count":1,"children":[]},{"name":"intake_server.py — Webhook intake server for Phase 3.  Receives raw GitHub webho","total_count":1,"children":[]},{"name":"Map a raw GitHub webhook payload to our normalized event schema.     Returns Non","total_count":1,"children":[]},{"name":"normalize_event()","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"verify_signature()","total_count":1,"children":[]},{"name":"webhook()","total_count":1,"children":[]}]},{"name":"rollback.py","total_count":4,"children":[{"name":"connect()","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"rollback()","total_count":1,"children":[]},{"name":"rollback.py — Revert a job and restore node state.  Usage:     python3 scripts/r","total_count":1,"children":[]}]},{"name":"runtime","total_count":202,"children":[{"name":"decision_loop","total_count":70,"children":[{"name":"context_reader.py","total_count":12,"children":[{"name":"Build the full context payload for one decision cycle.","total_count":1,"children":[]},{"name":"Connection","total_count":1,"children":[]},{"name":"context_reader.py - builds the context payload the runtime decision loop needs.","total_count":1,"children":[]},{"name":"DecisionContext","total_count":1,"children":[]},{"name":"GraphReader","total_count":1,"children":[]},{"name":"Load project graph and categorize nodes by status.","total_count":1,"children":[]},{"name":"ProjectState","total_count":1,"children":[]},{"name":"Pull recent rows from SQLite to understand momentum and detect stale state.","total_count":1,"children":[]},{"name":"read_context()","total_count":1,"children":[]},{"name":"read_project_state()","total_count":1,"children":[]},{"name":"read_recent_activity()","total_count":1,"children":[]},{"name":"RecentActivity","total_count":1,"children":[]}]},{"name":"engine.py","total_count":15,"children":[{"name":"_check_stuck_jobs()","total_count":1,"children":[]},{"name":"_clean_stale_state()","total_count":1,"children":[]},{"name":"_connect()","total_count":1,"children":[]},{"name":"_write_decision_result()","total_count":1,"children":[]},{"name":"Check if any active job has been running > 24 hours.","total_count":1,"children":[]},{"name":"Connection","total_count":1,"children":[]},{"name":"Cron entry point — same logic, cron trigger.","total_count":1,"children":[]},{"name":"DecisionContext","total_count":1,"children":[]},{"name":"DecisionResult","total_count":1,"children":[]},{"name":"engine.py - runtime decision loop.  Wake → read context → decide → act → write r","total_count":1,"children":[]},{"name":"handle_cron()","total_count":1,"children":[]},{"name":"handle_event()","total_count":1,"children":[]},{"name":"Main entry point — called by webhook router or cron.      Args:         trigger:","total_count":1,"children":[]},{"name":"Mark stale jobs and events as expired. Returns count of rows cleaned.","total_count":1,"children":[]},{"name":"Persist the decision to the decision_results table.","total_count":1,"children":[]}]},{"name":"powers","total_count":17,"children":[{"name":"dispatch_next.py","total_count":12,"children":[{"name":"_build_issue_body()","total_count":1,"children":[]},{"name":"_find_eligible_node()","total_count":1,"children":[]},{"name":"_has_active_job()","total_count":1,"children":[]},{"name":"Check if there's already a dispatched/running job for this project.","total_count":1,"children":[]},{"name":"Decide whether to dispatch and do it.      Returns DispatchResult on success, Es","total_count":1,"children":[]},{"name":"DecisionContext","total_count":1,"children":[]},{"name":"dispatch_next.py — Select the next eligible node and create a GitHub issue for J","total_count":1,"children":[]},{"name":"DispatchResult","total_count":1,"children":[]},{"name":"EscalateResult","total_count":1,"children":[]},{"name":"Find the highest-priority pending node whose dependencies are all complete.","total_count":1,"children":[]},{"name":"Format the node spec as a GitHub issue body for Jules.","total_count":1,"children":[]},{"name":"run()","total_count":1,"children":[]}]},{"name":"escalate.py","total_count":4,"children":[{"name":"Create an escalation result. The engine handles writing it to SQLite.","total_count":1,"children":[]},{"name":"escalate.py — Flag blocked or unexpected state.  Writes an escalation record to","total_count":1,"children":[]},{"name":"EscalateResult","total_count":1,"children":[]},{"name":"run()","total_count":1,"children":[]}]},{"name":"__init__.py","total_count":1,"children":[]}]},{"name":"schema.py","total_count":9,"children":[{"name":"AcceptResult","total_count":1,"children":[]},{"name":"DispatchResult","total_count":1,"children":[]},{"name":"EscalateResult","total_count":1,"children":[]},{"name":"NoOpResult","total_count":1,"children":[]},{"name":"Nothing to do — all nodes complete or blocked, no stale state.","total_count":1,"children":[]},{"name":"ReviewResult","total_count":1,"children":[]},{"name":"schema.py - Pydantic models enforcing the decision loop output contract.  Every","total_count":1,"children":[]},{"name":"v0 placeholder - accept_node ships in the review-gate node.","total_count":1,"children":[]},{"name":"v0 placeholder - review_pr ships in the review-gate node.","total_count":1,"children":[]}]},{"name":"test_decision_loop.py","total_count":16,"children":[{"name":"A GraphReader that returns a simple 3-node project.","total_count":1,"children":[]},{"name":"A no-row cleanup must not keep SQLite locked for the result writer.","total_count":1,"children":[]},{"name":"dispatch_next should escalate if a job is already active.","total_count":1,"children":[]},{"name":"in_memory_db()","total_count":1,"children":[]},{"name":"mock_graph_reader()","total_count":1,"children":[]},{"name":"Pydantic should reject a DispatchResult with missing fields.","total_count":1,"children":[]},{"name":"SQLite in-memory DB with the tables the decision loop needs.","total_count":1,"children":[]},{"name":"test_clean_stale_state_releases_lock_before_writing_decision_result()","total_count":1,"children":[]},{"name":"test_dispatch_blocked_when_job_active()","total_count":1,"children":[]},{"name":"test_dispatch_result_accepts_good_data()","total_count":1,"children":[]},{"name":"test_dispatch_result_rejects_bad_data()","total_count":1,"children":[]},{"name":"test_escalate_returns_valid_schema()","total_count":1,"children":[]},{"name":"test_read_project_state_categorizes_nodes()","total_count":1,"children":[]},{"name":"test_read_recent_activity_finds_active_jobs()","total_count":1,"children":[]},{"name":"test_read_recent_activity_shape()","total_count":1,"children":[]},{"name":"Tests for the runtime decision loop.","total_count":1,"children":[]}]},{"name":"__init__.py","total_count":1,"children":[]}]},{"name":"graph_updater.py","total_count":4,"children":[{"name":"Any","total_count":1,"children":[]},{"name":"graph_updater.py — Disabled runtime graph mutation entrypoint.  Graph and gddp-c","total_count":1,"children":[]},{"name":"Legacy compatibility stub.      Returns a disabled response instead of mutating","total_count":1,"children":[]},{"name":"update_graph_node_complete()","total_count":1,"children":[]}]},{"name":"heartbeat","total_count":74,"children":[{"name":"classifier.py","total_count":7,"children":[{"name":"_pick_executor()","total_count":1,"children":[]},{"name":"classifier.py — Maps implementation requests to ready nodes.  The heartbeat only","total_count":1,"children":[]},{"name":"classify()","total_count":1,"children":[]},{"name":"NodeData","total_count":1,"children":[]},{"name":"Pick the first declared execution mode, preserving graph ordering.","total_count":1,"children":[]},{"name":"Returns a classification dict if the event maps to a dispatchable node, else Non","total_count":1,"children":[]},{"name":"Row","total_count":1,"children":[]}]},{"name":"dispatcher.py","total_count":6,"children":[{"name":".__init__()","total_count":1,"children":[]},{"name":"_build_adapter_payload()","total_count":1,"children":[]},{"name":"Build the executor packet from the persisted job payload.","total_count":1,"children":[]},{"name":"dispatch()","total_count":1,"children":[]},{"name":"dispatcher.py — Routes a job to the correct adapter.  Dispatch stays executor-dr","total_count":1,"children":[]},{"name":"DispatchResult","total_count":1,"children":[]}]},{"name":"graph_reader.py","total_count":9,"children":[{"name":".__init__()","total_count":1,"children":[]},{"name":".get_ready_nodes()","total_count":1,"children":[]},{"name":".load_node()","total_count":1,"children":[]},{"name":".load_project()","total_count":1,"children":[]},{"name":"graph_reader.py — Reads gddp-config YAML and returns graph state.  Replaces the","total_count":1,"children":[]},{"name":"GraphReader","total_count":1,"children":[]},{"name":"NodeData","total_count":1,"children":[]},{"name":"ProjectGraph","total_count":1,"children":[]},{"name":"Returns nodes that are status=ready in project.yaml AND have a node YAML file.","total_count":1,"children":[]}]},{"name":"job_factory.py","total_count":6,"children":[{"name":"build_job()","total_count":1,"children":[]},{"name":"job_factory.py — Builds a job payload from a NodeData and event.  Returns a plai","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"Path","total_count":1,"children":[]},{"name":"Row","total_count":1,"children":[]},{"name":"ts_id()","total_count":1,"children":[]}]},{"name":"runner.py","total_count":14,"children":[{"name":"_execute_dispatches()","total_count":1,"children":[]},{"name":"_plan_dispatches()","total_count":1,"children":[]},{"name":"_record_outcomes()","total_count":1,"children":[]},{"name":"connect()","total_count":1,"children":[]},{"name":"Connection","total_count":1,"children":[]},{"name":"DispatchOutcome","total_count":1,"children":[]},{"name":"GraphReader","total_count":1,"children":[]},{"name":"main()","total_count":1,"children":[]},{"name":"Phase A: Fetch events, classify, scope-check, and reserve jobs on the main threa","total_count":1,"children":[]},{"name":"Phase B: Worker threads execute dispatch(job, repo) in parallel.","total_count":1,"children":[]},{"name":"Phase C: Record results sequentially on the main thread.","total_count":1,"children":[]},{"name":"PlannedDispatch","total_count":1,"children":[]},{"name":"run_heartbeat()","total_count":1,"children":[]},{"name":"runner.py — Heartbeat vNext main loop.  Replaces scripts/heartbeat.py with a gra","total_count":1,"children":[]}]},{"name":"scope_checker.py","total_count":9,"children":[{"name":".__bool__()","total_count":1,"children":[]},{"name":".__init__()","total_count":1,"children":[]},{"name":"check_scope()","total_count":1,"children":[]},{"name":"Connection","total_count":1,"children":[]},{"name":"GraphReader","total_count":1,"children":[]},{"name":"NodeData","total_count":1,"children":[]},{"name":"Returns ScopeCheckResult. safe=True means it is OK to dispatch.","total_count":1,"children":[]},{"name":"scope_checker.py — Guards against duplicate dispatch.  Before creating a job, ve","total_count":1,"children":[]},{"name":"ScopeCheckResult","total_count":1,"children":[]}]},{"name":"state_recorder.py","total_count":12,"children":[{"name":"Connection","total_count":1,"children":[]},{"name":"insert_job()","total_count":1,"children":[]},{"name":"insert_queue_record()","total_count":1,"children":[]},{"name":"mark_event_classified()","total_count":1,"children":[]},{"name":"mark_event_ignored()","total_count":1,"children":[]},{"name":"mark_event_mapped()","total_count":1,"children":[]},{"name":"mark_event_scope_blocked()","total_count":1,"children":[]},{"name":"mark_job_failed()","total_count":1,"children":[]},{"name":"mark_job_running()","total_count":1,"children":[]},{"name":"now()","total_count":1,"children":[]},{"name":"state_recorder.py — All SQLite state mutations for the heartbeat.  Single respon","total_count":1,"children":[]},{"name":"ts_id()","total_count":1,"children":[]}]},{"name":"test_parallel_dispatch.py","total_count":10,"children":[{"name":"_init_db()","total_count":1,"children":[]},{"name":"_insert_event()","total_count":1,"children":[]},{"name":"_mock_id_generation()","total_count":1,"children":[]},{"name":"_verify_parallel_results()","total_count":1,"children":[]},{"name":"_write_graph()","total_count":1,"children":[]},{"name":"Path","total_count":1,"children":[]},{"name":"test_cross_project_event_filtering()","total_count":1,"children":[]},{"name":"test_env()","total_count":1,"children":[]},{"name":"test_parallel_dispatch.py — Verifies parallel dispatch with main-thread SQLite w","total_count":1,"children":[]},{"name":"test_parallel_dispatch_records_results_and_blocks_dependencies()","total_count":1,"children":[]}]},{"name":"__init__.py","total_count":1,"children":[]}]},{"name":"replay.py","total_count":5,"children":[{"name":"connect()","total_count":1,"children":[]},{"name":"main()","total_count":1,"children":[]},{"name":"replay.py — Replay failed or partial runtime steps from persisted state.  Usage:","total_count":1,"children":[]},{"name":"replay_job()","total_count":1,"children":[]},{"name":"replay_result()","total_count":1,"children":[]}]},{"name":"results_store.py","total_count":11,"children":[{"name":"_json_or_none()","total_count":1,"children":[]},{"name":"_now()","total_count":1,"children":[]},{"name":"Ensure the canonical review-receipt table exists.","total_count":1,"children":[]},{"name":"Ensure the decision-loop results table exists.      Distinct from the `results`","total_count":1,"children":[]},{"name":"init_db()","total_count":1,"children":[]},{"name":"init_decision_results()","total_count":1,"children":[]},{"name":"Insert a decision-loop result row. Does NOT touch graph truth.","total_count":1,"children":[]},{"name":"Insert or update a structured review receipt in the canonical results table.","total_count":1,"children":[]},{"name":"results_store.py — Persistence helpers for review receipts.  Runtime return hand","total_count":1,"children":[]},{"name":"write_decision_result()","total_count":1,"children":[]},{"name":"write_result()","total_count":1,"children":[]}]},{"name":"return_router.py","total_count":14,"children":[{"name":"_connect()","total_count":1,"children":[]},{"name":"_load_job()","total_count":1,"children":[]},{"name":"_mark_job_awaiting_review()","total_count":1,"children":[]},{"name":"Connection","total_count":1,"children":[]},{"name":"Extract `job: <job_id>` from the PR body.","total_count":1,"children":[]},{"name":"Extract `node: <node_id>` from the PR body.","total_count":1,"children":[]},{"name":"handle_merged_pr()","total_count":1,"children":[]},{"name":"Main entry point for merged PR handling.     Returns review-routing status only;","total_count":1,"children":[]},{"name":"parse_job_id()","total_count":1,"children":[]},{"name":"parse_node_id()","total_count":1,"children":[]},{"name":"Reject repos not in ALLOWED_REPOS.","total_count":1,"children":[]},{"name":"return_router.py — Convert merged PR events into review receipts.  Runtime does","total_count":1,"children":[]},{"name":"Row","total_count":1,"children":[]},{"name":"validate_repo()","total_count":1,"children":[]}]},{"name":"test_graph_updater.py","total_count":2,"children":[{"name":"test_graph_updater.py — Verifies runtime graph mutation stays disabled.","total_count":1,"children":[]},{"name":"test_update_graph_node_complete_is_disabled()","total_count":1,"children":[]}]},{"name":"test_replay.py","total_count":6,"children":[{"name":".test_replay_job_aborted()","total_count":1,"children":[]},{"name":".test_replay_job_success()","total_count":1,"children":[]},{"name":".test_replay_result_not_found()","total_count":1,"children":[]},{"name":".test_replay_result_success()","total_count":1,"children":[]},{"name":"test_replay.py — Tests for the replay logic.","total_count":1,"children":[]},{"name":"TestReplay","total_count":1,"children":[]}]},{"name":"test_results_store.py","total_count":4,"children":[{"name":"temp_db()","total_count":1,"children":[]},{"name":"test_init_db_creates_results_table()","total_count":1,"children":[]},{"name":"test_write_result_insert()","total_count":1,"children":[]},{"name":"test_write_result_update_replaces_existing_receipt()","total_count":1,"children":[]}]},{"name":"test_return_router.py","total_count":11,"children":[{"name":".test_handle_merged_pr_invalid_repo()","total_count":1,"children":[]},{"name":".test_handle_merged_pr_missing_job_tag()","total_count":1,"children":[]},{"name":".test_handle_merged_pr_missing_node_tag()","total_count":1,"children":[]},{"name":".test_handle_merged_pr_rejects_mismatched_job_metadata()","total_count":1,"children":[]},{"name":".test_handle_merged_pr_rejects_unknown_job()","total_count":1,"children":[]},{"name":".test_handle_merged_pr_success()","total_count":1,"children":[]},{"name":".test_parse_job_id()","total_count":1,"children":[]},{"name":".test_parse_node_id()","total_count":1,"children":[]},{"name":".test_validate_repo()","total_count":1,"children":[]},{"name":"test_return_router.py — Tests for review-receipt routing on merged PRs.","total_count":1,"children":[]},{"name":"TestReturnRouter","total_count":1,"children":[]}]},{"name":"__init__.py","total_count":1,"children":[]}]},{"name":"test_intake_server.py","total_count":10,"children":[{"name":"Test when the payload is signed with a different secret.","total_count":1,"children":[]},{"name":"Test when WEBHOOK_SECRET is not set (empty string).","total_count":1,"children":[]},{"name":"Test with a valid secret and matching signature.","total_count":1,"children":[]},{"name":"Test with a valid secret but an incorrect signature hash.","total_count":1,"children":[]},{"name":"Test with a valid secret but missing 'sha256=' prefix in signature.","total_count":1,"children":[]},{"name":"test_verify_signature_invalid_hash()","total_count":1,"children":[]},{"name":"test_verify_signature_missing_prefix()","total_count":1,"children":[]},{"name":"test_verify_signature_no_secret()","total_count":1,"children":[]},{"name":"test_verify_signature_valid()","total_count":1,"children":[]},{"name":"test_verify_signature_wrong_secret()","total_count":1,"children":[]}]},{"name":"test_runtime_root_config.py","total_count":3,"children":[{"name":"_reload_module()","total_count":1,"children":[]},{"name":"test_legacy_scripts_keep_opclaw_root_fallback()","total_count":1,"children":[]},{"name":"test_legacy_scripts_prefer_gddp_runtime_root()","total_count":1,"children":[]}]}]},{"name":"setup.sh","total_count":1,"children":[{"name":"setup.sh script","total_count":1,"children":[]}]},{"name":"verification-parallel-build-revised.md","total_count":16,"children":[{"name":"Cleanup","total_count":1,"children":[]},{"name":"Core model","total_count":1,"children":[]},{"name":"Environment","total_count":1,"children":[]},{"name":"GDDP Verification Module — Parallel Build Setup","total_count":1,"children":[]},{"name":"Per-agent stop condition","total_count":1,"children":[]},{"name":"Pre-work on main","total_count":1,"children":[]},{"name":"Quick reference","total_count":1,"children":[]},{"name":"Shared shape profile interface","total_count":1,"children":[]},{"name":"Task 1 packet — Structural Validator","total_count":1,"children":[]},{"name":"Task 2 packet — Decision Loop rules engine","total_count":1,"children":[]},{"name":"Task 4 packet — Semantic Evaluator","total_count":1,"children":[]},{"name":"Task 5 packet — Shape Profiles","total_count":1,"children":[]},{"name":"verification-parallel-build-revised.md","total_count":1,"children":[]},{"name":"Wave 1 — Tasks 1 + 2 in parallel","total_count":1,"children":[]},{"name":"Wave 2 — Task 3 standalone","total_count":1,"children":[]},{"name":"Wave 3 — Tasks 4 + 5 in parallel","total_count":1,"children":[]}]},{"name":"verification-parallel-build.md","total_count":9,"children":[{"name":"Cleanup","total_count":1,"children":[]},{"name":"Environment","total_count":1,"children":[]},{"name":"GDDP Verification Module — Parallel Build Setup","total_count":1,"children":[]},{"name":"Pre-work on main (one commit, before any branching)","total_count":1,"children":[]},{"name":"Quick reference","total_count":1,"children":[]},{"name":"verification-parallel-build.md","total_count":1,"children":[]},{"name":"Wave 1 — Tasks 1 + 2 in parallel","total_count":1,"children":[]},{"name":"Wave 2 — Task 3 standalone","total_count":1,"children":[]},{"name":"Wave 3 — Tasks 4 + 5 in parallel","total_count":1,"children":[]}]}]};
+
+    function transformData(jsonData) {
+        // Helper function to recursively build the children structure
+        function processNode(node, parentL1StageName) {
+            let displayName = node.name;
+            // Append total_count if it exists and is not already in the name
+            if (node.total_count !== undefined) {
+                if (!/\(Total Count: \d+\)$/.test(displayName)) {
+                    displayName += ` (Total Count: ${node.total_count})`;
+                }
+            }
+
+            const newNode = { name: displayName };
+
+            if (parentL1StageName === "Root") {
+                 newNode.originalStageName = node.name;
+            } else {
+                newNode.originalStageName = parentL1StageName;
+            }
+
+            if (node.children && node.children.length > 0) {
+                const stageNameToPass = (parentL1StageName === "Root") ? node.name : parentL1StageName;
+                newNode.children = node.children.map(child => processNode(child, stageNameToPass));
+            }
+
+            return newNode;
+        }
+
+        let rootDisplayName = jsonData.name;
+        if (jsonData.total_count !== undefined && !/\(Total Count: \d+\)$/.test(rootDisplayName)) {
+            rootDisplayName += ` (Total Count: ${jsonData.total_count})`;
+        }
+
+        return {
+            name: rootDisplayName,
+            originalStageName: "Root",
+            children: (jsonData.children || []).map(child => processNode(child, "Root"))
+        };
+    }
+
+    const treeData = transformData(initialJsonData);
+
+    // Auto-populated phaseColors: every depth-1 child of the root gets
+    // a stable colour from a bigger palette so all top-level dirs are
+    // distinguishable.
+    const PALETTE = [
+      ["#3498DB","#2980B9","#AED6F1"], ["#2ECC71","#27AE60","#A9DFBF"],
+      ["#E74C3C","#C0392B","#F5B7B1"], ["#9B59B6","#8E44AD","#D7BDE2"],
+      ["#F39C12","#D68910","#FAD7A0"], ["#1ABC9C","#117864","#A2D9CE"],
+      ["#34495E","#1B2631","#ABB2B9"], ["#E67E22","#BA4A00","#F5CBA7"],
+      ["#16A085","#0E6655","#A2D9CE"], ["#D35400","#A04000","#EDBB99"],
+      ["#7F8C8D","#566573","#D5DBDB"], ["#C0392B","#7B241C","#F5B7B1"],
+      ["#2E86C1","#1B4F72","#A9CCE3"], ["#28B463","#196F3D","#A9DFBF"],
+      ["#AF7AC5","#6C3483","#D2B4DE"],
+    ];
+    const phaseColors = { "Root": { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+                          "Default": { fill: "#BDC3C7", stroke: "#95A5A6", collapsedFill: "#ECF0F1" } };
+    (initialJsonData.children || []).forEach((c, i) => {
+      const pal = PALETTE[i % PALETTE.length];
+      phaseColors[c.name] = { fill: pal[0], stroke: pal[1], collapsedFill: pal[2] };
+    });
+
+    const levelSpecificPalettes = {
+      0: { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+      2: { fill: "#6ab04c", stroke: "#508a38", collapsedFill: "#a3d391" },
+      3: { fill: "#f0932b", stroke: "#d0730f", collapsedFill: "#f6c07e" },
+      4: { fill: "#be2edd", stroke: "#a01cb3", collapsedFill: "#e08bf2" },
+      5: { fill: "#00a8ff", stroke: "#007ac1", collapsedFill: "#74d2ff" },
+      6: { fill: "#e55039", stroke: "#c23620", collapsedFill: "#f09a8d" },
+      default: { fill: "#747d8c", stroke: "#57606f", collapsedFill: "#a4b0be" }
+    };
+
+    const svgElement = d3.select("#tree-svg");
+    const initialSvgWidth = +svgElement.attr("width");
+    const initialSvgHeight = +svgElement.attr("height");
+    const margin = { top: 40, right: 120, bottom: 80, left: 450 };
+    let width = initialSvgWidth - margin.left - margin.right;
+    let height = initialSvgHeight - margin.top - margin.bottom;
+    const duration = 500;
+    let nodeCounter = 0;
+    const g = svgElement.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const treemap = d3.tree().nodeSize([40, 0]);
+    let rootNode = d3.hierarchy(treeData, d => d.children);
+    rootNode.x0 = 0;
+    rootNode.y0 = 0;
+
+    if (rootNode.children) {
+      rootNode.children.forEach(d_child => {
+        if (d_child.children) { collapseBranch(d_child); }
+      });
+    }
+    updateTree(rootNode);
+
+    function collapseBranch(d) { if (d.children) { d._children = d.children; d._children.forEach(collapseBranch); d.children = null; } }
+    function expandBranch(d) { if (d._children) { d.children = d._children; d._children = null; } if (d.children) { d.children.forEach(expandBranch); } }
+    window.expandAll = () => { expandBranch(rootNode); updateTree(rootNode); };
+    window.collapseAll = () => { if (rootNode.children) { rootNode.children.forEach(collapseBranch); } updateTree(rootNode); };
+    window.resetView = () => { if (rootNode.children) { rootNode.children.forEach(d_child => { if (d_child.children || d_child._children) { collapseBranch(d_child); } }); } if (rootNode._children && !rootNode.children) { rootNode.children = rootNode._children; rootNode._children = null; } updateTree(rootNode); };
+
+    function updateTree(source) {
+      const treeLayoutData = treemap(rootNode);
+      let nodes = treeLayoutData.descendants();
+      let links = treeLayoutData.descendants().slice(1);
+
+      let minX = 0;
+      let maxX = 0;
+      if (nodes.length > 0) {
+        minX = d3.min(nodes, d => d.x);
+        maxX = d3.max(nodes, d => d.x);
+      }
+
+      let neededHeight = Math.max(initialSvgHeight, maxX - minX + margin.top + margin.bottom + 100);
+      svgElement.transition().duration(duration / 2).attr("height", neededHeight);
+      g.transition().duration(duration / 2).attr("transform", `translate(${margin.left},${margin.top - minX + 40})`);
+
+      nodes.forEach(d => { d.y = d.depth * 400; }); // Adjust horizontal separation if needed
+
+      const node = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++nodeCounter));
+      const nodeEnter = node.enter().append('g')
+        .attr('class', d => "node" + (d.children || d._children ? " node--internal" : " node--leaf") + (d._children ? " _children" : ""))
+        .attr('transform', d => `translate(${source.y0},${source.x0})`)
+        .on('click', (event, d) => { if (d.children) { d._children = d.children; d.children = null; } else if (d._children) { d.children = d._children; d._children = null; } updateTree(d); })
+        .style('cursor', d => (d.children || d._children) ? 'pointer' : 'default');
+
+      nodeEnter.append('circle').attr('r', 1e-6);
+
+      nodeEnter.append('text')
+        .attr('dy', '.35em')
+        .attr('x', d => d.children || d._children ? -14 : 14)
+        .attr('text-anchor', d => d.children || d._children ? 'end' : 'start')
+        .style("fill-opacity", 1e-6)
+        .call(wrapText, 380);
+
+      const nodeUpdate = nodeEnter.merge(node);
+      nodeUpdate.transition().duration(duration)
+        .attr('transform', d => `translate(${d.y},${d.x})`)
+        .attr('class', d => "node" + (d.children ? " node--internal" : " node--leaf") + (d._children ? " node--internal _children" : ""));
+
+      nodeUpdate.select('circle').attr('r', 8.5)
+        .style('fill', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            if (d._children) return palette.collapsedFill;
+            if (d.children) return palette.fill;
+            return "#fff";
+        })
+        .style('stroke', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            return palette.stroke;
+        });
+      nodeUpdate.select('text').style("fill-opacity", 1).call(wrapText, 380);
+
+      const nodeExit = node.exit().transition().duration(duration).attr('transform', d => `translate(${source.y},${source.x})`).remove();
+      nodeExit.select('circle').attr('r', 1e-6);
+      nodeExit.select('text').style('fill-opacity', 1e-6);
+
+      const link = g.selectAll('path.link').data(links, d => d.id);
+      const linkEnter = link.enter().insert('path', "g").attr('class', 'link').attr('d', d => { const o = { x: source.x0, y: source.y0 }; return diagonal(o, o); });
+
+      linkEnter.merge(link).transition().duration(duration).attr('d', d => diagonal(d, d.parent))
+        .style('stroke', d => {
+            const sourceNode = d.parent;
+            if (!sourceNode) return phaseColors.Default.stroke;
+            const l1AncestorName = sourceNode.data.originalStageName;
+            const colorPalette = phaseColors[l1AncestorName] || phaseColors.Default;
+            return colorPalette.stroke;
+        });
+      link.exit().transition().duration(duration).attr('d', d => { const o = { x: source.x, y: source.y }; return diagonal(o, o); }).remove();
+      nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    }
+
+    function diagonal(s, d) { return `M ${s.y} ${s.x} C ${(s.y + d.y) / 2} ${s.x}, ${(s.y + d.y) / 2} ${d.x}, ${d.y} ${d.x}`; }
+
+    function wrapText(textElements, maxWidth) {
+        const textPartColors = {
+            name: '#343a40',
+            count: '#0056b3'
+        };
+        const countRegex = /(\s\(Total Count: \d+\))$/;
+
+        textElements.each(function () {
+            const textD3 = d3.select(this);
+            const originalNodeText = textD3.datum().data.name;
+            const x = parseFloat(textD3.attr("x") || 0);
+            const initialDy = textD3.attr("dy");
+            const textAnchor = textD3.attr("text-anchor");
+            const lineHeight = 1.1;
+
+            textD3.text(null);
+
+            let namePart = originalNodeText;
+            let countPartText = "";
+
+            const countMatch = originalNodeText.match(countRegex);
+            if (countMatch && originalNodeText.endsWith(countMatch[0])) {
+                namePart = originalNodeText.substring(0, originalNodeText.length - countMatch[0].length).trim();
+                countPartText = countMatch[0].trim();
+            }
+
+            const tokens = [];
+            namePart.split(/\s+/).filter(Boolean).forEach(word => {
+                tokens.push({ text: word, type: 'name' });
+            });
+            if (countPartText) {
+                tokens.push({ text: countPartText, type: 'count' });
+            }
+
+            if (tokens.length === 0 && originalNodeText) {
+                tokens.push({ text: originalNodeText, type: 'name' });
+            }
+
+            let currentTspan = textD3.append("tspan").attr("x", x).attr("dy", initialDy);
+            if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+
+            let lineTokens = [];
+
+            for (let i = 0; i < tokens.length; i++) {
+                const tokenObj = tokens[i];
+
+                lineTokens.push(tokenObj);
+                currentTspan.text(lineTokens.map(t => t.text).join(" "));
+
+                if (currentTspan.node().getComputedTextLength() > maxWidth && lineTokens.length > 1) {
+                    lineTokens.pop();
+
+                    currentTspan.text(null);
+                    lineTokens.forEach((prevToken, idx) => {
+                        currentTspan.append("tspan")
+                            .text((idx > 0 ? " " : "") + prevToken.text)
+                            .style("fill", textPartColors[prevToken.type] || textPartColors.name)
+                            .style("font-weight", prevToken.type === 'count' ? "bold" : "normal");
+                    });
+
+                    lineTokens = [tokenObj];
+                    currentTspan = textD3.append("tspan").attr("x", x).attr("dy", lineHeight + "em");
+                    if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+                }
+            }
+
+            currentTspan.text(null);
+            lineTokens.forEach((token, idx) => {
+                currentTspan.append("tspan")
+                    .text((idx > 0 ? " " : "") + token.text)
+                    .style("fill", textPartColors[token.type] || textPartColors.name)
+                    .style("font-weight", token.type === 'count' ? "bold" : "normal");
+            });
+
+            if (textD3.selectAll("tspan > tspan").empty() && textD3.select("tspan").text().length === 0 && originalNodeText) {
+                let t = textD3.select("tspan");
+                let displayText = originalNodeText;
+                t.text(displayText).style("fill", textPartColors.name);
+                if (t.node() && t.node().getComputedTextLength() > maxWidth && displayText.length > 20) {
+                    let estimatedChars = Math.floor(maxWidth / (t.node().getComputedTextLength()/displayText.length) );
+                    displayText = displayText.substring(0, Math.max(0, estimatedChars - 3)) + "...";
+                    t.text(displayText);
+                }
+            }
+        });
+    }
+  </script>
+</body>
+</html>
