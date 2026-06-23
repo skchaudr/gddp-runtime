@@ -143,12 +143,28 @@ def init_db():
         notes               TEXT,
         FOREIGN KEY(job_id) REFERENCES jobs(job_id)
     );
+
+    -- -----------------------------------------------------------------------
+    -- decision_results: records from the runtime decision loop.
+    -- Distinct from `results` (which holds merged-PR receipts and FKs to jobs).
+    -- A decision can be a no_op or a stale-state clean that has no associated
+    -- job, so this table intentionally has NO foreign key to jobs.
+    -- -----------------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS decision_results (
+        result_id           TEXT PRIMARY KEY,
+        schema_version      TEXT NOT NULL DEFAULT '1.0',
+        action              TEXT NOT NULL,              -- dispatch_next | escalate | review_pr | accept_node | no_op
+        node_id             TEXT,                       -- nullable: no_op/escalate may have no node
+        project_id          TEXT,
+        reason              TEXT,
+        created_at          TEXT NOT NULL
+    );
     """)
 
     con.commit()
     con.close()
     print(f"Initialized: {DB_PATH}")
-    print("Tables: events, jobs, queue_records, results, artifact_verifications")
+    print("Tables: events, jobs, queue_records, results, artifact_verifications, decision_results")
 
 
 if __name__ == "__main__":

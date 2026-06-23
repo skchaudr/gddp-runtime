@@ -81,20 +81,33 @@ def in_memory_db():
             event_id TEXT PRIMARY KEY,
             event_type TEXT,
             status TEXT,
-            created_at TEXT
+            received_at TEXT
         )
     """)
     con.execute("""
-        CREATE TABLE return_results (
-            id TEXT PRIMARY KEY,
-            repo_name TEXT NOT NULL,
-            node_id TEXT,
-            pr_number INTEGER,
-            merged_at TEXT,
-            status TEXT NOT NULL,
-            reason TEXT,
-            commit_sha TEXT,
-            created_at TEXT NOT NULL
+        CREATE TABLE results (
+            result_id                   TEXT PRIMARY KEY,
+            job_id                      TEXT NOT NULL,
+            executor                    TEXT NOT NULL,
+            received_at                 TEXT NOT NULL,
+            outcome                     TEXT NOT NULL,
+            status                      TEXT NOT NULL,
+            changed_files               TEXT,
+            patch_path                  TEXT,
+            summary_path                TEXT,
+            acceptance_check            TEXT,
+            risks                       TEXT,
+            github_action               TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE decision_results (
+            result_id           TEXT PRIMARY KEY,
+            action              TEXT NOT NULL,
+            node_id             TEXT,
+            project_id          TEXT,
+            reason              TEXT,
+            created_at          TEXT NOT NULL
         )
     """)
     con.commit()
@@ -166,6 +179,42 @@ def test_escalate_returns_valid_schema():
     assert result.reason == "test_reason"
     assert result.node_id == "node-x"
     assert result.ok is True
+
+
+def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path, monkeypatch):
+    """A no-row cleanup must not keep SQLite locked for the result writer."""
+    from .. import results_store
+    from .engine import _clean_stale_state, _write_decision_result
+
+    db_path = tmp_path / "queue.db"
+    monkeypatch.setattr(results_store, "DB_PATH", db_path)
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    con.execute("""
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            node_id TEXT,
+            status TEXT,
+            created_at TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE events (
+            event_id TEXT PRIMARY KEY,
+            event_type TEXT,
+            status TEXT,
+            received_at TEXT
+        )
+    """)
+    con.commit()
+
+    assert _clean_stale_state(con) == 0
+
+    result = NoOpResult(action="no_op", reason="nothing_actionable", ok=True)
+    _write_decision_result(result, "test-project")
+
+    con.close()
 
 
 # --- Test Pydantic schema enforcement ---

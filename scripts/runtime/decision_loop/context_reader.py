@@ -78,9 +78,9 @@ def read_recent_activity(con: sqlite3.Connection, project_id: str) -> RecentActi
     )
     active_jobs = [dict(row) for row in cur.fetchall()]
 
-    # Recent results (last 20)
+    # Recent results (last 20) — from the real `results` receipt table
     cur.execute(
-        "SELECT * FROM return_results ORDER BY created_at DESC LIMIT 20"
+        "SELECT * FROM results ORDER BY received_at DESC LIMIT 20"
     )
     recent_results = [dict(row) for row in cur.fetchall()]
 
@@ -96,7 +96,7 @@ def read_recent_activity(con: sqlite3.Connection, project_id: str) -> RecentActi
     cur.execute("""
         SELECT * FROM events
         WHERE status = 'received'
-        AND created_at < datetime('now', '-6 hours')
+        AND received_at < datetime('now', '-6 hours')
     """)
     stale_events = [dict(row) for row in cur.fetchall()]
 

@@ -146,3 +146,62 @@ def write_result(
         con.commit()
     finally:
         con.close()
+
+
+def init_decision_results() -> None:
+    """Ensure the decision-loop results table exists.
+
+    Distinct from the `results` receipt table: decision results record what the
+    runtime decision loop *did* (dispatch / escalate / no_op), which may have no
+    associated job (e.g. a no_op or a stale-state clean). No FK to jobs.
+    """
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS decision_results (
+                result_id           TEXT PRIMARY KEY,
+                schema_version      TEXT NOT NULL DEFAULT '1.0',
+                action              TEXT NOT NULL,
+                node_id             TEXT,
+                project_id          TEXT,
+                reason              TEXT,
+                created_at          TEXT NOT NULL
+            )
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def write_decision_result(
+    result_id: str,
+    action: str,
+    node_id: str = None,
+    project_id: str = None,
+    reason: str = None,
+) -> None:
+    """Insert a decision-loop result row. Does NOT touch graph truth."""
+    init_decision_results()
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            """
+            INSERT INTO decision_results
+                (result_id, action, node_id, project_id, reason, created_at)
+            VALUES
+                (:result_id, :action, :node_id, :project_id, :reason, :created_at)
+            """,
+            {
+                "result_id": result_id,
+                "action": action,
+                "node_id": node_id,
+                "project_id": project_id,
+                "reason": reason,
+                "created_at": _now(),
+            },
+        )
+        con.commit()
+    finally:
+        con.close()

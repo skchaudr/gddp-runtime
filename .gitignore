@@ -32,3 +32,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Graphify rebuild cache
+graphify-out/cache/
+
+# Local agent/tooling state
+.pi/
+.serena/
