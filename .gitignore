@@ -35,3 +35,7 @@ Thumbs.db
 
 # Graphify rebuild cache
 graphify-out/cache/
+
+# Local agent/tooling state
+.pi/
+.serena/
