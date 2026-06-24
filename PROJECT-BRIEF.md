@@ -68,7 +68,7 @@ documented. Drafts only — no push until Sab signs off.
 ## Deeper docs
 
 - README (v2 draft): [`docs/README-v2.md`](docs/README-v2.md)
-- Pi README handoff: [`docs/HANDOFF-PI-README.md`](docs/HANDOFF-PI-README.md)
+- Pi README handoff: [`.handoffs/002-pi-readme-handoff.md`](.handoffs/002-pi-readme-handoff.md)
 - Decision-loop spec: [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md)
 - Big Pi runbook: [`deploy/BIGPI_RUNBOOK.md`](deploy/BIGPI_RUNBOOK.md)
 - Handoffs: [`docs/handoffs/`](docs/handoffs/) (001 reality-check, 002 return-path vocabulary lock)

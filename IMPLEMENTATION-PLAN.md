@@ -30,7 +30,7 @@ graph edges, and returns pass/fail without editing code.
 - Direction + gaps: [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md)
 - **The build plan** — verification module, 5 tasks / 3 waves / worktree parallelism: [`verification-parallel-build-revised.md`](verification-parallel-build-revised.md) — load-bearing; Phases 0–3 below sequence it, not replace it
 - Decision-loop v0 contract (4 powers, event-driven, hard limits): [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md) — **draft/future; label as such**
-- Portfolio README handoff (voice, shape, scrub list): [`docs/HANDOFF-PI-README.md`](docs/HANDOFF-PI-README.md)
+- Portfolio README handoff (voice, shape, scrub list): [`.handoffs/002-pi-readme-handoff.md`](.handoffs/002-pi-readme-handoff.md)
 - Trials ops runbook: [`deploy/BIGPI_RUNBOOK.md`](deploy/BIGPI_RUNBOOK.md)
 - Vision framing for README "why": [`docs/gdd-next.md`](docs/gdd-next.md)
 
@@ -100,7 +100,7 @@ competence demonstration).
 - **Native unit:** 1 graph node (`decision-loop-review-gate`) + runbook updates.
 
 ### Phase 5 — Finish-for-public (portfolio polish)
-- **Scope:** (a) Build a scrub verification script that automates the grep sweep + link resolution + test pass — this becomes part of the repo's CI/test infrastructure and runs on every future commit. (b) Portfolio `README.md` per [`HANDOFF-PI-README.md`](docs/HANDOFF-PI-README.md) — voice: confident, not boastful; mixed audience. (c) Scrub host-roles topology leak (`ssd-big`, `ssd-small`, `mac`, SSH paths, Big Pi `~/opclaw`). (d) `graph_updater.py` stub disposition — README explains WHY it's disabled. (e) `.agents/hooks/ag_natural_guard.py` attribution. (f) Label `decision-loop-spec.md` review/accept powers as draft/future. (g) Note `gddp-config` branch `feat/openclaw-nodes` is historical.
+- **Scope:** (a) Build a scrub verification script that automates the grep sweep + link resolution + test pass — this becomes part of the repo's CI/test infrastructure and runs on every future commit. (b) Portfolio `README.md` per [`HANDOFF-PI-README.md`](.handoffs/002-pi-readme-handoff.md) — voice: confident, not boastful; mixed audience. (c) Scrub host-roles topology leak (`ssd-big`, `ssd-small`, `mac`, SSH paths, Big Pi `~/opclaw`). (d) `graph_updater.py` stub disposition — README explains WHY it's disabled. (e) `.agents/hooks/ag_natural_guard.py` attribution. (f) Label `decision-loop-spec.md` review/accept powers as draft/future. (g) Note `gddp-config` branch `feat/openclaw-nodes` is historical.
 - **Build:** scrub verification script (reusable test infrastructure). README draft.
 - **Audit:** run the scrub script — `grep` sweep clean, all links resolve, `pytest` still passes. The script is the audit infrastructure; running it is the audit.
 - **Understand:** README demonstrates portfolio confidence — what the system is, why it exists, how it was verified. ADR notes and labels preserve decisions as learning artifacts. Scrub proves the repo is safe for public eyes.
