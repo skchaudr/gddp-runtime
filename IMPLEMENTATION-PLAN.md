@@ -1,8 +1,9 @@
 # GDDP — Implementation Plan
 
 Sequel to [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md). Direction + ground state live
-there; this plan sequences the work into phases a lesser model can decompose
-into native units — **graph node** in [`gddp-config`](../gddp-config) + **Jules
+there. This is an implementation scaffold, not a complete execution plan: it
+sequences the work into phases a lesser model can decompose into native units —
+**graph node** in [`gddp-config`](../gddp-config) + **Jules
 task** in this repo. **Link, don't restate:** the build plan, the decision-loop
 contract, and the README handoff already exist. This overlay adds phase shape,
 DoD, and risk; it does not re-architect.
@@ -18,8 +19,9 @@ decision and verification loop. **Goal: overnight run is a success.**
 GDDP is two repos that work together. **This repo** (`gddp-runtime`) is the
 pipeline — webhook intake → classify → scope → queue → execute. **`gddp-config`**
 (next directory over) is the graph — YAML node definitions, dependency edges, and
-state tracking. The runtime reads the graph to know what to build next; it writes
-results back to the graph so nodes progress toward `complete`. A **graph node**
+state tracking. The runtime reads the graph to know what to build next; it records
+results as receipts/review state and proposes graph updates, but never writes
+`gddp-config` truth directly. A **graph node**
 is a YAML file in gddp-config that defines one unit of work (a feature, a fix, a
 doc). A **Jules task** is a bounded coding job dispatched from this repo that
 produces a PR against the codebase the graph node points at. The verification
@@ -111,8 +113,13 @@ competence demonstration).
 
 ## Execution + commit policy
 - Order: Phase 0 → 1 → 2 → 3 → 4 → 5. Waves 1 and 3 parallelize (worktree); Wave 2 standalone.
-- Branch: this plan and all phase work land on the current branch `fix/decision-loop-io-seams`; **no push** until Sab signs off.
+- Branch: this scaffold is now on `main`; `fix/decision-loop-io-seams` is
+  historical. New phase work should branch from `main` unless Sab chooses
+  otherwise. **No push** until Sab signs off.
 - Re-derive nothing: when decomposing a phase into Jules tasks, copy the packet text from [`verification-parallel-build-revised.md`](verification-parallel-build-revised.md) verbatim.
+- Before graph or runtime work, classify inherited local state in both
+  `gddp-runtime` and `gddp-config`. Unknown edits are receipts/evidence until
+  proven generated noise; no phase closes with unclassified state.
 
 ## Open (Sab decides)
 - **Trials N:** how many consecutive stable overnight runs close Phase 4?

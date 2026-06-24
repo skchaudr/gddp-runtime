@@ -60,10 +60,13 @@ documented. Drafts only — no push until Sab signs off.
   README must explain WHY or it reads as broken code
 - Decision-loop review/accept powers are draft/future, not the stable
   contract — must be labeled as such
-- `gddp-config` active branch is `feat/openclaw-nodes` (historical; objects
-  now use decision-loop naming) — confusing for a first-time reader
+- `gddp-config` is currently on `main`; `feat/openclaw-nodes` is historical
+  and confusing because the active objects now use decision-loop naming
 - `.agents/hooks/ag_natural_guard.py` (paste-marker guard) is borrowed from
   .pi — needs attribution or a clarifying note on the cross-project reuse
+- Unclassified local edits in either repo are graph evidence until proven
+  otherwise. `gddp-runtime` and `gddp-config` must classify inherited state
+  before dispatching, accepting, or declaring the graph ready.
 
 ## Deeper docs
 
