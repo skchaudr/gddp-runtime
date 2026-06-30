@@ -256,3 +256,30 @@ class _LazyRunner:
 
 def _build_toolbox(repo: Path) -> SemanticToolbox:
     return SemanticToolbox(repo)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point so cron can drive the verification-wired decision loop.
+
+    Usage (from gddp-runtime repo root):
+        python3 -m scripts.runtime.decision_loop.engine \
+            --project vault-doctor \
+            [--config-path /path/to/gddp-config]
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="GDDP decision loop (cron trigger)")
+    parser.add_argument("--project", required=True, help="Project graph id to evaluate")
+    # Optional; falls back to GDDP_CONFIG_PATH env / sibling dir via GraphReader.
+    parser.add_argument("--config-path", default=None, help="Override path to gddp-config")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO)
+    result = handle_cron(args.project, config_path=args.config_path)
+    print(f"{result.action}: {result.reason}")
+    # Non-zero only on hard failure so cron surfaces real breakage, not escalations.
+    return 0 if result.ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
