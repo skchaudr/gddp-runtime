@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from scripts.runtime.verification.semantic.agent import LLMResponse, SemanticAgent, ToolCall
+from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 from scripts.runtime.verification.semantic.tools import SemanticToolbox, ToolSafetyError
 
 
@@ -58,9 +59,9 @@ def test_agent_uses_mock_runner_and_toolbox_without_network(tmp_path: Path) -> N
         ]
     )
 
-    output = SemanticAgent(runner=runner, toolbox=SemanticToolbox(tmp_path)).investigate(
+    output = SemanticAgent(runner=runner, toolbox=SemanticToolbox(tmp_path)).run(
         node={"id": "n1", "acceptance": ["c1"]},
-        project={"id": "p1"},
+        graph={"id": "p1"},
         deterministic_result={"criteria": []},
     )
 
@@ -84,7 +85,41 @@ def test_agent_returns_budget_exhausted_when_tool_budget_is_spent(tmp_path: Path
         runner=runner,
         toolbox=SemanticToolbox(tmp_path),
         max_tool_calls=0,
-    ).investigate(node={}, project={}, deterministic_result={})
+    ).run(node={}, graph={}, deterministic_result={})
 
     assert output.budget_exhausted is True
     assert output.judgments == []
+
+
+def test_agent_returns_partial_result_when_token_budget_is_spent(tmp_path: Path) -> None:
+    runner = MockRunner(
+        [
+            LLMResponse(
+                content="x" * 200,
+                tool_calls=[],
+                finish_reason="stop",
+            )
+        ]
+    )
+
+    output = SemanticAgent(
+        runner=runner,
+        toolbox=SemanticToolbox(tmp_path),
+        max_tokens=120,
+    ).run(node={"id": "n1"}, graph={"id": "p1"}, deterministic_result={"criteria": []})
+
+    assert output.budget_exhausted is True
+    assert output.judgments == []
+
+
+def test_prompt_builder_renders_node_graph_and_deterministic_context() -> None:
+    messages = build_prompt_messages(
+        node={"id": "node-a", "acceptance": ["criterion"]},
+        graph={"project_id": "project-a", "execution_policy": "human merge"},
+        deterministic_result={"criteria_mismatches": [{"criterion_id": "criterion"}]},
+    )
+
+    rendered = "\n".join(message["content"] for message in messages)
+    assert "node-a" in rendered
+    assert "project-a" in rendered
+    assert "criteria_mismatches" in rendered
