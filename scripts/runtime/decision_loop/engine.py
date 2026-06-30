@@ -17,8 +17,15 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from ..heartbeat.graph_reader import GraphReader
 from ..results_store import write_decision_result
+from ..verification import orchestrator as verification_orchestrator
+from ..verification.receipt_sink import receipt_exists, write_receipt
+from ..verification.schemas import Verdict
+from ..verification.semantic.agent import AnthropicRunner
+from ..verification.semantic.tools import SemanticToolbox
 from .context_reader import read_context, DecisionContext
 from .powers import dispatch_next
 from .powers.escalate import run as escalate
@@ -125,6 +132,7 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
         # Step 2: Read context
         try:
             ctx = read_context(reader, con, project_id, trigger)
+            setattr(ctx, "config_path", reader.config_path)
         except Exception as e:
             result = escalate(reason=f"context_read_failed: {e}", project_id=project_id)
             _write_decision_result(result, project_id)
@@ -140,6 +148,20 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
                 node_id=stuck_job.get("node_id"),
                 project_id=project_id,
             )
+            _write_decision_result(result, project_id)
+            return result
+
+        # 3a.5. Complete node awaiting recommend-only verification?
+        node_to_verify = next(
+            (
+                node
+                for node in ctx.project.complete_nodes
+                if not receipt_exists(project_id, node.node_id)
+            ),
+            None,
+        )
+        if node_to_verify is not None:
+            result = _run_verification(ctx, node_to_verify, project_id)
             _write_decision_result(result, project_id)
             return result
 
@@ -187,3 +209,50 @@ def handle_cron(project_id: str, config_path: str = None) -> DecisionResult:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     return handle_event(trigger, project_id, config_path)
+
+
+def _run_verification(ctx: DecisionContext, node, project_id: str) -> DecisionResult:
+    config_path = getattr(ctx, "config_path", None)
+    config_root = Path(config_path) if config_path is not None else GraphReader().config_path
+    graph_root = config_root / "graphs" / project_id
+    project_yaml = yaml.safe_load((graph_root / "project.yaml").read_text(encoding="utf-8"))
+    node_yaml = yaml.safe_load((graph_root / "nodes" / f"{node.node_id}.yaml").read_text(encoding="utf-8"))
+    repo = Path(ctx.project.repo)
+
+    receipt = verification_orchestrator.verify(
+        node_yaml=node_yaml,
+        project_yaml=project_yaml,
+        repo=repo,
+        runner=_LazyRunner(),
+        toolbox=_build_toolbox(repo),
+        config_root=config_root,
+    )
+    write_receipt(receipt, project_id)
+
+    if receipt.verdict == Verdict.PASS:
+        return NoOpResult(
+            action="no_op",
+            reason=f"verified_pass: {node.node_id}",
+            ok=True,
+        )
+    return escalate(
+        reason=f"verification_{receipt.verdict.value}: {receipt.required_next_action}",
+        node_id=node.node_id,
+        project_id=project_id,
+    )
+
+
+class _LazyRunner:
+    def __init__(self) -> None:
+        self._runner: AnthropicRunner | None = None
+
+    def chat(self, messages, tools):
+        if self._runner is None:
+            import anthropic
+
+            self._runner = AnthropicRunner(anthropic.Anthropic())
+        return self._runner.chat(messages, tools)
+
+
+def _build_toolbox(repo: Path) -> SemanticToolbox:
+    return SemanticToolbox(repo)
