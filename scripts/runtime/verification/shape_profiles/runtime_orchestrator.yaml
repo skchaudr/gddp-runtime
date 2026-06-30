@@ -1,0 +1,20 @@
+profile_id: runtime_orchestrator
+description: Runtime orchestrator shape profile — event-driven loop, no config mutation, receipt-based return
+expected_node_chain:
+  - spec
+  - intake
+  - scheduler
+  - executor
+  - receipt
+  - tests
+invariant_rules:
+  - Graph legality must be preserved
+  - Acceptance criteria must not weaken
+  - Orchestration loop is event-driven and bounded; handlers return receipts, not graph writes
+  - Common/shared layers must not import or source executor-specific modules
+anti_patterns:
+  - Runtime silently mutates source graph
+  - Acceptance criteria removed without replacement
+  - Executor-specific imports in a common or shared layer
+  - Direct graph YAML mutation from orchestration code
+  - Unbounded retry loops without receipt or escalation

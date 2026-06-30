@@ -1,0 +1,18 @@
+profile_id: cli_tool
+description: CLI tool shape profile — console-script entry point, arg parsing, read-only-by-default
+expected_node_chain:
+  - spec
+  - parser
+  - validator
+  - executor
+  - tests
+invariant_rules:
+  - Graph legality must be preserved
+  - Acceptance criteria must not weaken
+  - A console-scripts entry point must be declared for the CLI command
+  - Argument parsing must be explicit; no silent defaults that mutate state
+anti_patterns:
+  - Runtime silently mutates source graph
+  - Acceptance criteria removed without replacement
+  - CLI entry point missing from packaging metadata
+  - Side-effectful work executed at import time
