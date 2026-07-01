@@ -106,7 +106,7 @@ def test_run_verification_unresolved_repo_writes_escalation_receipt_without_veri
     assert receipt.project_id == project_id
     assert receipt.node_id == node_id
     assert receipt.verdict == Verdict.NEEDS_HUMAN_REVIEW
-    assert receipt.confidence == 0.0
+    assert receipt.criteria_confidence == 0.0
     assert receipt.semantic is None
     assert receipt.decision_reasoning == "repo checkout unresolved"
     assert receipt.required_next_action == "resolve_repo_checkout"
