@@ -23,7 +23,7 @@ from ..heartbeat.graph_reader import GraphReader
 from ..results_store import write_decision_result
 from ..verification import orchestrator as verification_orchestrator
 from ..verification.receipt_sink import receipt_exists, write_receipt
-from ..verification.schemas import Verdict
+from ..verification.schemas import DeterministicResult, Verdict, VerdictReceipt
 from ..verification.semantic.agent import OpenAICompatibleRunner
 from ..verification.semantic.tools import SemanticToolbox
 from .context_reader import read_context, DecisionContext
@@ -217,7 +217,33 @@ def _run_verification(ctx: DecisionContext, node, project_id: str) -> DecisionRe
     graph_root = config_root / "graphs" / project_id
     project_yaml = yaml.safe_load((graph_root / "project.yaml").read_text(encoding="utf-8"))
     node_yaml = yaml.safe_load((graph_root / "nodes" / f"{node.node_id}.yaml").read_text(encoding="utf-8"))
-    repo = Path(ctx.project.repo)
+    repo = _resolve_repo(ctx.project.repo, config_root)
+    if repo is None:
+        receipt = VerdictReceipt(
+            project_id=project_id,
+            node_id=node.node_id,
+            verdict=Verdict.NEEDS_HUMAN_REVIEW,
+            confidence=0.0,
+            deterministic=DeterministicResult(
+                criteria=[],
+                constraints=[],
+                artifacts_present={},
+                deps_status={},
+                criteria_mismatches=[],
+                missing_evidence=[],
+                human_review_questions=[],
+            ),
+            semantic=None,
+            decision_reasoning="repo checkout unresolved",
+            required_next_action="resolve_repo_checkout",
+            generated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        write_receipt(receipt, project_id)
+        return escalate(
+            reason="repo_unresolved: resolve_repo_checkout",
+            node_id=node.node_id,
+            project_id=project_id,
+        )
 
     receipt = verification_orchestrator.verify(
         node_yaml=node_yaml,
@@ -292,6 +318,25 @@ def _build_decision_loop_runner():
 
 def _build_toolbox(repo: Path) -> SemanticToolbox:
     return SemanticToolbox(repo)
+
+
+def _resolve_repo(repo_value: str, config_root: Path) -> Path | None:
+    repo = Path(repo_value)
+    if repo.is_absolute() and repo.exists():
+        return repo
+
+    basename = repo_value.split("/")[-1]
+    repo_root = os.environ.get("GDDP_REPO_ROOT")
+    if repo_root:
+        candidate = Path(repo_root) / basename
+        if candidate.exists():
+            return candidate
+
+    candidate = config_root / ".." / basename
+    if candidate.exists():
+        return candidate
+
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
