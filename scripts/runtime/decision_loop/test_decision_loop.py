@@ -163,7 +163,7 @@ def test_dispatch_blocked_when_job_active(mock_graph_reader, in_memory_db):
     ctx = read_context(mock_graph_reader, in_memory_db, "test-project", {"event": "cron"})
 
     from .powers.dispatch_next import run as dispatch_run
-    result = dispatch_run(ctx)
+    result = dispatch_run(ctx, in_memory_db)
 
     assert isinstance(result, EscalateResult)
     assert "active job" in result.reason

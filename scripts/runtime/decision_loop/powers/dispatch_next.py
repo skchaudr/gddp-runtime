@@ -71,11 +71,13 @@ This block is parsed by the GDDP return router to create a review receipt when t
 """
 
 
-def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
+def run(ctx: DecisionContext, con) -> DispatchResult | EscalateResult:
     """
     Decide whether to dispatch and do it.
 
     Returns DispatchResult on success, EscalateResult if blocked or failed.
+    con: open sqlite connection, used to persist the dispatched job so the
+    next tick's active-job guard sees it and does not re-file a duplicate issue.
     """
     # Guard: no dispatch if a job is already active
     if _has_active_job(ctx):
@@ -128,6 +130,30 @@ def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
 
         issue_url = result.stdout.strip()
         issue_number = int(issue_url.rstrip("/").split("/")[-1])
+
+        # Persist the job so the next tick's active-job guard blocks re-dispatch.
+        from datetime import datetime, timezone
+        con.execute(
+            """
+            INSERT INTO jobs (
+                job_id, created_at, project_id, repo, node_id,
+                job_type, executor, title, goal, why, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'dispatched')
+            """,
+            (
+                job_id,
+                datetime.now(timezone.utc).isoformat(),
+                ctx.project.project_id,
+                ctx.project.repo,
+                node_id,
+                "implementation",
+                "jules",
+                node.title,
+                node.title,
+                node.why,
+            ),
+        )
+        con.commit()
 
         return DispatchResult(
             action="dispatch_next",

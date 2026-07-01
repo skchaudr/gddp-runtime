@@ -167,7 +167,7 @@ def handle_event(trigger: dict, project_id: str, config_path: str = None) -> Dec
 
         # 3b. Eligible node to dispatch?
         if ctx.project.pending_nodes:
-            result = dispatch_next.run(ctx)
+            result = dispatch_next.run(ctx, con)
             _write_decision_result(result, project_id)
             return result
 
@@ -357,7 +357,9 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO)
     result = handle_cron(args.project, config_path=args.config_path)
-    print(f"{result.action}: {result.reason}")
+    # Result types differ: dispatch carries an issue URL, others carry a reason.
+    detail = getattr(result, "reason", None) or getattr(result, "issue_url", "")
+    print(f"{result.action}: {detail}")
     # Non-zero only on hard failure so cron surfaces real breakage, not escalations.
     return 0 if result.ok else 1
 
