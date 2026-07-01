@@ -71,6 +71,7 @@ def in_memory_db():
     con.execute("""
         CREATE TABLE jobs (
             job_id TEXT PRIMARY KEY,
+            project_id TEXT,
             node_id TEXT,
             status TEXT,
             created_at TEXT
@@ -79,6 +80,7 @@ def in_memory_db():
     con.execute("""
         CREATE TABLE events (
             event_id TEXT PRIMARY KEY,
+            project_id TEXT,
             event_type TEXT,
             status TEXT,
             received_at TEXT
@@ -137,8 +139,8 @@ def test_read_recent_activity_shape(in_memory_db):
 
 def test_read_recent_activity_finds_active_jobs(in_memory_db):
     in_memory_db.execute(
-        "INSERT INTO jobs (job_id, node_id, status, created_at) VALUES (?, ?, ?, datetime('now'))",
-        ("job_001", "node-b", "running",),
+        "INSERT INTO jobs (job_id, project_id, node_id, status, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        ("job_001", "test-project", "node-b", "running",),
     )
     in_memory_db.commit()
 
@@ -155,8 +157,8 @@ def test_dispatch_blocked_when_job_active(mock_graph_reader, in_memory_db):
 
     # Insert an active job
     in_memory_db.execute(
-        "INSERT INTO jobs (job_id, node_id, status, created_at) VALUES (?, ?, ?, datetime('now'))",
-        ("job_active", "node-b", "running",),
+        "INSERT INTO jobs (job_id, project_id, node_id, status, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        ("job_active", "test-project", "node-b", "running",),
     )
     in_memory_db.commit()
 
@@ -194,6 +196,7 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
     con.execute("""
         CREATE TABLE jobs (
             job_id TEXT PRIMARY KEY,
+            project_id TEXT,
             node_id TEXT,
             status TEXT,
             created_at TEXT
@@ -202,6 +205,7 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
     con.execute("""
         CREATE TABLE events (
             event_id TEXT PRIMARY KEY,
+            project_id TEXT,
             event_type TEXT,
             status TEXT,
             received_at TEXT

@@ -75,32 +75,43 @@ def read_recent_activity(con: sqlite3.Connection, project_id: str) -> RecentActi
     """Pull recent rows from SQLite to understand momentum and detect stale state."""
     cur = con.cursor()
 
-    # Active jobs (dispatched or running)
+    # Active jobs (dispatched or running) — scoped to this project so one
+    # project's work does not block dispatch on another.
     cur.execute(
-        "SELECT * FROM jobs WHERE status IN ('dispatched', 'running') ORDER BY created_at DESC"
+        "SELECT * FROM jobs WHERE project_id = ? AND status IN ('dispatched', 'running') ORDER BY created_at DESC",
+        (project_id,),
     )
     active_jobs = [dict(row) for row in cur.fetchall()]
 
-    # Recent results (last 20) — from the real `results` receipt table
+    # Recent results (last 20) — results carry no project_id, so scope via
+    # their parent job.
     cur.execute(
-        "SELECT * FROM results ORDER BY received_at DESC LIMIT 20"
+        """
+        SELECT r.* FROM results r
+        JOIN jobs j ON r.job_id = j.job_id
+        WHERE j.project_id = ?
+        ORDER BY r.received_at DESC LIMIT 20
+        """,
+        (project_id,),
     )
     recent_results = [dict(row) for row in cur.fetchall()]
 
     # Stale jobs: running for more than 6 hours
     cur.execute("""
         SELECT * FROM jobs
-        WHERE status IN ('dispatched', 'running')
+        WHERE project_id = ?
+        AND status IN ('dispatched', 'running')
         AND created_at < datetime('now', '-6 hours')
-    """)
+    """, (project_id,))
     stale_jobs = [dict(row) for row in cur.fetchall()]
 
     # Stale events: received but unprocessed for more than 6 hours
     cur.execute("""
         SELECT * FROM events
-        WHERE status = 'received'
+        WHERE project_id = ?
+        AND status = 'received'
         AND received_at < datetime('now', '-6 hours')
-    """)
+    """, (project_id,))
     stale_events = [dict(row) for row in cur.fetchall()]
 
     return RecentActivity(
