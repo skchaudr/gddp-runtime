@@ -44,6 +44,8 @@ def _assert_valid_receipt(receipt: VerdictReceipt, *, project_id: str, node_id: 
     assert receipt.project_id == project_id
     assert receipt.node_id == node_id
     assert 0.0 <= receipt.confidence <= 1.0
+    assert receipt.confidence == receipt.criteria_confidence
+    assert receipt.completeness_status in {"complete", "partial", "not-run"}
     assert receipt.required_next_action
     assert receipt.generated_at
 

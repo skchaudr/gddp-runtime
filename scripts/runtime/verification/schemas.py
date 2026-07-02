@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Verdict(str, Enum):
@@ -92,11 +92,46 @@ class VerdictReceipt(BaseModel):
     project_id: str
     node_id: str
     verdict: Verdict
-    confidence: float
-    criteria_confidence: float
+    # Compatibility alias for criteria_confidence. New readers should prefer
+    # criteria_confidence; both fields are emitted so old receipt consumers keep
+    # working while completeness is tracked separately.
+    confidence: float = Field(ge=0.0, le=1.0)
+    criteria_confidence: float = Field(ge=0.0, le=1.0)
     completeness_status: Literal["complete", "partial", "not-run"]
     deterministic: DeterministicResult
     semantic: SemanticOutput | None
     decision_reasoning: str
     required_next_action: str
     generated_at: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_compatibility_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        values = dict(data)
+        if "criteria_confidence" not in values and "confidence" in values:
+            values["criteria_confidence"] = values["confidence"]
+        if "confidence" not in values and "criteria_confidence" in values:
+            values["confidence"] = values["criteria_confidence"]
+        if "completeness_status" not in values:
+            values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
+        return values
+
+    @model_validator(mode="after")
+    def _confidence_alias_must_match(self):
+        if self.confidence != self.criteria_confidence:
+            raise ValueError("confidence is a compatibility alias for criteria_confidence and must match")
+        return self
+
+    @staticmethod
+    def _infer_completeness_status(semantic) -> Literal["complete", "partial", "not-run"]:
+        if semantic is None:
+            return "not-run"
+        if isinstance(semantic, dict):
+            if semantic.get("budget_exhausted") or not semantic.get("judgments"):
+                return "partial"
+            return "complete"
+        if getattr(semantic, "budget_exhausted", False) or not getattr(semantic, "judgments", []):
+            return "partial"
+        return "complete"

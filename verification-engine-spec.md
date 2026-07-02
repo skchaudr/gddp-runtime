@@ -421,13 +421,20 @@ class VerdictReceipt(BaseModel):
     project_id: str
     node_id: str
     verdict: Verdict
-    confidence: float
+    confidence: float                  # legacy alias for criteria_confidence
+    criteria_confidence: float         # verdict confidence from criteria evidence
+    completeness_status: Literal["complete", "partial", "not-run"]
     deterministic: DeterministicResult
     semantic: SemanticOutput | None
     decision_reasoning: str           # from the decision engine
     required_next_action: str
     generated_at: str                 # ISO timestamp
 ```
+
+`confidence` remains in receipts for compatibility with older consumers and
+must equal `criteria_confidence` when both are present. New code should read
+`criteria_confidence` for judgment strength and `completeness_status` for
+whether semantic verification was complete, partial, or not run.
 
 ### 7.2 Persistence
 
