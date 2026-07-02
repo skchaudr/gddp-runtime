@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Verdict(str, Enum):
@@ -75,7 +75,7 @@ class DeterministicResult:
 class CriterionJudgment(BaseModel):
     criterion_id: str
     judgment: Literal["judged_pass", "judged_fail", "indeterminate"]
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     evidence: list[str]
     reasoning: str
 
@@ -93,6 +93,8 @@ class VerdictReceipt(BaseModel):
     node_id: str
     verdict: Verdict
     confidence: float
+    criteria_confidence: float
+    completeness_status: Literal["complete", "partial", "not-run"]
     deterministic: DeterministicResult
     semantic: SemanticOutput | None
     decision_reasoning: str

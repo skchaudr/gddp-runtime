@@ -69,6 +69,7 @@ class SemanticAgent:
     max_turns: int = 15
     max_tool_calls: int = 40
     max_tokens: int = 24_000
+    max_validation_retries: int = 2
 
     def run(
         self,
@@ -85,10 +86,23 @@ class SemanticAgent:
         )
         remaining_tool_calls = self.max_tool_calls
         remaining_tokens = self.max_tokens - self._estimate_message_tokens(messages)
+        validation_retries = 0
+        finalization_requested = False
         if remaining_tokens <= 0:
             return self._budget_exhausted(messages, reason="initial prompt exceeds token budget")
 
-        for _ in range(self.max_turns):
+        for turn_index in range(self.max_turns):
+            if self._near_limits(
+                turn_index=turn_index,
+                remaining_tokens=remaining_tokens,
+                remaining_tool_calls=remaining_tool_calls,
+            ) and not finalization_requested:
+                messages.append(self._finalization_prompt())
+                remaining_tokens -= self._estimate_text_tokens(messages[-1]["content"])
+                finalization_requested = True
+                if remaining_tokens <= 0:
+                    return self._budget_exhausted(messages, reason="finalization prompt exhausted token budget")
+
             response = self.runner.chat(messages, tools=TOOL_SCHEMAS)
             remaining_tokens -= self._estimate_text_tokens(response.content)
             if remaining_tokens <= 0:
@@ -97,6 +111,19 @@ class SemanticAgent:
             if response.tool_calls:
                 messages.append({"role": "assistant", "content": response.content})
                 for call in response.tool_calls:
+                    if call.name == "submit_verdict":
+                        submitted = self._validate_submitted_verdict(call.args)
+                        if isinstance(submitted, SemanticOutput):
+                            return submitted
+                        if validation_retries >= self.max_validation_retries:
+                            return self._budget_exhausted(
+                                messages,
+                                reason=f"submit_verdict validation failed after retry: {submitted}",
+                            )
+                        messages.append(self._validation_error_message(call, submitted))
+                        validation_retries += 1
+                        continue
+
                     if remaining_tool_calls <= 0:
                         return self._budget_exhausted(messages, reason="tool call budget exhausted")
                     tool_result = self._execute_tool_safely(call)
@@ -116,7 +143,17 @@ class SemanticAgent:
                 continue
 
             if response.finish_reason in {"stop", "end_turn", ""}:
-                return self._parse_semantic_output(response.content)
+                parsed = self._parse_semantic_output(response.content)
+                if isinstance(parsed, SemanticOutput):
+                    return parsed
+                if validation_retries >= self.max_validation_retries:
+                    return self._budget_exhausted(
+                        messages,
+                        reason=f"terminal SemanticOutput validation failed after retry: {parsed}",
+                    )
+                messages.append(self._terminal_validation_retry_message(parsed))
+                validation_retries += 1
+                continue
 
             messages.append({"role": "assistant", "content": response.content})
 
@@ -136,17 +173,67 @@ class SemanticAgent:
             shape_profile=shape_profile,
         )
 
-    def _parse_semantic_output(self, content: str) -> SemanticOutput:
+    def _parse_semantic_output(self, content: str) -> SemanticOutput | str:
         try:
             return SemanticOutput.model_validate_json(content)
         except Exception as exc:
-            return SemanticOutput(
-                judgments=[],
-                overall_reasoning="Model response could not be parsed into SemanticOutput.",
-                risks=f"Parse error: {exc}",
-                followup_candidates=None,
-                budget_exhausted=False,
-            )
+            return str(exc)
+
+    def _validate_submitted_verdict(self, args: dict[str, Any]) -> SemanticOutput | str:
+        try:
+            return SemanticOutput.model_validate(args)
+        except Exception as exc:
+            return str(exc)
+
+    def _validation_error_message(self, call: ToolCall, error: str) -> dict[str, Any]:
+        return {
+            "role": "tool",
+            "tool_call_id": call.id,
+            "name": call.name,
+            "content": json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "submit_verdict arguments failed SemanticOutput validation. "
+                        "Retry submit_verdict with a complete typed payload."
+                    ),
+                    "detail": error,
+                }
+            ),
+        }
+
+    def _terminal_validation_retry_message(self, error: str) -> dict[str, Any]:
+        return {
+            "role": "user",
+            "content": (
+                "Your terminal response failed SemanticOutput validation. "
+                "Retry now by calling submit_verdict with a complete typed payload. "
+                f"Validation error: {error}"
+            ),
+        }
+
+    def _finalization_prompt(self) -> dict[str, Any]:
+        return {
+            "role": "user",
+            "content": (
+                "You are near the semantic investigation limit. Stop tool use and call "
+                "submit_verdict now using only the evidence already gathered. Mark "
+                "uncertain criteria indeterminate."
+            ),
+        }
+
+    def _near_limits(
+        self,
+        *,
+        turn_index: int,
+        remaining_tokens: int,
+        remaining_tool_calls: int,
+    ) -> bool:
+        return (
+            turn_index >= self.max_turns - 1
+            or remaining_tool_calls <= 0
+            or remaining_tokens <= 1_000
+        )
 
     def _execute_tool_safely(self, call: ToolCall) -> dict[str, Any]:
         try:

@@ -7,8 +7,8 @@ from typing import Any
 SYSTEM_PROMPT = """You are the GDDP semantic verification investigator.
 
 Use only the provided read-only tools. Investigate acceptance criteria against
-the repo evidence. Do not choose the final project verdict. Return only JSON
-matching SemanticOutput:
+the repo evidence. Do not choose the final project verdict. When finished, call
+submit_verdict with arguments matching SemanticOutput:
 {
   "judgments": [
     {

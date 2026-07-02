@@ -70,6 +70,152 @@ def test_agent_uses_mock_runner_and_toolbox_without_network(tmp_path: Path) -> N
     assert output.judgments[0].judgment == "judged_pass"
 
 
+
+def test_agent_accepts_typed_submit_verdict_tool(tmp_path: Path) -> None:
+    runner = MockRunner(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="verdict-1",
+                        name="submit_verdict",
+                        args={
+                            "judgments": [
+                                {
+                                    "criterion_id": "c1",
+                                    "judgment": "judged_pass",
+                                    "confidence": 0.9,
+                                    "evidence": ["module.py:1"],
+                                    "reasoning": "typed verdict",
+                                }
+                            ],
+                            "overall_reasoning": "Submitted through the typed terminal tool.",
+                            "risks": None,
+                            "followup_candidates": None,
+                            "budget_exhausted": False,
+                        },
+                    )
+                ],
+                finish_reason="tool_use",
+            )
+        ]
+    )
+
+    output = SemanticAgent(runner=runner, toolbox=SemanticToolbox(tmp_path)).run(
+        node={}, graph={}, deterministic_result={}
+    )
+
+    assert runner.calls == 1
+    assert output.judgments[0].criterion_id == "c1"
+    assert output.overall_reasoning == "Submitted through the typed terminal tool."
+
+
+def test_agent_retries_malformed_submit_verdict(tmp_path: Path) -> None:
+    runner = MockRunner(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="bad-verdict",
+                        name="submit_verdict",
+                        args={
+                            "judgments": [
+                                {
+                                    "criterion_id": "c1",
+                                    "judgment": "pass",
+                                    "confidence": 1.2,
+                                    "evidence": [],
+                                    "reasoning": "bad enum and confidence",
+                                }
+                            ],
+                            "overall_reasoning": "bad",
+                            "risks": None,
+                            "followup_candidates": None,
+                            "budget_exhausted": False,
+                        },
+                    )
+                ],
+                finish_reason="tool_use",
+            ),
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="good-verdict",
+                        name="submit_verdict",
+                        args={
+                            "judgments": [
+                                {
+                                    "criterion_id": "c1",
+                                    "judgment": "indeterminate",
+                                    "confidence": 0.4,
+                                    "evidence": [],
+                                    "reasoning": "retry corrected the typed verdict",
+                                }
+                            ],
+                            "overall_reasoning": "valid retry",
+                            "risks": None,
+                            "followup_candidates": None,
+                            "budget_exhausted": False,
+                        },
+                    )
+                ],
+                finish_reason="tool_use",
+            ),
+        ]
+    )
+
+    output = SemanticAgent(runner=runner, toolbox=SemanticToolbox(tmp_path)).run(
+        node={}, graph={}, deterministic_result={}
+    )
+
+    assert runner.calls == 2
+    assert output.judgments[0].judgment == "indeterminate"
+
+
+def test_agent_forces_finalization_on_last_turn(tmp_path: Path) -> None:
+    runner = MockRunner(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="final-verdict",
+                        name="submit_verdict",
+                        args={
+                            "judgments": [
+                                {
+                                    "criterion_id": "c1",
+                                    "judgment": "indeterminate",
+                                    "confidence": 0.3,
+                                    "evidence": [],
+                                    "reasoning": "forced finalization near limit",
+                                }
+                            ],
+                            "overall_reasoning": "finalized near limit",
+                            "risks": None,
+                            "followup_candidates": None,
+                            "budget_exhausted": False,
+                        },
+                    )
+                ],
+                finish_reason="tool_use",
+            )
+        ]
+    )
+
+    output = SemanticAgent(
+        runner=runner,
+        toolbox=SemanticToolbox(tmp_path),
+        max_turns=1,
+    ).run(node={}, graph={}, deterministic_result={})
+
+    assert runner.calls == 1
+    assert output.overall_reasoning == "finalized near limit"
+
+
 def test_agent_returns_budget_exhausted_when_tool_budget_is_spent(tmp_path: Path) -> None:
     runner = MockRunner(
         [

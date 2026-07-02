@@ -76,6 +76,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {"name": "read_project_yaml", "description": "Read the configured project YAML file."},
     {"name": "git_diff", "description": "Return git diff output."},
     {"name": "git_log", "description": "Return recent git log output."},
+    {
+        "name": "submit_verdict",
+        "description": "Submit the final typed SemanticOutput. This is the only terminal semantic verdict path.",
+    },
 ]
 
 

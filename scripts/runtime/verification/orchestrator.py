@@ -43,6 +43,8 @@ def verify(
         node_id=node_yaml.get("node_id", ""),
         verdict=verdict,
         confidence=confidence,
+        criteria_confidence=confidence,
+        completeness_status=_completeness_status(semantic),
         deterministic=det,
         semantic=semantic,
         decision_reasoning=semantic.overall_reasoning if semantic else action,
@@ -57,3 +59,11 @@ def _should_run_semantic(det) -> bool:
     constraint_violated = any(constraint.status == "violated" for constraint in det.constraints)
     criterion_failed = any(criterion.status == "fail" for criterion in det.criteria)
     return has_indeterminate and not deps_incomplete and not constraint_violated and not criterion_failed
+
+
+def _completeness_status(semantic) -> str:
+    if semantic is None:
+        return "not-run"
+    if semantic.budget_exhausted or not semantic.judgments:
+        return "partial"
+    return "complete"
