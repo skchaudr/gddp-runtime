@@ -146,8 +146,9 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
-    verdict, _, _ = decide(det, sem)
+    verdict, confidence, _ = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert confidence == 0.95
 
 
 def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
@@ -258,7 +259,7 @@ def test_row_4_precedence_over_budget_exhausted():
     assert verdict == Verdict.FAIL
 
 
-def test_semantic_confidence_blend_uses_weaker_layer():
+def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminate():
     det = _deterministic(
         criteria=[_criterion("a", "indeterminate", 0.4)],
         artifacts_present={"receipt.json": True},
@@ -266,4 +267,41 @@ def test_semantic_confidence_blend_uses_weaker_layer():
     )
     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
     _, confidence, _ = decide(det, sem)
-    assert confidence == 0.4
+    assert confidence == 0.95
+
+
+def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
+    det = _deterministic(
+        criteria=[
+            _criterion("a", "indeterminate", 0.18),
+            _criterion("b", "pass", 0.7),
+        ],
+        artifacts_present={
+            "decision.md": False,
+            "result-summary.md": False,
+            "patch.diff": False,
+        },
+        deps_status={"dep-a": "complete"},
+    )
+    sem = _semantic(
+        [
+            _judgment("a", "judged_pass", 0.99),
+            _judgment("b", "judged_pass", 0.91),
+        ]
+    )
+    verdict, confidence, action = decide(det, sem)
+    assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert confidence >= 0.85
+    assert action == "Provide missing required artifacts and re-submit."
+
+
+def test_semantic_fail_yields_low_criteria_confidence():
+    det = _deterministic(
+        criteria=[_criterion("a", "indeterminate", 0.6)],
+        artifacts_present={"receipt.json": True},
+        deps_status={"dep-a": "complete"},
+    )
+    sem = _semantic([_judgment("a", "judged_fail", 0.9)])
+    verdict, confidence, _ = decide(det, sem)
+    assert verdict == Verdict.FAIL
+    assert confidence < 0.2

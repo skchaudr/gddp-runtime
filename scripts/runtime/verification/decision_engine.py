@@ -143,11 +143,26 @@ def _confidence_semantic_blend(
     if not judgments:
         blended = floor
     else:
-        semantic = _mean(j.confidence for j in judgments)
-        blended = min(floor, semantic)
+        semantic = _semantic_criteria_confidence(judgments)
+        if ctx.indeterminate_only:
+            blended = semantic
+        else:
+            blended = min(floor, semantic)
     if cap_at_half:
         return min(blended, 0.5)
     return blended
+
+
+def _semantic_criteria_confidence(judgments: list[CriterionJudgment]) -> float:
+    return _mean(_criterion_satisfaction_confidence(judgment) for judgment in judgments)
+
+
+def _criterion_satisfaction_confidence(judgment: CriterionJudgment) -> float:
+    if judgment.judgment == "judged_pass":
+        return judgment.confidence
+    if judgment.judgment == "judged_fail":
+        return 1.0 - judgment.confidence
+    return min(judgment.confidence, 1.0 - judgment.confidence)
 
 
 def _row1(ctx: _DecisionContext) -> bool:
