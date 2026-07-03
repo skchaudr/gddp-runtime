@@ -1,0 +1,21 @@
+# Patch Evidence: runtime-receipt-proves-node
+
+Runtime-side evidence attached in this completion round:
+
+```text
+.gddp/decision.md
+.gddp/result-summary.md
+.gddp/patch.diff
+.handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json
+.handoffs/018-runtime-receipt-proves-node.md
+```
+
+Constrained areas intentionally not changed:
+
+```text
+scripts/runtime/verification/decision_engine.py
+/home/sab/gddp-config/graphs/gddp-runtime/nodes/verification-receipt-contract.yaml
+```
+
+Behavioral patch surface: none. This evidence bundle attaches the decision,
+result, patch note, and live receipt artifact required by the node contract.

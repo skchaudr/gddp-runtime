@@ -1,0 +1,1138 @@
+{
+  "project_id": "gddp-runtime",
+  "node_id": "verification-receipt-contract",
+  "verdict": "needs-more-evidence",
+  "confidence": 0.19,
+  "criteria_confidence": 0.19,
+  "completeness_status": "complete",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "contract-doc-defines-current-shape",
+        "criterion": "verification-engine-spec.md or docs/verification-receipt-contract.md in gddp-runtime defines the current VerdictReceipt fields: project_id, node_id, verdict, confidence, criteria_confidence, completeness_status, deterministic, semantic, decision_reasoning, required_next_action, and generated_at",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (project_id, node_id, criteria_confidence, completeness_status, decision_reasoning, required_next_action, generated_at). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "confidence-alias-rule-explicit",
+        "criterion": "the contract states that confidence is a legacy compatibility alias for criteria_confidence, that new consumers should read criteria_confidence, and that mismatched values are invalid",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (criteria_confidence, criteria_confidence). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "completeness-status-enum-defined",
+        "criterion": "the contract defines completeness_status values complete, partial, and not-run, including how semantic absence, empty judgments, and budget_exhausted map to those values",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (completeness_status, budget_exhausted). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "criteria-evidence-shape-defined",
+        "criterion": "the contract specifies the per-criterion semantic evidence shape, including criterion_id, judgment, confidence, reasoning, and evidence entries with file/command references when available",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (criterion_id). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "artifact-gate-shape-defined",
+        "criterion": "the contract specifies how deterministic.artifacts_present reports required artifacts independently from criteria_confidence, including present, missing, and not-required/no-entry cases",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (artifacts_present, criteria_confidence). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "graph-truth-boundary-explicit",
+        "criterion": "the contract states that runtime may emit a receipt and required_next_action but must not mutate gddp-config graph truth directly",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (required_next_action). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "next-action-vocabulary-defined",
+        "criterion": "the contract maps required_next_action strings to the operator decisions accept, retry, block, defer, or dispatch-next without requiring readers to infer the action from verdict text alone",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (required_next_action). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "fixture-receipts-cover-ambiguity",
+        "criterion": "tests/fixtures/verification_receipts/ or equivalent committed test fixtures include semantic-pass-with-missing-artifacts and semantic-fail-with-complete-artifacts examples, and both validate as VerdictReceipt",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (verification_receipts). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "schema-tests-lock-contract",
+        "criterion": "scripts/runtime/verification/test_schemas.py or equivalent tests prove legacy confidence-only payloads are accepted, confidence/criteria_confidence mismatches are rejected, and missing completeness_status is backfilled deterministically",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (test_schemas, criteria_confidence, completeness_status). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "runtime-receipt-proves-node",
+        "criterion": "this node is not complete until a runtime-generated verifier receipt for verification-receipt-contract is attached to the handoff or result artifacts and shows the contract fields populated without graph mutation",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [
+      {
+        "constraint": "documentation, fixtures, schema compatibility tests, and receipt-generation proof only; do not change confidence calibration in this node",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "do not change verifier decision matrix behavior; verdict-confidence-split owns calibration behavior",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "do not add a visualization, dashboard, web UI, or graph rendering structure",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "preserve backward compatibility for existing receipt readers unless the contract doc explicitly names a migration path",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "keep graph truth human-owned; do not revive or replace graph_updater.py",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "do not mark this node complete from code inspection alone; require a runtime verifier receipt generated in the completion round",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      }
+    ],
+    "artifacts_present": {
+      "decision.md": false,
+      "result-summary.md": false,
+      "patch.diff": false
+    },
+    "deps_status": {
+      "return-router": "complete",
+      "semantic-submit-verdict-tool": "complete",
+      "semantic-validation-retry": "complete"
+    },
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [
+      {
+        "criterion_id": "contract-doc-defines-current-shape",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 7.1 defines VerdictReceipt with all listed fields",
+          "scripts/runtime/verification/schemas.py: VerdictReceipt Pydantic model with project_id, node_id, verdict, confidence, criteria_confidence, completeness_status, deterministic, semantic, decision_reasoning, required_next_action, generated_at"
+        ],
+        "reasoning": "The verification-engine-spec.md document (section 7.1) explicitly defines the VerdictReceipt shape with all required fields. The schemas.py file implements the VerdictReceipt Pydantic model matching the spec. Both the spec document and the code define the current contract shape."
+      },
+      {
+        "criterion_id": "confidence-alias-rule-explicit",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 7.1 'confidence remains in receipts for compatibility with older consumers and must equal criteria_confidence when both are present. New code should read criteria_confidence'",
+          "scripts/runtime/verification/schemas.py: VerdictReceipt model with @model_validator('_confidence_alias_must_match') that rejects mismatched values",
+          "scripts/runtime/verification/schemas.py: VerdictReceipt docstring 'Compatibility alias for criteria_confidence. New readers should prefer criteria_confidence'",
+          "scripts/runtime/verification/test_schemas.py: test_verdict_receipt_confidence_is_legacy_alias_for_criteria_confidence, test_verdict_receipt_accepts_legacy_confidence_only_payload, test_verdict_receipt_rejects_confidence_alias_mismatch"
+        ],
+        "reasoning": "The verification-engine-spec.md explicitly documents the alias rule. The schemas.py implements it with a model_validator that enforces confidence == criteria_confidence. Tests prove legacy-only payloads are accepted, mismatches are rejected, and the alias relationship is enforced."
+      },
+      {
+        "criterion_id": "completeness-status-enum-defined",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 7.1 defines completeness_status as Literal['complete', 'partial', 'not-run']",
+          "scripts/runtime/verification/schemas.py: VerdictReceipt.completeness_status field typed as Literal['complete', 'partial', 'not-run']",
+          "scripts/runtime/verification/schemas.py: VerdictReceipt._infer_completeness_status() maps semantic=None -> 'not-run', budget_exhausted or empty judgments -> 'partial', else -> 'complete'",
+          "scripts/runtime/verification/orchestrator.py: _completeness_status() function mirrors the same mapping logic"
+        ],
+        "reasoning": "The contract defines the three completeness_status values. The schemas.py implements the enum and the inference logic that maps semantic absence to 'not-run', budget_exhausted/empty judgments to 'partial', and complete judgments to 'complete'. The orchestrator also implements this mapping."
+      },
+      {
+        "criterion_id": "criteria-evidence-shape-defined",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 4.4 defines CriterionJudgment with criterion_id, judgment, confidence, evidence, reasoning",
+          "scripts/runtime/verification/schemas.py: CriterionJudgment Pydantic model with criterion_id, judgment (Literal['judged_pass','judged_fail','indeterminate']), confidence (0.0-1.0), evidence (list[str]), reasoning (str)",
+          "scripts/runtime/verification/semantic/tools.py: submit_verdict tool schema requires criterion_id, judgment, confidence, evidence, reasoning"
+        ],
+        "reasoning": "The verification-engine-spec.md section 4.4 defines the per-criterion semantic evidence shape. The schemas.py implements CriterionJudgment with all required fields. The submit_verdict tool schema in tools.py also requires the same shape."
+      },
+      {
+        "criterion_id": "artifact-gate-shape-defined",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 3.3 defines gate logic for artifacts_present with present, missing, and not-required cases",
+          "verification-engine-spec.md: Section 5.3 decision matrix rows 5-7 handle missing artifacts independently from criteria_confidence",
+          "scripts/runtime/verification/schemas.py: DeterministicResult.artifacts_present is dict[str, bool]",
+          "scripts/runtime/verification/decision_engine.py: artifacts_missing and artifacts_present properties used in matrix rows 5-7, 10-12",
+          "scripts/runtime/verification/deterministic/artifacts.py: check_artifacts() checks required_artifacts against repo, returns dict[str, bool]"
+        ],
+        "reasoning": "The verification-engine-spec.md defines how artifacts_present reports required artifacts independently from criteria_confidence. The decision matrix (rows 5-7) shows how missing artifacts produce needs-more-evidence regardless of criteria confidence. The code implements this separation."
+      },
+      {
+        "criterion_id": "graph-truth-boundary-explicit",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 14 Hard Constraint #1 'No graph mutation. The engine writes receipts and verdicts only.'",
+          "verification-engine-spec.md: Section 8.2 'It never mutates graph status. It writes a receipt.'",
+          "scripts/runtime/verification/orchestrator.py: verify() returns VerdictReceipt, does not write to graph YAML",
+          "scripts/runtime/verification/receipt_sink.py: write_receipt() writes to receipt directory, not graph",
+          "scripts/runtime/verification/test_dry_run_e2e.py: _assert_zero_repo_writes() proves verify() does not modify repo files"
+        ],
+        "reasoning": "The verification-engine-spec.md explicitly states the graph truth boundary in multiple places. The orchestrator and receipt_sink only write receipts, never graph YAML. The e2e test proves zero repo writes during verification."
+      },
+      {
+        "criterion_id": "next-action-vocabulary-defined",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "verification-engine-spec.md: Section 5.3 decision matrix defines required_next_action for each row",
+          "scripts/runtime/verification/decision_engine.py: MATRIX rows define required_next_action strings for each verdict path",
+          "scripts/runtime/verification/decision_engine.py: required_next_action values include 'Complete dependency nodes before re-verification.', 'Revert out-of-scope changes...', 'Fix failing acceptance criteria...', 'Address semantic failures...', 'Provide missing required artifacts...', 'Re-run semantic investigation...', 'Human review required...', 'Proceed to accept_node...'"
+        ],
+        "reasoning": "The decision matrix in verification-engine-spec.md and the decision_engine.py implementation define explicit required_next_action strings for each verdict path. Consumers read the action string directly rather than inferring from verdict text."
+      },
+      {
+        "criterion_id": "fixture-receipts-cover-ambiguity",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "scripts/runtime/verification/fixtures/verification_receipts/semantic-pass-with-missing-artifacts.json: semantic pass with missing artifacts, verdict=needs-more-evidence",
+          "scripts/runtime/verification/fixtures/verification_receipts/semantic-fail-with-complete-artifacts.json: semantic fail with complete artifacts, verdict=fail",
+          "scripts/runtime/verification/test_schemas.py: test_ambiguity_receipt_fixtures_validate_contract() validates both fixtures as VerdictReceipt"
+        ],
+        "reasoning": "Both fixture files exist in the verification_receipts directory. The test_schemas.py test validates both as VerdictReceipt and asserts the correct verdict mapping: semantic-pass-with-missing-artifacts -> NEEDS_MORE_EVIDENCE, semantic-fail-with-complete-artifacts -> FAIL."
+      },
+      {
+        "criterion_id": "schema-tests-lock-contract",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "scripts/runtime/verification/test_schemas.py: test_verdict_receipt_accepts_legacy_confidence_only_payload() - proves legacy confidence-only payloads are accepted",
+          "scripts/runtime/verification/test_schemas.py: test_verdict_receipt_rejects_confidence_alias_mismatch() - proves confidence/criteria_confidence mismatches are rejected",
+          "scripts/runtime/verification/test_schemas.py: test_verdict_receipt_accepts_legacy_confidence_only_payload() - proves missing completeness_status is backfilled to 'not-run'"
+        ],
+        "reasoning": "The test_schemas.py file contains tests that prove: (1) legacy confidence-only payloads (without criteria_confidence or completeness_status) are accepted and backfilled, (2) confidence/criteria_confidence mismatches are rejected with ValidationError, (3) missing completeness_status is deterministically inferred as 'not-run' when semantic is None."
+      },
+      {
+        "criterion_id": "runtime-receipt-proves-node",
+        "judgment": "indeterminate",
+        "confidence": 0.85,
+        "evidence": [
+          ".handoffs/014-verifier-cli-real-receipt-run.md: CLI ran against verification-receipt-contract, produced receipt with verdict=needs-more-evidence, criteria_confidence=0.19, completeness_status=partial",
+          ".handoffs/015-live-semantic-runner.md: Live semantic run against verification-receipt-contract, budget exhausted, node remains ready/incomplete",
+          "scripts/runtime/verification/cli.py: CLI exists and can produce receipts",
+          "scripts/runtime/verification/receipt_sink.py: write_receipt() writes receipts without graph mutation"
+        ],
+        "reasoning": "The CLI has been run against this node and produced receipts (documented in handoffs 014 and 015). However, the live semantic run exhausted its budget before producing per-criterion judgments, so the node remains in 'ready' status. A runtime-generated verifier receipt exists but with partial completeness_status. The criterion requires a receipt showing contract fields populated without graph mutation - the receipts exist but the semantic judgments were empty due to budget exhaustion. This criterion cannot be fully resolved by code inspection alone; it requires a successful live run that produces complete semantic judgments."
+      }
+    ],
+    "overall_reasoning": "The verification-receipt-contract node has been substantially implemented. The contract documentation (verification-engine-spec.md) defines the VerdictReceipt shape, confidence alias rules, completeness_status enum, criteria evidence shape, artifact gate shape, graph truth boundary, and next-action vocabulary. The schemas.py implements all Pydantic models with validators enforcing the contract rules. The decision_engine.py implements the 12-row verdict matrix with explicit required_next_action strings. Fixture receipts cover the ambiguity cases (semantic-pass-with-missing-artifacts, semantic-fail-with-complete-artifacts). Schema tests lock the contract behavior (legacy payload acceptance, mismatch rejection, backfill). The CLI and orchestrator produce receipts without graph mutation. The only criterion that remains indeterminate is runtime-receipt-proves-node, which requires a successful live semantic run producing complete per-criterion judgments - the existing live runs exhausted their budget before completing. The node status is 'ready' in the graph, consistent with this finding.",
+    "risks": "The runtime-receipt-proves-node criterion cannot be verified by code inspection alone. Live runs have been attempted but the semantic agent exhausted its budget before producing per-criterion judgments. The node remains in 'ready' status. A successful live run with sufficient budget is needed to fully close this node.",
+    "followup_candidates": "verdict-confidence-split (unlocked by this node), tuning live semantic budget/loop behavior to avoid budget exhaustion on real nodes",
+    "budget_exhausted": false,
+    "budget_trace": {
+      "max_turns": 25,
+      "max_tool_calls": 80,
+      "max_tokens": 96000,
+      "max_tool_result_chars": 50000,
+      "initial_estimated_tokens": 5693,
+      "initial_remaining_tokens": 90307,
+      "initial_remaining_tool_calls": 80,
+      "events": [
+        {
+          "event": "model_response",
+          "turn": 0,
+          "estimated_tokens": 21,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 90286,
+          "remaining_tool_calls": 80
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "list_directory",
+          "estimated_tokens": 132,
+          "truncated": false,
+          "original_chars": 526,
+          "ok": true,
+          "remaining_tokens": 90154,
+          "remaining_tool_calls": 79
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "read_node_yaml",
+          "estimated_tokens": 1253,
+          "truncated": false,
+          "original_chars": 5011,
+          "ok": true,
+          "remaining_tokens": 88901,
+          "remaining_tool_calls": 78
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "read_project_yaml",
+          "estimated_tokens": 928,
+          "truncated": false,
+          "original_chars": 3711,
+          "ok": true,
+          "remaining_tokens": 87973,
+          "remaining_tool_calls": 77
+        },
+        {
+          "event": "model_response",
+          "turn": 1,
+          "estimated_tokens": 32,
+          "tool_calls": 4,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 87941,
+          "remaining_tool_calls": 77
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "read_file",
+          "estimated_tokens": 7490,
+          "truncated": false,
+          "original_chars": 29957,
+          "ok": true,
+          "remaining_tokens": 80451,
+          "remaining_tool_calls": 76
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "list_directory",
+          "estimated_tokens": 48,
+          "truncated": false,
+          "original_chars": 190,
+          "ok": true,
+          "remaining_tokens": 80403,
+          "remaining_tool_calls": 75
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "list_directory",
+          "estimated_tokens": 50,
+          "truncated": false,
+          "original_chars": 200,
+          "ok": true,
+          "remaining_tokens": 80353,
+          "remaining_tool_calls": 74
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "list_directory",
+          "estimated_tokens": 20,
+          "truncated": false,
+          "original_chars": 80,
+          "ok": false,
+          "remaining_tokens": 80333,
+          "remaining_tool_calls": 73
+        },
+        {
+          "event": "model_response",
+          "turn": 2,
+          "estimated_tokens": 27,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80306,
+          "remaining_tool_calls": 73
+        },
+        {
+          "event": "tool_result",
+          "turn": 2,
+          "tool": "list_directory",
+          "estimated_tokens": 68,
+          "truncated": false,
+          "original_chars": 270,
+          "ok": true,
+          "remaining_tokens": 80238,
+          "remaining_tool_calls": 72
+        },
+        {
+          "event": "tool_result",
+          "turn": 2,
+          "tool": "list_directory",
+          "estimated_tokens": 84,
+          "truncated": false,
+          "original_chars": 336,
+          "ok": true,
+          "remaining_tokens": 80154,
+          "remaining_tool_calls": 71
+        },
+        {
+          "event": "tool_result",
+          "turn": 2,
+          "tool": "read_file",
+          "estimated_tokens": 3097,
+          "truncated": false,
+          "original_chars": 12386,
+          "ok": true,
+          "remaining_tokens": 77057,
+          "remaining_tool_calls": 70
+        },
+        {
+          "event": "model_response",
+          "turn": 3,
+          "estimated_tokens": 32,
+          "tool_calls": 4,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 77025,
+          "remaining_tool_calls": 70
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "read_file",
+          "estimated_tokens": 1045,
+          "truncated": false,
+          "original_chars": 4178,
+          "ok": true,
+          "remaining_tokens": 75980,
+          "remaining_tool_calls": 69
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "read_file",
+          "estimated_tokens": 792,
+          "truncated": false,
+          "original_chars": 3168,
+          "ok": true,
+          "remaining_tokens": 75188,
+          "remaining_tool_calls": 68
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "list_directory",
+          "estimated_tokens": 13,
+          "truncated": false,
+          "original_chars": 50,
+          "ok": true,
+          "remaining_tokens": 75175,
+          "remaining_tool_calls": 67
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "list_directory",
+          "estimated_tokens": 31,
+          "truncated": false,
+          "original_chars": 124,
+          "ok": true,
+          "remaining_tokens": 75144,
+          "remaining_tool_calls": 66
+        },
+        {
+          "event": "model_response",
+          "turn": 4,
+          "estimated_tokens": 24,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 75120,
+          "remaining_tool_calls": 66
+        },
+        {
+          "event": "tool_result",
+          "turn": 4,
+          "tool": "list_directory",
+          "estimated_tokens": 29,
+          "truncated": false,
+          "original_chars": 115,
+          "ok": true,
+          "remaining_tokens": 75091,
+          "remaining_tool_calls": 65
+        },
+        {
+          "event": "tool_result",
+          "turn": 4,
+          "tool": "read_file",
+          "estimated_tokens": 2792,
+          "truncated": false,
+          "original_chars": 11167,
+          "ok": true,
+          "remaining_tokens": 72299,
+          "remaining_tool_calls": 64
+        },
+        {
+          "event": "tool_result",
+          "turn": 4,
+          "tool": "read_file",
+          "estimated_tokens": 5886,
+          "truncated": false,
+          "original_chars": 23541,
+          "ok": true,
+          "remaining_tokens": 66413,
+          "remaining_tool_calls": 63
+        },
+        {
+          "event": "model_response",
+          "turn": 5,
+          "estimated_tokens": 16,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 66397,
+          "remaining_tool_calls": 63
+        },
+        {
+          "event": "tool_result",
+          "turn": 5,
+          "tool": "read_file",
+          "estimated_tokens": 451,
+          "truncated": false,
+          "original_chars": 1803,
+          "ok": true,
+          "remaining_tokens": 65946,
+          "remaining_tool_calls": 62
+        },
+        {
+          "event": "tool_result",
+          "turn": 5,
+          "tool": "read_file",
+          "estimated_tokens": 457,
+          "truncated": false,
+          "original_chars": 1825,
+          "ok": true,
+          "remaining_tokens": 65489,
+          "remaining_tool_calls": 61
+        },
+        {
+          "event": "tool_result",
+          "turn": 5,
+          "tool": "read_file",
+          "estimated_tokens": 2045,
+          "truncated": false,
+          "original_chars": 8178,
+          "ok": true,
+          "remaining_tokens": 63444,
+          "remaining_tool_calls": 60
+        },
+        {
+          "event": "model_response",
+          "turn": 6,
+          "estimated_tokens": 30,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 63414,
+          "remaining_tool_calls": 60
+        },
+        {
+          "event": "tool_result",
+          "turn": 6,
+          "tool": "read_file",
+          "estimated_tokens": 2905,
+          "truncated": false,
+          "original_chars": 11617,
+          "ok": true,
+          "remaining_tokens": 60509,
+          "remaining_tool_calls": 59
+        },
+        {
+          "event": "tool_result",
+          "turn": 6,
+          "tool": "read_file",
+          "estimated_tokens": 404,
+          "truncated": false,
+          "original_chars": 1614,
+          "ok": true,
+          "remaining_tokens": 60105,
+          "remaining_tool_calls": 58
+        },
+        {
+          "event": "tool_result",
+          "turn": 6,
+          "tool": "read_file",
+          "estimated_tokens": 625,
+          "truncated": false,
+          "original_chars": 2497,
+          "ok": true,
+          "remaining_tokens": 59480,
+          "remaining_tool_calls": 57
+        },
+        {
+          "event": "model_response",
+          "turn": 7,
+          "estimated_tokens": 28,
+          "tool_calls": 4,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 59452,
+          "remaining_tool_calls": 57
+        },
+        {
+          "event": "tool_result",
+          "turn": 7,
+          "tool": "list_directory",
+          "estimated_tokens": 35,
+          "truncated": false,
+          "original_chars": 138,
+          "ok": true,
+          "remaining_tokens": 59417,
+          "remaining_tool_calls": 56
+        },
+        {
+          "event": "tool_result",
+          "turn": 7,
+          "tool": "read_file",
+          "estimated_tokens": 593,
+          "truncated": false,
+          "original_chars": 2372,
+          "ok": true,
+          "remaining_tokens": 58824,
+          "remaining_tool_calls": 55
+        },
+        {
+          "event": "tool_result",
+          "turn": 7,
+          "tool": "read_file",
+          "estimated_tokens": 199,
+          "truncated": false,
+          "original_chars": 795,
+          "ok": true,
+          "remaining_tokens": 58625,
+          "remaining_tool_calls": 54
+        },
+        {
+          "event": "tool_result",
+          "turn": 7,
+          "tool": "git_log",
+          "estimated_tokens": 357,
+          "truncated": false,
+          "original_chars": 1428,
+          "ok": true,
+          "remaining_tokens": 58268,
+          "remaining_tool_calls": 53
+        },
+        {
+          "event": "model_response",
+          "turn": 8,
+          "estimated_tokens": 22,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 58246,
+          "remaining_tool_calls": 53
+        },
+        {
+          "event": "tool_result",
+          "turn": 8,
+          "tool": "read_file",
+          "estimated_tokens": 9206,
+          "truncated": false,
+          "original_chars": 36823,
+          "ok": true,
+          "remaining_tokens": 49040,
+          "remaining_tool_calls": 52
+        },
+        {
+          "event": "tool_result",
+          "turn": 8,
+          "tool": "read_file",
+          "estimated_tokens": 190,
+          "truncated": false,
+          "original_chars": 760,
+          "ok": true,
+          "remaining_tokens": 48850,
+          "remaining_tool_calls": 51
+        },
+        {
+          "event": "tool_result",
+          "turn": 8,
+          "tool": "read_file",
+          "estimated_tokens": 712,
+          "truncated": false,
+          "original_chars": 2847,
+          "ok": true,
+          "remaining_tokens": 48138,
+          "remaining_tool_calls": 50
+        },
+        {
+          "event": "model_response",
+          "turn": 9,
+          "estimated_tokens": 20,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 48118,
+          "remaining_tool_calls": 50
+        },
+        {
+          "event": "tool_result",
+          "turn": 9,
+          "tool": "read_file",
+          "estimated_tokens": 2089,
+          "truncated": false,
+          "original_chars": 8353,
+          "ok": true,
+          "remaining_tokens": 46029,
+          "remaining_tool_calls": 49
+        },
+        {
+          "event": "tool_result",
+          "turn": 9,
+          "tool": "read_file",
+          "estimated_tokens": 1440,
+          "truncated": false,
+          "original_chars": 5759,
+          "ok": true,
+          "remaining_tokens": 44589,
+          "remaining_tool_calls": 48
+        },
+        {
+          "event": "tool_result",
+          "turn": 9,
+          "tool": "read_file",
+          "estimated_tokens": 1997,
+          "truncated": false,
+          "original_chars": 7985,
+          "ok": true,
+          "remaining_tokens": 42592,
+          "remaining_tool_calls": 47
+        },
+        {
+          "event": "model_response",
+          "turn": 10,
+          "estimated_tokens": 31,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 42561,
+          "remaining_tool_calls": 47
+        },
+        {
+          "event": "tool_result",
+          "turn": 10,
+          "tool": "list_directory",
+          "estimated_tokens": 26,
+          "truncated": false,
+          "original_chars": 101,
+          "ok": true,
+          "remaining_tokens": 42535,
+          "remaining_tool_calls": 46
+        },
+        {
+          "event": "tool_result",
+          "turn": 10,
+          "tool": "read_file",
+          "estimated_tokens": 2477,
+          "truncated": false,
+          "original_chars": 9905,
+          "ok": true,
+          "remaining_tokens": 40058,
+          "remaining_tool_calls": 45
+        },
+        {
+          "event": "tool_result",
+          "turn": 10,
+          "tool": "grep_code",
+          "estimated_tokens": 7,
+          "truncated": false,
+          "original_chars": 26,
+          "ok": true,
+          "remaining_tokens": 40051,
+          "remaining_tool_calls": 44
+        },
+        {
+          "event": "model_response",
+          "turn": 11,
+          "estimated_tokens": 25,
+          "tool_calls": 4,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 40026,
+          "remaining_tool_calls": 44
+        },
+        {
+          "event": "tool_result",
+          "turn": 11,
+          "tool": "read_file",
+          "estimated_tokens": 207,
+          "truncated": false,
+          "original_chars": 828,
+          "ok": true,
+          "remaining_tokens": 39819,
+          "remaining_tool_calls": 43
+        },
+        {
+          "event": "tool_result",
+          "turn": 11,
+          "tool": "read_file",
+          "estimated_tokens": 175,
+          "truncated": false,
+          "original_chars": 698,
+          "ok": true,
+          "remaining_tokens": 39644,
+          "remaining_tool_calls": 42
+        },
+        {
+          "event": "tool_result",
+          "turn": 11,
+          "tool": "read_file",
+          "estimated_tokens": 1407,
+          "truncated": false,
+          "original_chars": 5628,
+          "ok": true,
+          "remaining_tokens": 38237,
+          "remaining_tool_calls": 41
+        },
+        {
+          "event": "tool_result",
+          "turn": 11,
+          "tool": "read_file",
+          "estimated_tokens": 3724,
+          "truncated": false,
+          "original_chars": 14893,
+          "ok": true,
+          "remaining_tokens": 34513,
+          "remaining_tool_calls": 40
+        },
+        {
+          "event": "model_response",
+          "turn": 12,
+          "estimated_tokens": 32,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 34481,
+          "remaining_tool_calls": 40
+        },
+        {
+          "event": "tool_result",
+          "turn": 12,
+          "tool": "grep_code",
+          "estimated_tokens": 1094,
+          "truncated": false,
+          "original_chars": 4376,
+          "ok": true,
+          "remaining_tokens": 33387,
+          "remaining_tool_calls": 39
+        },
+        {
+          "event": "tool_result",
+          "turn": 12,
+          "tool": "read_file",
+          "estimated_tokens": 441,
+          "truncated": false,
+          "original_chars": 1761,
+          "ok": true,
+          "remaining_tokens": 32946,
+          "remaining_tool_calls": 38
+        },
+        {
+          "event": "tool_result",
+          "turn": 12,
+          "tool": "read_file",
+          "estimated_tokens": 132,
+          "truncated": false,
+          "original_chars": 526,
+          "ok": true,
+          "remaining_tokens": 32814,
+          "remaining_tool_calls": 37
+        },
+        {
+          "event": "model_response",
+          "turn": 13,
+          "estimated_tokens": 20,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 32794,
+          "remaining_tool_calls": 37
+        },
+        {
+          "event": "tool_result",
+          "turn": 13,
+          "tool": "read_file",
+          "estimated_tokens": 653,
+          "truncated": false,
+          "original_chars": 2611,
+          "ok": true,
+          "remaining_tokens": 32141,
+          "remaining_tool_calls": 36
+        },
+        {
+          "event": "tool_result",
+          "turn": 13,
+          "tool": "read_file",
+          "estimated_tokens": 689,
+          "truncated": false,
+          "original_chars": 2753,
+          "ok": true,
+          "remaining_tokens": 31452,
+          "remaining_tool_calls": 35
+        },
+        {
+          "event": "model_response",
+          "turn": 14,
+          "estimated_tokens": 24,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 31428,
+          "remaining_tool_calls": 35
+        },
+        {
+          "event": "tool_result",
+          "turn": 14,
+          "tool": "grep_code",
+          "estimated_tokens": 7,
+          "truncated": false,
+          "original_chars": 26,
+          "ok": true,
+          "remaining_tokens": 31421,
+          "remaining_tool_calls": 34
+        },
+        {
+          "event": "tool_result",
+          "turn": 14,
+          "tool": "list_directory",
+          "estimated_tokens": 78,
+          "truncated": false,
+          "original_chars": 312,
+          "ok": true,
+          "remaining_tokens": 31343,
+          "remaining_tool_calls": 33
+        },
+        {
+          "event": "model_response",
+          "turn": 15,
+          "estimated_tokens": 18,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 31325,
+          "remaining_tool_calls": 33
+        },
+        {
+          "event": "tool_result",
+          "turn": 15,
+          "tool": "read_file",
+          "estimated_tokens": 626,
+          "truncated": false,
+          "original_chars": 2503,
+          "ok": true,
+          "remaining_tokens": 30699,
+          "remaining_tool_calls": 32
+        },
+        {
+          "event": "model_response",
+          "turn": 16,
+          "estimated_tokens": 25,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 30674,
+          "remaining_tool_calls": 32
+        },
+        {
+          "event": "tool_result",
+          "turn": 16,
+          "tool": "run_command",
+          "estimated_tokens": 36,
+          "truncated": false,
+          "original_chars": 141,
+          "ok": false,
+          "remaining_tokens": 30638,
+          "remaining_tool_calls": 31
+        },
+        {
+          "event": "model_response",
+          "turn": 17,
+          "estimated_tokens": 1,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 30637,
+          "remaining_tool_calls": 31
+        },
+        {
+          "event": "tool_result",
+          "turn": 17,
+          "tool": "run_command",
+          "estimated_tokens": 24,
+          "truncated": false,
+          "original_chars": 94,
+          "ok": false,
+          "remaining_tokens": 30613,
+          "remaining_tool_calls": 30
+        },
+        {
+          "event": "model_response",
+          "turn": 18,
+          "estimated_tokens": 1,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 30612,
+          "remaining_tool_calls": 30
+        },
+        {
+          "event": "tool_result",
+          "turn": 18,
+          "tool": "run_command",
+          "estimated_tokens": 31,
+          "truncated": false,
+          "original_chars": 121,
+          "ok": false,
+          "remaining_tokens": 30581,
+          "remaining_tool_calls": 29
+        },
+        {
+          "event": "model_response",
+          "turn": 19,
+          "estimated_tokens": 1,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 30580,
+          "remaining_tool_calls": 29
+        },
+        {
+          "event": "tool_result",
+          "turn": 19,
+          "tool": "run_command",
+          "estimated_tokens": 186,
+          "truncated": false,
+          "original_chars": 742,
+          "ok": true,
+          "remaining_tokens": 30394,
+          "remaining_tool_calls": 28
+        },
+        {
+          "event": "model_response",
+          "turn": 20,
+          "estimated_tokens": 620,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 29774,
+          "remaining_tool_calls": 28
+        }
+      ],
+      "final_reason": "submit_verdict accepted",
+      "final_remaining_tokens": 29774,
+      "final_remaining_tool_calls": 28,
+      "message_count": 75
+    }
+  },
+  "decision_reasoning": "The verification-receipt-contract node has been substantially implemented. The contract documentation (verification-engine-spec.md) defines the VerdictReceipt shape, confidence alias rules, completeness_status enum, criteria evidence shape, artifact gate shape, graph truth boundary, and next-action vocabulary. The schemas.py implements all Pydantic models with validators enforcing the contract rules. The decision_engine.py implements the 12-row verdict matrix with explicit required_next_action strings. Fixture receipts cover the ambiguity cases (semantic-pass-with-missing-artifacts, semantic-fail-with-complete-artifacts). Schema tests lock the contract behavior (legacy payload acceptance, mismatch rejection, backfill). The CLI and orchestrator produce receipts without graph mutation. The only criterion that remains indeterminate is runtime-receipt-proves-node, which requires a successful live semantic run producing complete per-criterion judgments - the existing live runs exhausted their budget before completing. The node status is 'ready' in the graph, consistent with this finding.",
+  "required_next_action": "Provide missing required artifacts and re-run semantic investigation.",
+  "generated_at": "2026-07-03T01:53:17.020845+00:00"
+}
