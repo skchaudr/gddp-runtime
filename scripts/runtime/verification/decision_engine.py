@@ -201,6 +201,7 @@ def _row7(ctx: _DecisionContext) -> bool:
         and ctx.indeterminate_only
         and ctx.any_judgment_indeterminate
         and ctx.artifacts_missing
+        and not ctx.budget_exhausted
     )
 
 

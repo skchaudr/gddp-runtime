@@ -177,6 +177,22 @@ def test_matrix_row_8_needs_more_evidence_budget_exhausted():
     assert confidence <= 0.5
 
 
+def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
+    det = _deterministic(
+        criteria=[_criterion("a", "indeterminate", 0.55)],
+        artifacts_present={"receipt.json": False},
+        deps_status={"dep-a": "complete"},
+    )
+    sem = _semantic(
+        [_judgment("a", "indeterminate", 0.7)],
+        budget_exhausted=True,
+    )
+    verdict, confidence, action = decide(det, sem)
+    assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert confidence <= 0.5
+    assert action == "Re-run semantic investigation with sufficient budget."
+
+
 def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
     det = _deterministic(
         criteria=[_criterion("a", "indeterminate", 0.4)],
