@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from scripts.runtime.verification.semantic.agent import LLMResponse, SemanticAgent, ToolCall
+from scripts.runtime.verification.semantic.agent import LLMResponse, OpenAICompatibleRunner, SemanticAgent, ToolCall
 from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 from scripts.runtime.verification.semantic.tools import SemanticToolbox, ToolSafetyError
 
@@ -269,3 +269,61 @@ def test_prompt_builder_renders_node_graph_and_deterministic_context() -> None:
     assert "node-a" in rendered
     assert "project-a" in rendered
     assert "criteria_mismatches" in rendered
+
+
+def test_openai_compatible_runner_converts_tools_and_tool_messages() -> None:
+    runner = OpenAICompatibleRunner(api_key="key", base_url="https://example.test/v1", model="model")
+
+    tool = runner._tool_for_chat_completions(
+        {
+            "name": "read_file",
+            "description": "Read a file.",
+            "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        }
+    )
+    messages = runner._messages_for_chat_completions(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "type": "function"}]},
+            {"role": "tool", "tool_call_id": "call-1", "name": "read_file", "content": "ok"},
+        ]
+    )
+
+    assert runner._endpoint() == "https://example.test/v1/chat/completions"
+    assert tool["type"] == "function"
+    assert tool["function"]["parameters"]["properties"]["path"]["type"] == "string"
+    assert messages[0]["tool_calls"][0]["id"] == "call-1"
+    assert messages[1]["role"] == "tool"
+
+
+def test_openai_compatible_runner_parses_tool_calls() -> None:
+    runner = OpenAICompatibleRunner(api_key="key", base_url="https://example.test/v1/chat/completions", model="model")
+
+    calls = runner._parse_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "function": {"name": "read_file", "arguments": '{"path":"module.py"}'},
+            }
+        ]
+    )
+
+    assert runner._endpoint() == "https://example.test/v1/chat/completions"
+    assert calls == [ToolCall(id="call-1", name="read_file", args={"path": "module.py"})]
+
+
+def test_toolbox_reads_configured_yaml_outside_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = tmp_path / "config"
+    config.mkdir()
+    node_yaml = config / "node.yaml"
+    project_yaml = config / "project.yaml"
+    node_yaml.write_text("node_id: n1\n", encoding="utf-8")
+    project_yaml.write_text("project_id: p1\n", encoding="utf-8")
+
+    toolbox = SemanticToolbox(repo, node_yaml_path=node_yaml, project_yaml_path=project_yaml)
+
+    assert "node_id: n1" in toolbox.read_node_yaml()
+    assert "project_id: p1" in toolbox.read_project_yaml()
+    with pytest.raises(ToolSafetyError):
+        toolbox.read_file(str(node_yaml))

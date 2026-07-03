@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Protocol
 
@@ -62,6 +64,119 @@ class AnthropicRunner:
         )
 
 
+class OpenAICompatibleRunner:
+    """Minimal stdlib runner for OpenAI-compatible chat-completions APIs."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        model: str,
+        max_tokens: int = 4096,
+        timeout_seconds: int = 120,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
+        payload = {
+            "model": self.model,
+            "messages": self._messages_for_chat_completions(messages),
+            "tools": [self._tool_for_chat_completions(tool) for tool in tools],
+            "tool_choice": "auto",
+            "max_tokens": self.max_tokens,
+            "temperature": 0,
+        }
+        request = urllib.request.Request(
+            self._endpoint(),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"semantic provider HTTP {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"semantic provider request failed: {exc.reason}") from exc
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"semantic provider returned no choices: {data}")
+        choice = choices[0]
+        message = choice.get("message") or {}
+        return LLMResponse(
+            content=message.get("content") or "",
+            tool_calls=self._parse_tool_calls(message.get("tool_calls") or []),
+            finish_reason=choice.get("finish_reason") or "",
+        )
+
+    def _endpoint(self) -> str:
+        if self.base_url.endswith("/chat/completions"):
+            return self.base_url
+        return f"{self.base_url}/chat/completions"
+
+    def _messages_for_chat_completions(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        converted = []
+        for message in messages:
+            role = message.get("role")
+            if role == "assistant":
+                converted_message = {"role": "assistant", "content": message.get("content") or ""}
+                if message.get("tool_calls"):
+                    converted_message["tool_calls"] = message["tool_calls"]
+                converted.append(converted_message)
+                continue
+            if role == "tool":
+                converted.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": message.get("tool_call_id"),
+                        "name": message.get("name"),
+                        "content": message.get("content") or "",
+                    }
+                )
+                continue
+            converted.append({"role": role, "content": message.get("content") or ""})
+        return converted
+
+    def _tool_for_chat_completions(self, tool: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+            },
+        }
+
+    def _parse_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[ToolCall]:
+        parsed = []
+        for index, call in enumerate(tool_calls):
+            function = call.get("function") or {}
+            raw_args = function.get("arguments") or "{}"
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"semantic provider returned malformed tool arguments: {raw_args}") from exc
+            parsed.append(
+                ToolCall(
+                    id=call.get("id") or f"tool-call-{index}",
+                    name=function.get("name") or "",
+                    args=args if isinstance(args, dict) else {},
+                )
+            )
+        return parsed
+
+
 @dataclass
 class SemanticAgent:
     runner: Runner
@@ -109,7 +224,7 @@ class SemanticAgent:
                 return self._budget_exhausted(messages, reason="model response exhausted token budget")
 
             if response.tool_calls:
-                messages.append({"role": "assistant", "content": response.content})
+                messages.append(self._assistant_tool_call_message(response))
                 for call in response.tool_calls:
                     if call.name == "submit_verdict":
                         submitted = self._validate_submitted_verdict(call.args)
@@ -172,6 +287,20 @@ class SemanticAgent:
             deterministic_result=deterministic_result,
             shape_profile=shape_profile,
         )
+
+    def _assistant_tool_call_message(self, response: LLMResponse) -> dict[str, Any]:
+        return {
+            "role": "assistant",
+            "content": response.content,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": json.dumps(call.args)},
+                }
+                for call in response.tool_calls
+            ],
+        }
 
     def _parse_semantic_output(self, content: str) -> SemanticOutput | str:
         try:

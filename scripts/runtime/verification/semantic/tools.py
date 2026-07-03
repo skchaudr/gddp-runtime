@@ -68,17 +68,108 @@ ALLOWED_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 )
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
-    {"name": "read_file", "description": "Read a file inside the source repo."},
-    {"name": "list_directory", "description": "List a directory inside the source repo."},
-    {"name": "grep_code", "description": "Search files with a regular expression."},
-    {"name": "run_command", "description": "Run an allowed read-only command."},
-    {"name": "read_node_yaml", "description": "Read the configured node YAML file."},
-    {"name": "read_project_yaml", "description": "Read the configured project YAML file."},
-    {"name": "git_diff", "description": "Return git diff output."},
-    {"name": "git_log", "description": "Return recent git log output."},
+    {
+        "name": "read_file",
+        "description": "Read a file inside the source repo.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_bytes": {"type": "integer", "minimum": 1},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": "List a directory inside the source repo.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+        },
+    },
+    {
+        "name": "grep_code",
+        "description": "Search files with a regular expression.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+                "context": {"type": "integer", "minimum": 0},
+                "max_matches": {"type": "integer", "minimum": 1},
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "run_command",
+        "description": "Run an allowed read-only command.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "array", "items": {"type": "string"}},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_node_yaml",
+        "description": "Read the configured node YAML file.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "read_project_yaml",
+        "description": "Read the configured project YAML file.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "git_diff",
+        "description": "Return git diff output.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"ref": {"type": "string"}},
+        },
+    },
+    {
+        "name": "git_log",
+        "description": "Return recent git log output.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"max_count": {"type": "integer", "minimum": 1}},
+        },
+    },
     {
         "name": "submit_verdict",
         "description": "Submit the final typed SemanticOutput. This is the only terminal semantic verdict path.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "judgments": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "criterion_id": {"type": "string"},
+                            "judgment": {
+                                "type": "string",
+                                "enum": ["judged_pass", "judged_fail", "indeterminate"],
+                            },
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                            "evidence": {"type": "array", "items": {"type": "string"}},
+                            "reasoning": {"type": "string"},
+                        },
+                        "required": ["criterion_id", "judgment", "confidence", "evidence", "reasoning"],
+                    },
+                },
+                "overall_reasoning": {"type": "string"},
+                "risks": {"type": ["string", "null"]},
+                "followup_candidates": {"type": ["string", "null"]},
+                "budget_exhausted": {"type": "boolean"},
+            },
+            "required": ["judgments", "overall_reasoning", "risks", "followup_candidates", "budget_exhausted"],
+        },
     },
 ]
 
@@ -163,12 +254,12 @@ class SemanticToolbox:
     def read_node_yaml(self) -> str:
         if self.node_yaml_path is None:
             raise ToolSafetyError("node_yaml_path is not configured")
-        return self.read_file(str(self.node_yaml_path))
+        return self._read_configured_yaml(self.node_yaml_path)
 
     def read_project_yaml(self) -> str:
         if self.project_yaml_path is None:
             raise ToolSafetyError("project_yaml_path is not configured")
-        return self.read_file(str(self.project_yaml_path))
+        return self._read_configured_yaml(self.project_yaml_path)
 
     def git_diff(self, ref: str | None = None) -> str:
         command = ["git", "diff"]
@@ -178,6 +269,12 @@ class SemanticToolbox:
 
     def git_log(self, max_count: int = 10) -> str:
         return self.run_command(["git", "log", f"--max-count={max_count}", "--oneline"])
+
+    def _read_configured_yaml(self, path: Path) -> str:
+        target = Path(path).resolve()
+        if not target.is_file():
+            raise FileNotFoundError(str(target))
+        return target.read_text(encoding="utf-8", errors="replace")
 
     def _resolve_inside_repo(self, path: str | Path) -> Path:
         target = Path(path)

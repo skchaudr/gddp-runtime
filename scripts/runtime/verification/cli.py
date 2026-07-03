@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ import yaml
 
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
-from scripts.runtime.verification.semantic.agent import LLMResponse, ToolCall
+from scripts.runtime.verification.semantic.agent import LLMResponse, OpenAICompatibleRunner, ToolCall
 from scripts.runtime.verification.semantic.tools import SemanticToolbox
 
 
@@ -94,11 +95,65 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shape-profile", type=Path, help="Optional shape profile YAML path.")
     parser.add_argument(
         "--semantic-mode",
-        choices=["offline"],
+        choices=["offline", "live"],
         default="offline",
-        help="Semantic runner mode. offline is network-free and marks unresolved criteria indeterminate.",
+        help=(
+            "Semantic runner mode. offline is network-free and marks unresolved criteria "
+            "indeterminate; live uses an OpenAI-compatible DeepSeek or GLM endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-provider",
+        choices=["auto", "deepseek", "glm"],
+        default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
+        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM.",
     )
     return parser
+
+
+LIVE_PROVIDER_CONFIG = {
+    "deepseek": {
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "base_url_env": "DEEPSEEK_BASE_URL",
+        "model_env": "DEEPSEEK_MODEL",
+        "default_base_url": "https://api.deepseek.com",
+        "default_model": "deepseek-chat",
+    },
+    "glm": {
+        "api_key_env": "GLM_API_KEY",
+        "base_url_env": "GLM_BASE_URL",
+        "model_env": "GLM_MODEL",
+        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "default_model": "glm-4-flash",
+    },
+}
+
+
+def _build_runner(args) -> OfflineFinalizingRunner | OpenAICompatibleRunner:
+    if args.semantic_mode == "offline":
+        return OfflineFinalizingRunner()
+
+    provider = _select_live_provider(args.semantic_provider)
+    config = LIVE_PROVIDER_CONFIG[provider]
+    api_key = os.environ.get(config["api_key_env"], "")
+    if not api_key:
+        raise RuntimeError(f"{config['api_key_env']} is required for --semantic-mode live --semantic-provider {provider}")
+    return OpenAICompatibleRunner(
+        api_key=api_key,
+        base_url=os.environ.get(config["base_url_env"], config["default_base_url"]),
+        model=os.environ.get(config["model_env"], config["default_model"]),
+    )
+
+
+def _select_live_provider(requested: str) -> str:
+    if requested != "auto":
+        return requested
+    for provider in ("deepseek", "glm"):
+        config = LIVE_PROVIDER_CONFIG[provider]
+        if os.environ.get(config["api_key_env"]):
+            return provider
+    required = ", ".join(config["api_key_env"] for config in LIVE_PROVIDER_CONFIG.values())
+    raise RuntimeError(f"--semantic-mode live requires one of these env vars: {required}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,12 +163,17 @@ def main(argv: list[str] | None = None) -> int:
     shape_profile = _load_yaml(args.shape_profile) if args.shape_profile else None
     repo = args.repo.resolve()
 
+    runner = _build_runner(args)
     receipt = verify(
         node_yaml=node_yaml,
         project_yaml=project_yaml,
         repo=repo,
-        runner=OfflineFinalizingRunner(),
-        toolbox=SemanticToolbox(repo),
+        runner=runner,
+        toolbox=SemanticToolbox(
+            repo,
+            node_yaml_path=args.node_yaml.resolve(),
+            project_yaml_path=args.project_yaml.resolve(),
+        ),
         shape_profile=shape_profile,
         config_root=args.config_root.resolve() if args.config_root else None,
     )

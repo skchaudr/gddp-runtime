@@ -60,3 +60,79 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
     assert receipt.confidence == receipt.criteria_confidence
     assert receipt.completeness_status == output["completeness_status"]
     assert receipt.required_next_action == output["required_next_action"]
+
+
+def test_live_runner_auto_prefers_deepseek(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.setenv("GLM_API_KEY", "glm-key")
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml",
+            "node.yaml",
+            "--project-yaml",
+            "project.yaml",
+            "--repo",
+            ".",
+            "--semantic-mode",
+            "live",
+        ]
+    )
+
+    runner = cli._build_runner(args)
+
+    assert runner.model == "deepseek-chat"
+    assert runner.base_url == "https://api.deepseek.com"
+
+
+def test_live_runner_can_target_glm_with_env_overrides(monkeypatch) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("GLM_API_KEY", "glm-key")
+    monkeypatch.setenv("GLM_BASE_URL", "https://example.test/v4")
+    monkeypatch.setenv("GLM_MODEL", "glm-test")
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml",
+            "node.yaml",
+            "--project-yaml",
+            "project.yaml",
+            "--repo",
+            ".",
+            "--semantic-mode",
+            "live",
+            "--semantic-provider",
+            "glm",
+        ]
+    )
+
+    runner = cli._build_runner(args)
+
+    assert runner.model == "glm-test"
+    assert runner.base_url == "https://example.test/v4"
+
+
+def test_live_runner_requires_selected_provider_key(monkeypatch) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml",
+            "node.yaml",
+            "--project-yaml",
+            "project.yaml",
+            "--repo",
+            ".",
+            "--semantic-mode",
+            "live",
+            "--semantic-provider",
+            "deepseek",
+        ]
+    )
+
+    try:
+        cli._build_runner(args)
+    except RuntimeError as exc:
+        assert "DEEPSEEK_API_KEY" in str(exc)
+    else:
+        raise AssertionError("expected missing provider key to fail")
