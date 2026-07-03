@@ -1,0 +1,53 @@
+{
+  "project_id": "project-a",
+  "node_id": "semantic-fail-complete-artifacts",
+  "verdict": "fail",
+  "confidence": 0.21,
+  "criteria_confidence": 0.21,
+  "completeness_status": "complete",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "c1",
+        "criterion": "The implementation satisfies the behavior.",
+        "status": "indeterminate",
+        "confidence": 0.4,
+        "method": "semantic-required",
+        "evidence": ["src/module.py"],
+        "reasoning": "Requires semantic judgment.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [],
+    "artifacts_present": {
+      "decision.md": true,
+      "result-summary.md": true,
+      "patch.diff": true
+    },
+    "deps_status": {},
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [
+      {
+        "criterion_id": "c1",
+        "judgment": "judged_fail",
+        "confidence": 0.79,
+        "evidence": ["src/module.py:12"],
+        "reasoning": "The code evidence contradicts the criterion."
+      }
+    ],
+    "overall_reasoning": "The artifact trail is complete, but semantic criteria fail.",
+    "risks": "Complete artifacts do not override a failed semantic criterion.",
+    "followup_candidates": null,
+    "budget_exhausted": false
+  },
+  "decision_reasoning": "Semantic criteria failed despite a complete artifact trail.",
+  "required_next_action": "Address semantic failures and re-submit.",
+  "generated_at": "2026-07-02T00:00:00+00:00"
+}

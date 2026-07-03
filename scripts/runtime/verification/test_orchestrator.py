@@ -26,6 +26,43 @@ class MockRunner:
         return LLMResponse(content=self.content, tool_calls=[], finish_reason="stop")
 
 
+class CapturingRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.message_count = 0
+
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
+        self.calls += 1
+        self.message_count = len(messages)
+        from scripts.runtime.verification.semantic.agent import LLMResponse, ToolCall
+
+        return LLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="verdict-1",
+                    name="submit_verdict",
+                    args={
+                        "judgments": [
+                            {
+                                "criterion_id": "c1",
+                                "judgment": "judged_pass",
+                                "confidence": 0.7,
+                                "evidence": ["module.py:1"],
+                                "reasoning": "Mock semantic evidence matched the criterion.",
+                            }
+                        ],
+                        "overall_reasoning": "Semantic mock passed.",
+                        "risks": None,
+                        "followup_candidates": None,
+                        "budget_exhausted": False,
+                    },
+                )
+            ],
+            finish_reason="tool_use",
+        )
+
+
 def test_clean_deterministic_pass_skips_semantic(monkeypatch, tmp_path: Path) -> None:
     det = DeterministicResult(
         criteria=[
@@ -139,3 +176,47 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
     assert receipt.completeness_status == "complete"
     assert receipt.decision_reasoning == "Semantic mock passed."
     assert receipt.required_next_action == "Proceed to accept_node (open evidence PR)."
+
+
+def test_orchestrator_passes_semantic_agent_budget_kwargs(monkeypatch, tmp_path: Path) -> None:
+    det = DeterministicResult(
+        criteria=[
+            CriterionCheck(
+                id="c1",
+                criterion="criterion needs semantic read",
+                status="indeterminate",
+                confidence=0.8,
+                method="regex",
+                evidence=["module.py"],
+                reasoning="regex could not decide",
+                mismatch_kind="wording",
+                mismatch_detail="needs meaning check",
+                needs_evidence=False,
+                human_question="",
+            )
+        ],
+        constraints=[],
+        artifacts_present={},
+        deps_status={},
+        criteria_mismatches=[],
+        missing_evidence=[],
+        human_review_questions=[],
+    )
+    monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
+    runner = CapturingRunner()
+
+    receipt = orchestrator.verify(
+        node_yaml={"node_id": "node-semantic"},
+        project_yaml={"project_id": "project-semantic"},
+        repo=tmp_path,
+        runner=runner,
+        toolbox=SemanticToolbox(tmp_path),
+        semantic_agent_kwargs={"max_turns": 1, "max_tool_calls": 3, "max_tokens": 50_000},
+        now=lambda: "2026-06-30T00:00:00+00:00",
+    )
+
+    assert receipt.semantic is not None
+    assert receipt.semantic.budget_trace is not None
+    assert receipt.semantic.budget_trace["max_turns"] == 1
+    assert receipt.semantic.budget_trace["max_tool_calls"] == 3
+    assert receipt.semantic.budget_trace["max_tokens"] == 50_000

@@ -1,0 +1,53 @@
+{
+  "project_id": "project-a",
+  "node_id": "semantic-pass-missing-artifacts",
+  "verdict": "needs-more-evidence",
+  "confidence": 0.92,
+  "criteria_confidence": 0.92,
+  "completeness_status": "complete",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "c1",
+        "criterion": "The implementation satisfies the behavior.",
+        "status": "indeterminate",
+        "confidence": 0.4,
+        "method": "semantic-required",
+        "evidence": ["src/module.py"],
+        "reasoning": "Requires semantic judgment.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [],
+    "artifacts_present": {
+      "decision.md": false,
+      "result-summary.md": false,
+      "patch.diff": false
+    },
+    "deps_status": {},
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [
+      {
+        "criterion_id": "c1",
+        "judgment": "judged_pass",
+        "confidence": 0.92,
+        "evidence": ["src/module.py:12"],
+        "reasoning": "The code evidence satisfies the criterion."
+      }
+    ],
+    "overall_reasoning": "Criteria pass semantically, but required artifacts are missing.",
+    "risks": null,
+    "followup_candidates": null,
+    "budget_exhausted": false
+  },
+  "decision_reasoning": "Semantic criteria passed, but the artifact trail is incomplete.",
+  "required_next_action": "Provide missing required artifacts before re-verification.",
+  "generated_at": "2026-07-02T00:00:00+00:00"
+}

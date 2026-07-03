@@ -83,6 +83,7 @@ def test_live_runner_auto_prefers_deepseek(monkeypatch) -> None:
 
     assert runner.model == "deepseek-chat"
     assert runner.base_url == "https://api.deepseek.com"
+    assert runner.max_tokens == 4096
 
 
 def test_live_runner_can_target_glm_with_env_overrides(monkeypatch) -> None:
@@ -110,6 +111,53 @@ def test_live_runner_can_target_glm_with_env_overrides(monkeypatch) -> None:
 
     assert runner.model == "glm-test"
     assert runner.base_url == "https://example.test/v4"
+
+
+def test_live_runner_uses_provider_response_limit(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml",
+            "node.yaml",
+            "--project-yaml",
+            "project.yaml",
+            "--repo",
+            ".",
+            "--semantic-mode",
+            "live",
+            "--semantic-provider-max-tokens",
+            "8192",
+        ]
+    )
+
+    runner = cli._build_runner(args)
+
+    assert runner.max_tokens == 8192
+
+
+def test_semantic_budget_args_parse_env_and_cli(monkeypatch) -> None:
+    monkeypatch.setenv("GDDP_SEMANTIC_MAX_TURNS", "21")
+    monkeypatch.setenv("GDDP_SEMANTIC_MAX_TOOL_CALLS", "77")
+    monkeypatch.setenv("GDDP_SEMANTIC_MAX_TOOL_RESULT_CHARS", "12345")
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml",
+            "node.yaml",
+            "--project-yaml",
+            "project.yaml",
+            "--repo",
+            ".",
+            "--semantic-max-tokens",
+            "96000",
+        ]
+    )
+
+    assert args.semantic_max_turns == 21
+    assert args.semantic_max_tool_calls == 77
+    assert args.semantic_max_tokens == 96000
+    assert args.semantic_max_tool_result_chars == 12345
 
 
 def test_live_runner_requires_selected_provider_key(monkeypatch) -> None:

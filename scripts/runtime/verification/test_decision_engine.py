@@ -150,7 +150,19 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
 
 
-def test_matrix_row_7_needs_more_evidence_budget_exhausted():
+def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
+    det = _deterministic(
+        criteria=[_criterion("a", "indeterminate", 0.6)],
+        artifacts_present={"receipt.json": False},
+        deps_status={"dep-a": "complete"},
+    )
+    sem = _semantic([_judgment("a", "indeterminate", 0.65)])
+    verdict, _, action = decide(det, sem)
+    assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert action == "Provide missing required artifacts and re-run semantic investigation."
+
+
+def test_matrix_row_8_needs_more_evidence_budget_exhausted():
     det = _deterministic(
         criteria=[_criterion("a", "indeterminate", 0.55)],
         artifacts_present={"receipt.json": True},
@@ -165,7 +177,7 @@ def test_matrix_row_7_needs_more_evidence_budget_exhausted():
     assert confidence <= 0.5
 
 
-def test_matrix_row_8_needs_more_evidence_empty_semantic_judgments():
+def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
     det = _deterministic(
         criteria=[_criterion("a", "indeterminate", 0.4)],
         artifacts_present={"receipt.json": True},
@@ -175,7 +187,7 @@ def test_matrix_row_8_needs_more_evidence_empty_semantic_judgments():
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
 
 
-def test_matrix_row_9_needs_human_review_semantic_indeterminate():
+def test_matrix_row_10_needs_human_review_semantic_indeterminate():
     det = _deterministic(
         criteria=[_criterion("a", "indeterminate", 0.5)],
         artifacts_present={"receipt.json": True},
@@ -186,7 +198,7 @@ def test_matrix_row_9_needs_human_review_semantic_indeterminate():
     assert verdict == Verdict.NEEDS_HUMAN_REVIEW
 
 
-def test_matrix_row_10_pass_semantic_resolves_indeterminate():
+def test_matrix_row_11_pass_semantic_resolves_indeterminate():
     det = _deterministic(
         criteria=[
             _criterion("a", "indeterminate", 0.7),
@@ -205,7 +217,7 @@ def test_matrix_row_10_pass_semantic_resolves_indeterminate():
     assert verdict == Verdict.PASS
 
 
-def test_matrix_row_11_pass_deterministic_clean():
+def test_matrix_row_12_pass_deterministic_clean():
     det = _deterministic(
         criteria=[_criterion("a", "pass", 0.9), _criterion("b", "pass", 0.85)],
         artifacts_present={"receipt.json": True},

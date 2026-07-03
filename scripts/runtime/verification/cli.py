@@ -108,6 +108,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
         help="Live semantic provider. auto prefers DeepSeek when configured, then GLM.",
     )
+    parser.add_argument(
+        "--semantic-max-turns",
+        type=int,
+        default=_env_int("GDDP_SEMANTIC_MAX_TURNS", 15),
+        help="Maximum live semantic agent turns before finalization.",
+    )
+    parser.add_argument(
+        "--semantic-max-tool-calls",
+        type=int,
+        default=_env_int("GDDP_SEMANTIC_MAX_TOOL_CALLS", 40),
+        help="Maximum semantic evidence tool calls.",
+    )
+    parser.add_argument(
+        "--semantic-max-tokens",
+        type=int,
+        default=None,
+        help="Estimated total semantic transcript token budget.",
+    )
+    parser.add_argument(
+        "--semantic-provider-max-tokens",
+        type=int,
+        default=_env_int("GDDP_SEMANTIC_PROVIDER_MAX_TOKENS", 4096),
+        help="Maximum tokens requested from the live model per response.",
+    )
+    parser.add_argument(
+        "--semantic-max-tool-result-chars",
+        type=int,
+        default=_env_int("GDDP_SEMANTIC_MAX_TOOL_RESULT_CHARS", 50_000),
+        help="Maximum serialized characters from one semantic evidence tool result.",
+    )
     return parser
 
 
@@ -129,6 +159,16 @@ LIVE_PROVIDER_CONFIG = {
 }
 
 
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+
+
 def _build_runner(args) -> OfflineFinalizingRunner | OpenAICompatibleRunner:
     if args.semantic_mode == "offline":
         return OfflineFinalizingRunner()
@@ -142,6 +182,7 @@ def _build_runner(args) -> OfflineFinalizingRunner | OpenAICompatibleRunner:
         api_key=api_key,
         base_url=os.environ.get(config["base_url_env"], config["default_base_url"]),
         model=os.environ.get(config["model_env"], config["default_model"]),
+        max_tokens=args.semantic_provider_max_tokens,
     )
 
 
@@ -164,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     repo = args.repo.resolve()
 
     runner = _build_runner(args)
+    semantic_max_tokens = args.semantic_max_tokens
+    if semantic_max_tokens is None:
+        semantic_max_tokens = 96_000 if args.semantic_mode == "live" else 24_000
     receipt = verify(
         node_yaml=node_yaml,
         project_yaml=project_yaml,
@@ -176,6 +220,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
         shape_profile=shape_profile,
         config_root=args.config_root.resolve() if args.config_root else None,
+        semantic_agent_kwargs={
+            "max_turns": args.semantic_max_turns,
+            "max_tool_calls": args.semantic_max_tool_calls,
+            "max_tokens": semantic_max_tokens,
+            "max_tool_result_chars": args.semantic_max_tool_result_chars,
+        },
     )
     path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
     print(

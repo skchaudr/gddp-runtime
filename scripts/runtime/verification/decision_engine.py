@@ -199,7 +199,8 @@ def _row7(ctx: _DecisionContext) -> bool:
         and not ctx.constraint_violated
         and not ctx.any_fail
         and ctx.indeterminate_only
-        and ctx.budget_exhausted
+        and ctx.any_judgment_indeterminate
+        and ctx.artifacts_missing
     )
 
 
@@ -209,11 +210,21 @@ def _row8(ctx: _DecisionContext) -> bool:
         and not ctx.constraint_violated
         and not ctx.any_fail
         and ctx.indeterminate_only
-        and ctx.judgments_empty
+        and ctx.budget_exhausted
     )
 
 
 def _row9(ctx: _DecisionContext) -> bool:
+    return (
+        not ctx.deps_incomplete
+        and not ctx.constraint_violated
+        and not ctx.any_fail
+        and ctx.indeterminate_only
+        and ctx.judgments_empty
+    )
+
+
+def _row10(ctx: _DecisionContext) -> bool:
     return (
         not ctx.deps_incomplete
         and not ctx.constraint_violated
@@ -224,7 +235,7 @@ def _row9(ctx: _DecisionContext) -> bool:
     )
 
 
-def _row10(ctx: _DecisionContext) -> bool:
+def _row11(ctx: _DecisionContext) -> bool:
     return (
         not ctx.deps_incomplete
         and not ctx.constraint_violated
@@ -235,7 +246,7 @@ def _row10(ctx: _DecisionContext) -> bool:
     )
 
 
-def _row11(ctx: _DecisionContext) -> bool:
+def _row12(ctx: _DecisionContext) -> bool:
     return (
         not ctx.deps_incomplete
         and not ctx.constraint_violated
@@ -300,43 +311,53 @@ MATRIX: list[_MatrixRow] = [
         7,
         _row7,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
-        "Re-run semantic investigation with sufficient budget.",
-        "Matrix row 7: semantic budget exhausted.",
+        lambda ctx: _confidence_semantic_blend(
+            ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
+        ),
+        "Provide missing required artifacts and re-run semantic investigation.",
+        "Matrix row 7: semantic indeterminate and required artifacts missing.",
     ),
     _MatrixRow(
         8,
         _row8,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(ctx, []),
-        "Re-run semantic investigation to produce judgments.",
-        "Matrix row 8: semantic produced no judgments.",
+        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
+        "Re-run semantic investigation with sufficient budget.",
+        "Matrix row 8: semantic budget exhausted.",
     ),
     _MatrixRow(
         9,
         _row9,
+        Verdict.NEEDS_MORE_EVIDENCE,
+        lambda ctx: _confidence_semantic_blend(ctx, []),
+        "Re-run semantic investigation to produce judgments.",
+        "Matrix row 9: semantic produced no judgments.",
+    ),
+    _MatrixRow(
+        10,
+        _row10,
         Verdict.NEEDS_HUMAN_REVIEW,
         lambda ctx: _confidence_semantic_blend(
             ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
         ),
         "Human review required for unresolved semantic judgments.",
-        "Matrix row 9: semantic indeterminate with artifacts present.",
-    ),
-    _MatrixRow(
-        10,
-        _row10,
-        Verdict.PASS,
-        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
-        "Proceed to accept_node (open evidence PR).",
-        "Matrix row 10: semantic pass on indeterminate criteria.",
+        "Matrix row 10: semantic indeterminate with artifacts present.",
     ),
     _MatrixRow(
         11,
         _row11,
         Verdict.PASS,
+        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
+        "Proceed to accept_node (open evidence PR).",
+        "Matrix row 11: semantic pass on indeterminate criteria.",
+    ),
+    _MatrixRow(
+        12,
+        _row12,
+        Verdict.PASS,
         _confidence_all_criteria,
         "Proceed to accept_node (open evidence PR).",
-        "Matrix row 11: deterministic clean pass.",
+        "Matrix row 12: deterministic clean pass.",
     ),
 ]
 

@@ -185,6 +185,7 @@ class SemanticAgent:
     max_tool_calls: int = 40
     max_tokens: int = 24_000
     max_validation_retries: int = 2
+    max_tool_result_chars: int = 50_000
 
     def run(
         self,
@@ -199,12 +200,24 @@ class SemanticAgent:
             deterministic_result=self._jsonable(deterministic_result),
             shape_profile=shape_profile,
         )
+        initial_tokens = self._estimate_message_tokens(messages)
         remaining_tool_calls = self.max_tool_calls
-        remaining_tokens = self.max_tokens - self._estimate_message_tokens(messages)
+        remaining_tokens = self.max_tokens - initial_tokens
         validation_retries = 0
         finalization_requested = False
+        budget_trace = self._new_budget_trace(
+            initial_tokens=initial_tokens,
+            remaining_tokens=remaining_tokens,
+            remaining_tool_calls=remaining_tool_calls,
+        )
         if remaining_tokens <= 0:
-            return self._budget_exhausted(messages, reason="initial prompt exceeds token budget")
+            return self._budget_exhausted(
+                messages,
+                reason="initial prompt exceeds token budget",
+                budget_trace=budget_trace,
+                remaining_tokens=remaining_tokens,
+                remaining_tool_calls=remaining_tool_calls,
+            )
 
         for turn_index in range(self.max_turns):
             if self._near_limits(
@@ -213,15 +226,47 @@ class SemanticAgent:
                 remaining_tool_calls=remaining_tool_calls,
             ) and not finalization_requested:
                 messages.append(self._finalization_prompt())
-                remaining_tokens -= self._estimate_text_tokens(messages[-1]["content"])
+                prompt_tokens = self._estimate_text_tokens(messages[-1]["content"])
+                remaining_tokens -= prompt_tokens
+                self._trace_event(
+                    budget_trace,
+                    "finalization_prompt",
+                    turn=turn_index,
+                    estimated_tokens=prompt_tokens,
+                    remaining_tokens=remaining_tokens,
+                    remaining_tool_calls=remaining_tool_calls,
+                )
                 finalization_requested = True
                 if remaining_tokens <= 0:
-                    return self._budget_exhausted(messages, reason="finalization prompt exhausted token budget")
+                    return self._budget_exhausted(
+                        messages,
+                        reason="finalization prompt exhausted token budget",
+                        budget_trace=budget_trace,
+                        remaining_tokens=remaining_tokens,
+                        remaining_tool_calls=remaining_tool_calls,
+                    )
 
-            response = self.runner.chat(messages, tools=TOOL_SCHEMAS)
-            remaining_tokens -= self._estimate_text_tokens(response.content)
+            response = self.runner.chat(messages, tools=self._tools_for_turn(finalization_requested))
+            response_tokens = self._estimate_text_tokens(response.content)
+            remaining_tokens -= response_tokens
+            self._trace_event(
+                budget_trace,
+                "model_response",
+                turn=turn_index,
+                estimated_tokens=response_tokens,
+                tool_calls=len(response.tool_calls),
+                finish_reason=response.finish_reason,
+                remaining_tokens=remaining_tokens,
+                remaining_tool_calls=remaining_tool_calls,
+            )
             if remaining_tokens <= 0:
-                return self._budget_exhausted(messages, reason="model response exhausted token budget")
+                return self._budget_exhausted(
+                    messages,
+                    reason="model response exhausted token budget",
+                    budget_trace=budget_trace,
+                    remaining_tokens=remaining_tokens,
+                    remaining_tool_calls=remaining_tool_calls,
+                )
 
             if response.tool_calls:
                 messages.append(self._assistant_tool_call_message(response))
@@ -229,23 +274,58 @@ class SemanticAgent:
                     if call.name == "submit_verdict":
                         submitted = self._validate_submitted_verdict(call.args)
                         if isinstance(submitted, SemanticOutput):
-                            return submitted
+                            return self._with_budget_trace(
+                                submitted,
+                                budget_trace,
+                                reason="submit_verdict accepted",
+                                remaining_tokens=remaining_tokens,
+                                remaining_tool_calls=remaining_tool_calls,
+                                message_count=len(messages),
+                            )
                         if validation_retries >= self.max_validation_retries:
                             return self._budget_exhausted(
                                 messages,
                                 reason=f"submit_verdict validation failed after retry: {submitted}",
+                                budget_trace=budget_trace,
+                                remaining_tokens=remaining_tokens,
+                                remaining_tool_calls=remaining_tool_calls,
                             )
                         messages.append(self._validation_error_message(call, submitted))
                         validation_retries += 1
                         continue
 
                     if remaining_tool_calls <= 0:
-                        return self._budget_exhausted(messages, reason="tool call budget exhausted")
+                        return self._budget_exhausted(
+                            messages,
+                            reason="tool call budget exhausted",
+                            budget_trace=budget_trace,
+                            remaining_tokens=remaining_tokens,
+                            remaining_tool_calls=remaining_tool_calls,
+                        )
                     tool_result = self._execute_tool_safely(call)
-                    tool_content = json.dumps(tool_result, default=str)
-                    remaining_tokens -= self._estimate_text_tokens(tool_content)
+                    tool_content, tool_truncated, original_tool_chars = self._bounded_tool_content(tool_result)
+                    tool_tokens = self._estimate_text_tokens(tool_content)
+                    remaining_tokens -= tool_tokens
+                    self._trace_event(
+                        budget_trace,
+                        "tool_result",
+                        turn=turn_index,
+                        tool=call.name,
+                        estimated_tokens=tool_tokens,
+                        truncated=tool_truncated,
+                        original_chars=original_tool_chars,
+                        ok=bool(tool_result.get("ok")),
+                        remaining_tokens=remaining_tokens,
+                        remaining_tool_calls=remaining_tool_calls - 1,
+                    )
                     if remaining_tokens <= 0:
-                        return self._budget_exhausted(messages, reason="tool result exhausted token budget")
+                        return self._budget_exhausted(
+                            messages,
+                            reason="tool result exhausted token budget",
+                            budget_trace=budget_trace,
+                            remaining_tokens=remaining_tokens,
+                            remaining_tool_calls=remaining_tool_calls,
+                        )
                     messages.append(
                         {
                             "role": "tool",
@@ -260,11 +340,21 @@ class SemanticAgent:
             if response.finish_reason in {"stop", "end_turn", ""}:
                 parsed = self._parse_semantic_output(response.content)
                 if isinstance(parsed, SemanticOutput):
-                    return parsed
+                    return self._with_budget_trace(
+                        parsed,
+                        budget_trace,
+                        reason="terminal SemanticOutput accepted",
+                        remaining_tokens=remaining_tokens,
+                        remaining_tool_calls=remaining_tool_calls,
+                        message_count=len(messages),
+                    )
                 if validation_retries >= self.max_validation_retries:
                     return self._budget_exhausted(
                         messages,
                         reason=f"terminal SemanticOutput validation failed after retry: {parsed}",
+                        budget_trace=budget_trace,
+                        remaining_tokens=remaining_tokens,
+                        remaining_tool_calls=remaining_tool_calls,
                     )
                 messages.append(self._terminal_validation_retry_message(parsed))
                 validation_retries += 1
@@ -272,7 +362,13 @@ class SemanticAgent:
 
             messages.append({"role": "assistant", "content": response.content})
 
-        return self._budget_exhausted(messages, reason="turn budget exhausted")
+        return self._budget_exhausted(
+            messages,
+            reason="turn budget exhausted",
+            budget_trace=budget_trace,
+            remaining_tokens=remaining_tokens,
+            remaining_tool_calls=remaining_tool_calls,
+        )
 
     def investigate(
         self,
@@ -364,19 +460,99 @@ class SemanticAgent:
             or remaining_tokens <= 1_000
         )
 
+    def _tools_for_turn(self, finalization_requested: bool) -> list[dict[str, Any]]:
+        if not finalization_requested:
+            return TOOL_SCHEMAS
+        return [tool for tool in TOOL_SCHEMAS if tool.get("name") == "submit_verdict"]
+
     def _execute_tool_safely(self, call: ToolCall) -> dict[str, Any]:
         try:
             return {"ok": True, "result": self.toolbox.execute(call.name, call.args)}
         except Exception as exc:
             return {"ok": False, "error": str(exc), "tool": call.name}
 
-    def _budget_exhausted(self, messages: list[dict[str, Any]], reason: str) -> SemanticOutput:
+    def _new_budget_trace(
+        self,
+        *,
+        initial_tokens: int,
+        remaining_tokens: int,
+        remaining_tool_calls: int,
+    ) -> dict[str, Any]:
+        return {
+            "max_turns": self.max_turns,
+            "max_tool_calls": self.max_tool_calls,
+            "max_tokens": self.max_tokens,
+            "max_tool_result_chars": self.max_tool_result_chars,
+            "initial_estimated_tokens": initial_tokens,
+            "initial_remaining_tokens": remaining_tokens,
+            "initial_remaining_tool_calls": remaining_tool_calls,
+            "events": [],
+        }
+
+    def _trace_event(self, trace: dict[str, Any], event: str, **fields: Any) -> None:
+        trace["events"].append({"event": event, **fields})
+
+    def _bounded_tool_content(self, tool_result: dict[str, Any]) -> tuple[str, bool, int]:
+        content = json.dumps(tool_result, default=str)
+        if len(content) <= self.max_tool_result_chars:
+            return content, False, len(content)
+        bounded = {
+            "ok": tool_result.get("ok", False),
+            "truncated": True,
+            "original_chars": len(content),
+            "max_chars": self.max_tool_result_chars,
+            "content": content[: self.max_tool_result_chars],
+        }
+        return json.dumps(bounded, default=str), True, len(content)
+
+    def _with_budget_trace(
+        self,
+        output: SemanticOutput,
+        budget_trace: dict[str, Any],
+        *,
+        reason: str,
+        remaining_tokens: int,
+        remaining_tool_calls: int,
+        message_count: int,
+    ) -> SemanticOutput:
+        trace = dict(budget_trace)
+        trace["events"] = list(budget_trace.get("events", []))
+        trace.update(
+            {
+                "final_reason": reason,
+                "final_remaining_tokens": remaining_tokens,
+                "final_remaining_tool_calls": remaining_tool_calls,
+                "message_count": message_count,
+            }
+        )
+        return output.model_copy(update={"budget_trace": trace})
+
+    def _budget_exhausted(
+        self,
+        messages: list[dict[str, Any]],
+        reason: str,
+        *,
+        budget_trace: dict[str, Any],
+        remaining_tokens: int,
+        remaining_tool_calls: int,
+    ) -> SemanticOutput:
+        trace = dict(budget_trace)
+        trace["events"] = list(budget_trace.get("events", []))
+        trace.update(
+            {
+                "final_reason": reason,
+                "final_remaining_tokens": remaining_tokens,
+                "final_remaining_tool_calls": remaining_tool_calls,
+                "message_count": len(messages),
+            }
+        )
         return SemanticOutput(
             judgments=[],
             overall_reasoning=f"Semantic investigation stopped gracefully: {reason}.",
             risks=f"Partial result only. The loop stopped after {len(messages)} messages.",
             followup_candidates=None,
             budget_exhausted=True,
+            budget_trace=trace,
         )
 
     def _jsonable(self, value: Any) -> Any:

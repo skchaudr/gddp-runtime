@@ -18,6 +18,7 @@ def verify(
     toolbox,
     shape_profile: dict | None = None,
     config_root: Path | None = None,
+    semantic_agent_kwargs: dict[str, Any] | None = None,
     now: Callable[[], str] = lambda: __import__("datetime")
     .datetime.now(__import__("datetime").timezone.utc)
     .isoformat(),
@@ -30,7 +31,7 @@ def verify(
     )
     semantic = None
     if _should_run_semantic(det):
-        semantic = SemanticAgent(runner=runner, toolbox=toolbox).run(
+        semantic = SemanticAgent(runner=runner, toolbox=toolbox, **(semantic_agent_kwargs or {})).run(
             node=node_yaml,
             graph=project_yaml,
             deterministic_result=det,

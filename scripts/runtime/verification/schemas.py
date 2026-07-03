@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -86,6 +86,7 @@ class SemanticOutput(BaseModel):
     risks: str | None
     followup_candidates: str | None
     budget_exhausted: bool
+    budget_trace: dict[str, Any] | None = None
 
 
 class VerdictReceipt(BaseModel):

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -60,3 +63,24 @@ def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
 def test_verdict_receipt_rejects_confidence_alias_mismatch() -> None:
     with pytest.raises(ValidationError, match="compatibility alias"):
         VerdictReceipt.model_validate(_receipt_payload(criteria_confidence=0.7))
+
+
+def test_ambiguity_receipt_fixtures_validate_contract() -> None:
+    fixture_dir = Path(__file__).parent / "fixtures" / "verification_receipts"
+    fixture_paths = [
+        fixture_dir / "semantic-pass-with-missing-artifacts.json",
+        fixture_dir / "semantic-fail-with-complete-artifacts.json",
+    ]
+
+    receipts = [VerdictReceipt.model_validate(json.loads(path.read_text(encoding="utf-8"))) for path in fixture_paths]
+
+    semantic_pass_missing_artifacts, semantic_fail_complete_artifacts = receipts
+    assert semantic_pass_missing_artifacts.semantic is not None
+    assert semantic_pass_missing_artifacts.semantic.judgments[0].judgment == "judged_pass"
+    assert semantic_pass_missing_artifacts.deterministic.artifacts_present["decision.md"] is False
+    assert semantic_pass_missing_artifacts.verdict == Verdict.NEEDS_MORE_EVIDENCE
+
+    assert semantic_fail_complete_artifacts.semantic is not None
+    assert semantic_fail_complete_artifacts.semantic.judgments[0].judgment == "judged_fail"
+    assert all(semantic_fail_complete_artifacts.deterministic.artifacts_present.values())
+    assert semantic_fail_complete_artifacts.verdict == Verdict.FAIL

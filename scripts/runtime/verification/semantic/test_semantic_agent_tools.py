@@ -14,9 +14,11 @@ class MockRunner:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
         self.calls = 0
+        self.tool_names_by_call: list[list[str]] = []
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
         self.calls += 1
+        self.tool_names_by_call.append([tool["name"] for tool in tools])
         return self.responses.pop(0)
 
 
@@ -68,6 +70,8 @@ def test_agent_uses_mock_runner_and_toolbox_without_network(tmp_path: Path) -> N
     assert runner.calls == 2
     assert output.budget_exhausted is False
     assert output.judgments[0].judgment == "judged_pass"
+    assert output.budget_trace is not None
+    assert output.budget_trace["final_reason"] == "terminal SemanticOutput accepted"
 
 
 
@@ -214,6 +218,7 @@ def test_agent_forces_finalization_on_last_turn(tmp_path: Path) -> None:
 
     assert runner.calls == 1
     assert output.overall_reasoning == "finalized near limit"
+    assert runner.tool_names_by_call == [["submit_verdict"]]
 
 
 def test_agent_returns_budget_exhausted_when_tool_budget_is_spent(tmp_path: Path) -> None:
@@ -235,13 +240,16 @@ def test_agent_returns_budget_exhausted_when_tool_budget_is_spent(tmp_path: Path
 
     assert output.budget_exhausted is True
     assert output.judgments == []
+    assert output.budget_trace is not None
+    assert output.budget_trace["final_reason"] == "tool call budget exhausted"
+    assert output.budget_trace["message_count"] >= 2
 
 
 def test_agent_returns_partial_result_when_token_budget_is_spent(tmp_path: Path) -> None:
     runner = MockRunner(
         [
             LLMResponse(
-                content="x" * 200,
+                content="x" * 6000,
                 tool_calls=[],
                 finish_reason="stop",
             )
@@ -251,11 +259,54 @@ def test_agent_returns_partial_result_when_token_budget_is_spent(tmp_path: Path)
     output = SemanticAgent(
         runner=runner,
         toolbox=SemanticToolbox(tmp_path),
-        max_tokens=120,
+        max_tokens=1200,
     ).run(node={"id": "n1"}, graph={"id": "p1"}, deterministic_result={"criteria": []})
 
     assert output.budget_exhausted is True
     assert output.judgments == []
+    assert output.budget_trace is not None
+    assert output.budget_trace["final_reason"] == "model response exhausted token budget"
+
+
+def test_agent_caps_large_tool_results(tmp_path: Path) -> None:
+    (tmp_path / "huge.txt").write_text("x" * 10_000, encoding="utf-8")
+    runner = MockRunner(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=[ToolCall(id="call-1", name="read_file", args={"path": "huge.txt"})],
+                finish_reason="tool_use",
+            ),
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="verdict-1",
+                        name="submit_verdict",
+                        args={
+                            "judgments": [],
+                            "overall_reasoning": "bounded result accepted",
+                            "risks": None,
+                            "followup_candidates": None,
+                            "budget_exhausted": False,
+                        },
+                    )
+                ],
+                finish_reason="tool_use",
+            ),
+        ]
+    )
+
+    output = SemanticAgent(
+        runner=runner,
+        toolbox=SemanticToolbox(tmp_path),
+        max_tool_result_chars=1000,
+    ).run(node={}, graph={}, deterministic_result={})
+
+    assert output.budget_trace is not None
+    tool_events = [event for event in output.budget_trace["events"] if event["event"] == "tool_result"]
+    assert tool_events[0]["truncated"] is True
+    assert tool_events[0]["original_chars"] > 1000
 
 
 def test_prompt_builder_renders_node_graph_and_deterministic_context() -> None:
