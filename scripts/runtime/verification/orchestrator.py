@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from . import decision_engine, deterministic
-from .schemas import VerdictReceipt
+from .schemas import SemanticOutput, VerdictReceipt
 from .semantic.agent import SemanticAgent
+
+SemanticHarness = Callable[..., SemanticOutput]
 
 
 def verify(
@@ -19,6 +21,7 @@ def verify(
     shape_profile: dict | None = None,
     config_root: Path | None = None,
     semantic_agent_kwargs: dict[str, Any] | None = None,
+    semantic_harness: SemanticHarness | None = None,
     now: Callable[[], str] = lambda: __import__("datetime")
     .datetime.now(__import__("datetime").timezone.utc)
     .isoformat(),
@@ -31,12 +34,21 @@ def verify(
     )
     semantic = None
     if _should_run_semantic(det):
-        semantic = SemanticAgent(runner=runner, toolbox=toolbox, **(semantic_agent_kwargs or {})).run(
-            node=node_yaml,
-            graph=project_yaml,
-            deterministic_result=det,
-            shape_profile=shape_profile,
-        )
+        if semantic_harness is not None:
+            semantic = semantic_harness(
+                node=node_yaml,
+                graph=project_yaml,
+                deterministic_result=det,
+                shape_profile=shape_profile,
+                repo=repo,
+            )
+        else:
+            semantic = SemanticAgent(runner=runner, toolbox=toolbox, **(semantic_agent_kwargs or {})).run(
+                node=node_yaml,
+                graph=project_yaml,
+                deterministic_result=det,
+                shape_profile=shape_profile,
+            )
 
     verdict, confidence, action = decision_engine.decide(det, semantic)
     return VerdictReceipt(

@@ -11,6 +11,7 @@ import yaml
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.semantic.agent import LLMResponse, OpenAICompatibleRunner, ToolCall
+from scripts.runtime.verification.semantic.pi_runner import PiHarnessRunner
 from scripts.runtime.verification.semantic.tools import SemanticToolbox
 
 
@@ -138,6 +139,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=_env_int("GDDP_SEMANTIC_MAX_TOOL_RESULT_CHARS", 50_000),
         help="Maximum serialized characters from one semantic evidence tool result.",
     )
+    parser.add_argument(
+        "--semantic-harness",
+        choices=["auto", "pi", "runner"],
+        default=os.environ.get("GDDP_SEMANTIC_HARNESS", "auto"),
+        help=(
+            "Agent harness for the semantic phase. 'pi' drives the pi coding agent "
+            "(live, streaming, visible, read-only evidence tools); 'runner' uses the "
+            "built-in OpenAI-compatible loop; 'auto' currently resolves to 'runner' "
+            "(opt in to pi explicitly)."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-thinking",
+        default=os.environ.get("GDDP_SEMANTIC_THINKING", "medium"),
+        help="Pi thinking level (off|minimal|low|medium|high|xhigh) when --semantic-harness pi.",
+    )
+    parser.add_argument(
+        "--semantic-pi-model",
+        default=os.environ.get("GDDP_SEMANTIC_PI_MODEL", ""),
+        help="Pi model id (e.g. deepseek-v4-flash) for --semantic-harness pi. Defaults to provider default.",
+    )
     return parser
 
 
@@ -197,6 +219,32 @@ def _select_live_provider(requested: str) -> str:
     raise RuntimeError(f"--semantic-mode live requires one of these env vars: {required}")
 
 
+def _resolve_harness(args) -> str:
+    if args.semantic_harness == "pi":
+        return "pi"
+    if args.semantic_harness == "runner":
+        return "runner"
+    # auto: keep the built-in runner as the default; opt in with --semantic-harness pi.
+    return "runner"
+
+
+def _pi_provider(args) -> str:
+    """Map the gddp --semantic-provider name to a pi provider name."""
+    requested = args.semantic_provider
+    if requested == "deepseek":
+        return "deepseek"
+    if requested == "glm":
+        return "zai"
+    # auto: prefer deepseek if a key is present, else zai (GLM).
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
+    if os.environ.get("GLM_API_KEY"):
+        return "zai"
+    raise RuntimeError(
+        "--semantic-harness pi needs DEEPSEEK_API_KEY or GLM_API_KEY for provider auto-selection"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     node_yaml = _load_yaml(args.node_yaml)
@@ -208,6 +256,17 @@ def main(argv: list[str] | None = None) -> int:
     semantic_max_tokens = args.semantic_max_tokens
     if semantic_max_tokens is None:
         semantic_max_tokens = 96_000 if args.semantic_mode == "live" else 24_000
+
+    harness_choice = _resolve_harness(args)
+    semantic_harness = None
+    if harness_choice == "pi":
+        pi_runner = PiHarnessRunner(
+            provider=_pi_provider(args),
+            model=args.semantic_pi_model or None,
+            thinking=args.semantic_thinking,
+        )
+        semantic_harness = pi_runner.run
+
     receipt = verify(
         node_yaml=node_yaml,
         project_yaml=project_yaml,
@@ -226,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
             "max_tokens": semantic_max_tokens,
             "max_tool_result_chars": args.semantic_max_tool_result_chars,
         },
+        semantic_harness=semantic_harness,
     )
     path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
     print(
