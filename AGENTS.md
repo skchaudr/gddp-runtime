@@ -15,6 +15,8 @@ GitHub webhook intake → classify → scope → queue → execute pipeline.
 Python scripts in `scripts/`, deploy configs in `deploy/`, docs in `docs/`.
 No requirements.txt — scripts use stdlib + Flask (see `deploy/setup.sh`).
 
+Semi-autonomous pipeline with human in the loop review and agentic evaluation is the goal. The loop "works" (must be ran more and more) but note the lack of an agentic evaluator. It was ad-hoc. That needs to change.  
+
 Portfolio brief + system narrative: [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md).
 
 ## Project snapshot
