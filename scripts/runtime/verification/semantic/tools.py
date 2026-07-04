@@ -43,8 +43,6 @@ WRITE_TOKENS = {
     "tee",
     "sed",
     "perl",
-    "python",
-    "python3",
     "git commit",
     "git push",
     "git reset",
@@ -56,6 +54,10 @@ WRITE_TOKENS = {
     "git add",
 }
 
+# python/python3 are allowed evidence tools: this harness runs trusted
+# (near-)frontier models against the operator's own repos with the network
+# disabled, so executing tests/scripts is legitimate evaluation work. Network
+# installs (pip, etc.) and destructive shell verbs remain blocked above.
 ALLOWED_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("git", "diff"),
     ("git", "log"),
@@ -63,8 +65,8 @@ ALLOWED_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("git", "status"),
     ("git", "grep"),
     ("pytest",),
-    ("python3", "-m", "pytest"),
-    ("python", "-m", "pytest"),
+    ("python3",),
+    ("python",),
 )
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [

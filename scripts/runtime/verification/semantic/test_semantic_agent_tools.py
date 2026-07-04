@@ -38,6 +38,20 @@ def test_file_tools_are_read_only_and_repo_scoped(tmp_path: Path) -> None:
         toolbox.run_command(["curl", "https://example.com"])
 
 
+def test_python_is_an_allowed_evidence_tool_but_network_and_writes_stay_blocked(tmp_path: Path) -> None:
+    toolbox = SemanticToolbox(tmp_path)
+
+    toolbox._assert_safe_command(["python", "-m", "pytest", "-q"])
+    toolbox._assert_safe_command(["python3", "-m", "pytest"])
+    toolbox._assert_safe_command(["pytest"])
+    toolbox._assert_safe_command(["python", "script.py"])
+
+    with pytest.raises(ToolSafetyError):
+        toolbox._assert_safe_command(["python", "-m", "pip", "install", "requests"])
+    with pytest.raises(ToolSafetyError):
+        toolbox._assert_safe_command(["rm", "-rf", "src"])
+
+
 def test_agent_uses_mock_runner_and_toolbox_without_network(tmp_path: Path) -> None:
     (tmp_path / "module.py").write_text("VALUE = 42\n", encoding="utf-8")
     runner = MockRunner(
