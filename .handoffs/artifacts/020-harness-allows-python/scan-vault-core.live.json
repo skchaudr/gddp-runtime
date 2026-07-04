@@ -1,0 +1,736 @@
+{
+  "project_id": "vault-doctor",
+  "node_id": "scan-vault-core",
+  "verdict": "needs-more-evidence",
+  "confidence": 1.0,
+  "criteria_confidence": 1.0,
+  "completeness_status": "complete",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "vaultdoctor-class-exists",
+        "criterion": "VaultDoctor class exists in src/doctor.py",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "scan-vault-walks-directory",
+        "criterion": "scan_vault(vault_path) walks the directory tree and returns a list of file metadata dicts",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (scan_vault, vault_path). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "metadata-dict-minimum-keys",
+        "criterion": "each metadata dict contains at minimum: path, size_bytes, extension, modified_at",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (size_bytes, modified_at). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "scan-vault-ignores-obsidian",
+        "criterion": "scan_vault correctly ignores .obsidian/ system files",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (scan_vault). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "at-least-3-passing-tests",
+        "criterion": "at least 3 passing tests in tests/test_doctor.py covering scan output structure",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (test_doctor). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "tests-use-mock-vault-fixture",
+        "criterion": "tests use the existing mock vault at vault_doctor/mock_vault/ as fixture",
+        "status": "indeterminate",
+        "confidence": 0.2,
+        "method": "keyword_scan_lib",
+        "evidence": [
+          "no hit in any lib/*.zsh"
+        ],
+        "reasoning": "Scanned lib/*.zsh for identifiers named in the criterion (vault_doctor, mock_vault). No match — but absence could mean rewording, not failure.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [
+      {
+        "constraint": "implement in src/doctor.py only — do not modify triage.py",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "do not delete or modify the mock vault files Jules added in the previous PR",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "use only libraries already in requirements.txt (python-frontmatter, rich, pyyaml)",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "do not add new dependencies",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "keep the implementation simple — this is a foundation, not a full feature",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      }
+    ],
+    "artifacts_present": {
+      "decision.md": false,
+      "result-summary.md": false,
+      "patch.diff": false,
+      "graph-update.yaml": false
+    },
+    "deps_status": {},
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [
+      {
+        "criterion_id": "vaultdoctor-class-exists",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "src/doctor.py:13-15"
+        ],
+        "reasoning": "The VaultDoctor class is defined at line 13 of src/doctor.py with class VaultDoctor: and a docstring."
+      },
+      {
+        "criterion_id": "scan-vault-walks-directory",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "src/doctor.py:56-76",
+          "tests/test_doctor.py:18-22"
+        ],
+        "reasoning": "scan_vault(vault_path) is defined at line 56 of src/doctor.py. It uses os.walk() to traverse the directory tree and returns a list of file metadata dicts. Test test_scan_vault_returns_list confirms it returns a non-empty list."
+      },
+      {
+        "criterion_id": "metadata-dict-minimum-keys",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "src/doctor.py:68-73",
+          "tests/test_doctor.py:24-29"
+        ],
+        "reasoning": "Each metadata dict in scan_vault contains path, size_bytes, extension, and modified_at keys (lines 68-73). Test test_scan_vault_metadata_structure explicitly validates these four required keys are present."
+      },
+      {
+        "criterion_id": "scan-vault-ignores-obsidian",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "src/doctor.py:12",
+          "src/doctor.py:60",
+          "tests/test_doctor.py:31-35"
+        ],
+        "reasoning": "EXCLUDED_DIRS = {'.obsidian', '.git'} at line 12. In scan_vault, dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS] at line 60 filters out .obsidian. Test test_scan_vault_ignores_obsidian confirms no results have paths starting with .obsidian."
+      },
+      {
+        "criterion_id": "at-least-3-passing-tests",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "tests/test_doctor.py",
+          "pytest output: 20 passed"
+        ],
+        "reasoning": "All 20 tests in tests/test_doctor.py pass. At minimum, the following tests directly cover scan output structure: test_scan_vault_returns_list, test_scan_vault_metadata_structure, test_scan_vault_ignores_obsidian, test_scan_vault_file_count, test_scan_vault_ignores_git — well exceeding the 3-test minimum."
+      },
+      {
+        "criterion_id": "tests-use-mock-vault-fixture",
+        "judgment": "judged_pass",
+        "confidence": 1.0,
+        "evidence": [
+          "tests/test_doctor.py:14",
+          "vault_doctor/mock_vault/"
+        ],
+        "reasoning": "The setUp method in TestVaultDoctor sets self.mock_vault_path = 'vault_doctor/mock_vault' (line 14). The vault_doctor/mock_vault/ directory exists with .obsidian/, Inbox/Archive/ subdirectories containing test fixture files. Multiple tests use this fixture path."
+      }
+    ],
+    "overall_reasoning": "All six acceptance criteria for the scan-vault-core node are satisfied. The VaultDoctor class exists in src/doctor.py with a working scan_vault() method that walks directories, returns metadata dicts with the required keys (path, size_bytes, extension, modified_at), correctly ignores .obsidian/ system files, and has at least 3 passing tests in tests/test_doctor.py that use the existing mock vault at vault_doctor/mock_vault/ as fixture. All 20 tests pass. Constraints are also respected: implementation is in src/doctor.py only (triage.py not modified), mock vault files are intact, only libraries from requirements.txt are used, no new dependencies added, and the implementation is appropriately simple/foundational.",
+    "risks": "None identified. All criteria are clearly met with strong evidence.",
+    "followup_candidates": "None",
+    "budget_exhausted": false,
+    "budget_trace": {
+      "max_turns": 25,
+      "max_tool_calls": 40,
+      "max_tokens": 96000,
+      "max_tool_result_chars": 50000,
+      "initial_estimated_tokens": 3164,
+      "initial_remaining_tokens": 92836,
+      "initial_remaining_tool_calls": 40,
+      "events": [
+        {
+          "event": "model_response",
+          "turn": 0,
+          "estimated_tokens": 24,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 92812,
+          "remaining_tool_calls": 40
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "list_directory",
+          "estimated_tokens": 62,
+          "truncated": false,
+          "original_chars": 245,
+          "ok": true,
+          "remaining_tokens": 92750,
+          "remaining_tool_calls": 39
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "list_directory",
+          "estimated_tokens": 25,
+          "truncated": false,
+          "original_chars": 97,
+          "ok": true,
+          "remaining_tokens": 92725,
+          "remaining_tool_calls": 38
+        },
+        {
+          "event": "tool_result",
+          "turn": 0,
+          "tool": "list_directory",
+          "estimated_tokens": 30,
+          "truncated": false,
+          "original_chars": 118,
+          "ok": true,
+          "remaining_tokens": 92695,
+          "remaining_tool_calls": 37
+        },
+        {
+          "event": "model_response",
+          "turn": 1,
+          "estimated_tokens": 1,
+          "tool_calls": 3,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 92694,
+          "remaining_tool_calls": 37
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "read_file",
+          "estimated_tokens": 3445,
+          "truncated": false,
+          "original_chars": 13779,
+          "ok": true,
+          "remaining_tokens": 89249,
+          "remaining_tool_calls": 36
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "read_file",
+          "estimated_tokens": 3576,
+          "truncated": false,
+          "original_chars": 14302,
+          "ok": true,
+          "remaining_tokens": 85673,
+          "remaining_tool_calls": 35
+        },
+        {
+          "event": "tool_result",
+          "turn": 1,
+          "tool": "read_file",
+          "estimated_tokens": 24,
+          "truncated": false,
+          "original_chars": 95,
+          "ok": true,
+          "remaining_tokens": 85649,
+          "remaining_tool_calls": 34
+        },
+        {
+          "event": "model_response",
+          "turn": 2,
+          "estimated_tokens": 24,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 85625,
+          "remaining_tool_calls": 34
+        },
+        {
+          "event": "tool_result",
+          "turn": 2,
+          "tool": "list_directory",
+          "estimated_tokens": 36,
+          "truncated": false,
+          "original_chars": 144,
+          "ok": true,
+          "remaining_tokens": 85589,
+          "remaining_tool_calls": 33
+        },
+        {
+          "event": "tool_result",
+          "turn": 2,
+          "tool": "list_directory",
+          "estimated_tokens": 10,
+          "truncated": false,
+          "original_chars": 40,
+          "ok": true,
+          "remaining_tokens": 85579,
+          "remaining_tool_calls": 32
+        },
+        {
+          "event": "model_response",
+          "turn": 3,
+          "estimated_tokens": 1,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 85578,
+          "remaining_tool_calls": 32
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "list_directory",
+          "estimated_tokens": 12,
+          "truncated": false,
+          "original_chars": 48,
+          "ok": true,
+          "remaining_tokens": 85566,
+          "remaining_tool_calls": 31
+        },
+        {
+          "event": "tool_result",
+          "turn": 3,
+          "tool": "list_directory",
+          "estimated_tokens": 25,
+          "truncated": false,
+          "original_chars": 100,
+          "ok": true,
+          "remaining_tokens": 85541,
+          "remaining_tool_calls": 30
+        },
+        {
+          "event": "model_response",
+          "turn": 4,
+          "estimated_tokens": 1,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 85540,
+          "remaining_tool_calls": 30
+        },
+        {
+          "event": "tool_result",
+          "turn": 4,
+          "tool": "list_directory",
+          "estimated_tokens": 9,
+          "truncated": false,
+          "original_chars": 36,
+          "ok": true,
+          "remaining_tokens": 85531,
+          "remaining_tool_calls": 29
+        },
+        {
+          "event": "tool_result",
+          "turn": 4,
+          "tool": "list_directory",
+          "estimated_tokens": 10,
+          "truncated": false,
+          "original_chars": 37,
+          "ok": true,
+          "remaining_tokens": 85521,
+          "remaining_tool_calls": 28
+        },
+        {
+          "event": "model_response",
+          "turn": 5,
+          "estimated_tokens": 1,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 85520,
+          "remaining_tool_calls": 28
+        },
+        {
+          "event": "tool_result",
+          "turn": 5,
+          "tool": "list_directory",
+          "estimated_tokens": 39,
+          "truncated": false,
+          "original_chars": 153,
+          "ok": true,
+          "remaining_tokens": 85481,
+          "remaining_tool_calls": 27
+        },
+        {
+          "event": "model_response",
+          "turn": 6,
+          "estimated_tokens": 28,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 85453,
+          "remaining_tool_calls": 27
+        },
+        {
+          "event": "tool_result",
+          "turn": 6,
+          "tool": "git_log",
+          "estimated_tokens": 174,
+          "truncated": false,
+          "original_chars": 695,
+          "ok": true,
+          "remaining_tokens": 85279,
+          "remaining_tool_calls": 26
+        },
+        {
+          "event": "tool_result",
+          "turn": 6,
+          "tool": "git_diff",
+          "estimated_tokens": 830,
+          "truncated": false,
+          "original_chars": 3319,
+          "ok": true,
+          "remaining_tokens": 84449,
+          "remaining_tool_calls": 25
+        },
+        {
+          "event": "model_response",
+          "turn": 7,
+          "estimated_tokens": 25,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 84424,
+          "remaining_tool_calls": 25
+        },
+        {
+          "event": "tool_result",
+          "turn": 7,
+          "tool": "read_file",
+          "estimated_tokens": 175,
+          "truncated": false,
+          "original_chars": 699,
+          "ok": true,
+          "remaining_tokens": 84249,
+          "remaining_tool_calls": 24
+        },
+        {
+          "event": "model_response",
+          "turn": 8,
+          "estimated_tokens": 34,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 84215,
+          "remaining_tool_calls": 24
+        },
+        {
+          "event": "tool_result",
+          "turn": 8,
+          "tool": "run_command",
+          "estimated_tokens": 747,
+          "truncated": false,
+          "original_chars": 2988,
+          "ok": true,
+          "remaining_tokens": 83468,
+          "remaining_tool_calls": 23
+        },
+        {
+          "event": "model_response",
+          "turn": 9,
+          "estimated_tokens": 32,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 83436,
+          "remaining_tool_calls": 23
+        },
+        {
+          "event": "tool_result",
+          "turn": 9,
+          "tool": "grep_code",
+          "estimated_tokens": 2158,
+          "truncated": false,
+          "original_chars": 8631,
+          "ok": true,
+          "remaining_tokens": 81278,
+          "remaining_tool_calls": 22
+        },
+        {
+          "event": "model_response",
+          "turn": 10,
+          "estimated_tokens": 44,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 81234,
+          "remaining_tool_calls": 22
+        },
+        {
+          "event": "tool_result",
+          "turn": 10,
+          "tool": "run_command",
+          "estimated_tokens": 31,
+          "truncated": false,
+          "original_chars": 124,
+          "ok": false,
+          "remaining_tokens": 81203,
+          "remaining_tool_calls": 21
+        },
+        {
+          "event": "model_response",
+          "turn": 11,
+          "estimated_tokens": 1,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 81202,
+          "remaining_tool_calls": 21
+        },
+        {
+          "event": "tool_result",
+          "turn": 11,
+          "tool": "list_directory",
+          "estimated_tokens": 39,
+          "truncated": false,
+          "original_chars": 153,
+          "ok": true,
+          "remaining_tokens": 81163,
+          "remaining_tool_calls": 20
+        },
+        {
+          "event": "model_response",
+          "turn": 12,
+          "estimated_tokens": 24,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 81139,
+          "remaining_tool_calls": 20
+        },
+        {
+          "event": "tool_result",
+          "turn": 12,
+          "tool": "list_directory",
+          "estimated_tokens": 25,
+          "truncated": false,
+          "original_chars": 100,
+          "ok": true,
+          "remaining_tokens": 81114,
+          "remaining_tool_calls": 19
+        },
+        {
+          "event": "model_response",
+          "turn": 13,
+          "estimated_tokens": 16,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 81098,
+          "remaining_tool_calls": 19
+        },
+        {
+          "event": "tool_result",
+          "turn": 13,
+          "tool": "list_directory",
+          "estimated_tokens": 10,
+          "truncated": false,
+          "original_chars": 37,
+          "ok": true,
+          "remaining_tokens": 81088,
+          "remaining_tool_calls": 18
+        },
+        {
+          "event": "model_response",
+          "turn": 14,
+          "estimated_tokens": 36,
+          "tool_calls": 2,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 81052,
+          "remaining_tool_calls": 18
+        },
+        {
+          "event": "tool_result",
+          "turn": 14,
+          "tool": "grep_code",
+          "estimated_tokens": 73,
+          "truncated": false,
+          "original_chars": 290,
+          "ok": true,
+          "remaining_tokens": 80979,
+          "remaining_tool_calls": 17
+        },
+        {
+          "event": "tool_result",
+          "turn": 14,
+          "tool": "grep_code",
+          "estimated_tokens": 7,
+          "truncated": false,
+          "original_chars": 26,
+          "ok": true,
+          "remaining_tokens": 80972,
+          "remaining_tool_calls": 16
+        },
+        {
+          "event": "model_response",
+          "turn": 15,
+          "estimated_tokens": 32,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80940,
+          "remaining_tool_calls": 16
+        },
+        {
+          "event": "tool_result",
+          "turn": 15,
+          "tool": "run_command",
+          "estimated_tokens": 7,
+          "truncated": false,
+          "original_chars": 26,
+          "ok": true,
+          "remaining_tokens": 80933,
+          "remaining_tool_calls": 15
+        },
+        {
+          "event": "model_response",
+          "turn": 16,
+          "estimated_tokens": 29,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80904,
+          "remaining_tool_calls": 15
+        },
+        {
+          "event": "tool_result",
+          "turn": 16,
+          "tool": "grep_code",
+          "estimated_tokens": 314,
+          "truncated": false,
+          "original_chars": 1255,
+          "ok": true,
+          "remaining_tokens": 80590,
+          "remaining_tool_calls": 14
+        },
+        {
+          "event": "model_response",
+          "turn": 17,
+          "estimated_tokens": 18,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80572,
+          "remaining_tool_calls": 14
+        },
+        {
+          "event": "tool_result",
+          "turn": 17,
+          "tool": "read_file",
+          "estimated_tokens": 24,
+          "truncated": false,
+          "original_chars": 95,
+          "ok": true,
+          "remaining_tokens": 80548,
+          "remaining_tool_calls": 13
+        },
+        {
+          "event": "model_response",
+          "turn": 18,
+          "estimated_tokens": 58,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80490,
+          "remaining_tool_calls": 13
+        },
+        {
+          "event": "tool_result",
+          "turn": 18,
+          "tool": "read_file",
+          "estimated_tokens": 183,
+          "truncated": false,
+          "original_chars": 732,
+          "ok": true,
+          "remaining_tokens": 80307,
+          "remaining_tool_calls": 12
+        },
+        {
+          "event": "model_response",
+          "turn": 19,
+          "estimated_tokens": 16,
+          "tool_calls": 1,
+          "finish_reason": "tool_calls",
+          "remaining_tokens": 80291,
+          "remaining_tool_calls": 12
+        }
+      ],
+      "final_reason": "submit_verdict accepted",
+      "final_remaining_tokens": 80291,
+      "final_remaining_tool_calls": 12,
+      "message_count": 50
+    }
+  },
+  "decision_reasoning": "All six acceptance criteria for the scan-vault-core node are satisfied. The VaultDoctor class exists in src/doctor.py with a working scan_vault() method that walks directories, returns metadata dicts with the required keys (path, size_bytes, extension, modified_at), correctly ignores .obsidian/ system files, and has at least 3 passing tests in tests/test_doctor.py that use the existing mock vault at vault_doctor/mock_vault/ as fixture. All 20 tests pass. Constraints are also respected: implementation is in src/doctor.py only (triage.py not modified), mock vault files are intact, only libraries from requirements.txt are used, no new dependencies added, and the implementation is appropriately simple/foundational.",
+  "required_next_action": "Provide missing required artifacts and re-submit.",
+  "generated_at": "2026-07-04T10:40:49.848313+00:00"
+}
