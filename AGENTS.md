@@ -1,17 +1,21 @@
 # AGENTS.md — gddp-runtime
 
+Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
+
+The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to drift from user intent or project integrity. 
+
+Not spec-driven-development; the mission here is create a agentic harness that oversees the execution of a graph of project nodes. It's entire purpose is to detect drift, both of intent or project integrity. 
+
+The tools it will need in a "production" environment are per-project capabilities, but the baseline capabilities it will need are read-only tooling. 
+
+Harness design and implementation + running nodes through the loop and creating project graphs is the current stage with ambition of overnight runs resulting in a continuous, semi-automated pipeline, with human intervention only when necessary.
+
+Past versions of the runtime loop: 
 GitHub webhook intake → classify → scope → queue → execute pipeline.
 Python scripts in `scripts/`, deploy configs in `deploy/`, docs in `docs/`.
 No requirements.txt — scripts use stdlib + Flask (see `deploy/setup.sh`).
 
 Portfolio brief + system narrative: [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md).
-
-## Environment
-
-| Var | Purpose | Set by |
-|---|---|---|
-| `GDDP_RUNTIME_ROOT` | Override default runtime root path | Optional |
-| `GITHUB_WEBHOOK_SECRET` | Validate incoming webhook signatures | Operator |
 
 ## Project snapshot
 
