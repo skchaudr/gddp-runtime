@@ -1,3 +1,12 @@
+> **STALE / SUPERSEDED (2026-07-03).** This file is NOT canonical and is kept
+> only for history. The authoritative spec is the graph in
+> `gddp-config/graphs/gddp-runtime/nodes/` (see `verification-receipt-contract.yaml`
+> and `verdict-confidence-split.yaml`) plus the `.handoffs/` trail. Where this
+> file disagrees with those, they win. Known drift: this file's
+> `completeness_status` enum (`missing_execution_artifacts | missing_trail |
+> gate_blocked`) was never adopted; the canonical/shipped enum is
+> `complete | partial | not-run`. "Mission" is not a workflow used in this repo.
+
 # Mission 001 — Harden Semantic Verification
 
 **Goal:** Replace the semantic verifier's free-text JSON final answer with a typed `submit_verdict` tool, add validation-retry and forced termination, split criteria confidence from artifact completeness, and rerun the `vault-doctor` 7-node case against GLM and DeepSeek. The work lives on `sab-air` (`main` there, not yet pushed to `origin/main`).
