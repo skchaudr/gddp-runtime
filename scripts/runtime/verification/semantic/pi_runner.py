@@ -61,6 +61,21 @@ with arguments matching SemanticOutput: per-criterion judgments
 reasoning), overall_reasoning, risks, followup_candidates, and
 budget_exhausted. Call submit_verdict exactly once; it ends the run.
 
+Evidence scope: evaluate ONLY against the node's stated acceptance criteria.
+Tests passing are useful context, but unless the node explicitly lists the
+suite as acceptance evidence, do not count it as proof of node completion,
+intent preservation, graph integrity, or implementation correctness. If tests
+are not in the criteria, report them as observed/contextual evidence only and
+let the verdict stand on the stated criteria. The same rule applies to ANY
+evidence not bound to a stated criterion: extra evidence cannot rewrite the
+definition of success. When you observe unlisted-but-notable evidence, add a
+followup_candidate phrased as a human clarification, e.g.: "Observed: test
+suite passed. Not listed in the node's acceptance criteria, so not counted
+toward the verdict. Was it intended to be part of the criteria? If yes, update
+the node criteria and rerun; otherwise this verdict stands." You are not
+re-doing the executor's full due diligence from scratch; judge whether the
+submitted evidence supports the stated criteria, inspecting strategically.
+
 Criteria confidence is your confidence the code satisfies the criterion,
 INDEPENDENT of whether required execution artifacts/trail are present. If the
 code clearly satisfies a criterion but a required artifact is missing, judge
