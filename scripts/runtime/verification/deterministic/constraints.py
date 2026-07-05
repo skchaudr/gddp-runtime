@@ -6,7 +6,13 @@ import re
 from pathlib import Path
 
 from ..schemas import ConstraintCheck
-from .probes import probe_for, read_repo_file
+from .probes import (
+    existing_paths_from_text,
+    fallback_scan_files,
+    mentioned_paths_from_text,
+    probe_for,
+    read_repo_file,
+)
 
 FORBIDDEN_PATTERNS = [
     (r"\bsource\b.*\b(grok|pi|gemini|droid|codex|jules)\b.*\.zsh",
@@ -16,7 +22,7 @@ FORBIDDEN_PATTERNS = [
 
 
 def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
-    """Files the constraints scope: the node's own declared probe files."""
+    """Files the constraints scope: explicit probe files + named source files."""
     files: set[str] = set()
     node_id = node_yaml.get("node_id", "")
     for item in node_yaml.get("acceptance", []):
@@ -25,6 +31,16 @@ def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
             files.update(probe.get("files", []))
             if probe.get("file"):
                 files.add(probe["file"])
+        else:
+            criterion = item.get("criterion", "")
+            mentioned = mentioned_paths_from_text(criterion)
+            existing = [p for p in mentioned if (repo / p).is_file()]
+            if mentioned:
+                files.update(existing)
+            else:
+                files.update(fallback_scan_files(repo, criterion))
+    for text in node_yaml.get("constraints", []):
+        files.update(existing_paths_from_text(repo, text))
     return sorted(files)
 
 
@@ -44,6 +60,8 @@ def evaluate_constraint(
     for rx, why in FORBIDDEN_PATTERNS:
         comp = re.compile(rx, re.MULTILINE)
         for fname, body in bodies:
+            if not (fname.startswith("lib/") and fname.endswith(".zsh")):
+                continue
             for m in comp.finditer(body):
                 line_no = body.count("\n", 0, m.start()) + 1
                 evidence.append(f"{fname}:{line_no}: {why} ({m.group(0)!r})")

@@ -164,7 +164,7 @@ def test_probe_any_of(monkeypatch, tmp_path: Path):
     assert result.method == "any_of"
 
 
-def test_probe_keyword_scan_lib(tmp_path: Path):
+def test_probe_keyword_scan_source_keeps_zsh_layout(tmp_path: Path):
     lib = tmp_path / "lib"
     lib.mkdir()
     (lib / "common.zsh").write_text("function aa_custom_helper() {}\n")
@@ -176,7 +176,24 @@ def test_probe_keyword_scan_lib(tmp_path: Path):
         },
     )
     assert result.status == "pass"
-    assert result.method == "keyword_scan_lib"
+    assert result.method == "keyword_scan_source"
+
+
+def test_probe_missing_named_path_does_not_scan_elsewhere(tmp_path: Path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "other.py").write_text("submit_verdict = True\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "missing-specific-path",
+            "criterion": "scripts/runtime/verification/semantic/pi_runner.py provides submit_verdict",
+        },
+    )
+    assert result.status == "indeterminate"
+    assert result.method == "path_mentioned_missing"
+    assert result.mismatch_kind == "source_path"
+    assert "pi_runner.py absent" in result.mismatch_detail
 
 
 def test_probe_no_probe(tmp_path: Path):

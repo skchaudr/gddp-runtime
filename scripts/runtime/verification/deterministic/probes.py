@@ -439,8 +439,8 @@ def probe_for(node_id: str, criterion_id: str) -> dict | None:
 def slug_keywords(criterion_text: str) -> list[str]:
     """Fallback probe targets derived from the criterion text itself.
 
-    Used when CHECK_PROBES has no explicit entry: extract the identifiers
-    named in the criterion (aa_*/AA_*) and look for them in lib/*.zsh.
+    Used when CHECK_PROBES has no explicit entry: extract identifiers named in
+    the criterion and look for them in source files that match the repo layout.
     Deterministic and conservative — if nothing matches, the check is
     `indeterminate`, not `fail`.
     """
@@ -448,9 +448,57 @@ def slug_keywords(criterion_text: str) -> list[str]:
     stop = {"the", "and", "for", "with", "from", "when", "not", "are",
             "must", "via", "into", "only", "that", "this", "under",
             "clear", "error", "returns", "non-zero", "installed", "against",
-            "missing", "invalid", "filesystem", "produce", "helpers"}
-    return [t for t in tokens if t.lower() not in stop and
-            ("_" in t or t.startswith(("aa", "AA")))]
+            "missing", "invalid", "filesystem", "produce", "helpers",
+            "exists", "writes", "reads", "accepts", "returns", "spawns",
+            "mode", "target", "repo", "cwd", "loaded", "valid", "receipt",
+            "populated", "passes", "regressions"}
+    out: list[str] = []
+    for token in tokens:
+        if token.lower() in stop:
+            continue
+        if (
+            "_" in token
+            or "-" in token
+            or token.startswith(("aa", "AA"))
+            or any(ch.isupper() for ch in token[1:])
+        ):
+            out.append(token)
+    return out
+
+
+def mentioned_paths_from_text(text: str) -> list[str]:
+    """Return repo-looking paths mentioned in criterion text."""
+    paths: list[str] = []
+    for raw in re.findall(r"[\w./-]+\.(?:py|ts|tsx|js|json|toml|yaml|yml|zsh|md)", text):
+        paths.append(raw.strip("`'\".,);:"))
+    return sorted(set(paths))
+
+
+def existing_paths_from_text(repo: Path, text: str) -> list[str]:
+    """Return existing repo-relative paths mentioned in criterion text."""
+    return sorted({p for p in mentioned_paths_from_text(text) if (repo / p).is_file()})
+
+
+def fallback_scan_files(repo: Path, text: str = "") -> list[str]:
+    """Candidate source files for unregistered deterministic probes."""
+    explicit = existing_paths_from_text(repo, text)
+    if explicit:
+        return explicit
+
+    candidates: list[Path] = []
+    lib_dir = repo / "lib"
+    if lib_dir.is_dir():
+        candidates.extend(sorted(lib_dir.glob("*.zsh")))
+    for dirname, patterns in (
+        ("src", ("*.py", "*.ts", "*.tsx", "*.js")),
+        ("scripts", ("*.py", "*.ts", "*.tsx", "*.js")),
+        ("tests", ("*.py", "*.ts", "*.tsx", "*.js")),
+    ):
+        base = repo / dirname
+        if base.is_dir():
+            for pattern in patterns:
+                candidates.extend(sorted(base.rglob(pattern)))
+    return sorted({p.relative_to(repo).as_posix() for p in candidates if p.is_file()})
 
 
 def read_repo_file(repo: Path, rel: str) -> str | None:
@@ -523,8 +571,25 @@ def evaluate_criterion(
     probe = probe_for(node_id, cid)
 
     if probe is None:
-        # Fallback: keyword probe across lib/*.zsh
+        # Fallback: keyword probe across files implied by the repo layout.
         kws = slug_keywords(text)
+        mentioned_paths = mentioned_paths_from_text(text)
+        existing_paths = [p for p in mentioned_paths if (repo / p).is_file()]
+        missing_paths = [p for p in mentioned_paths if not (repo / p).is_file()]
+        if mentioned_paths and not existing_paths:
+            return CriterionCheck(
+                id=cid, criterion=text, status="indeterminate",
+                confidence=0.2, method="path_mentioned_missing",
+                evidence=[f"{p} absent" for p in missing_paths],
+                reasoning=("The criterion names source path(s) that are not "
+                           "present in the checkout. The harness did not scan "
+                           "unrelated files as substitutes."),
+                mismatch_kind="source_path",
+                mismatch_detail=", ".join(f"{p} absent" for p in missing_paths),
+                needs_evidence=False,
+                human_question=("Is the criterion path stale, or has the "
+                                "implementation not landed yet?"),
+            )
         if not kws:
             return CriterionCheck(
                 id=cid, criterion=text, status="indeterminate",
@@ -535,30 +600,30 @@ def evaluate_criterion(
                 mismatch_kind="", mismatch_detail="",
                 needs_evidence=False, human_question="",
             )
-        lib_dir = repo / "lib"
-        lib_files = sorted(lib_dir.glob("*.zsh")) if lib_dir.is_dir() else []
-        named = [(f.relative_to(repo).as_posix(),
-                  read_repo_file(repo, f.relative_to(repo).as_posix()) or "")
-                 for f in lib_files]
+        scan_files = fallback_scan_files(repo, text)
+        named = [(f, read_repo_file(repo, f) or "") for f in scan_files]
         patterns = [re.escape(k) for k in kws]
         matched, evidence = grep_all([h for _, h in named], patterns,
                                       want_all=False)
         status = "pass" if matched else "indeterminate"
-        files_with_hits = [name for (name, body), _ in
-                           zip(named, [re.search(p, b) for p in patterns
-                                       for _, b in named])
-                           ] if matched else []
+        scope = ", ".join(scan_files[:4]) + ("..." if len(scan_files) > 4 else "")
+        if missing_paths:
+            evidence.extend(f"{p} absent" for p in missing_paths)
+            status = "indeterminate"
         return CriterionCheck(
             id=cid, criterion=text, status=status,
             confidence=0.5 if matched else 0.2,
-            method="keyword_scan_lib",
-            evidence=(evidence or ["no hit in any lib/*.zsh"])[:6],
-            reasoning=(f"Scanned lib/*.zsh for identifiers named in the "
+            method="keyword_scan_source",
+            evidence=(evidence or [f"no hit in source scan ({scope or 'no files'})"])[:6],
+            reasoning=(f"Scanned source files ({scope or 'none'}) for identifiers named in the "
                        f"criterion ({', '.join(kws)}). "
-                       + ("Found." if matched else "No match — but absence "
-                          "could mean rewording, not failure.")),
-            mismatch_kind="", mismatch_detail="",
-            needs_evidence=False, human_question="",
+                       + ("Found." if matched and not missing_paths else "No complete match — "
+                          "absence could mean rewording, missing path, or missing implementation.")),
+            mismatch_kind="source_path" if missing_paths else "",
+            mismatch_detail=", ".join(f"{p} absent" for p in missing_paths),
+            needs_evidence=False,
+            human_question=("Is the criterion path stale, or has the implementation not landed yet?")
+            if missing_paths else "",
         )
 
     ptype = probe["type"]
@@ -819,7 +884,6 @@ def eval_tier_distinct(cid, text, probe, repo, mk, hq):
         method="tier_distinct", evidence=evidence[:12], reasoning=reasoning,
         mismatch_kind=mk, mismatch_detail=mismatch_detail,
         needs_evidence=False, human_question=hq)
-
 
 
 
