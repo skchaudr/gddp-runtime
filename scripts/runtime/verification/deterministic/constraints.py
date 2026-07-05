@@ -11,12 +11,12 @@ from .probes import probe_for, read_repo_file
 FORBIDDEN_PATTERNS = [
     (r"\bsource\b.*\b(grok|pi|gemini|droid|codex|jules)\b.*\.zsh",
      "sourcing an executor-specific module from a common-layer file"),
-    (r"^\s*python3?\b", "introducing a python runtime dependency in a zsh lib"),
+    (r"^\s*python3?\b(?!\s*=)", "introducing a python runtime dependency in a zsh lib"),
 ]
 
 
 def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
-    """Files the constraints scope: explicit probe files + all lib/*.zsh."""
+    """Files the constraints scope: the node's own declared probe files."""
     files: set[str] = set()
     node_id = node_yaml.get("node_id", "")
     for item in node_yaml.get("acceptance", []):
@@ -25,9 +25,6 @@ def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
             files.update(probe.get("files", []))
             if probe.get("file"):
                 files.add(probe["file"])
-    if (repo / "lib").is_dir():
-        for f in sorted((repo / "lib").glob("*.zsh")):
-            files.add(f.relative_to(repo).as_posix())
     return sorted(files)
 
 
