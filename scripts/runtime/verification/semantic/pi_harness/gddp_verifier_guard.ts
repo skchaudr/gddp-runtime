@@ -32,7 +32,9 @@ const BLOCKED_BASH_PATTERNS: RegExp[] = [
   /(?:^|\s|&&|\|\|)\s*chown\s/,
   /\b(?:curl|wget|ssh|scp|sftp|rsync|nc|netcat|telnet|ftp|pip|npm|pnpm|yarn|brew)\b/,
   /\bgit\s+(?:commit|push|reset|checkout|switch|merge|rebase|clean|add|restore|stash|cherry-pick|revert)\b/,
-  /(?:>\s*|>>\s*|2>\s*)/, // shell redirection to a file
+  // Redirection to a real file is blocked; fd merges (2>&1, >&2) and
+  // /dev/null sinks stay legal so read-only inspection commands survive.
+  /(?:\d?>>?|&>)(?!\s*(?:&\d|\/dev\/null))/,
   /\bpip3?\s+install\b/,
   /\bpython3?\s+-m\s+pip\b/,
 ];

@@ -151,7 +151,13 @@ class PiHarnessRunner:
                 trace,
             )
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
-        raw.setdefault("budget_trace", {"tool_calls": trace} if trace else None)
+        # Ground-truth trace wins over whatever the model put in budget_trace
+        # (submit_verdict always includes the key, usually null, so setdefault
+        # would never fire).
+        if trace:
+            raw["budget_trace"] = {"tool_calls": trace}
+        else:
+            raw.setdefault("budget_trace", None)
         return SemanticOutput.model_validate(raw)
 
     def _build_command(self, system_prompt: str, user_prompt: str, repo: Path) -> list[str]:
