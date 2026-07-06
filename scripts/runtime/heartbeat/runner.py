@@ -21,6 +21,7 @@ What it does:
 import argparse
 import os
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,10 +108,27 @@ def _plan_dispatches(
     """
     Phase A: Fetch events, classify, scope-check, and reserve jobs on the main thread.
     """
+    # Migration: claimed_at supports crash recovery of claimed events.
+    try:
+        con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
+        con.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     cur = con.cursor()
+    # Stale 'claimed' events (a heartbeat crashed mid-claim) become eligible
+    # again after 30 minutes.
+    stale_cutoff = (
+        datetime.now(timezone.utc) - timedelta(minutes=30)
+    ).isoformat()
     cur.execute(
-        "SELECT * FROM events WHERE status = 'received' AND project_id = ?",
-        (project_id,)
+        """
+        SELECT * FROM events
+         WHERE project_id = ?
+           AND (status = 'received'
+                OR (status = 'claimed' AND claimed_at < ?))
+        """,
+        (project_id, stale_cutoff),
     )
     events = cur.fetchall()
 
@@ -124,6 +142,25 @@ def _plan_dispatches(
 
     for event in events:
         event_id = event["event_id"]
+
+        # Atomic claim: only one heartbeat process may win this event. A
+        # concurrent runner that read the same 'received' row loses the
+        # UPDATE race and skips.
+        claim = con.execute(
+            """
+            UPDATE events
+               SET status = 'claimed', claimed_at = ?
+             WHERE event_id = ?
+               AND (status = 'received'
+                    OR (status = 'claimed' AND claimed_at < ?))
+            """,
+            (datetime.now(timezone.utc).isoformat(), event_id, stale_cutoff),
+        )
+        con.commit()
+        if claim.rowcount != 1:
+            print(f"Skipping: {event_id} (claimed by another heartbeat)")
+            continue
+
         print(f"Processing: {event_id} ({event['event_type']})")
 
         # Classify and reserve jobs on the main thread.
