@@ -145,17 +145,27 @@ class PiHarnessRunner:
         env = dict(os.environ)
         env["GDDP_VERDICT_OUT"] = verdict_path
         env["GDDP_TOOL_TRACE"] = trace_path
+        # Sandbox: point HOME at a throwaway directory so pi cannot discover
+        # ~/.pi/agent/ (models.json, extensions, context files) even if future
+        # pi versions add new auto-discovery paths. The evaluator must run with
+        # zero ambient config.
+        sandbox_home = tempfile.mkdtemp(prefix="gddp-pi-home-")
+        env["HOME"] = sandbox_home
 
         cmd = self._build_command(sys_prompt, user_prompt, repo)
-        proc = subprocess.run(
-            cmd,
-            env=env,
-            cwd=str(repo),
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                env=env,
+                cwd=str(repo),
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                check=False,
+            )
+        finally:
+            # Clean up the sandbox home — the evaluator leaves nothing behind.
+            shutil.rmtree(sandbox_home, ignore_errors=True)
         if proc.returncode != 0:
             raise RuntimeError(f"pi exited with code {proc.returncode}")
 
