@@ -94,6 +94,21 @@ def _verify_once(project_id: str, node_id: str) -> dict:
     ]
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)
+    # The evaluator pi runs with a sandboxed HOME (no ~/.pi/agent/models.json),
+    # so it can only resolve the DeepSeek key from the environment. Cron and
+    # other non-login contexts don't source the shell secrets, so fetch from
+    # the pass store when the env lacks it. Best-effort: if pass fails, the
+    # verifier's own error surfaces in the error record.
+    if not env.get("DEEPSEEK_API_KEY"):
+        try:
+            key = subprocess.run(
+                ["pass", "show", "api/deepseek"],
+                capture_output=True, text=True, timeout=15, check=False,
+            ).stdout.strip()
+            if key:
+                env["DEEPSEEK_API_KEY"] = key
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     try:
         proc = subprocess.run(
