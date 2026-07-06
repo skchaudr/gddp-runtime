@@ -72,6 +72,36 @@ class TestVerifyJobReturn(unittest.TestCase):
         self.assertEqual(res["verification_status"], "error")
         self.assertIn("timed out", res["error"])
 
+    def test_transient_error_retried_once_then_succeeds(self):
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="blip")
+        ok = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", side_effect=[fail, ok]
+        ) as mock_run:
+            res = bridge.verify_job_return("vault-doctor", "auth-node")
+        self.assertEqual(res["verification_status"], "ok")
+        self.assertEqual(mock_run.call_count, 2)
+
+    def test_missing_paths_not_retried(self):
+        with patch("scripts.runtime.verification.bridge.subprocess.run") as mock_run:
+            res = bridge.verify_job_return("no-such-project", "no-such-node")
+        self.assertEqual(res["verification_status"], "error")
+        mock_run.assert_not_called()
+        self.assertNotIn("retryable", res)
+
+    def test_double_failure_reports_both_attempts(self):
+        fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", side_effect=[fail, fail]
+        ):
+            res = bridge.verify_job_return("vault-doctor", "auth-node")
+        self.assertEqual(res["verification_status"], "error")
+        self.assertIn("after 1 retry", res["error"])
+        self.assertIn("first attempt", res["error"])
+
     def test_unparseable_stdout_is_error(self):
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="garbage", stderr="")
         with _fake_paths_exist(), patch(

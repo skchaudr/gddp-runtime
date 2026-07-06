@@ -42,10 +42,26 @@ def verify_job_return(project_id: str, node_id: str) -> dict:
     Success: {"verification_status": "ok", "receipt_path", "verdict",
               "criteria_confidence", "required_next_action"}
     Failure: {"verification_status": "error", "error": <why>}
+
+    Transient failures (timeout, crash, garbled output) get exactly one retry;
+    missing config/repo paths do not — those need a human, not a rerun.
     """
+    first = _verify_once(project_id, node_id)
+    if first["verification_status"] == "ok" or first.get("retryable") is False:
+        first.pop("retryable", None)
+        return first
+    second = _verify_once(project_id, node_id)
+    second.pop("retryable", None)
+    if second["verification_status"] == "error":
+        second["error"] = f"(after 1 retry) {second['error']}; first attempt: {first['error']}"
+    return second
+
+
+def _verify_once(project_id: str, node_id: str) -> dict:
     if not project_id or not node_id:
         return {
             "verification_status": "error",
+            "retryable": False,
             "error": f"job missing project_id/node_id (project_id={project_id!r}, node_id={node_id!r})",
         }
 
@@ -57,7 +73,11 @@ def verify_job_return(project_id: str, node_id: str) -> dict:
 
     for path, label in ((node_yaml, "node yaml"), (project_yaml, "project yaml"), (repo, "repo")):
         if not path.exists():
-            return {"verification_status": "error", "error": f"{label} not found: {path}"}
+            return {
+                "verification_status": "error",
+                "retryable": False,
+                "error": f"{label} not found: {path}",
+            }
 
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
