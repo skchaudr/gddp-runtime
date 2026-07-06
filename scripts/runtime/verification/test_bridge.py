@@ -1,9 +1,17 @@
 """Tests for the return-path verification bridge (E1)."""
 
 import json
+import os
 import subprocess
 import unittest
 from unittest.mock import patch
+
+
+def setUpModule():
+    # The bridge fetches the key via `pass` when the env lacks it, which would
+    # consume mocked subprocess side_effects; pin the env so tests are
+    # deterministic regardless of the shell they run in.
+    os.environ.setdefault("DEEPSEEK_API_KEY", "test-key-not-real")
 
 from scripts.runtime.verification import bridge
 

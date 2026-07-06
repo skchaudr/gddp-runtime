@@ -205,6 +205,93 @@ def test_probe_no_probe(tmp_path: Path):
     assert result.method == "no_probe"
 
 
+# ── command_proof tests ────────────────────────────────────────────────────
+
+
+def test_command_proof_pass(tmp_path: Path):
+    result = _eval(
+        tmp_path,
+        {
+            "id": "suite-green",
+            "criterion": "pytest passes",
+            "command": "python3 -c 'print(\"ok\")'",
+        },
+    )
+    assert result.status == "pass"
+    assert result.confidence == 0.95
+    assert result.method == "command_proof"
+    assert any("exit 0" in e for e in result.evidence)
+    assert any("$" in e for e in result.evidence)
+
+
+def test_command_proof_fail(tmp_path: Path):
+    result = _eval(
+        tmp_path,
+        {
+            "id": "suite-green",
+            "criterion": "pytest fails",
+            "command": "python3 -c 'exit(1)'",
+        },
+    )
+    assert result.status == "fail"
+    assert result.confidence == 0.9
+    assert result.method == "command_proof"
+    assert any("exit 1" in e for e in result.evidence)
+
+
+def test_command_proof_timeout(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    orig_run = subprocess.run
+
+    def _fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=kwargs.get("args", ""), timeout=1)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    result = _eval(
+        tmp_path,
+        {
+            "id": "suite-green",
+            "criterion": "slow test",
+            "command": "sleep 10",
+        },
+    )
+    assert result.status == "indeterminate"
+    assert result.confidence == 0.3
+    assert result.method == "command_proof_error"
+
+
+def test_command_proof_oserror(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    def _fake_run(*args, **kwargs):
+        raise OSError("command not found")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    result = _eval(
+        tmp_path,
+        {
+            "id": "suite-green",
+            "criterion": "bad cmd",
+            "command": "nonexistent_cmd",
+        },
+    )
+    assert result.status == "indeterminate"
+    assert result.confidence == 0.3
+    assert result.method == "command_proof_error"
+    assert any("OSError" in e for e in result.evidence)
+
+
+def test_command_proof_no_command_key_falls_through(tmp_path: Path):
+    """No command key -> existing behavior untouched (regression)."""
+    result = _eval(
+        tmp_path,
+        {"id": "plain-criterion", "criterion": "something vague"},
+    )
+    assert result.status == "indeterminate"
+    assert result.method == "no_probe"
+
+
 def test_constraint_scan_clear(tmp_path: Path):
     lib = tmp_path / "lib"
     lib.mkdir()

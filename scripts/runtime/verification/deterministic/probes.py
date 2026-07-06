@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 from ..schemas import CriterionCheck
@@ -568,6 +570,60 @@ def evaluate_criterion(
 ) -> CriterionCheck:
     cid = item.get("id", "<no-id>")
     text = item.get("criterion", "")
+
+    # ── command_proof: explicit command in criterion dict runs FIRST ──
+    cmd = item.get("command", "")
+    if cmd:
+        timeout = int(os.environ.get("GDDP_COMMAND_PROOF_TIMEOUT", "300"))
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=repo, capture_output=True,
+                text=True, timeout=timeout,
+            )
+            exit_code = proc.returncode
+            combined_output = (proc.stdout + proc.stderr).strip()
+            evidence = [
+                f"$ {cmd}",
+                f"exit {exit_code}",
+                combined_output[-1500:] if combined_output else "",
+            ]
+            if exit_code == 0:
+                return CriterionCheck(
+                    id=cid, criterion=text, status="pass",
+                    confidence=0.95, method="command_proof",
+                    evidence=evidence,
+                    reasoning=f"Ran `{cmd}` (exit 0). Command passed.",
+                    mismatch_kind="", mismatch_detail="",
+                    needs_evidence=False, human_question="",
+                )
+            else:
+                return CriterionCheck(
+                    id=cid, criterion=text, status="fail",
+                    confidence=0.9, method="command_proof",
+                    evidence=evidence,
+                    reasoning=f"Ran `{cmd}` (exit {exit_code}). Command failed.",
+                    mismatch_kind="", mismatch_detail="",
+                    needs_evidence=False, human_question="",
+                )
+        except subprocess.TimeoutExpired:
+            return CriterionCheck(
+                id=cid, criterion=text, status="indeterminate",
+                confidence=0.3, method="command_proof_error",
+                evidence=[f"$ {cmd}", f"timed out after {timeout}s"],
+                reasoning=f"`{cmd}` timed out after {timeout}s.",
+                mismatch_kind="", mismatch_detail="",
+                needs_evidence=False, human_question="",
+            )
+        except OSError as exc:
+            return CriterionCheck(
+                id=cid, criterion=text, status="indeterminate",
+                confidence=0.3, method="command_proof_error",
+                evidence=[f"$ {cmd}", f"OSError: {exc}"],
+                reasoning=f"`{cmd}` could not run: {exc}.",
+                mismatch_kind="", mismatch_detail="",
+                needs_evidence=False, human_question="",
+            )
+
     probe = probe_for(node_id, cid)
 
     if probe is None:
