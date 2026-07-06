@@ -661,11 +661,14 @@ def evaluate_criterion(
         patterns = [re.escape(k) for k in kws]
         matched, evidence = grep_all([h for _, h in named], patterns,
                                       want_all=False)
-        status = "pass" if matched else "indeterminate"
+        # Keyword scan is inherently weak evidence — finding strings in files
+        # does not prove the criterion is satisfied. Always mark indeterminate
+        # so the semantic layer gets a chance to judge. The confidence reflects
+        # how strong the keyword signal is (0.5 = found strings, 0.2 = nothing).
+        status = "indeterminate"
         scope = ", ".join(scan_files[:4]) + ("..." if len(scan_files) > 4 else "")
         if missing_paths:
             evidence.extend(f"{p} absent" for p in missing_paths)
-            status = "indeterminate"
         return CriterionCheck(
             id=cid, criterion=text, status=status,
             confidence=0.5 if matched else 0.2,
@@ -673,7 +676,8 @@ def evaluate_criterion(
             evidence=(evidence or [f"no hit in source scan ({scope or 'no files'})"])[:6],
             reasoning=(f"Scanned source files ({scope or 'none'}) for identifiers named in the "
                        f"criterion ({', '.join(kws)}). "
-                       + ("Found." if matched and not missing_paths else "No complete match — "
+                       + ("String match found — semantic investigation needed to confirm." if matched
+                          else "No complete match — "
                           "absence could mean rewording, missing path, or missing implementation.")),
             mismatch_kind="source_path" if missing_paths else "",
             mismatch_detail=", ".join(f"{p} absent" for p in missing_paths),

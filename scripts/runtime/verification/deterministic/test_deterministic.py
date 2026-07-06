@@ -175,7 +175,7 @@ def test_probe_keyword_scan_source_keeps_zsh_layout(tmp_path: Path):
             "criterion": "aa_custom_helper must exist in lib",
         },
     )
-    assert result.status == "pass"
+    assert result.status == "indeterminate"  # keyword scan is weak evidence
     assert result.method == "keyword_scan_source"
 
 
