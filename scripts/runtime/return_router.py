@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .results_store import DB_PATH, write_result
+from .verification.bridge import verify_job_return
 
 ALLOWED_REPOS = ["skchaudr/vault-doctor"]
 
@@ -118,6 +119,11 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     if job["node_id"] != node_id:
         return {"status": "rejected", "reason": "node_job_mismatch"}
 
+    # E1: run the evaluator automatically so the human reviews a receipt, not a
+    # raw diff. The verdict is evidence only — the job routes to awaiting_review
+    # regardless of outcome, and an evaluator failure is recorded, never fatal.
+    verification = verify_job_return(job["project_id"], node_id)
+
     write_result(
         result_id=result_id,
         job_id=job_id,
@@ -125,6 +131,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         outcome="success",
         status="needs_review",
         received_at=merged_at,
+        acceptance_check=verification,
         github_action={
             "source": "merged_pr",
             "event_id": event["event_id"],
@@ -145,4 +152,5 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         "result_id": result_id,
         "job_id": job_id,
         "node_id": node_id,
+        "verification": verification,
     }

@@ -49,10 +49,13 @@ class TestReturnRouter(unittest.TestCase):
         self.assertTrue(validate_repo("skchaudr/vault-doctor"))
         self.assertFalse(validate_repo("other/repo"))
 
+    @patch("scripts.runtime.return_router.verify_job_return")
     @patch("scripts.runtime.return_router._mark_job_awaiting_review")
     @patch("scripts.runtime.return_router.write_result")
     @patch("scripts.runtime.return_router._load_job")
-    def test_handle_merged_pr_success(self, mock_load_job, mock_write, mock_mark_review):
+    def test_handle_merged_pr_success(
+        self, mock_load_job, mock_write, mock_mark_review, mock_verify
+    ):
         event = {"raw_payload_path": "payload.json", "event_id": "evt_123456"}
         payload = {
             "repository": {"full_name": "skchaudr/vault-doctor"},
@@ -68,7 +71,16 @@ class TestReturnRouter(unittest.TestCase):
             "repo": "skchaudr/vault-doctor",
             "node_id": "auth-node",
             "executor": "jules",
+            "project_id": "vault-doctor",
         }
+        verification = {
+            "verification_status": "ok",
+            "receipt_path": "/tmp/receipt.json",
+            "verdict": "pass",
+            "criteria_confidence": 0.9,
+            "required_next_action": "Proceed to accept_node (open evidence PR).",
+        }
+        mock_verify.return_value = verification
 
         with patch("builtins.open", mock_open(read_data=json.dumps(payload))):
             res = handle_merged_pr(event)
@@ -80,8 +92,10 @@ class TestReturnRouter(unittest.TestCase):
                 "result_id": "res_123456",
                 "job_id": "job_123",
                 "node_id": "auth-node",
+                "verification": verification,
             },
         )
+        mock_verify.assert_called_once_with("vault-doctor", "auth-node")
         mock_write.assert_called_once_with(
             result_id="res_123456",
             job_id="job_123",
@@ -89,6 +103,7 @@ class TestReturnRouter(unittest.TestCase):
             outcome="success",
             status="needs_review",
             received_at="2024-03-20T10:00:00Z",
+            acceptance_check=verification,
             github_action={
                 "source": "merged_pr",
                 "event_id": "evt_123456",
