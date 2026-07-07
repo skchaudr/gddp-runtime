@@ -49,7 +49,8 @@ def init_db():
         normalized_payload_path TEXT,
         classification          TEXT,                   -- JSON object (category, intent, flags)
         routing                 TEXT,                   -- JSON object (selected_executor, selected_queue)
-        status                  TEXT DEFAULT 'received' -- received | classified | mapped | ignored
+        status                  TEXT DEFAULT 'received', -- received | classified | mapped | ignored
+        claimed_at              TEXT
     );
 
     -- -----------------------------------------------------------------------

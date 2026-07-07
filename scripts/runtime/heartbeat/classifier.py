@@ -5,10 +5,14 @@ The heartbeat only plans forward-path execution work. Return/review handling is
 kept outside automatic dispatch.
 """
 
+import re
 import sqlite3
 from typing import Optional
 
 from .graph_reader import NodeData
+
+
+_NODE_TAG_RE = re.compile(r"(?i)node[:\s-]+([a-z0-9_-]+)")
 
 
 def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
@@ -19,7 +23,9 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     - Only issue.opened events trigger dispatch
     - If there are no ready nodes, event is ignored
     - If there is exactly one ready node, it wins automatically
-    - If there are multiple ready nodes, priority ordering applies (high > normal > low)
+    - If there are multiple ready nodes, a `node: <id>` tag in event metadata
+      (url, branch) is matched first; otherwise priority ordering applies
+      (high > normal > low)
     """
     if event["event_type"] != "issue.opened":
         return None
@@ -27,9 +33,23 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     if not ready_nodes:
         return None
 
-    # Pick highest-priority ready node
-    priority_order = {"high": 0, "normal": 1, "low": 2}
-    target = sorted(ready_nodes, key=lambda n: priority_order.get(n.priority, 1))[0]
+    ready_ids = {n.node_id for n in ready_nodes}
+
+    # Try to match a `node: <id>` tag in event metadata (url, branch).
+    target = None
+    for field in ("url", "branch"):
+        value = event[field] if field in event.keys() else None
+        if not value:
+            continue
+        match = _NODE_TAG_RE.search(str(value))
+        if match and match.group(1) in ready_ids:
+            target = next(n for n in ready_nodes if n.node_id == match.group(1))
+            break
+
+    # Fall back to highest-priority ready node.
+    if target is None:
+        priority_order = {"high": 0, "normal": 1, "low": 2}
+        target = sorted(ready_nodes, key=lambda n: priority_order.get(n.priority, 1))[0]
 
     return {
         "category":                "implementation_request",

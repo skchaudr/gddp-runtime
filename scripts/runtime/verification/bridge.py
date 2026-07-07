@@ -14,6 +14,7 @@ pi failure cannot take down the return router.
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -96,19 +97,46 @@ def _verify_once(project_id: str, node_id: str) -> dict:
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)
     # The evaluator pi runs with a sandboxed HOME (no ~/.pi/agent/models.json),
     # so it can only resolve the DeepSeek key from the environment. Cron and
-    # other non-login contexts don't source the shell secrets, so fetch from
-    # the pass store when the env lacks it. Best-effort: if pass fails, the
+    # other non-login contexts don't source the shell secrets, so fetch the key
+    # from an external source when the env lacks it. The source command is
+    # configurable via GDDP_DEEPSEEK_KEY_CMD (default: the `pass` password
+    # manager, which is Big Pi-specific). Best-effort: if the fetch fails, the
     # verifier's own error surfaces in the error record.
     if not env.get("DEEPSEEK_API_KEY"):
-        try:
-            key = subprocess.run(
-                ["pass", "show", "api/deepseek"],
-                capture_output=True, text=True, timeout=15, check=False,
-            ).stdout.strip()
-            if key:
-                env["DEEPSEEK_API_KEY"] = key
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+        key_cmd = os.environ.get("GDDP_DEEPSEEK_KEY_CMD", "pass show api/deepseek")
+        parts = shlex.split(key_cmd)
+        binary = parts[0] if parts else ""
+        if not binary or shutil.which(binary) is None:
+            print(
+                f"[bridge] DEEPSEEK_API_KEY not set and credential command binary "
+                f"{binary!r} not found on PATH (GDDP_DEEPSEEK_KEY_CMD={key_cmd!r}); "
+                f"continuing without key",
+                file=sys.stderr,
+            )
+        else:
+            try:
+                cred_proc = subprocess.run(
+                    parts,
+                    capture_output=True, text=True, timeout=15, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                print(
+                    f"[bridge] credential fetch command failed ({exc!r}); "
+                    f"continuing without DEEPSEEK_API_KEY",
+                    file=sys.stderr,
+                )
+            else:
+                key = cred_proc.stdout.strip()
+                if cred_proc.returncode != 0 or not key:
+                    print(
+                        f"[bridge] credential fetch command exited "
+                        f"{cred_proc.returncode} with no usable key "
+                        f"(GDDP_DEEPSEEK_KEY_CMD={key_cmd!r}); "
+                        f"continuing without DEEPSEEK_API_KEY",
+                        file=sys.stderr,
+                    )
+                else:
+                    env["DEEPSEEK_API_KEY"] = key
 
     try:
         proc = subprocess.run(

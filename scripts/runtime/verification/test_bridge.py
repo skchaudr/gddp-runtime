@@ -120,5 +120,56 @@ class TestVerifyJobReturn(unittest.TestCase):
         self.assertIn("no parseable", res["error"])
 
 
+class TestCredentialFetch(unittest.TestCase):
+    def setUp(self):
+        # setUpModule pins the key so most tests skip the fetch; remove it so
+        # the credential-fetch path actually executes in these tests.
+        self._saved_key = os.environ.pop("DEEPSEEK_API_KEY", None)
+
+    def tearDown(self):
+        if self._saved_key is not None:
+            os.environ["DEEPSEEK_API_KEY"] = self._saved_key
+        os.environ.pop("GDDP_DEEPSEEK_KEY_CMD", None)
+
+    def test_custom_key_command_is_used(self):
+        os.environ["GDDP_DEEPSEEK_KEY_CMD"] = "echo test-key-123"
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cred = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="test-key-123\n", stderr=""
+        )
+        cli = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run",
+            side_effect=[cred, cli],
+        ) as mock_run:
+            res = bridge.verify_job_return("vault-doctor", "auth-node")
+        self.assertEqual(res["verification_status"], "ok")
+        # The first subprocess.run call is the credential fetch; it must use
+        # the shlex-split custom command.
+        first_call = mock_run.call_args_list[0]
+        self.assertEqual(first_call.args[0], ["echo", "test-key-123"])
+
+    def test_absent_binary_does_not_crash(self):
+        # GDDP_DEEPSEEK_KEY_CMD unset -> default "pass show api/deepseek";
+        # mock shutil.which so `pass` is reported absent.
+        os.environ.pop("GDDP_DEEPSEEK_KEY_CMD", None)
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.shutil.which", return_value=None
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", return_value=cli
+        ) as mock_run:
+            res = bridge.verify_job_return("vault-doctor", "auth-node")
+        self.assertEqual(res["verification_status"], "ok")
+        # The credential fetch must not have invoked subprocess.run; only the
+        # verifier CLI call should have occurred.
+        self.assertEqual(mock_run.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

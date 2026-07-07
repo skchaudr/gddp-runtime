@@ -108,13 +108,6 @@ def _plan_dispatches(
     """
     Phase A: Fetch events, classify, scope-check, and reserve jobs on the main thread.
     """
-    # Migration: claimed_at supports crash recovery of claimed events.
-    try:
-        con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
-        con.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
-
     cur = con.cursor()
     # Stale 'claimed' events (a heartbeat crashed mid-claim) become eligible
     # again after 30 minutes.

@@ -24,7 +24,7 @@ from ..results_store import write_decision_result
 from ..verification import orchestrator as verification_orchestrator
 from ..verification.receipt_sink import receipt_exists, write_receipt
 from ..verification.schemas import Verdict
-from ..verification.semantic.agent import AnthropicRunner
+from ..verification.semantic.agent import OpenAICompatibleRunner
 from ..verification.semantic.tools import SemanticToolbox
 from .context_reader import read_context, DecisionContext
 from .powers import dispatch_next
@@ -243,15 +243,51 @@ def _run_verification(ctx: DecisionContext, node, project_id: str) -> DecisionRe
 
 
 class _LazyRunner:
+    """Builds a semantic runner lazily, using the same env-based provider
+    resolution as the verification CLI. Falls back to an offline finalizer
+    when no provider is available, so the decision loop never crashes on a
+    missing optional dependency (e.g. anthropic)."""
+
     def __init__(self) -> None:
-        self._runner: AnthropicRunner | None = None
+        self._runner = None
 
     def chat(self, messages, tools):
         if self._runner is None:
-            import anthropic
-
-            self._runner = AnthropicRunner(anthropic.Anthropic())
+            self._runner = _build_decision_loop_runner()
         return self._runner.chat(messages, tools)
+
+
+def _build_decision_loop_runner():
+    """Resolve a semantic runner from the environment.
+
+    Priority: DEEPSEEK_API_KEY > GLM_API_KEY > anthropic (if installed) > offline.
+    """
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    if deepseek_key:
+        return OpenAICompatibleRunner(
+            api_key=deepseek_key,
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        )
+
+    glm_key = os.environ.get("GLM_API_KEY")
+    if glm_key:
+        return OpenAICompatibleRunner(
+            api_key=glm_key,
+            base_url=os.environ.get("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
+            model=os.environ.get("GLM_MODEL", "glm-4-flash"),
+        )
+
+    try:
+        import anthropic
+        from ..verification.semantic.agent import AnthropicRunner
+        return AnthropicRunner(anthropic.Anthropic())
+    except ImportError:
+        pass
+
+    # Offline fallback: finalizes indeterminate criteria without network.
+    from ..verification.cli import OfflineFinalizingRunner
+    return OfflineFinalizingRunner()
 
 
 def _build_toolbox(repo: Path) -> SemanticToolbox:
