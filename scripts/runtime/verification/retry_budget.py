@@ -77,7 +77,10 @@ def should_retry(
 
     attempt = job.get("attempt", 0)
     max_attempts = job.get("max_attempts", 3)
-    if attempt >= max_attempts:
+    # retry_budget is the actual dial: budget=1 means one retry, budget=3 means
+    # three. max_attempts is a backstop. The effective cap is the lower of the two.
+    effective_cap = min(retry_budget, max_attempts)
+    if attempt >= effective_cap:
         return False
 
     return True

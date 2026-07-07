@@ -184,10 +184,13 @@ def _config_root():
 
 
 def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
-    """Re-dispatch the same node to the executor with findings in the issue body."""
+    """Re-dispatch the same node to the executor with findings in the issue body.
+
+    On dispatch failure, falls back to awaiting_review so the human can inspect
+    the findings and decide — the job never sits in limbo.
+    """
     import json
     from .heartbeat.dispatcher import dispatch
-    from .heartbeat.state_recorder import mark_job_running
 
     # Increment attempt
     con = _connect()
@@ -219,13 +222,27 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     # Dispatch
     dispatch_result = dispatch(job_with_findings, job["repo"])
 
+    if not dispatch_result.success:
+        # Dispatch failed — fall back to awaiting_review so the human sees the
+        # findings and can re-dispatch manually. The job must not sit unattended.
+        _mark_job_awaiting_review(job_id)
+        return {
+            "status": "needs_review",
+            "result_id": result_id,
+            "job_id": job_id,
+            "node_id": node_id,
+            "verification": verification,
+            "dispatch_attempted": True,
+            "dispatch_success": False,
+            "dispatch_error": dispatch_result.error,
+        }
+
     return {
         "status": "redispatched",
         "result_id": result_id,
         "job_id": job_id,
         "node_id": node_id,
         "verification": verification,
-        "dispatch_success": dispatch_result.success,
+        "dispatch_success": True,
         "issue_url": dispatch_result.issue_url,
-        "dispatch_error": dispatch_result.error,
     }

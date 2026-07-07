@@ -96,7 +96,7 @@ def _verify_once(project_id: str, node_id: str) -> dict:
         # point of the return path is that every merged PR gets a fresh-eyes
         # integrity review, including deterministic clean passes. Override with
         # GDDP_INTEGRITY_MODE=off for dev/test runs.
-        "--integrity", os.environ.get("GDDP_INTEGRITY_MODE", "on"),
+        "--integrity", "off" if os.environ.get("GDDP_INTEGRITY_MODE", "on").lower() == "off" else "on",
     ]
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)

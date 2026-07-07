@@ -162,6 +162,16 @@ def init_db():
     );
     """)
 
+    # One-time migration: add claimed_at to pre-existing events tables.
+    # CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so
+    # databases created before the claimed_at column was in the canonical schema
+    # need an explicit ALTER TABLE. try/except handles both "already exists" and
+    # "table missing" so init_db is safe to run from any state.
+    try:
+        con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     con.commit()
     con.close()
     print(f"Initialized: {DB_PATH}")

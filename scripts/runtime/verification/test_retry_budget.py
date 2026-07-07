@@ -156,13 +156,53 @@ class TestShouldRetry(unittest.TestCase):
         )
 
     def test_room_exactly_one_below_max_returns_true(self):
+        """attempt=2 with budget=3 and max_attempts=3: one retry left."""
         job = {"attempt": 2, "max_attempts": 3}
+        project_yaml = {"execution_policy": {"retry_budget": 3}}
         self.assertTrue(
             should_retry(
                 verdict="fail",
                 integrity=self._evidence_integrity(),
                 job=job,
-                project_yaml=self._base_project_yaml(),
+                project_yaml=project_yaml,
+            )
+        )
+
+    def test_retry_budget_caps_below_max_attempts(self):
+        """retry_budget=1 means only one retry even if max_attempts=3."""
+        job = {"attempt": 1, "max_attempts": 3}
+        project_yaml = {"execution_policy": {"retry_budget": 1}}
+        self.assertFalse(
+            should_retry(
+                verdict="fail",
+                integrity=self._evidence_integrity(),
+                job=job,
+                project_yaml=project_yaml,
+            )
+        )
+
+    def test_retry_budget_allows_up_to_budget(self):
+        """retry_budget=3 allows attempts 0, 1, 2 (three retries)."""
+        project_yaml = {"execution_policy": {"retry_budget": 3}}
+        for attempt in (0, 1, 2):
+            job = {"attempt": attempt, "max_attempts": 5}
+            self.assertTrue(
+                should_retry(
+                    verdict="fail",
+                    integrity=self._evidence_integrity(),
+                    job=job,
+                    project_yaml=project_yaml,
+                ),
+                f"attempt={attempt} should retry with budget=3",
+            )
+        # attempt=3 exhausts the budget
+        job = {"attempt": 3, "max_attempts": 5}
+        self.assertFalse(
+            should_retry(
+                verdict="fail",
+                integrity=self._evidence_integrity(),
+                job=job,
+                project_yaml=project_yaml,
             )
         )
 
