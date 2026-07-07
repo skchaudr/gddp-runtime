@@ -11,6 +11,7 @@ import yaml
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.semantic.agent import LLMResponse, OpenAICompatibleRunner, ToolCall
+from scripts.runtime.verification.semantic.integrity_runner import IntegrityHarnessRunner
 from scripts.runtime.verification.semantic.pi_runner import PiHarnessRunner
 from scripts.runtime.verification.semantic.tools import SemanticToolbox
 
@@ -160,6 +161,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("GDDP_SEMANTIC_PI_MODEL", ""),
         help="Pi model id (e.g. deepseek-v4-flash) for --semantic-harness pi. Defaults to provider default.",
     )
+    parser.add_argument(
+        "--integrity",
+        choices=["on", "off"],
+        default="off",
+        help=(
+            "Enable lane 2 integrity review (fresh-eyes drift review). "
+            "Default off; the bridge flips this on later. When on, the integrity "
+            "harness runs after criteria adjudication on every verification, "
+            "including row-12 deterministic clean passes."
+        ),
+    )
     return parser
 
 
@@ -267,6 +279,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         semantic_harness = pi_runner.run
 
+    integrity_harness = None
+    if args.integrity == "on":
+        integrity_pi_runner = IntegrityHarnessRunner(
+            provider=_pi_provider(args),
+            model=args.semantic_pi_model or None,
+            thinking=args.semantic_thinking,
+        )
+        integrity_harness = integrity_pi_runner.run
+
     receipt = verify(
         node_yaml=node_yaml,
         project_yaml=project_yaml,
@@ -286,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
             "max_tool_result_chars": args.semantic_max_tool_result_chars,
         },
         semantic_harness=semantic_harness,
+        integrity_harness=integrity_harness,
     )
     path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
     print(
