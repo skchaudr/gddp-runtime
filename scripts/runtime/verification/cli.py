@@ -276,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
             provider=_pi_provider(args),
             model=args.semantic_pi_model or None,
             thinking=args.semantic_thinking,
+            config_root=args.config_root.resolve() if args.config_root else None,
         )
         semantic_harness = pi_runner.run
 
@@ -310,18 +311,28 @@ def main(argv: list[str] | None = None) -> int:
         integrity_harness=integrity_harness,
     )
     path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
-    print(
-        json.dumps(
-            {
-                "receipt_path": str(path),
-                "verdict": receipt.verdict.value,
-                "criteria_confidence": receipt.criteria_confidence,
-                "completeness_status": receipt.completeness_status,
-                "required_next_action": receipt.required_next_action,
-            },
-            indent=2,
-        )
-    )
+    summary = {
+        "receipt_path": str(path),
+        "verdict": receipt.verdict.value,
+        "criteria_confidence": receipt.criteria_confidence,
+        "completeness_status": receipt.completeness_status,
+        "required_next_action": receipt.required_next_action,
+    }
+    # Two-lane evaluation: include criteria_verdict and integrity when present
+    # so the bridge and return_router can see both lanes.
+    if receipt.criteria_verdict is not None:
+        summary["criteria_verdict"] = receipt.criteria_verdict.value
+    if receipt.integrity is not None:
+        summary["integrity"] = {
+            "verdict": receipt.integrity.verdict,
+            "intent_preserved": receipt.integrity.intent_preserved,
+            "graph_integrity_preserved": receipt.integrity.graph_integrity_preserved,
+            "required_human_review": receipt.integrity.required_human_review,
+            "confidence": receipt.integrity.confidence,
+            "findings": [f.model_dump() for f in receipt.integrity.findings],
+            "reasoning": receipt.integrity.reasoning,
+        }
+    print(json.dumps(summary, indent=2))
     return 0
 
 

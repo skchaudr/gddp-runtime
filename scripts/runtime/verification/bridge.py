@@ -92,6 +92,11 @@ def _verify_once(project_id: str, node_id: str) -> dict:
         "--config-root", str(config_root),
         "--receipt-dir", str(receipt_dir),
         *semantic_args,
+        # Integrity lane (lane 2) defaults ON for the live bridge — the whole
+        # point of the return path is that every merged PR gets a fresh-eyes
+        # integrity review, including deterministic clean passes. Override with
+        # GDDP_INTEGRITY_MODE=off for dev/test runs.
+        "--integrity", os.environ.get("GDDP_INTEGRITY_MODE", "on"),
     ]
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)

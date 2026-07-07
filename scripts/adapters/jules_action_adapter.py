@@ -62,6 +62,28 @@ class JulesActionAdapter:
         constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
         criteria_text    = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
 
+        findings = job.get("_previous_findings")
+        findings_section = ""
+        if findings:
+            findings_list = "\n".join(
+                f"- [{f.get('severity', '?')}] {f.get('summary', '')}"
+                for f in findings.get("findings", [])
+            )
+            findings_section = f"""
+## Previous Attempt Findings (attempt {job.get('attempt', 0)})
+
+The previous implementation was reviewed and the following issues were found:
+
+**Verdict:** {findings.get('verdict', 'unknown')}
+**Integrity verdict:** {findings.get('integrity_verdict', 'unknown')}
+**Reasoning:** {findings.get('reasoning', '')}
+
+### Findings
+{findings_list}
+
+Please address these findings in your implementation.
+"""
+
         return f"""## Goal
 {job['goal']}
 
@@ -73,7 +95,7 @@ class JulesActionAdapter:
 
 ## Acceptance Criteria
 {criteria_text}
-
+{findings_section}
 ## Output Requirements
 - Implement the change
 - Add or update tests
