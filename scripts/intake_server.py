@@ -27,8 +27,31 @@ _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
 DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
-# Optional: set GITHUB_WEBHOOK_SECRET env var to validate signatures
-WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+# Optional: set GITHUB_WEBHOOK_SECRET env var to validate signatures.
+# When the env var is absent, fetch from an external command so the secret
+# never sits in a plaintext env file — same pattern as the bridge's
+# GDDP_DEEPSEEK_KEY_CMD (default: the `pass` password manager).
+def _resolve_webhook_secret() -> str:
+    secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    if secret:
+        return secret
+    import shlex
+    import shutil
+    import subprocess
+    secret_cmd = os.environ.get("GDDP_WEBHOOK_SECRET_CMD", "pass show gddp/webhook-secret")
+    parts = shlex.split(secret_cmd)
+    if not parts or shutil.which(parts[0]) is None:
+        return ""
+    try:
+        proc = subprocess.run(parts, capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+WEBHOOK_SECRET = _resolve_webhook_secret()
 
 app = Flask(__name__)
 
@@ -193,6 +216,12 @@ if __name__ == "__main__":
         print("Run: python3 scripts/init_db.py first")
         sys.exit(1)
 
+    if not WEBHOOK_SECRET:
+        print(
+            "WARNING: no webhook secret resolved (env GITHUB_WEBHOOK_SECRET or "
+            "GDDP_WEBHOOK_SECRET_CMD) — signature verification is DISABLED. "
+            "Do not expose this server publicly in this state."
+        )
     print(f"Intake server starting on http://127.0.0.1:5050")
     print(f"DB: {DB_PATH}")
     print(f"Expose with: ngrok http 5050")
