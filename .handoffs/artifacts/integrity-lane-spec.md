@@ -13,16 +13,22 @@ Implements Sab's decision (2026-07-07): the evaluator has two distinct responsib
 - New orchestrator phase after criteria adjudication: `integrity_review`.
 - Runs the pi/deepseek harness with a SEPARATE system prompt and a SEPARATE typed
   terminal tool (`submit_integrity_verdict`, not `submit_verdict`).
-- **Two verdicts, peers on the receipt** (amended 2026-07-07 after Sab flagged the
-  advisory-only version as toothless):
+- **Two verdicts with CO-EQUAL authority** (amended 2026-07-07 x2; Sab: integrity
+  authority is the entire reason the project exists — "tests pass" while intent
+  and integrity are butchered is the exact failure GDDP guards against, and the
+  damage is the CASCADE: ten nodes built on a rotten one):
   - `criteria_verdict` — decided by the existing 12-row matrix, untouched.
   - `integrity_verdict` — `clear | concerns | breach-suspected`, with confidence
     and findings `[{severity, summary, affected_node_ids}]`.
-  - Top-level `verdict` = deterministic combination rule (small, auditable, NOT
-    model judgment): integrity `breach-suspected` DOWNGRADES a criteria pass to
-    `needs-human-review` with reason `integrity_breach`; `concerns` annotates but
-    does not downgrade; integrity can NEVER upgrade a criteria fail/indeterminate.
-    Authority is scoped per lane, never absent and never crossed.
+  - Top-level `verdict` = WORST-OF the two lanes (deterministic, auditable rule,
+    not model judgment): `breach-suspected` → verdict `fail` (reason
+    `integrity_breach`); `concerns` → at best `needs-human-review`; `clear` leaves
+    the criteria verdict as-is. Neither lane can ever upgrade the other.
+- **Cascade halt is the point**: downstream nodes gate on their dependency's
+  status/verdict (scope_checker + graph_reader). An integrity `fail` verdict
+  therefore mechanically stops the chain — no dependent dispatches on a breached
+  node, tonight with the human gate and later in verdict-gated overnight mode.
+  This is not an arbitrary per-node blocker; it is cascade prevention.
 - Investigation scope given to the model:
   - the node's `why` (intent), `constraints`, `depends_on` + `unlocks` neighbors
     (their YAML loaded as context), and the diff/artifacts under review
@@ -55,4 +61,5 @@ Implements Sab's decision (2026-07-07): the evaluator has two distinct responsib
 ## Open for Sab
 
 - name check: "integrity lane" vs existing node id `evaluator-intent-integrity-verdict`
-- does `breach-suspected` ever justify auto-blocking dispatch of dependent nodes? (v2)
+- RESOLVED 2026-07-07: breach blocks dependent dispatch — that is the founding
+  purpose, not a v2 option.
