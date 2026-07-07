@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.runtime.verification.schemas import SemanticOutput
+from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
 from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 
 
@@ -76,6 +77,13 @@ the node criteria and rerun; otherwise this verdict stands." You are not
 re-doing the executor's full due diligence from scratch; judge whether the
 submitted evidence supports the stated criteria, inspecting strategically.
 
+Canonical context: README, PROJECT-BRIEF, the foundational/first node, and
+your DAG neighbors (depends_on + unlocks) are provided as file pointers in
+the prompt. Read the ones relevant to your criteria evaluation. Upstream
+node files state what this node was allowed to assume; downstream files
+state what depends on it. The target repo's AGENTS.md is NOT provided — it
+is executor-facing, not evaluator-facing.
+
 Criteria confidence is your confidence the code satisfies the criterion,
 INDEPENDENT of whether required execution artifacts/trail are present. If the
 code clearly satisfies a criterion but a required artifact is missing, judge
@@ -95,12 +103,14 @@ class PiHarnessRunner:
         thinking: str = "medium",
         extra_args: list[str] | None = None,
         pi_binary: str = "pi",
+        config_root: Path | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
         self.thinking = thinking
         self.extra_args = extra_args or []
         self.pi_binary = pi_binary
+        self.config_root = config_root
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:  # noqa: ARG002
         """Runner protocol shim.
@@ -128,7 +138,17 @@ class PiHarnessRunner:
 
         messages = build_prompt_messages(node, graph, deterministic_result, shape_profile)
         sys_prompt = system_prompt or PI_SYSTEM_PROMPT
-        user_prompt = _extract_user_prompt(messages)
+        # Canonical context: file pointers to README, PROJECT-BRIEF, foundational
+        # node, and DAG neighbors. The evaluator reads what it needs; the tool
+        # trace proves what was read. AGENTS.md is never included.
+        canonical = build_canonical_pointers(
+            node=node, graph=graph, repo=repo, config_root=self.config_root,
+        )
+        canonical_block = (
+            "\n\n--- Canonical Context (file pointers — read what you need) ---\n"
+            + json.dumps(canonical, indent=2, sort_keys=True)
+        )
+        user_prompt = _extract_user_prompt(messages) + canonical_block
 
         with tempfile.NamedTemporaryFile(
             prefix="gddp-verdict-", suffix=".json", delete=False

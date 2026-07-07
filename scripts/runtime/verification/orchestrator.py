@@ -4,11 +4,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import decision_engine, deterministic
-from .schemas import SemanticOutput, VerdictReceipt
+from . import decision_engine, deterministic, integrity_combiner
+from .schemas import IntegrityOutput, SemanticOutput, VerdictReceipt
 from .semantic.agent import SemanticAgent
 
 SemanticHarness = Callable[..., SemanticOutput]
+IntegrityHarness = Callable[..., IntegrityOutput]
 
 
 def verify(
@@ -22,6 +23,7 @@ def verify(
     config_root: Path | None = None,
     semantic_agent_kwargs: dict[str, Any] | None = None,
     semantic_harness: SemanticHarness | None = None,
+    integrity_harness: IntegrityHarness | None = None,
     now: Callable[[], str] = lambda: __import__("datetime")
     .datetime.now(__import__("datetime").timezone.utc)
     .isoformat(),
@@ -51,10 +53,29 @@ def verify(
             )
 
     verdict, confidence, action = decision_engine.decide(det, semantic)
+
+    # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
+    # adjudication, which only fires on indeterminate evidence). A green
+    # deterministic run must not bypass it. None here means not wired yet;
+    # the live bridge will default this ON.
+    criteria_verdict = verdict
+    integrity = None
+    if integrity_harness is not None:
+        integrity = integrity_harness(
+            node=node_yaml,
+            graph=project_yaml,
+            deterministic_result=det,
+            repo=repo,
+            config_root=config_root,
+        )
+        verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
+
     return VerdictReceipt(
         project_id=project_yaml.get("project_id", ""),
         node_id=node_yaml.get("node_id", ""),
         verdict=verdict,
+        criteria_verdict=criteria_verdict,
+        integrity=integrity,
         confidence=confidence,
         criteria_confidence=confidence,
         completeness_status=_completeness_status(semantic),

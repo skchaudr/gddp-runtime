@@ -145,6 +145,26 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         },
     )
 
+    # Retry loop: if the verdict is non-pass with evidence-referenced findings
+    # and the project's retry budget has room, re-dispatch instead of awaiting_review.
+    from scripts.runtime.verification.retry_budget import should_retry
+
+    # Load the project YAML for retry_budget
+    config_root = _config_root()
+    project_yaml_path = config_root / "graphs" / job["project_id"] / "project.yaml"
+    project_yaml = {}
+    if project_yaml_path.exists():
+        import yaml
+        project_yaml = yaml.safe_load(project_yaml_path.read_text()) or {}
+
+    # Extract integrity from the verification result
+    integrity = verification.get("integrity") if verification.get("verification_status") == "ok" else None
+    verdict = verification.get("verdict", "") if verification.get("verification_status") == "ok" else ""
+
+    if should_retry(verdict=verdict, integrity=integrity, job=job, project_yaml=project_yaml):
+        result = _redispatch_with_findings(job_id, job, node_id, verification, result_id)
+        return result
+
     _mark_job_awaiting_review(job_id)
 
     return {
@@ -153,4 +173,59 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         "job_id": job_id,
         "node_id": node_id,
         "verification": verification,
+    }
+
+
+def _config_root():
+    import os
+    from pathlib import Path
+    _runtime_root = Path(__file__).resolve().parents[2]
+    return Path(os.environ.get("GDDP_CONFIG_PATH", str(_runtime_root.parent / "gddp-config")))
+
+
+def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
+    """Re-dispatch the same node to the executor with findings in the issue body."""
+    import json
+    from .heartbeat.dispatcher import dispatch
+    from .heartbeat.state_recorder import mark_job_running
+
+    # Increment attempt
+    con = _connect()
+    try:
+        con.execute(
+            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    # Build the job dict with findings injected
+    job_with_findings = dict(job)
+    # Convert constraints/acceptance_criteria from JSON strings if needed
+    if isinstance(job_with_findings.get("constraints"), str):
+        job_with_findings["constraints"] = json.loads(job_with_findings["constraints"])
+    if isinstance(job_with_findings.get("acceptance_criteria"), str):
+        job_with_findings["acceptance_criteria"] = json.loads(job_with_findings["acceptance_criteria"])
+
+    # Add findings to the job for the adapter to include in the issue body
+    integrity = verification.get("integrity", {}) if verification.get("verification_status") == "ok" else {}
+    job_with_findings["_previous_findings"] = {
+        "verdict": verification.get("verdict", ""),
+        "integrity_verdict": integrity.get("verdict", ""),
+        "findings": integrity.get("findings", []),
+        "reasoning": integrity.get("reasoning", ""),
+    }
+
+    # Dispatch
+    dispatch_result = dispatch(job_with_findings, job["repo"])
+
+    return {
+        "status": "redispatched",
+        "result_id": result_id,
+        "job_id": job_id,
+        "node_id": node_id,
+        "verification": verification,
+        "dispatch_success": dispatch_result.success,
+        "issue_url": dispatch_result.issue_url,
+        "dispatch_error": dispatch_result.error,
     }

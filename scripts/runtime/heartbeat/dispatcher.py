@@ -45,7 +45,7 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
 
 def _build_adapter_payload(job: dict) -> dict:
     """Build the executor packet from the persisted job payload."""
-    return {
+    payload = {
         "node_id":             job["node_id"],
         "title":               job["title"],
         "goal":                job["goal"],
@@ -55,3 +55,10 @@ def _build_adapter_payload(job: dict) -> dict:
         "acceptance_criteria": job["acceptance_criteria"],  # already JSON string
         "required_artifacts":  job.get("_required_artifacts", []),
     }
+    # Pass through retry-loop fields so the adapter can inject findings into
+    # the issue body on re-dispatch. Absent on first dispatch.
+    if "_previous_findings" in job:
+        payload["_previous_findings"] = job["_previous_findings"]
+    if "attempt" in job:
+        payload["attempt"] = job["attempt"]
+    return payload

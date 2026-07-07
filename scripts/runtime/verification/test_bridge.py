@@ -171,5 +171,45 @@ class TestCredentialFetch(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 1)
 
 
+class TestIntegrityFlag(unittest.TestCase):
+    """The bridge must default --integrity on and respect GDDP_INTEGRITY_MODE."""
+
+    def test_bridge_defaults_integrity_on(self):
+        """The CLI command includes --integrity on by default."""
+        os.environ.pop("GDDP_INTEGRITY_MODE", None)
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
+        ) as mock_run:
+            bridge.verify_job_return("vault-doctor", "auth-node")
+
+        cmd = mock_run.call_args[0][0]
+        # Find --integrity in the command list
+        idx = cmd.index("--integrity")
+        self.assertEqual(cmd[idx + 1], "on")
+
+    def test_bridge_respects_integrity_off(self):
+        """GDDP_INTEGRITY_MODE=off passes --integrity off to the CLI."""
+        os.environ["GDDP_INTEGRITY_MODE"] = "off"
+        try:
+            summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+            proc = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+            )
+            with _fake_paths_exist(), patch(
+                "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
+            ) as mock_run:
+                bridge.verify_job_return("vault-doctor", "auth-node")
+
+            cmd = mock_run.call_args[0][0]
+            idx = cmd.index("--integrity")
+            self.assertEqual(cmd[idx + 1], "off")
+        finally:
+            os.environ.pop("GDDP_INTEGRITY_MODE", None)
+
+
 if __name__ == "__main__":
     unittest.main()

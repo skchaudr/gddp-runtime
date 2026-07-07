@@ -89,10 +89,33 @@ class SemanticOutput(BaseModel):
     budget_trace: dict[str, Any] | None = None
 
 
+class IntegrityFinding(BaseModel):
+    severity: Literal["low", "medium", "high"]
+    summary: str
+    affected_node_ids: list[str]
+
+
+class IntegrityOutput(BaseModel):
+    # Vocabulary comes from the evaluator-intent-integrity-verdict node YAML in
+    # gddp-config, not from this repo — the graph is the source of the language.
+    verdict: Literal["pass", "block", "drift", "insufficient", "contradicted", "unknown"]
+    intent_preserved: bool
+    graph_integrity_preserved: bool
+    required_human_review: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    findings: list[IntegrityFinding]
+    reasoning: str
+
+
 class VerdictReceipt(BaseModel):
     project_id: str
     node_id: str
     verdict: Verdict
+    # Two-lane evaluation (evaluator-intent-integrity-verdict node): verdict above
+    # is the combined value; criteria_verdict preserves the matrix's own answer.
+    # Both optional so every existing receipt stays valid.
+    criteria_verdict: Verdict | None = None
+    integrity: IntegrityOutput | None = None
     # Compatibility alias for criteria_confidence. New readers should prefer
     # criteria_confidence; both fields are emitted so old receipt consumers keep
     # working while completeness is tracked separately.
