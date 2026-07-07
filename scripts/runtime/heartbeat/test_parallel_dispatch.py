@@ -47,7 +47,8 @@ def _init_db(db_path: Path) -> None:
             normalized_payload_path TEXT,
             classification          TEXT,
             routing                 TEXT,
-            status                  TEXT DEFAULT 'received'
+            status                  TEXT DEFAULT 'received',
+            claimed_at              TEXT
         );
 
         CREATE TABLE jobs (

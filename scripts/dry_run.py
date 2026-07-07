@@ -3,17 +3,24 @@ dry_run.py — Fake end-to-end flow for Phase 2 verification.
 
 Walks one mock GitHub PR event through the full pipeline:
   inject event → classify → scope check → create job → queue →
-  simulate result → write artifacts → verify artifacts → route to review
+  simulate result → write artifacts → simulate merged PR → return router
 
 No real executors are called. No GitHub API. SQLite only.
+The verification bridge is mocked so no real LLM call happens.
 """
 
 import json
 import os
 import sqlite3
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Allow `from scripts.runtime...` imports when run as a plain script.
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
@@ -302,63 +309,100 @@ def simulate_result(cur, job_id):
 
 
 # ---------------------------------------------------------------------------
-# Step 6: Artifact verification gate
+# Step 6: Simulate merged PR + return router + bridge
 # ---------------------------------------------------------------------------
 
-def verify_artifacts(cur, job_id):
-    step("STEP 6 — Artifact verification gate")
+def simulate_merged_pr(cur, job_id):
+    step("STEP 6 — Simulate merged PR + return router + bridge")
 
-    d = job_dir(job_id)
-    required = ["decision.md", "result-summary.md", "patch.diff"]
-    all_verified = True
+    from unittest.mock import patch
+    from scripts.runtime.return_router import handle_merged_pr
 
-    for i, artifact_type in enumerate(required):
-        path = d / artifact_type
-        exists = path.exists() and path.stat().st_size > 0
-        ver_id = f"ver_dry_00{i+1}"
+    # Write a fake merged-PR payload
+    pr_payload = {
+        "repository": {"full_name": "skchaudr/test-project"},
+        "pull_request": {
+            "number": 42,
+            "body": "Implemented auth boundary.\n\nnode: auth-boundary\njob: job_dry_001",
+            "merged_at": now(),
+            "html_url": "https://github.com/skchaudr/test-project/pull/42",
+        },
+    }
+    pr_path = RUNTIME_ROOT / "events/raw/pr_dry_001.json"
+    pr_path.parent.mkdir(parents=True, exist_ok=True)
+    pr_path.write_text(json.dumps(pr_payload, indent=2))
 
-        cur.execute("""
-            INSERT INTO artifact_verifications (
-                verification_id, job_id, node_id, artifact_type,
-                validation_method, verified, verified_at, verified_by, notes
-            ) VALUES (?, ?, 'auth-boundary', ?, 'file_exists', ?, ?, 'runtime_validator', ?)
-        """, (
-            ver_id, job_id, artifact_type,
-            1 if exists else 0,
-            now() if exists else None,
-            f"found at {path}" if exists else "FILE MISSING",
-        ))
-
-        status = "PASS" if exists else "FAIL"
-        print(f"  {status}  {artifact_type}")
-        if not exists:
-            all_verified = False
-
-    return all_verified
-
-
-# ---------------------------------------------------------------------------
-# Step 7: Route to review
-# ---------------------------------------------------------------------------
-
-def route_to_review(cur, job_id, all_verified):
-    step("STEP 7 — Route receipt to review")
-
+    # Insert a merged-PR event
+    pr_event = {
+        "event_id":                 "evt_dry_pr_001",
+        "received_at":              now(),
+        "source":                   "github",
+        "event_type":               "pull_request.closed",
+        "actor":                    "dry-run-user",
+        "branch":                   "feature/auth-boundary",
+        "base_branch":              "main",
+        "pr_number":                42,
+        "issue_number":             None,
+        "commit_sha":               "abc123def456",
+        "url":                      "https://github.com/skchaudr/test-project/pull/42",
+        "project_id":               "test-project",
+        "project_node_candidates":  json.dumps(["auth-boundary"]),
+        "scope_status":             "pending",
+        "priority":                 "pending",
+        "risk_level":               "pending",
+        "raw_payload_path":         str(pr_path),
+        "normalized_payload_path":  str(RUNTIME_ROOT / "events/normalized/evt_dry_pr_001.yaml"),
+        "classification":           json.dumps({}),
+        "routing":                  json.dumps({"selected_queue": "intake"}),
+        "status":                   "received",
+    }
     cur.execute("""
-        UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review'
-        WHERE job_id = ?
-    """, (job_id,))
-    cur.execute("""
-        UPDATE queue_records SET queue = 'awaiting_review'
-        WHERE job_id = ?
-    """, (job_id,))
+        INSERT INTO events (
+            event_id, received_at, source, event_type, actor,
+            branch, base_branch, pr_number, issue_number, commit_sha, url,
+            project_id, project_node_candidates,
+            scope_status, priority, risk_level,
+            raw_payload_path, normalized_payload_path,
+            classification, routing, status
+        ) VALUES (
+            :event_id, :received_at, :source, :event_type, :actor,
+            :branch, :base_branch, :pr_number, :issue_number, :commit_sha, :url,
+            :project_id, :project_node_candidates,
+            :scope_status, :priority, :risk_level,
+            :raw_payload_path, :normalized_payload_path,
+            :classification, :routing, :status
+        )
+    """, pr_event)
 
-    if all_verified:
-        print("  All review artifacts verified.")
-    else:
-        print("  Review artifacts incomplete.")
-    print("  Job routed to awaiting_review.")
-    print("  Node truth remains unchanged in the graph.")
+    # handle_merged_pr opens its own connection (_load_job, write_result,
+    # _mark_job_awaiting_review), so commit the event/job rows first or the
+    # job lookup will fail with job_not_found.
+    cur.connection.commit()
+
+    # Mock the bridge so no real LLM call happens
+    fake_verification = {
+        "verification_status":   "ok",
+        "receipt_path":          "/tmp/dry_run_receipt.json",
+        "verdict":               "pass",
+        "criteria_confidence":   0.9,
+        "completeness_status":   "complete",
+        "required_next_action":  "Proceed to accept_node (open evidence PR).",
+    }
+
+    # handle_merged_pr expects a sqlite3.Row-like object with event_id and
+    # raw_payload_path accessible via __getitem__.
+    event_row_data = {"event_id": "evt_dry_pr_001", "raw_payload_path": str(pr_path)}
+    class FakeEventRow:
+        def __getitem__(self, key):
+            return event_row_data[key]
+
+    with patch("scripts.runtime.return_router.verify_job_return", return_value=fake_verification):
+        result = handle_merged_pr(FakeEventRow())
+
+    print(f"  return_router result : {result['status']}")
+    print(f"  verification verdict : {fake_verification['verdict']}")
+    print(f"  job routed to awaiting_review")
+    print(f"  Node truth remains unchanged in the graph.")
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +422,7 @@ def main():
     job_id   = create_job(cur, event_id)
     enqueue(cur, job_id)
     simulate_result(cur, job_id)
-    all_verified = verify_artifacts(cur, job_id)
-    route_to_review(cur, job_id, all_verified)
+    simulate_merged_pr(cur, job_id)
 
     con.commit()
     con.close()

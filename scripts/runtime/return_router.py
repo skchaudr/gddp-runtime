@@ -14,7 +14,7 @@ from typing import Optional
 from .results_store import DB_PATH, write_result
 from .verification.bridge import verify_job_return
 
-ALLOWED_REPOS = ["skchaudr/vault-doctor"]
+ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project"]
 
 
 def parse_node_id(pr_body: str) -> Optional[str]:
