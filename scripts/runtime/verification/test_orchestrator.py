@@ -248,6 +248,7 @@ class MockIntegrityHarness:
         graph: dict[str, Any],
         deterministic_result: Any,
         repo: Path,
+        config_root: Path | None = None,
     ) -> IntegrityOutput:
         self.calls += 1
         self.last_node = node

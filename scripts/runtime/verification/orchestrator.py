@@ -66,6 +66,7 @@ def verify(
             graph=project_yaml,
             deterministic_result=det,
             repo=repo,
+            config_root=config_root,
         )
         verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
 

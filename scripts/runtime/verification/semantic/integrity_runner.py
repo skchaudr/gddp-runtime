@@ -20,6 +20,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from scripts.runtime.verification.schemas import IntegrityOutput
 
 
@@ -101,6 +103,7 @@ class IntegrityHarnessRunner:
         graph: dict[str, Any],
         deterministic_result: Any,
         repo: Path,
+        config_root: Path | None = None,
         system_prompt: str | None = None,
     ) -> IntegrityOutput:
         if not shutil.which(self.pi_binary):
@@ -109,7 +112,10 @@ class IntegrityHarnessRunner:
             raise RuntimeError(f"gddp_integrity extension missing: {EXTENSION_PATH}")
 
         sys_prompt = system_prompt or INTEGRITY_SYSTEM_PROMPT
-        user_prompt = _build_integrity_prompt(node, graph, deterministic_result)
+        neighbors = _load_neighbor_nodes(node, graph, config_root)
+        user_prompt = _build_integrity_prompt(
+            node, graph, deterministic_result, neighbors, config_root
+        )
 
         with tempfile.NamedTemporaryFile(
             prefix="gddp-integrity-", suffix=".json", delete=False
@@ -175,23 +181,64 @@ class IntegrityHarnessRunner:
         return cmd
 
 
+def _load_neighbor_nodes(
+    node: dict[str, Any],
+    graph: dict[str, Any],
+    config_root: Path | None,
+) -> dict[str, Any]:
+    """Load the YAML of depends_on/unlocks neighbors from gddp-config.
+
+    The graph is the evaluator's evidence base for integrity review; without the
+    neighbors the model can only diagnose locally visible drift. Missing files
+    are reported as missing rather than silently dropped, so absence itself is
+    reviewable evidence.
+    """
+    neighbor_ids = list(node.get("depends_on") or []) + list(node.get("unlocks") or [])
+    if not neighbor_ids:
+        return {}
+    if config_root is None:
+        return {nid: "UNAVAILABLE: no config_root provided" for nid in neighbor_ids}
+
+    project_id = graph.get("project_id", "")
+    nodes_dir = Path(config_root) / "graphs" / project_id / "nodes"
+    neighbors: dict[str, Any] = {}
+    for nid in neighbor_ids:
+        path = nodes_dir / f"{nid}.yaml"
+        try:
+            neighbors[nid] = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except OSError:
+            neighbors[nid] = f"UNAVAILABLE: {path} not readable"
+    return neighbors
+
+
 def _build_integrity_prompt(
     node: dict[str, Any],
     graph: dict[str, Any],
     deterministic_result: Any,
+    neighbors: dict[str, Any],
+    config_root: Path | None,
 ) -> str:
     context = {
         "node": node,
         "graph": graph,
+        "neighbor_nodes": neighbors,
         "deterministic_result": deterministic_result,
     }
+    graph_access = (
+        f"The full graph config lives at {config_root} (read-only; "
+        f"graphs/<project>/nodes/*.yaml) if you need nodes beyond the neighbors below.\n\n"
+        if config_root
+        else ""
+    )
     return (
         "Perform a fresh-eyes integrity review of the following GDDP verification context. "
         "Your focus: does the work preserve the node's intended role in the project and "
         "the project's graph integrity? You are NOT re-adjudicating acceptance criteria "
         "(that is lane 1's job). Instead, evaluate: given the node's why, constraints, "
-        "depends_on/unlocks neighbor YAML, and the work under review, does the change "
-        "preserve the node's intended role? Does it preserve graph integrity?\n\n"
+        "the depends_on/unlocks neighbor YAML included under neighbor_nodes, and the work "
+        "under review, does the change preserve the node's intended role? Does it preserve "
+        "graph integrity?\n\n"
+        f"{graph_access}"
         f"{json.dumps(context, indent=2, sort_keys=True, default=str)}"
     )
 
