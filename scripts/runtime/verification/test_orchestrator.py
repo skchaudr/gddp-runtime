@@ -111,7 +111,6 @@ def test_clean_deterministic_pass_skips_semantic(monkeypatch, tmp_path: Path) ->
     assert runner.calls == 0
     assert receipt.semantic is None
     assert receipt.verdict == Verdict.PASS
-    assert receipt.criteria_confidence == receipt.confidence
     assert receipt.completeness_status == "not-run"
     assert receipt.project_id == "project-clean"
     assert receipt.node_id == "node-clean"
@@ -171,7 +170,7 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
     assert runner.calls == 1
     assert receipt.semantic is not None
     assert receipt.verdict == Verdict.PASS
-    assert receipt.confidence == 0.7
+    assert receipt.criteria_confidence == 0.7
     assert receipt.criteria_confidence == 0.7
     assert receipt.completeness_status == "complete"
     assert receipt.decision_reasoning == "Semantic mock passed."

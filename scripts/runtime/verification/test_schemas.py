@@ -30,7 +30,6 @@ def _receipt_payload(**overrides):
         "project_id": "project-a",
         "node_id": "node-a",
         "verdict": Verdict.PASS,
-        "confidence": 0.8,
         "criteria_confidence": 0.8,
         "completeness_status": "not-run",
         "deterministic": _deterministic(),
@@ -43,26 +42,31 @@ def _receipt_payload(**overrides):
     return payload
 
 
-def test_verdict_receipt_confidence_is_legacy_alias_for_criteria_confidence() -> None:
+def test_verdict_receipt_has_no_confidence_alias_field() -> None:
     receipt = VerdictReceipt.model_validate(_receipt_payload())
 
-    assert receipt.confidence == receipt.criteria_confidence == 0.8
+    assert receipt.criteria_confidence == 0.8
+    assert "confidence" not in receipt.model_dump()
 
 
 def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
     payload = _receipt_payload()
     del payload["criteria_confidence"]
     del payload["completeness_status"]
+    payload["confidence"] = 0.8
 
     receipt = VerdictReceipt.model_validate(payload)
 
-    assert receipt.confidence == receipt.criteria_confidence == 0.8
+    assert receipt.criteria_confidence == 0.8
     assert receipt.completeness_status == "not-run"
 
 
-def test_verdict_receipt_rejects_confidence_alias_mismatch() -> None:
-    with pytest.raises(ValidationError, match="compatibility alias"):
-        VerdictReceipt.model_validate(_receipt_payload(criteria_confidence=0.7))
+def test_verdict_receipt_requires_some_confidence_value() -> None:
+    payload = _receipt_payload()
+    del payload["criteria_confidence"]
+
+    with pytest.raises(ValidationError):
+        VerdictReceipt.model_validate(payload)
 
 
 def test_ambiguity_receipt_fixtures_validate_contract() -> None:

@@ -43,8 +43,7 @@ def _assert_valid_receipt(receipt: VerdictReceipt, *, project_id: str, node_id: 
     assert isinstance(receipt.verdict, Verdict)
     assert receipt.project_id == project_id
     assert receipt.node_id == node_id
-    assert 0.0 <= receipt.confidence <= 1.0
-    assert receipt.confidence == receipt.criteria_confidence
+    assert 0.0 <= receipt.criteria_confidence <= 1.0
     assert receipt.completeness_status in {"complete", "partial", "not-run"}
     assert receipt.required_next_action
     assert receipt.generated_at
@@ -61,7 +60,7 @@ def _clean_pass_fixtures(tmp_path: Path) -> tuple[dict, dict]:
 
     node_yaml = {
         "node_id": "dry-run-clean",
-        "acceptance": [
+        "acceptance_criteria": [
             {"id": "aa-root-and-state-paths", "criterion": "roots exist"},
         ],
         "constraints": ["preserve targets.conf wiring"],
@@ -81,7 +80,7 @@ def _indeterminate_fixtures(tmp_path: Path) -> tuple[dict, dict]:
 
     node_yaml = {
         "node_id": "dry-run-indeterminate",
-        "acceptance": [
+        "acceptance_criteria": [
             {
                 "id": "acceptance-test-covers-grk",
                 "criterion": "acceptance test covers grk sync target",

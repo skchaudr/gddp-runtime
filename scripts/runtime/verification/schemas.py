@@ -116,10 +116,6 @@ class VerdictReceipt(BaseModel):
     # Both optional so every existing receipt stays valid.
     criteria_verdict: Verdict | None = None
     integrity: IntegrityOutput | None = None
-    # Compatibility alias for criteria_confidence. New readers should prefer
-    # criteria_confidence; both fields are emitted so old receipt consumers keep
-    # working while completeness is tracked separately.
-    confidence: float = Field(ge=0.0, le=1.0)
     criteria_confidence: float = Field(ge=0.0, le=1.0)
     completeness_status: Literal["complete", "partial", "not-run"]
     deterministic: DeterministicResult
@@ -134,19 +130,13 @@ class VerdictReceipt(BaseModel):
         if not isinstance(data, dict):
             return data
         values = dict(data)
+        # Legacy receipts (pre criteria_confidence) carried the value under
+        # "confidence"; map it forward so old receipt JSON still loads.
         if "criteria_confidence" not in values and "confidence" in values:
             values["criteria_confidence"] = values["confidence"]
-        if "confidence" not in values and "criteria_confidence" in values:
-            values["confidence"] = values["criteria_confidence"]
         if "completeness_status" not in values:
             values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
         return values
-
-    @model_validator(mode="after")
-    def _confidence_alias_must_match(self):
-        if self.confidence != self.criteria_confidence:
-            raise ValueError("confidence is a compatibility alias for criteria_confidence and must match")
-        return self
 
     @staticmethod
     def _infer_completeness_status(semantic) -> Literal["complete", "partial", "not-run"]:

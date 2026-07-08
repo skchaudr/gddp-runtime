@@ -20,7 +20,7 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
         yaml.safe_dump(
             {
                 "node_id": "contract-node",
-                "acceptance": [
+                "acceptance_criteria": [
                     {"id": "contract-doc-exists", "criterion": "docs/contract.md exists"},
                 ],
                 "depends_on": ["dep-a"],
@@ -57,7 +57,6 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
     assert receipt_path == receipt_dir / "project-a" / "contract-node.json"
     receipt = VerdictReceipt.model_validate_json(receipt_path.read_text(encoding="utf-8"))
     assert receipt.verdict.value == output["verdict"]
-    assert receipt.confidence == receipt.criteria_confidence
     assert receipt.completeness_status == output["completeness_status"]
     assert receipt.required_next_action == output["required_next_action"]
 
