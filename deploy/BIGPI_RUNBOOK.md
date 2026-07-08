@@ -4,82 +4,77 @@ This is the operator runbook for the live Big Pi control plane.
 
 ## Source Of Truth
 
-- `~/repos/gddp-runtime` is the source of truth for runtime code.
-- `~/opclaw/scripts` is the deployed execution surface.
+- `~/repos/gddp-runtime` is the source of truth for runtime code **and the live
+  execution surface** — both the intake service and the heartbeat cron run
+  directly from it.
 - `~/repos/gddp-config` is the source of truth for project graphs.
-- `~/opclaw/db`, `~/opclaw/events`, and `~/opclaw/jobs` are live runtime state only.
-
-`~/opclaw/` is retained as the Big Pi deploy/state root for now. Treat it as an
-operational path, not as endorsement of the archived `opclaw` repo as current
-architecture authority.
-
-Never treat `~/repos/gddp-runtime` and `~/opclaw/scripts` as peers.
+- Live runtime state (SQLite, events, jobs) lives under `~/repos/gddp-runtime`
+  (`db/queue.db` etc.), the runtime root default when `GDDP_RUNTIME_ROOT` is unset.
+- `~/opclaw/` is a **retired** legacy surface: `deploy.sh` still snapshots
+  scripts there and writes a marker, but nothing executes from it and its
+  `db/` is empty. Pending removal.
 
 ## Active Paths
 
-- Runtime source: `~/repos/gddp-runtime`
+- Runtime source + live surface: `~/repos/gddp-runtime`
 - Graph source: `~/repos/gddp-config`
-- Live runtime root: `~/opclaw`
-- Deployed scripts: `~/opclaw/scripts`
-- Deploy marker: `~/opclaw/.gddp-runtime-deploy.json`
+- Live DB: `~/repos/gddp-runtime/db/queue.db`
+- Legacy snapshot (unused): `~/opclaw/scripts`, marker `~/opclaw/.gddp-runtime-deploy.json`
 
-`GDDP_RUNTIME_ROOT` is the current environment variable for the runtime root.
-`OPCLAW_ROOT` remains a compatibility fallback for older local scripts.
+No environment on Big Pi sets `GDDP_RUNTIME_ROOT` or `OPCLAW_ROOT`; the runtime
+root defaults to the repo checkout. The `OPCLAW_ROOT` fallback in code is dead
+and safe to remove.
 
-## Active Service
+## Active Services
 
-- Intake server: `opclaw-intake.service`
-- Executable path: `/home/sab-ssd/opclaw/scripts/intake_server.py`
+- Intake server: `gddp-intake.service`
+  (`/home/sab-ssd/repos/gddp-runtime/scripts/intake_server.py`)
+- Heartbeat: user crontab, every 5 minutes, `python3 -m
+  scripts.runtime.heartbeat.runner` from the repo checkout
 
 Check status:
 
 ```bash
-sudo systemctl status opclaw-intake --no-pager
+sudo systemctl status gddp-intake --no-pager
+crontab -l | grep heartbeat
 ```
 
 ## Canonical Commands
 
-Show deployed runtime version:
+Deploy the current runtime checkout (both repos move together — node schema
+and runtime readers are coupled):
 
 ```bash
-cat ~/opclaw/.gddp-runtime-deploy.json
-```
-
-Deploy the current runtime checkout:
-
-```bash
-cd ~/repos/gddp-runtime
-git pull
-bash deploy/deploy.sh --restart-intake
+cd ~/repos/gddp-config && git pull --ff-only
+cd ~/repos/gddp-runtime && git pull --rebase   # local graphify commits ride on top
+sudo systemctl restart gddp-intake             # intake loads code at start
+# heartbeat picks up new code on the next cron tick automatically
 ```
 
 Run the heartbeat manually:
 
 ```bash
-cd ~/opclaw/scripts
-python3 -m runtime.heartbeat.runner \
+cd ~/repos/gddp-runtime
+python3 -m scripts.runtime.heartbeat.runner \
   --project <project-id> \
   --repo <owner/repo> \
   --config-path ~/repos/gddp-config
 ```
 
-The `--config-path` flag is required for Big Pi runs because the deployed runtime lives in
-`~/opclaw/scripts`, not next to the `gddp-config` checkout.
-
 ## First Real Dispatch Preflight
 
 Before the first real dispatch for a project:
 
-1. Verify the runtime marker:
+1. Verify the runtime checkout is current:
 
 ```bash
-cat ~/opclaw/.gddp-runtime-deploy.json
+cd ~/repos/gddp-runtime && git status -sb
 ```
 
 2. Verify intake is healthy:
 
 ```bash
-sudo systemctl status opclaw-intake --no-pager
+sudo systemctl status gddp-intake --no-pager
 ```
 
 3. Verify the target graph exists on Big Pi:

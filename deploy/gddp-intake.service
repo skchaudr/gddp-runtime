@@ -1,0 +1,13 @@
+[Unit]
+Description=GDDP Intake Server
+After=network.target
+
+[Service]
+User=sab-ssd
+WorkingDirectory=/home/sab-ssd/repos/gddp-runtime
+ExecStart=/usr/bin/python3 /home/sab-ssd/repos/gddp-runtime/scripts/intake_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

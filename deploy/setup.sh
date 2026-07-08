@@ -9,7 +9,7 @@ set -euo pipefail
 RUNTIME_ROOT="${GDDP_RUNTIME_ROOT:-${OPCLAW_ROOT:-$HOME/opclaw}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 
-echo "=== GDAD Runtime Setup ==="
+echo "=== GDDP Runtime Setup ==="
 
 # 1. Create runtime directories (data never goes in the repo)
 mkdir -p "$RUNTIME_ROOT"/{db,events/{raw,normalized},jobs,scripts/adapters}
@@ -20,9 +20,9 @@ bash "$SCRIPT_DIR/deploy/deploy.sh"
 echo "  scripts + marker: ok"
 
 # 3. Install systemd service
-sudo cp "$SCRIPT_DIR/deploy/opclaw-intake.service" /etc/systemd/system/
+sudo cp "$SCRIPT_DIR/deploy/gddp-intake.service" /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable opclaw-intake
+sudo systemctl enable gddp-intake
 echo "  systemd service: ok"
 
 # 4. Initialize DB if not already present
@@ -35,7 +35,7 @@ fi
 
 echo ""
 echo "=== Setup complete ==="
-echo "Start intake server: sudo systemctl start opclaw-intake"
-echo "Check status:        sudo systemctl status opclaw-intake"
+echo "Start intake server: sudo systemctl start gddp-intake"
+echo "Check status:        sudo systemctl status gddp-intake"
 echo "Check deploy:        cat $RUNTIME_ROOT/.gddp-runtime-deploy.json"
 echo "Expose tunnel:       cloudflared tunnel --url http://localhost:5050"

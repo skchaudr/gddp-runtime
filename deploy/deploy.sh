@@ -16,7 +16,7 @@ Usage:
   bash deploy/deploy.sh --restart-intake
 
 Options:
-  --restart-intake   Restart opclaw-intake.service after syncing scripts
+  --restart-intake   Restart gddp-intake.service after syncing scripts
 EOF
 }
 
@@ -91,14 +91,14 @@ cat > "$MARKER_PATH" <<EOF
 }
 EOF
 
-echo "=== GDAD Runtime Deploy ==="
+echo "=== GDDP Runtime Deploy ==="
 echo "  commit:  $COMMIT_SHORT ($COMMIT_SHA)"
 echo "  scripts: $TARGET_SCRIPTS_DIR"
 echo "  marker:  $MARKER_PATH"
 
 if (( RESTART_INTAKE )); then
     if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl restart opclaw-intake
+        sudo systemctl restart gddp-intake
         echo "  intake:  restarted"
     else
         echo "  intake:  systemctl unavailable, restart skipped"
