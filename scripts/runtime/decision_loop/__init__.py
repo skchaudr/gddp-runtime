@@ -1,1 +1,1 @@
-# Runtime decision loop for GDAD.
+# Runtime decision loop for GDDP.

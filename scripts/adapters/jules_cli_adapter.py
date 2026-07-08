@@ -23,7 +23,7 @@ class DispatchResult:
 class JulesCliAdapter:
     """
     Dispatches a job to Jules via the Jules CLI.
-    More GDAD-pure than Option A: the runtime decision loop explicitly dispatches the job packet
+    More GDDP-pure than Option A: the runtime decision loop explicitly dispatches the job packet
     rather than relying on GitHub label events to trigger Jules.
     """
 

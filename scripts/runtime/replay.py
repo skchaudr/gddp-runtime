@@ -121,7 +121,7 @@ def replay_job(job_id: str):
         con.close()
 
 def main():
-    parser = argparse.ArgumentParser(description="GDAD Replay Mechanics")
+    parser = argparse.ArgumentParser(description="GDDP Replay Mechanics")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--result-id", help="Replay a return router result (receipt/state routing)")
     group.add_argument("--job-id", help="Re-dispatch a failed or partial job")

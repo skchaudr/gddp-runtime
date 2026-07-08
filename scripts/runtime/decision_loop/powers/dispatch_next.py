@@ -64,10 +64,10 @@ node: {node.node_id}
 job: {job_id}
 ```
 
-This block is parsed by the GDAD return router to create a review receipt when the PR merges. If it is missing or malformed, the merge will not be recorded for review.
+This block is parsed by the GDDP return router to create a review receipt when the PR merges. If it is missing or malformed, the merge will not be recorded for review.
 
 ---
-*Dispatched by the GDAD decision loop - job_id: {job_id} - node: {node.node_id}*
+*Dispatched by the GDDP decision loop - job_id: {job_id} - node: {node.node_id}*
 """
 
 
@@ -104,7 +104,7 @@ def run(ctx: DecisionContext) -> DispatchResult | EscalateResult:
 
     # Build issue body
     body = _build_issue_body(node, job_id)
-    title = f"[GDAD] {node.title}"
+    title = f"[GDDP] {node.title}"
 
     # Create GitHub issue via gh CLI
     cmd = [

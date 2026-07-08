@@ -411,7 +411,7 @@ def simulate_merged_pr(cur, job_id):
 
 def main():
     print("\n" + "=" * 60)
-    print("  GDAD DRY RUN — Phase 2 vertical slice")
+    print("  GDDP DRY RUN — Phase 2 vertical slice")
     print("=" * 60)
 
     con = connect()

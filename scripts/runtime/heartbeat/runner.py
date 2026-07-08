@@ -274,7 +274,7 @@ def _record_outcomes(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="GDAD Heartbeat vNext")
+    parser = argparse.ArgumentParser(description="GDDP Heartbeat vNext")
     parser.add_argument("--project",     required=True, help="Project ID (e.g. vault-doctor)")
     parser.add_argument("--repo",        required=True, help="GitHub repo (owner/name)")
     parser.add_argument("--config-path", default=None,  help="Path to gddp-config checkout")

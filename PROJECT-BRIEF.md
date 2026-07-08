@@ -54,7 +54,7 @@ documented. Drafts only — no push until Sab signs off.
 ## Known gaps / risks
 
 - `docs/host-roles.md` and handoffs leak operator topology (ssd-big,
-  ssd-small, mac, SSH paths, Big Pi `~/opclaw` execution surface) — scrub
+  ssd-small, mac, SSH paths, Big Pi legacy `~/opclaw` execution surface) — scrub
   before public
 - `scripts/runtime/graph_updater.py` is an intentional disabled stub —
   README must explain WHY or it reads as broken code

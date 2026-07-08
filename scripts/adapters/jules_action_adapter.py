@@ -108,10 +108,10 @@ node: {job['node_id']}
 job: {job['job_id']}
 ```
 
-This block is parsed by the GDAD return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
+This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
 
 ---
-*Dispatched by GDAD control plane — job_id: {job['job_id']} — node: {job['node_id']}*
+*Dispatched by GDDP control plane — job_id: {job['job_id']} — node: {job['node_id']}*
 """
 
     def dispatch(self, job: dict) -> DispatchResult:
@@ -124,7 +124,7 @@ This block is parsed by the GDAD return router to create a structured review rec
                 error="Missing GitHub token: set GITHUB_TOKEN or GH_TOKEN",
             )
 
-        title = f"[GDAD] {job['title']}"
+        title = f"[GDDP] {job['title']}"
         body  = self.build_issue_body(job)
 
         cmd = [
