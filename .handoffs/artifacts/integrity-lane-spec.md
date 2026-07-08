@@ -13,7 +13,7 @@ Implements Sab's decision (2026-07-07): the evaluator has two distinct responsib
 - New orchestrator phase after criteria adjudication: `integrity_review`.
 - Runs the pi/deepseek harness with a SEPARATE system prompt and a SEPARATE typed
   terminal tool (`submit_integrity_verdict`, not `submit_verdict`).
-- **Two verdicts with CO-EQUAL authority** (amended 2026-07-07 x2; Sab: integrity
+- **Two distinct verdicts with separate responsibilities** (amended 2026-07-07 x2; Sab: integrity
   authority is the entire reason the project exists — "tests pass" while intent
   and integrity are butchered is the exact failure GDDP guards against, and the
   damage is the CASCADE: ten nodes built on a rotten one):
