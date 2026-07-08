@@ -20,9 +20,9 @@ class ProjectState:
     repo: str
     nodes: list[NodeData]
     pending_nodes: list[NodeData]
-    in_progress_nodes: list[NodeData]
+    ready_nodes: list[NodeData]
     complete_nodes: list[NodeData]
-    blocked_nodes: list[NodeData]
+    deferred_nodes: list[NodeData]
 
 
 @dataclass
@@ -52,19 +52,22 @@ def read_project_state(reader: GraphReader, project_id: str) -> ProjectState:
         except FileNotFoundError:
             pass
 
+    # Buckets mirror the node schema's human-owned status vocabulary:
+    # pending | ready | complete | deferred. Execution states live on
+    # jobs/queue_records, never on nodes.
     pending = [n for n in all_nodes if n.status == "pending"]
-    in_progress = [n for n in all_nodes if n.status == "in_progress"]
+    ready = [n for n in all_nodes if n.status == "ready"]
     complete = [n for n in all_nodes if n.status == "complete"]
-    blocked = [n for n in all_nodes if n.status == "blocked"]
+    deferred = [n for n in all_nodes if n.status == "deferred"]
 
     return ProjectState(
         project_id=project_id,
         repo=project.repo,
         nodes=all_nodes,
         pending_nodes=pending,
-        in_progress_nodes=in_progress,
+        ready_nodes=ready,
         complete_nodes=complete,
-        blocked_nodes=blocked,
+        deferred_nodes=deferred,
     )
 
 
