@@ -68,9 +68,25 @@ documented. Drafts only — no push until Sab signs off.
   otherwise. `gddp-runtime` and `gddp-config` must classify inherited state
   before dispatching, accepting, or declaring the graph ready.
 
+## Canonical documents
+
+The canon list, in order: **foundational node** (first node in each project's
+`project.yaml` — node order there is semantically meaningful), **README.md**,
+**PROJECT-BRIEF.md** (this file), **AGENTS.md**. Canon is small, human-owned,
+and wins over any other prose when they disagree.
+
+Canon has audiences. AGENTS.md is executor-canon and is deliberately excluded
+from evaluator context; evaluators judge against graph truth (node
+`acceptance_criteria`, constraints) plus README/brief context only. Vocabulary
+doctrine: **verdict** = evaluator output; **acceptance** = the human act that
+advances graph truth; **decision** = the human's status call on a node. The
+verification decision matrix's row order encodes intentional severity — do not
+reorder rows casually. Generated artifacts (wikis, receipts, handoffs) capture
+canon; they are never canon themselves.
+
 ## Deeper docs
 
-- README (v2 draft): [`docs/README-v2.md`](docs/README-v2.md)
+- README: [`README.md`](README.md)
 - Pi README handoff: [`.handoffs/002-pi-readme-handoff.md`](.handoffs/002-pi-readme-handoff.md)
 - Decision-loop spec: [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md)
 - Big Pi runbook: [`deploy/BIGPI_RUNBOOK.md`](deploy/BIGPI_RUNBOOK.md)
