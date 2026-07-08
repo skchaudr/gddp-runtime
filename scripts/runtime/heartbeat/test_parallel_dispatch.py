@@ -38,6 +38,7 @@ def _init_db(db_path: Path) -> None:
             issue_number            INTEGER,
             commit_sha              TEXT,
             url                     TEXT,
+            repo                    TEXT,
             project_id              TEXT,
             project_node_candidates TEXT,
             scope_status            TEXT DEFAULT 'pending',
@@ -356,3 +357,54 @@ def test_cross_project_event_filtering(test_env, monkeypatch):
 
     assert "evt-target" in seen_events
     assert "evt-other" not in seen_events
+
+
+def test_unowned_event_adopted_by_repo_match(test_env, monkeypatch):
+    # Intake inserts events with project_id=NULL; the heartbeat adopts events
+    # from its own --repo and stamps them, leaving other repos' events alone.
+    db_path = test_env["db_path"]
+    config_root = test_env["config_root"]
+
+    con = sqlite3.connect(db_path)
+    con.execute(
+        """
+        INSERT INTO events (
+            event_id, received_at, source, event_type, repo, project_id, status
+        ) VALUES (?, ?, 'github', 'issue.opened', 'owner/repo', NULL, 'received')
+        """,
+        ("evt-unowned-ours", "2026-03-19T00:00:00+00:00"),
+    )
+    con.execute(
+        """
+        INSERT INTO events (
+            event_id, received_at, source, event_type, repo, project_id, status
+        ) VALUES (?, ?, 'github', 'issue.opened', 'owner/other-repo', NULL, 'received')
+        """,
+        ("evt-unowned-theirs", "2026-03-19T00:00:00+00:00"),
+    )
+    con.commit()
+    con.close()
+
+    _write_graph(config_root)
+
+    seen_events = []
+    def fake_classify(event, ready_nodes):
+        seen_events.append(event["event_id"])
+        return None
+
+    monkeypatch.setattr(runner, "classify", fake_classify)
+
+    runner.run_heartbeat(
+        project_id="parallel-test",
+        repo="owner/repo",
+        config_path=str(config_root),
+    )
+
+    assert "evt-unowned-ours" in seen_events
+    assert "evt-unowned-theirs" not in seen_events
+
+    con = sqlite3.connect(db_path)
+    rows = dict(con.execute("SELECT event_id, project_id FROM events").fetchall())
+    con.close()
+    assert rows["evt-unowned-ours"] == "parallel-test"
+    assert rows["evt-unowned-theirs"] is None

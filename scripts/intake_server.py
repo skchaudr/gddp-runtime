@@ -129,7 +129,8 @@ def normalize_event(gh_event_type: str, payload: dict) -> dict | None:
         "issue_number":             issue_number,
         "commit_sha":               commit_sha,
         "url":                      url,
-        "project_id":               None,   # classifier fills this in
+        "repo":                     repo.get("full_name", ""),
+        "project_id":               None,   # heartbeat adopts by repo, stamps its project_id
         "project_node_candidates":  json.dumps([]),
         "scope_status":             "pending",
         "priority":                 "pending",
@@ -184,14 +185,14 @@ def webhook():
             INSERT INTO events (
                 event_id, received_at, source, event_type, actor,
                 branch, base_branch, pr_number, issue_number, commit_sha, url,
-                project_id, project_node_candidates,
+                repo, project_id, project_node_candidates,
                 scope_status, priority, risk_level,
                 raw_payload_path, normalized_payload_path,
                 classification, routing, status
             ) VALUES (
                 :event_id, :received_at, :source, :event_type, :actor,
                 :branch, :base_branch, :pr_number, :issue_number, :commit_sha, :url,
-                :project_id, :project_node_candidates,
+                :repo, :project_id, :project_node_candidates,
                 :scope_status, :priority, :risk_level,
                 :raw_payload_path, :normalized_payload_path,
                 :classification, :routing, :status

@@ -45,6 +45,7 @@ def _init_db(db_path: Path) -> None:
             issue_number            INTEGER,
             commit_sha              TEXT,
             url                     TEXT,
+            repo                    TEXT,
             project_id              TEXT,
             project_node_candidates TEXT,
             scope_status            TEXT DEFAULT 'pending',

@@ -114,14 +114,17 @@ def _plan_dispatches(
     stale_cutoff = (
         datetime.now(timezone.utc) - timedelta(minutes=30)
     ).isoformat()
+    # Events arrive from intake with project_id=NULL; the repo→project binding
+    # lives in project.yaml, mirrored by this runner's --project/--repo args.
+    # Adopt unowned events from our repo alongside events already stamped ours.
     cur.execute(
         """
         SELECT * FROM events
-         WHERE project_id = ?
+         WHERE (project_id = ? OR (project_id IS NULL AND repo = ?))
            AND (status = 'received'
                 OR (status = 'claimed' AND claimed_at < ?))
         """,
-        (project_id, stale_cutoff),
+        (project_id, repo, stale_cutoff),
     )
     events = cur.fetchall()
 
@@ -142,12 +145,12 @@ def _plan_dispatches(
         claim = con.execute(
             """
             UPDATE events
-               SET status = 'claimed', claimed_at = ?
+               SET status = 'claimed', claimed_at = ?, project_id = ?
              WHERE event_id = ?
                AND (status = 'received'
                     OR (status = 'claimed' AND claimed_at < ?))
             """,
-            (datetime.now(timezone.utc).isoformat(), event_id, stale_cutoff),
+            (datetime.now(timezone.utc).isoformat(), project_id, event_id, stale_cutoff),
         )
         con.commit()
         if claim.rowcount != 1:

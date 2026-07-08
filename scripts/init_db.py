@@ -40,6 +40,7 @@ def init_db():
         issue_number            INTEGER,
         commit_sha              TEXT,
         url                     TEXT,
+        repo                    TEXT,                   -- owner/name from webhook payload
         project_id              TEXT,
         project_node_candidates TEXT,                   -- JSON array
         scope_status            TEXT DEFAULT 'pending', -- pending | in_scope | out_of_scope
@@ -169,6 +170,10 @@ def init_db():
     # "table missing" so init_db is safe to run from any state.
     try:
         con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        con.execute("ALTER TABLE events ADD COLUMN repo TEXT")
     except sqlite3.OperationalError:
         pass
 
