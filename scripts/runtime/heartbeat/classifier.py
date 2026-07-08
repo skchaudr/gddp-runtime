@@ -5,8 +5,10 @@ The heartbeat only plans forward-path execution work. Return/review handling is
 kept outside automatic dispatch.
 """
 
+import json
 import re
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
 from .graph_reader import NodeData
@@ -15,17 +17,39 @@ from .graph_reader import NodeData
 _NODE_TAG_RE = re.compile(r"(?i)node[:\s-]+([a-z0-9_-]+)")
 
 
+def _tag_sources(event) -> list[str]:
+    """Places a `node: <id>` tag may legitimately appear."""
+    sources = []
+    for field in ("url", "branch"):
+        value = event[field] if field in event.keys() else None
+        if value:
+            sources.append(str(value))
+    # Issue title/body live only in the saved raw payload, not the event row.
+    raw_path = (
+        event["raw_payload_path"] if "raw_payload_path" in event.keys() else None
+    )
+    if raw_path:
+        try:
+            payload = json.loads(Path(raw_path).read_text())
+            issue = payload.get("issue", {})
+            for text in (issue.get("title"), issue.get("body")):
+                if text:
+                    sources.append(str(text))
+        except (OSError, ValueError):
+            pass  # unreadable payload → no extra sources, event stays untagged
+    return sources
+
+
 def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     """
     Returns a classification dict if the event maps to a dispatchable node, else None.
 
-    Rules for v1:
+    Rules:
     - Only issue.opened events trigger dispatch
-    - If there are no ready nodes, event is ignored
-    - If there is exactly one ready node, it wins automatically
-    - If there are multiple ready nodes, a `node: <id>` tag in event metadata
-      (url, branch) is matched first; otherwise priority ordering applies
-      (high > normal > low)
+    - Dispatch requires an explicit `node: <id>` tag (in url, branch, or the
+      issue title/body from the raw payload) naming a ready node. There is
+      deliberately NO fallback: repos are public, so an untagged issue must
+      never spend executor budget on a guessed node.
     """
     if event["event_type"] != "issue.opened":
         return None
@@ -35,21 +59,15 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
 
     ready_ids = {n.node_id for n in ready_nodes}
 
-    # Try to match a `node: <id>` tag in event metadata (url, branch).
     target = None
-    for field in ("url", "branch"):
-        value = event[field] if field in event.keys() else None
-        if not value:
-            continue
-        match = _NODE_TAG_RE.search(str(value))
+    for value in _tag_sources(event):
+        match = _NODE_TAG_RE.search(value)
         if match and match.group(1) in ready_ids:
             target = next(n for n in ready_nodes if n.node_id == match.group(1))
             break
 
-    # Fall back to highest-priority ready node.
     if target is None:
-        priority_order = {"high": 0, "normal": 1, "low": 2}
-        target = sorted(ready_nodes, key=lambda n: priority_order.get(n.priority, 1))[0]
+        return None  # no explicit tag for a ready node → ignored, auditable
 
     return {
         "category":                "implementation_request",

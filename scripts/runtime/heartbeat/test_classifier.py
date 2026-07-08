@@ -43,23 +43,41 @@ class TestNodeTagMatching:
         result = classify(event, nodes)
         assert result["matched_node_id"] == "auth-bug"
 
-    def test_node_tag_for_unready_node_falls_back_to_priority(self):
+    def test_node_tag_for_unready_node_returns_none(self):
         nodes = [
             FakeNode("auth-bug", priority="low"),
             FakeNode("high-prio-thing", priority="high"),
         ]
         event = _issue_event(url="https://example.com/issues/1  node: not-ready-node")
-        result = classify(event, nodes)
-        assert result["matched_node_id"] == "high-prio-thing"
+        assert classify(event, nodes) is None
 
-    def test_no_node_tag_falls_back_to_priority(self):
+    def test_no_node_tag_returns_none(self):
+        # No fallback: untagged issues must never dispatch (public repos).
         nodes = [
             FakeNode("auth-bug", priority="low"),
             FakeNode("high-prio-thing", priority="high"),
         ]
         event = _issue_event(url="https://example.com/issues/1")
+        assert classify(event, nodes) is None
+
+    def test_node_tag_in_issue_body_matches(self, tmp_path):
+        raw = tmp_path / "issues_raw.json"
+        raw.write_text(
+            '{"issue": {"title": "Fix the auth boundary", '
+            '"body": "Please implement this.\\n\\nnode: auth-bug"}}'
+        )
+        nodes = [
+            FakeNode("auth-bug", priority="low"),
+            FakeNode("high-prio-thing", priority="high"),
+        ]
+        event = FakeEvent(
+            event_type="issue.opened",
+            url="https://example.com/issues/1",
+            branch=None,
+            raw_payload_path=str(raw),
+        )
         result = classify(event, nodes)
-        assert result["matched_node_id"] == "high-prio-thing"
+        assert result["matched_node_id"] == "auth-bug"
 
     def test_non_issue_opened_returns_none(self):
         nodes = [FakeNode("auth-bug")]

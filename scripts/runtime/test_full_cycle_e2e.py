@@ -217,7 +217,7 @@ def test_full_cycle_dispatch_to_review(e2e_env):
     con.execute(
         """INSERT INTO events (
             event_id, received_at, source, event_type, project_id, status, url, branch
-        ) VALUES (?, ?, 'github', 'issue.opened', 'e2e-test', 'received', ?, 'feature/auth-boundary')""",
+        ) VALUES (?, ?, 'github', 'issue.opened', 'e2e-test', 'received', ?, 'feature/node:auth-boundary')""",
         ("evt_e2e_001", _now(),
          "https://github.com/skchaudr/e2e-test/issues/1"),
     )
