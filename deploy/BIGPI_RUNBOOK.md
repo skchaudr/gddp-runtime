@@ -107,9 +107,9 @@ When runtime creates a receipt and moves a job to `awaiting_review`, stop automa
 
 Review inputs:
 
-- the `results` row in `~/opclaw/db/queue.db`
+- the `results` row in `~/repos/gddp-runtime/db/queue.db`
 - the matching job row and queue state
-- the artifacts under `~/opclaw/jobs/<job-id>/`
+- the artifacts under `~/repos/gddp-runtime/jobs/<job-id>/`
 - the merged PR or executor output that produced the receipt
 
 Choose exactly one manual action:
@@ -124,7 +124,7 @@ Do not treat merged PRs or runtime receipts as automatic graph advancement.
 
 ## Troubleshooting Notes
 
-- If `~/repos/gddp-runtime` and `~/opclaw/scripts` disagree, the deploy marker is authoritative for what is actually running.
+- The repo checkout is what runs; `~/opclaw` snapshots and markers are legacy and not authoritative.
 - The deploy marker records both the canonical repo checkout and the worktree the deploy was invoked from.
 - `source_branch` and `source_commit` can legitimately differ from `deploy_invoked_branch` when deployment is done from a detached worktree.
 - If Big Pi repo branches diverge unexpectedly, report the divergence before changing branches or redeploying.
