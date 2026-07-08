@@ -15,7 +15,7 @@ GitHub webhook intake → classify → scope → queue → execute pipeline.
 Python scripts in `scripts/`, deploy configs in `deploy/`, docs in `docs/`.
 No requirements.txt — scripts use stdlib + Flask (see `deploy/setup.sh`).
 
-Semi-autonomous pipeline with human in the loop review and agentic evaluation is the goal. The loop "works" (must be ran more and more) but note the lack of an agentic evaluator. It was ad-hoc. That needs to change.  
+Semi-autonomous pipeline with human-in-the-loop review and agentic evaluation is the goal. The evaluator is live: a two-lane verification pass (deterministic + semantic criteria lane, intent/integrity lane) combined worst-of into a verdict receipt. Verdicts are evidence for human review — the evaluator is the second-to-last gate, never the last.  
 
 Portfolio brief + system narrative: [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md).
 
