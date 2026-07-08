@@ -344,7 +344,7 @@ def test_assemble_returns_deterministic_result(tmp_path: Path):
 
     node_yaml = {
         "node_id": "test-node",
-        "acceptance": [
+        "acceptance_criteria": [
             {"id": "aa-root-and-state-paths", "criterion": "roots"},
         ],
         "constraints": ["do not source executor-specific modules"],

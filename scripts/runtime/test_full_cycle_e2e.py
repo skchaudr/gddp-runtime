@@ -153,7 +153,7 @@ status: ready
 type: capability
 why: Protected actions need auth
 depends_on: []
-acceptance:
+acceptance_criteria:
   - id: auth-works
     criterion: auth works
 constraints: []

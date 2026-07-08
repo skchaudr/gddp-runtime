@@ -76,7 +76,7 @@ def test_agent_uses_mock_runner_and_toolbox_without_network(tmp_path: Path) -> N
     )
 
     output = SemanticAgent(runner=runner, toolbox=SemanticToolbox(tmp_path)).run(
-        node={"id": "n1", "acceptance": ["c1"]},
+        node={"id": "n1", "acceptance_criteria": ["c1"]},
         graph={"id": "p1"},
         deterministic_result={"criteria": []},
     )
@@ -325,7 +325,7 @@ def test_agent_caps_large_tool_results(tmp_path: Path) -> None:
 
 def test_prompt_builder_renders_node_graph_and_deterministic_context() -> None:
     messages = build_prompt_messages(
-        node={"id": "node-a", "acceptance": ["criterion"]},
+        node={"id": "node-a", "acceptance_criteria": ["criterion"]},
         graph={"project_id": "project-a", "execution_policy": "human merge"},
         deterministic_result={"criteria_mismatches": [{"criterion_id": "criterion"}]},
     )

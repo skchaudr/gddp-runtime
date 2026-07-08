@@ -37,19 +37,19 @@ def mock_graph_reader():
         nodes = {
             "node-a": MagicMock(
                 node_id="node-a", status="complete", depends_on=[], priority="normal",
-                title="Node A", why="", acceptance=[], constraints=[],
+                title="Node A", why="", acceptance_criteria=[], constraints=[],
                 allowed_execution_modes=["jules"], required_artifacts=[], unlocks=["node-b"],
                 type="capability",
             ),
             "node-b": MagicMock(
                 node_id="node-b", status="pending", depends_on=["node-a"], priority="high",
-                title="Node B", why="", acceptance=[], constraints=[],
+                title="Node B", why="", acceptance_criteria=[], constraints=[],
                 allowed_execution_modes=["jules"], required_artifacts=[], unlocks=["node-c"],
                 type="capability",
             ),
             "node-c": MagicMock(
                 node_id="node-c", status="pending", depends_on=["node-b"], priority="normal",
-                title="Node C", why="", acceptance=[], constraints=[],
+                title="Node C", why="", acceptance_criteria=[], constraints=[],
                 allowed_execution_modes=["jules"], required_artifacts=[], unlocks=[],
                 type="capability",
             ),

@@ -28,7 +28,7 @@ def assemble(
 
     criteria = [
         evaluate_criterion(item, repo, node_id, config_root=config_root)
-        for item in node_yaml.get("acceptance", [])
+        for item in node_yaml.get("acceptance_criteria", [])
     ]
 
     constraint_files = collect_constraint_files(node_yaml, repo)

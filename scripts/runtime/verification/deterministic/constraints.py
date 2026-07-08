@@ -25,7 +25,7 @@ def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
     """Files the constraints scope: explicit probe files + named source files."""
     files: set[str] = set()
     node_id = node_yaml.get("node_id", "")
-    for item in node_yaml.get("acceptance", []):
+    for item in node_yaml.get("acceptance_criteria", []):
         probe = probe_for(node_id, item.get("id", ""))
         if probe:
             files.update(probe.get("files", []))

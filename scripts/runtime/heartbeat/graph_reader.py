@@ -22,7 +22,7 @@ class NodeData:
     type: str
     why: str
     depends_on: list[str]
-    acceptance: list[str]
+    acceptance_criteria: list[str]
     constraints: list[str]
     allowed_execution_modes: list[str]
     required_artifacts: list[str]
@@ -101,7 +101,7 @@ class GraphReader:
             type=data.get("type", "capability"),
             why=data.get("why", ""),
             depends_on=data.get("depends_on", []),
-            acceptance=data.get("acceptance", []),
+            acceptance_criteria=data.get("acceptance_criteria", []),
             constraints=data.get("constraints", []),
             allowed_execution_modes=data.get("allowed_execution_modes", ["jules"]),
             required_artifacts=data.get("required_artifacts", []),

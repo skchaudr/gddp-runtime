@@ -146,7 +146,7 @@ def _write_graph(config_root: Path) -> None:
     type: capability
     why: test node
     depends_on:{depends_on}
-    acceptance:
+    acceptance_criteria:
       - test acceptance
     constraints:
       - test constraint

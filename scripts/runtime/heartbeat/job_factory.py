@@ -45,7 +45,7 @@ def build_job(
         "goal":                f"Produce a reviewable result for node {node.node_id}",
         "why":                 node.why.strip(),
         "constraints":         json.dumps(node.constraints),
-        "acceptance_criteria": json.dumps(node.acceptance),
+        "acceptance_criteria": json.dumps(node.acceptance_criteria),
         "priority":            node.priority,
         "status":              "ready",
         "attempt":             0,

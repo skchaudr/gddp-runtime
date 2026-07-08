@@ -38,7 +38,7 @@ def _has_active_job(ctx: DecisionContext) -> bool:
 def _build_issue_body(node, job_id: str) -> str:
     """Format the node spec as a GitHub issue body for Jules."""
     constraints_text = "\n".join(f"- {c}" for c in node.constraints)
-    criteria_text = "\n".join(f"- [ ] {c}" for c in node.acceptance)
+    criteria_text = "\n".join(f"- [ ] {c}" for c in node.acceptance_criteria)
 
     return f"""## Goal
 {node.title}
