@@ -1,16 +1,16 @@
 # Graph Report - gddp-runtime  (2026-07-09)
 
 ## Corpus Check
-- 159 files · ~95,680 words
+- 195 files · ~125,896 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1686 nodes · 3047 edges · 122 communities (108 shown, 14 thin omitted)
-- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 326 edges (avg confidence: 0.5)
+- 2066 nodes · 3392 edges · 168 communities (151 shown, 17 thin omitted)
+- Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 326 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6a4effac`
+- Built from commit: `ed308757`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -122,6 +122,52 @@
 - [[_COMMUNITY_Community 115|Community 115]]
 - [[_COMMUNITY_Community 116|Community 116]]
 - [[_COMMUNITY_Community 117|Community 117]]
+- [[_COMMUNITY_Community 122|Community 122]]
+- [[_COMMUNITY_Community 123|Community 123]]
+- [[_COMMUNITY_Community 124|Community 124]]
+- [[_COMMUNITY_Community 125|Community 125]]
+- [[_COMMUNITY_Community 126|Community 126]]
+- [[_COMMUNITY_Community 127|Community 127]]
+- [[_COMMUNITY_Community 128|Community 128]]
+- [[_COMMUNITY_Community 129|Community 129]]
+- [[_COMMUNITY_Community 130|Community 130]]
+- [[_COMMUNITY_Community 131|Community 131]]
+- [[_COMMUNITY_Community 132|Community 132]]
+- [[_COMMUNITY_Community 133|Community 133]]
+- [[_COMMUNITY_Community 134|Community 134]]
+- [[_COMMUNITY_Community 135|Community 135]]
+- [[_COMMUNITY_Community 136|Community 136]]
+- [[_COMMUNITY_Community 137|Community 137]]
+- [[_COMMUNITY_Community 138|Community 138]]
+- [[_COMMUNITY_Community 139|Community 139]]
+- [[_COMMUNITY_Community 140|Community 140]]
+- [[_COMMUNITY_Community 141|Community 141]]
+- [[_COMMUNITY_Community 142|Community 142]]
+- [[_COMMUNITY_Community 143|Community 143]]
+- [[_COMMUNITY_Community 144|Community 144]]
+- [[_COMMUNITY_Community 145|Community 145]]
+- [[_COMMUNITY_Community 146|Community 146]]
+- [[_COMMUNITY_Community 147|Community 147]]
+- [[_COMMUNITY_Community 148|Community 148]]
+- [[_COMMUNITY_Community 149|Community 149]]
+- [[_COMMUNITY_Community 150|Community 150]]
+- [[_COMMUNITY_Community 151|Community 151]]
+- [[_COMMUNITY_Community 152|Community 152]]
+- [[_COMMUNITY_Community 153|Community 153]]
+- [[_COMMUNITY_Community 154|Community 154]]
+- [[_COMMUNITY_Community 155|Community 155]]
+- [[_COMMUNITY_Community 156|Community 156]]
+- [[_COMMUNITY_Community 157|Community 157]]
+- [[_COMMUNITY_Community 158|Community 158]]
+- [[_COMMUNITY_Community 159|Community 159]]
+- [[_COMMUNITY_Community 160|Community 160]]
+- [[_COMMUNITY_Community 161|Community 161]]
+- [[_COMMUNITY_Community 162|Community 162]]
+- [[_COMMUNITY_Community 163|Community 163]]
+- [[_COMMUNITY_Community 164|Community 164]]
+- [[_COMMUNITY_Community 165|Community 165]]
+- [[_COMMUNITY_Community 166|Community 166]]
+- [[_COMMUNITY_Community 167|Community 167]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `SemanticToolbox` - 73 edges
@@ -150,11 +196,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (122 total, 14 thin omitted)
+## Communities (168 total, 17 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.15
-Nodes (19): context_reader.py - builds the context payload the runtime decision loop needs., Build the full context payload for one decision cycle., Load project graph and categorize nodes by status., Pull recent rows from SQLite to understand momentum and detect stale state., read_context(), read_project_state(), read_recent_activity(), in_memory_db() (+11 more)
+Cohesion: 0.10
+Nodes (30): Build the full context payload for one decision cycle., Load project graph and categorize nodes by status., Pull recent rows from SQLite to understand momentum and detect stale state., read_context(), read_project_state(), read_recent_activity(), AcceptResult, EvidencePacket (+22 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.17
@@ -173,12 +219,12 @@ Cohesion: 0.06
 Nodes (54): init_db(), init_decision_results(), _json_or_none(), _now(), results_store.py — Persistence helpers for review receipts.  Runtime return hand, Ensure the decision-loop results table exists.      Distinct from the `results`, Insert a decision-loop result row. Does NOT touch graph truth., Ensure the canonical review-receipt table exists. (+46 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (58): ArgumentParser, OpenAICompatibleRunner, Protocol, Any, LLMResponse, Path, Any, SemanticOutput (+50 more)
+Cohesion: 0.15
+Nodes (8): Any, Path, Any, LLMResponse, Raised when a semantic tool request would mutate state or use network., SemanticToolbox, ToolSafetyError, ValueError
 
 ### Community 6 - "Community 6"
-Cohesion: 0.08
-Nodes (32): _build_adapter_payload(), dispatch(), DispatchResult, dispatcher.py — Routes a job to the correct adapter.  Dispatch stays executor-dr, Build the executor packet from the persisted job payload., _init_db(), _insert_event(), _mock_id_generation() (+24 more)
+Cohesion: 0.18
+Nodes (14): _build_adapter_payload(), dispatch(), DispatchResult, dispatcher.py — Routes a job to the correct adapter.  Dispatch stays executor-dr, Build the executor packet from the persisted job payload., e2e_env(), _init_db(), _now() (+6 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.10
@@ -189,12 +235,12 @@ Cohesion: 0.12
 Nodes (17): connect(), normalize_event(), now(), intake_server.py — Webhook intake server for Phase 3.  Receives raw GitHub webho, Map a raw GitHub webhook payload to our normalized event schema.     Returns Non, verify_signature(), webhook(), Test when WEBHOOK_SECRET is not set (empty string). (+9 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.06
-Nodes (89): BaseModel, Enum, IntegrityHarness, CriterionCheck, CriterionJudgment, DeterministicResult, SemanticOutput, Verdict (+81 more)
+Cohesion: 0.18
+Nodes (36): CriterionCheck, DeterministicResult, SemanticOutput, Verdict, ConstraintCheck, CriterionCheck, CriterionJudgment, DeterministicResult (+28 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.06
-Nodes (71): check_artifacts(), Required-artifact presence checks — ported from verify_node.py., Look for required_artifacts in repo root and a few likely spots.      merged_pr, collect_constraint_files(), evaluate_constraint(), Constraint forbidden-pattern scan — ported from verify_node.py., Files the constraints scope: explicit probe files + named source files., Scan referenced lib files for forbidden patterns. (+63 more)
+Cohesion: 0.10
+Nodes (36): collect_constraint_files(), evaluate_constraint(), Constraint forbidden-pattern scan — ported from verify_node.py., Files the constraints scope: explicit probe files + named source files., Scan referenced lib files for forbidden patterns., assemble(), Deterministic verification floor — assembles a DeterministicResult., Run all deterministic checks and return a DeterministicResult. (+28 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.24
@@ -210,7 +256,7 @@ Nodes (12): [1.0.0] - 2026-03-13, [1.1.0] - 2026-03-13, [1.1.1] - 2026-03-19, [1
 
 ### Community 14 - "Community 14"
 Cohesion: 0.08
-Nodes (22): _confidence_all_criteria(), _confidence_blocked(), _confidence_constraint_violation(), _confidence_fail_criteria(), _confidence_semantic_blend(), _criterion_satisfaction_confidence(), _DecisionContext, _mean() (+14 more)
+Nodes (23): CriterionJudgment, _confidence_all_criteria(), _confidence_blocked(), _confidence_constraint_violation(), _confidence_fail_criteria(), _confidence_semantic_blend(), _criterion_satisfaction_confidence(), _DecisionContext (+15 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.20
@@ -237,12 +283,12 @@ Cohesion: 0.32
 Nodes (3): getCurrentChapter(), jumpChapter(), updateHighlights()
 
 ### Community 21 - "Community 21"
-Cohesion: 0.08
-Nodes (28): accept_node.py — Propose a graph truth change by opening an evidence PR.  The de, _config_repo_slug(), _ensure_config_repo_clean(), _format_evidence_block(), _mark_node_complete_in_yaml(), open_evidence_pr(), graph_updater.py — Opens evidence-packaged PRs against gddp-config.  The decisio, Set status: complete in the project.yaml nodes list for this node. (+20 more)
+Cohesion: 0.09
+Nodes (27): _config_repo_slug(), _ensure_config_repo_clean(), _format_evidence_block(), _mark_node_complete_in_yaml(), open_evidence_pr(), graph_updater.py — Opens evidence-packaged PRs against gddp-config.  The decisio, Set status: complete in the project.yaml nodes list for this node., Format the evidence packet as a markdown PR body. (+19 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.11
-Nodes (30): _build_toolbox(), _check_stuck_jobs(), _clean_stale_state(), _connect(), handle_cron(), handle_event(), main(), engine.py - runtime decision loop.  Wake → read context → decide → act → write r (+22 more)
+Nodes (31): _build_toolbox(), _check_stuck_jobs(), _clean_stale_state(), _connect(), handle_cron(), handle_event(), _LazyRunner, main() (+23 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.29
@@ -261,8 +307,8 @@ Cohesion: 0.09
 Nodes (10): _fake_paths_exist(), Tests for the return-path verification bridge (E1)., The bridge must default --integrity on and respect GDDP_INTEGRITY_MODE., The CLI command includes --integrity on by default., GDDP_INTEGRITY_MODE=off passes --integrity off to the CLI., Patch the yaml/repo existence checks to pass., TestCredentialFetch, TestIntegrityFlag (+2 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.14
-Nodes (17): AcceptResult, AcceptResult, EvidencePacket, Structured evidence attached to an accept_node decision., Proposes a graph truth change by opening an evidence PR against gddp-config., AcceptResult must include the evidence packet., The status literal enforces the correct value., test_accept_result_accepts_full_data() (+9 more)
+Cohesion: 0.33
+Nodes (6): AcceptResult, Assemble evidence packet and open a PR against gddp-config.      Args:         c, run(), Any, DecisionContext, EscalateResult
 
 ### Community 28 - "Community 28"
 Cohesion: 0.83
@@ -274,7 +320,7 @@ Nodes (26): decide(), Pure function. No I/O, no LLM, no side effects., _constrai
 
 ### Community 48 - "Community 48"
 Cohesion: 0.12
-Nodes (21): DispatchResult, EscalateResult, schema.py - Pydantic models enforcing the decision loop output contract.  Every, v0 placeholder - review_pr ships in the review-gate node., ReviewResult, Pydantic should reject a DispatchResult with missing fields., test_dispatch_result_accepts_good_data(), test_dispatch_result_rejects_bad_data() (+13 more)
+Nodes (21): DispatchResult, EscalateResult, schema.py - Pydantic models enforcing the decision loop output contract.  Every, v0 placeholder - review_pr ships in the review-gate node., ReviewResult, Pydantic should reject a DispatchResult with missing fields., test_dispatch_result_rejects_bad_data(), DispatchResult (+13 more)
 
 ### Community 49 - "Community 49"
 Cohesion: 0.08
@@ -301,8 +347,8 @@ Cohesion: 0.25
 Nodes (7): Canonical documents, Current direction, Deeper docs, GDDP — Brief, Ground state, Known gaps / risks, Narrative
 
 ### Community 55 - "Community 55"
-Cohesion: 0.18
-Nodes (10): classify(), Returns a classification dict if the event maps to a dispatchable node, else Non, FakeEvent, FakeNode, _issue_event(), Tests for classifier node-tag matching (item 1.5 hardening)., Minimal stand-in for graph_reader.NodeData., Dict-like stand-in for a sqlite3.Row used by the classifier. (+2 more)
+Cohesion: 0.14
+Nodes (15): classify(), _pick_executor(), Places a `node: <id>` tag may legitimately appear., Returns a classification dict if the event maps to a dispatchable node, else Non, Pick the first declared execution mode, preserving graph ordering., _tag_sources(), FakeEvent, FakeNode (+7 more)
 
 ### Community 56 - "Community 56"
 Cohesion: 0.18
@@ -313,20 +359,20 @@ Cohesion: 0.50
 Nodes (3): 001 — Repo Hygeine and Sanity Checking README, Empirical Reality (AGENT ONLY), Narrative / Trajectory (SAB ONLY)
 
 ### Community 60 - "Community 60"
-Cohesion: 0.16
-Nodes (11): GraphReader, ProjectGraph, graph_reader.py — Reads gddp-config YAML and returns graph state.  Replaces the, Returns nodes that are status=ready in project.yaml AND have a node YAML file., check_scope(), scope_checker.py — Guards against duplicate dispatch.  Before creating a job, ve, Returns ScopeCheckResult. safe=True means it is OK to dispatch., ScopeCheckResult (+3 more)
+Cohesion: 0.14
+Nodes (12): classifier.py — Maps implementation requests to ready nodes.  The heartbeat only, GraphReader, ProjectGraph, graph_reader.py — Reads gddp-config YAML and returns graph state.  Replaces the, Returns nodes that are status=ready in project.yaml AND have a node YAML file., check_scope(), scope_checker.py — Guards against duplicate dispatch.  Before creating a job, ve, Returns ScopeCheckResult. safe=True means it is OK to dispatch. (+4 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.11
 Nodes (17): 030 — Terminology Lock, Canon Declaration, Fleet Sync, Artifacts (Filepath - Description, 1 line max per artifact), Canon documents (the list; small, human-owned, wins over all other prose), Constrained areas touched (none / list + justification), Coupling hazard for the next agent, Current Git state (2-3 sentences max, anything more must be critically justifiable), Empirical Reality (2-3 sentences max, anything more must be critically justifiable), Friction experienced or anticipated (+9 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 0.36
-Nodes (15): DecisionContext, ProjectState, RecentActivity, NoOpResult, Nothing to do — all nodes complete or blocked, no stale state., _context(), FakeConnection, _node() (+7 more)
+Cohesion: 0.37
+Nodes (13): DecisionContext, ProjectState, context_reader.py - builds the context payload the runtime decision loop needs., RecentActivity, _context(), FakeConnection, _node(), test_complete_node_with_receipt_is_skipped() (+5 more)
 
 ### Community 63 - "Community 63"
-Cohesion: 0.16
-Nodes (8): _build_decision_loop_runner(), _LazyRunner, Builds a semantic runner lazily, using the same env-based provider     resolutio, Resolve a semantic runner from the environment.      Priority: DEEPSEEK_API_KEY, Tests for the decision loop's runner resolution (item 1.1).  Verifies that _buil, When no API keys are set and anthropic is not installed, the         decision lo, The _LazyRunner class used by _run_verification must build a         runner with, TestRunnerResolution
+Cohesion: 0.13
+Nodes (9): _build_decision_loop_runner(), Resolve a semantic runner from the environment.      Priority: DEEPSEEK_API_KEY, Tests for the decision loop's runner resolution (item 1.1).  Verifies that _buil, When no API keys are set and anthropic is not installed, the         decision lo, The _LazyRunner class used by _run_verification must build a         runner with, TestRunnerResolution, OpenAICompatibleRunner, Minimal stdlib runner for OpenAI-compatible chat-completions APIs. (+1 more)
 
 ### Community 64 - "Community 64"
 Cohesion: 0.12
@@ -453,8 +499,8 @@ Cohesion: 0.29
 Nodes (6): Acceptance sketch (for node YAML, Sab authors final), Constraints, Doctrine (verbatim intent), Open for Sab, Spec: Integrity Lane — always-on evaluator mandate (evaluator-intent-integrity-verdict), v1 design (lean)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.29
-Nodes (6): _pick_executor(), classifier.py — Maps implementation requests to ready nodes.  The heartbeat only, Places a `node: <id>` tag may legitimately appear., Pick the first declared execution mode, preserving graph ordering., _tag_sources(), NodeData
+Cohesion: 0.12
+Nodes (35): check_artifacts(), Required-artifact presence checks — ported from verify_node.py., Look for required_artifacts in repo root and a few likely spots.      merged_pr, dependency_status(), Graph dependency status checks — ported from verify_node.py., Return {dep_id: status} from the project graph index., _eval(), Tests for the deterministic verification floor. (+27 more)
 
 ### Community 97 - "Community 97"
 Cohesion: 0.43
@@ -524,20 +570,192 @@ Nodes (3): 7.1 VerdictReceipt (Pydantic), 7.2 Persistence, 7. Receipt and Verdic
 Cohesion: 0.67
 Nodes (3): 9.1 New dependency, 9.2 Pydantic, 9. LLM Dependency
 
+### Community 122 - "Community 122"
+Cohesion: 0.17
+Nodes (21): ArgumentParser, OpenAICompatibleRunner, Any, LLMResponse, Path, IntegrityHarnessRunner, Drives `pi` as the integrity reviewer. Implements the Runner protocol., PiHarnessRunner (+13 more)
+
+### Community 123 - "Community 123"
+Cohesion: 0.26
+Nodes (3): Any, SemanticOutput, SemanticAgent
+
+### Community 124 - "Community 124"
+Cohesion: 0.30
+Nodes (17): Any, LLMResponse, Path, LLMResponse, ToolCall, MockRunner, test_agent_accepts_typed_submit_verdict_tool(), test_agent_caps_large_tool_results() (+9 more)
+
+### Community 125 - "Community 125"
+Cohesion: 0.10
+Nodes (20): artifact_verifications, ConstraintCheck, CriterionCheck, CriterionJudgment, Data models, Dataclasses, decision_results, DeterministicResult (+12 more)
+
+### Community 126 - "Community 126"
+Cohesion: 0.10
+Nodes (19): Bridge: verification as a subprocess, Budget bounds, CLI entry point, Confidence calculation, Constraint scanning, Criterion probe types, Dependency and artifact checks, Deterministic probes (+11 more)
+
+### Community 127 - "Community 127"
+Cohesion: 0.16
+Nodes (15): Enum, IntegrityOutput, Verdict, IntegrityOutput, DeterministicResult, str, combine(), Combine the criteria verdict with the integrity verdict into the receipt verdict (+7 more)
+
+### Community 128 - "Community 128"
+Cohesion: 0.11
+Nodes (17): Big Pi runbook troubleshooting, Checking SQLite state, Common issues, Debugging, Deploy marker, Dry-run flow, GDDP_CONFIG_PATH not set, gh CLI not authenticated (+9 more)
+
+### Community 129 - "Community 129"
+Cohesion: 0.11
+Nodes (17): Decision loop, Executor adapters, Full-cycle end-to-end, Heartbeat modules, Intake server, Related pages, Replay and graph updater, Return router (+9 more)
+
+### Community 130 - "Community 130"
+Cohesion: 0.11
+Nodes (17): artifact_verifications, decision_results, events, Initialization, jobs, Key source files, Migration pattern, queue_records (+9 more)
+
+### Community 131 - "Community 131"
+Cohesion: 0.18
+Nodes (15): _integrity(), Tests for the integrity combiner — the two-lane authority boundary., Every non-pass integrity verdict has a floor at or above its declared severity., test_combine_block_floors_at_needs_human_review(), test_combine_block_with_violated_flags_stays_blocked(), test_combine_contradicted_floors_at_needs_human_review(), test_combine_criteria_worse_than_integrity_floor_wins(), test_combine_drift_floors_at_needs_human_review() (+7 more)
+
+### Community 132 - "Community 132"
+Cohesion: 0.12
+Nodes (16): classifier, Concurrency and safety notes, dispatcher, Flow diagram, graph_reader, Heartbeat, job_factory, Key source files (+8 more)
+
+### Community 133 - "Community 133"
+Cohesion: 0.31
+Nodes (11): BaseModel, IntegrityHarness, Any, Path, VerdictReceipt, SemanticHarness, _completeness_status(), _should_run_semantic() (+3 more)
+
+### Community 134 - "Community 134"
+Cohesion: 0.14
+Nodes (13): deploy.sh, Deploy workflow, Deployment, gddp-intake.service, Heartbeat cron, Live topology, Manual heartbeat run, Mutation boundaries (+5 more)
+
+### Community 135 - "Community 135"
+Cohesion: 0.14
+Nodes (13): Architecture, Decision loop, Executor adapters, Heartbeat dispatch loop, Key invariants, Language breakdown, Major subsystems, Return router (+5 more)
+
+### Community 136 - "Community 136"
+Cohesion: 0.14
+Nodes (13): Adapter-agnostic design, build_issue_body, dispatch, DispatchResult, Executor adapters, JulesActionAdapter (live), JulesCliAdapter (stub), Key source files (+5 more)
+
+### Community 137 - "Community 137"
+Cohesion: 0.15
+Nodes (12): cron, deploy.sh, dry_run.py, Flask dev server, gh CLI, graphify, No linter, pytest (+4 more)
+
+### Community 138 - "Community 138"
+Cohesion: 0.21
+Nodes (7): connect(), main(), replay.py — Replay failed or partial runtime steps from persisted state.  Usage:, replay_job(), replay_result(), test_replay.py — Tests for the replay logic., TestReplay
+
+### Community 139 - "Community 139"
+Cohesion: 0.35
+Nodes (11): Path, VerdictReceipt, _assert_valid_receipt(), _assert_zero_repo_writes(), _clean_pass_fixtures(), _indeterminate_fixtures(), MockRunner, End-to-end dry-run tests for verify() — no network, no SQLite, zero repo writes. (+3 more)
+
+### Community 140 - "Community 140"
+Cohesion: 0.17
+Nodes (11): 1. Two-repo split: config truth vs. execution machinery, 2. Receipt-based return instead of auto-advancement, 3. Two-lane evaluator: criteria + integrity, 4. Worst-of verdict combination, 5. Subprocess isolation for verification, 6. Executor-agnostic adapter pattern, 7. SQLite over Postgres, 8. Cron heartbeat instead of an always-on process (+3 more)
+
+### Community 141 - "Community 141"
+Cohesion: 0.17
+Nodes (11): 1. PR merges, 2. Return router parses tags, 3. Verify, 4. Write receipt to results table, 5. Route to awaiting_review, Key source files, Receipt-based return, Related pages (+3 more)
+
+### Community 142 - "Community 142"
+Cohesion: 0.32
+Nodes (11): _init_db(), _insert_event(), _mock_id_generation(), test_parallel_dispatch.py — Verifies parallel dispatch with main-thread SQLite w, test_cross_project_event_filtering(), test_env(), test_parallel_dispatch_records_results_and_blocks_dependencies(), test_unowned_event_adopted_by_repo_match() (+3 more)
+
+### Community 143 - "Community 143"
+Cohesion: 0.17
+Nodes (11): accept_node, Context, Decision loop, Decision priority, dispatch_next, escalate, Key source files, Output contract (+3 more)
+
+### Community 144 - "Community 144"
+Cohesion: 0.17
+Nodes (11): Caching, get_ready_nodes, Graph reader, Key source files, load_node, load_project, NodeData, Path resolution (+3 more)
+
+### Community 145 - "Community 145"
+Cohesion: 0.17
+Nodes (11): How a merged PR becomes a receipt, Job load and cross-check, Key source files, Receipt write, Related pages, Repo allowlist, Return router, Routing: awaiting_review or re-dispatch (+3 more)
+
+### Community 146 - "Community 146"
+Cohesion: 0.18
+Nodes (10): Audiences matter, Canon documents and their audiences, Doctrine, GDDP is the intent-preservation layer, Related pages, Source documents, The core invariant, The evaluator's actual question (+2 more)
+
+### Community 147 - "Community 147"
+Cohesion: 0.18
+Nodes (10): Deprecated features, Eras, Growth trajectory, Integrity lane and live deployment (Jul 2026), Longest-standing features, Lore, Major rewrites, Modular heartbeat and return path (Apr-May 2026) (+2 more)
+
+### Community 148 - "Community 148"
+Cohesion: 0.18
+Nodes (10): Canon and vocabulary doctrine, Coding conventions, Core invariants, Credential resolution, Environment variable resolution, Error handling, Naming conventions, Patterns and conventions (+2 more)
+
+### Community 149 - "Community 149"
+Cohesion: 0.18
+Nodes (10): Graph updater, Key source files, open_evidence_pr, Path and repo resolution, Related pages, The evidence block, The no-op commit case, The sequence (+2 more)
+
+### Community 150 - "Community 150"
+Cohesion: 0.18
+Nodes (10): Controlled event taxonomy, Credential resolution, Deployment, GET /health, Intake server, Key source files, POST /webhook, Related pages (+2 more)
+
+### Community 151 - "Community 151"
+Cohesion: 0.18
+Nodes (10): CLI, Database access, Import fallbacks, Key source files, Related pages, Replay, replay_job (--job-id), replay_result (--result-id) (+2 more)
+
+### Community 152 - "Community 152"
+Cohesion: 0.20
+Nodes (9): Audit trail, Authorization verb matching, Git safety: auto-checkpoint before first write, Key source files, Natural guard, Paste-marker splitting, Pre-invocation reminder injection, Related pages (+1 more)
+
+### Community 153 - "Community 153"
+Cohesion: 0.20
+Nodes (9): Branch, commit, and test cycle, Development workflow, During-work rules, End-of-session contract, Handoff requirement, Local dry-run flow, Related pages, Start-of-session contract (+1 more)
+
+### Community 154 - "Community 154"
+Cohesion: 0.20
+Nodes (9): Environment variables, Getting started, Initialize the database, Install, Prerequisites, Run tests, Run the decision loop, Run the dry run (+1 more)
+
+### Community 155 - "Community 155"
+Cohesion: 0.20
+Nodes (6): Protocol, Any, AnthropicRunner, Runner, build_prompt_messages(), test_prompt_builder_renders_node_graph_and_deterministic_context()
+
+### Community 156 - "Community 156"
+Cohesion: 0.25
+Nodes (7): How the budget is structured, Key source files, Re-dispatch with findings, Related pages, Retry loop, The four conditions, Why this is not automatic graph advancement
+
+### Community 157 - "Community 157"
+Cohesion: 0.25
+Nodes (7): Definition of done, How to contribute, Pages in this section, PR process, Related pages, Review expectations, Work pickup
+
+### Community 158 - "Community 158"
+Cohesion: 0.29
+Nodes (6): Configuration, GitHub credentials and webhook security, LLM provider credentials and endpoints, Notes on resolution order, Paths and runtime root, Verifier and semantic lane tuning
+
+### Community 159 - "Community 159"
+Cohesion: 0.33
+Nodes (5): Activity, Bot-attributed commits, By the numbers, Complexity, Size
+
+### Community 160 - "Community 160"
+Cohesion: 0.33
+Nodes (5): GDDP Runtime overview, Quick links, Tech stack, What it does, Who uses it
+
+### Community 161 - "Community 161"
+Cohesion: 0.33
+Nodes (5): Dependencies, Dev and test tooling, External binaries, Python packages, Standard library
+
+### Community 162 - "Community 162"
+Cohesion: 0.40
+Nodes (4): Core terms, Glossary, Runtime terms, Verification terms
+
+### Community 163 - "Community 163"
+Cohesion: 0.50
+Nodes (4): test_escalate_returns_valid_schema(), Create an escalation result. The engine handles writing it to SQLite., run(), EscalateResult
+
+### Community 164 - "Community 164"
+Cohesion: 0.50
+Nodes (3): Related, System pages, Systems
+
 ## Knowledge Gaps
-- **484 isolated node(s):** `setup.sh script`, `DecisionContext`, `Any`, `AcceptResult`, `EscalateResult` (+479 more)
+- **767 isolated node(s):** `1. Two-repo split: config truth vs. execution machinery`, `2. Receipt-based return instead of auto-advancement`, `3. Two-lane evaluator: criteria + integrity`, `4. Worst-of verdict combination`, `5. Subprocess isolation for verification` (+762 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GraphReader` connect `Community 60` to `Community 0`, `Community 1`, `Community 22`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
-- **Why does `SemanticOutput` connect `Community 9` to `Community 40`, `Community 19`, `Community 5`, `Community 14`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
-- **Why does `Verdict` connect `Community 9` to `Community 40`, `Community 5`, `Community 22`, `Community 14`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Why does `Verdict` connect `Community 127` to `Community 131`, `Community 5`, `Community 40`, `Community 9`, `Community 10`, `Community 139`, `Community 14`, `Community 22`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `SemanticToolbox` connect `Community 5` to `Community 9`, `Community 139`, `Community 155`, `Community 22`, `Community 122`, `Community 123`, `Community 124`, `Community 63`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `SemanticOutput` connect `Community 9` to `Community 5`, `Community 133`, `Community 40`, `Community 10`, `Community 139`, `Community 155`, `Community 14`, `Community 19`, `Community 122`, `Community 123`, `Community 124`, `Community 63`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._
 - **Are the 30 inferred relationships involving `SemanticToolbox` (e.g. with `ArgumentParser` and `OpenAICompatibleRunner`) actually correct?**
   _`SemanticToolbox` has 30 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 41 inferred relationships involving `SemanticOutput` (e.g. with `IntegrityHarness` and `CriterionCheck`) actually correct?**
