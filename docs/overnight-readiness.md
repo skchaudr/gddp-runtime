@@ -29,9 +29,11 @@ before unattended operation.
 
 - [ ] X1: heartbeat live-fire — one real heartbeat run dispatches a real job to a real executor
       (needs Sab's explicit go; only hardening item never executed live)
-- [ ] Integrity lane proven live — one live pi run produces a populated IntegrityReport
+- [x] Integrity lane proven live (2026-07-10) — live pi run on vault-doctor/find-duplicates
+      produced populated IntegrityReport (integrity verdict `drift`, 3 findings; criteria
+      verdict `fail` @0.075; graph truth untouched, receipt in session scratchpad)
 - [ ] Retry loop proven live — one non-pass verdict with evidence refs re-dispatches
-- [ ] `retry_budget` added to gddp-config project.yaml execution_policy (Sab; default 3)
+- [x] `retry_budget: 3` added to all gddp-config execution_policy blocks (600a6cc, 2026-07-10)
 - [ ] heartbeat restart-on-crash behavior tested (cron exists; crash-recovery unproven)
 
 ## Constraints carried from the spec
