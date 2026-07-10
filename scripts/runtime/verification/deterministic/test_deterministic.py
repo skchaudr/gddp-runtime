@@ -318,11 +318,151 @@ def test_constraint_scan_violated(tmp_path: Path):
 
 
 def test_check_artifacts(tmp_path: Path):
+    """Individual files still work (regression)."""
     (tmp_path / "decision.md").write_text("# decision\n")
     node = {"required_artifacts": ["decision.md", "merged_pr"]}
     present = check_artifacts(node, tmp_path)
     assert present["decision.md"] is True
     assert present["merged_pr"] is False
+
+
+def test_check_artifacts_condensed_receipt_all_present(tmp_path: Path):
+    """Condensed receipt with all four artifacts satisfied."""
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## decision.md\n"
+        "## plan.md\n"
+        "## feedback.md\n"
+        "## review.md\n"
+    )
+    node = {
+        "required_artifacts": [
+            "decision.md",
+            "plan.md",
+            "feedback.md",
+            "review.md",
+        ]
+    }
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is True
+    assert present["plan.md"] is True
+    assert present["feedback.md"] is True
+    assert present["review.md"] is True
+
+
+def test_check_artifacts_condensed_receipt_missing_heading(tmp_path: Path):
+    """Condensed receipt without a required artifact leaves it absent."""
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## decision.md\n"
+        "## plan.md\n"
+    )
+    node = {"required_artifacts": ["decision.md", "plan.md", "feedback.md"]}
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is True
+    assert present["plan.md"] is True
+    assert present["feedback.md"] is False
+
+
+def test_check_artifacts_individual_files_in_subdirs(tmp_path: Path):
+    """Individual files in .gddp/ and docs/ still work."""
+    (tmp_path / ".gddp").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / ".gddp" / "decision.md").write_text("# decision\n")
+    (tmp_path / "docs" / "plan.md").write_text("# plan\n")
+    node = {"required_artifacts": ["decision.md", "plan.md"]}
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is True
+    assert present["plan.md"] is True
+
+
+def test_check_artifacts_mixed_individual_and_condensed(tmp_path: Path):
+    """Some artifacts as individual files, some via condensed receipt."""
+    (tmp_path / "decision.md").write_text("# decision\n")
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## plan.md\n"
+        "## feedback.md\n"
+    )
+    node = {
+        "required_artifacts": [
+            "decision.md",
+            "plan.md",
+            "feedback.md",
+            "review.md",
+        ]
+    }
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is True  # individual file
+    assert present["plan.md"] is True  # from receipt
+    assert present["feedback.md"] is True  # from receipt
+    assert present["review.md"] is False  # not present anywhere
+
+
+def test_check_artifacts_merged_pr_always_false_even_in_receipt(tmp_path: Path):
+    """merged_pr always False, even if listed as H2 in receipt."""
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## merged_pr\n"
+        "## decision.md\n"
+    )
+    node = {"required_artifacts": ["merged_pr", "decision.md"]}
+    present = check_artifacts(node, tmp_path)
+    assert present["merged_pr"] is False  # special-cased, always False
+    assert present["decision.md"] is True  # from receipt
+
+
+def test_check_artifacts_receipt_in_subdirs(tmp_path: Path):
+    """executor-receipt.md in .gddp/ or docs/ also works."""
+    (tmp_path / ".gddp").mkdir()
+    receipt = tmp_path / ".gddp" / "executor-receipt.md"
+    receipt.write_text("# Execution Receipt\n## plan.md\n")
+    node = {"required_artifacts": ["plan.md"]}
+    present = check_artifacts(node, tmp_path)
+    assert present["plan.md"] is True
+
+
+def test_check_artifacts_heading_with_trailing_whitespace(tmp_path: Path):
+    """H2 heading match allows trailing whitespace."""
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## decision.md  \n"  # trailing spaces
+        "## plan.md\t\n"  # trailing tab
+    )
+    node = {"required_artifacts": ["decision.md", "plan.md"]}
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is True
+    assert present["plan.md"] is True
+
+
+def test_check_artifacts_heading_must_match_exactly(tmp_path: Path):
+    """H2 heading must match exactly; no partial or case mismatches."""
+    receipt = tmp_path / "executor-receipt.md"
+    receipt.write_text(
+        "# Execution Receipt\n"
+        "## Decision.md\n"  # case mismatch
+        "## plan.md extra\n"  # extra text
+        "### feedback.md\n"  # H3 instead of H2
+        "## review.md"
+    )
+    node = {
+        "required_artifacts": [
+            "decision.md",
+            "plan.md",
+            "feedback.md",
+            "review.md",
+        ]
+    }
+    present = check_artifacts(node, tmp_path)
+    assert present["decision.md"] is False  # case mismatch
+    assert present["plan.md"] is False  # extra text
+    assert present["feedback.md"] is False  # H3 not H2
+    assert present["review.md"] is True  # exact match
 
 
 def test_dependency_status():
