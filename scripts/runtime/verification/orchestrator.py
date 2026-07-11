@@ -52,7 +52,7 @@ def verify(
                 shape_profile=shape_profile,
             )
 
-    verdict, confidence, action = decision_engine.decide(det, semantic)
+    verdict, signals, action = decision_engine.decide(det, semantic)
 
     # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
     # adjudication, which only fires on indeterminate evidence). A green
@@ -76,8 +76,10 @@ def verify(
         verdict=verdict,
         criteria_verdict=criteria_verdict,
         integrity=integrity,
-        confidence=confidence,
-        criteria_confidence=confidence,
+        confidence=signals.overall_confidence,
+        criteria_confidence=signals.criteria_confidence,
+        completeness=signals.completeness,
+        graph_readiness=signals.graph_readiness,
         completeness_status=_completeness_status(semantic),
         deterministic=det,
         semantic=semantic,

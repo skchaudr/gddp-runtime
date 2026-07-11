@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .decision_engine import decide
 from .schemas import (
     ConstraintCheck,
@@ -95,8 +97,9 @@ def test_matrix_row_1_blocked_on_incomplete_deps():
         criteria=[_criterion("a", "pass")],
         deps_status={"dep-a": "pending", "dep-b": "complete"},
     )
-    verdict, _, _ = decide(det, None)
+    verdict, signals, _ = decide(det, None)
     assert verdict == Verdict.BLOCKED
+    assert signals.criteria_confidence == 1.0
 
 
 def test_matrix_row_2_out_of_scope_on_constraint_violation():
@@ -105,8 +108,9 @@ def test_matrix_row_2_out_of_scope_on_constraint_violation():
         constraints=[_constraint("violated")],
         deps_status={"dep-a": "complete"},
     )
-    verdict, _, _ = decide(det, None)
+    verdict, signals, _ = decide(det, None)
     assert verdict == Verdict.OUT_OF_SCOPE_CHANGE_DETECTED
+    assert signals.criteria_confidence == 0.85
 
 
 def test_matrix_row_3_fail_on_deterministic_hard_fail():
@@ -114,8 +118,9 @@ def test_matrix_row_3_fail_on_deterministic_hard_fail():
         criteria=[_criterion("a", "fail", 0.6), _criterion("b", "pass")],
         deps_status={"dep-a": "complete"},
     )
-    verdict, _, _ = decide(det, None)
+    verdict, signals, _ = decide(det, None)
     assert verdict == Verdict.FAIL
+    assert signals.criteria_confidence == 0.6
 
 
 def test_matrix_row_4_fail_on_semantic_judged_fail():
@@ -125,8 +130,10 @@ def test_matrix_row_4_fail_on_semantic_judged_fail():
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "judged_fail", 0.85)])
-    verdict, _, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.FAIL
+    # criteria_confidence for fail is 1.0 - semantic_confidence = 0.15
+    assert signals.criteria_confidence == pytest.approx(0.15)
 
 
 def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
@@ -135,8 +142,9 @@ def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
         artifacts_present={"receipt.json": False},
         deps_status={"dep-a": "complete"},
     )
-    verdict, _, _ = decide(det, None)
+    verdict, signals, _ = decide(det, None)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert signals.completeness == 0.5
 
 
 def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
@@ -146,9 +154,10 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
-    verdict, confidence, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-    assert confidence == 0.95
+    assert signals.criteria_confidence == 0.95
+    assert signals.completeness == 0.5
 
 
 def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
@@ -158,9 +167,10 @@ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifac
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
-    verdict, _, action = decide(det, sem)
+    verdict, signals, action = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
     assert action == "Provide missing required artifacts and re-run semantic investigation."
+    assert signals.completeness == 0.5
 
 
 def test_matrix_row_8_needs_more_evidence_budget_exhausted():
@@ -173,9 +183,10 @@ def test_matrix_row_8_needs_more_evidence_budget_exhausted():
         [_judgment("a", "indeterminate", 0.7)],
         budget_exhausted=True,
     )
-    verdict, confidence, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-    assert confidence <= 0.5
+    assert signals.criteria_confidence <= 0.5
+    assert signals.completeness <= 0.5
 
 
 def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
@@ -188,9 +199,9 @@ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
         [_judgment("a", "indeterminate", 0.7)],
         budget_exhausted=True,
     )
-    verdict, confidence, action = decide(det, sem)
+    verdict, signals, action = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-    assert confidence <= 0.5
+    assert signals.criteria_confidence <= 0.5
     assert action == "Re-run semantic investigation with sufficient budget."
 
 
@@ -200,8 +211,9 @@ def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
         artifacts_present={"receipt.json": True},
         deps_status={"dep-a": "complete"},
     )
-    verdict, _, _ = decide(det, _semantic([]))
+    verdict, signals, _ = decide(det, _semantic([]))
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+    assert signals.criteria_confidence == 0.4
 
 
 def test_matrix_row_10_needs_human_review_semantic_indeterminate():
@@ -211,8 +223,10 @@ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
-    verdict, _, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.NEEDS_HUMAN_REVIEW
+    # For indeterminate judgment, confidence is min(c, 1-c) = 0.35
+    assert signals.criteria_confidence == pytest.approx(0.35)
 
 
 def test_matrix_row_11_pass_semantic_resolves_indeterminate():
@@ -230,8 +244,9 @@ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
             _judgment("b", "judged_pass", 0.88),
         ]
     )
-    verdict, _, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.PASS
+    assert signals.criteria_confidence == pytest.approx(0.9)
 
 
 def test_matrix_row_12_pass_deterministic_clean():
@@ -240,8 +255,11 @@ def test_matrix_row_12_pass_deterministic_clean():
         artifacts_present={"receipt.json": True},
         deps_status={"dep-a": "complete"},
     )
-    verdict, _, _ = decide(det, None)
+    verdict, signals, _ = decide(det, None)
     assert verdict == Verdict.PASS
+    assert signals.criteria_confidence == 0.875
+    assert signals.completeness == 1.0
+    assert signals.graph_readiness == 0.875
 
 
 def test_row_4_precedence_over_budget_exhausted():
@@ -255,8 +273,9 @@ def test_row_4_precedence_over_budget_exhausted():
         [_judgment("a", "judged_fail", 0.8)],
         budget_exhausted=True,
     )
-    verdict, _, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.FAIL
+    assert signals.criteria_confidence == pytest.approx(0.2)
 
 
 def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminate():
@@ -266,8 +285,8 @@ def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminat
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
-    _, confidence, _ = decide(det, sem)
-    assert confidence == 0.95
+    _, signals, _ = decide(det, sem)
+    assert signals.criteria_confidence == 0.95
 
 
 def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
@@ -289,9 +308,11 @@ def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
             _judgment("b", "judged_pass", 0.91),
         ]
     )
-    verdict, confidence, action = decide(det, sem)
+    verdict, signals, action = decide(det, sem)
     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-    assert confidence >= 0.85
+    assert signals.criteria_confidence >= 0.85
+    assert signals.completeness == 0.5
+    assert signals.graph_readiness == 0.0
     assert action == "Provide missing required artifacts and re-submit."
 
 
@@ -302,6 +323,6 @@ def test_semantic_fail_yields_low_criteria_confidence():
         deps_status={"dep-a": "complete"},
     )
     sem = _semantic([_judgment("a", "judged_fail", 0.9)])
-    verdict, confidence, _ = decide(det, sem)
+    verdict, signals, _ = decide(det, sem)
     assert verdict == Verdict.FAIL
-    assert confidence < 0.2
+    assert signals.criteria_confidence < 0.2

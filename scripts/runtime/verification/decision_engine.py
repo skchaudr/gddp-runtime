@@ -101,11 +101,23 @@ class _DecisionContext:
 
 
 @dataclass(frozen=True)
+class VerificationSignals:
+    criteria_confidence: float
+    completeness: float
+    graph_readiness: float
+
+    @property
+    def overall_confidence(self) -> float:
+        """Compatibility alias for the single scalar expected by legacy callers."""
+        return min(self.criteria_confidence, self.completeness)
+
+
+@dataclass(frozen=True)
 class _MatrixRow:
     number: int
     matches: Callable[[_DecisionContext], bool]
     verdict: Verdict
-    confidence: Callable[[_DecisionContext], float]
+    signals: Callable[[_DecisionContext], VerificationSignals]
     required_next_action: str
     reasoning: str
 
@@ -117,40 +129,75 @@ def _mean(values) -> float:
     return sum(items) / len(items)
 
 
-def _confidence_blocked(_ctx: _DecisionContext) -> float:
-    return DEPS_CONFIDENCE
+def _signals_blocked(_ctx: _DecisionContext) -> VerificationSignals:
+    return VerificationSignals(
+        criteria_confidence=DEPS_CONFIDENCE,
+        completeness=0.5,
+        graph_readiness=0.0,
+    )
 
 
-def _confidence_constraint_violation(ctx: _DecisionContext) -> float:
-    return _mean(c.confidence for c in ctx.violated_constraints)
+def _signals_constraint_violation(ctx: _DecisionContext) -> VerificationSignals:
+    conf = _mean(c.confidence for c in ctx.violated_constraints)
+    return VerificationSignals(
+        criteria_confidence=conf,
+        completeness=1.0,
+        graph_readiness=0.0,
+    )
 
 
-def _confidence_fail_criteria(ctx: _DecisionContext) -> float:
-    return _mean(c.confidence for c in ctx.fail_criteria)
+def _signals_fail_criteria(ctx: _DecisionContext) -> VerificationSignals:
+    conf = _mean(c.confidence for c in ctx.fail_criteria)
+    return VerificationSignals(
+        criteria_confidence=conf,
+        completeness=1.0,
+        graph_readiness=0.0,
+    )
 
 
-def _confidence_all_criteria(ctx: _DecisionContext) -> float:
-    return _mean(c.confidence for c in ctx.deterministic.criteria)
+def _signals_all_criteria(ctx: _DecisionContext) -> VerificationSignals:
+    conf = _mean(c.confidence for c in ctx.deterministic.criteria)
+    completeness = 1.0 if ctx.artifacts_present else 0.5
+    return VerificationSignals(
+        criteria_confidence=conf,
+        completeness=completeness,
+        graph_readiness=conf if completeness > 0.9 else 0.0,
+    )
 
 
-def _confidence_semantic_blend(
+def _signals_semantic_blend(
     ctx: _DecisionContext,
     judgments: list[CriterionJudgment],
     *,
     cap_at_half: bool = False,
-) -> float:
+) -> VerificationSignals:
     floor = ctx.deterministic_floor_confidence()
     if not judgments:
-        blended = floor
+        criteria_conf = floor
     else:
         semantic = _semantic_criteria_confidence(judgments)
-        if ctx.indeterminate_only:
-            blended = semantic
+        # Fix calibration: when the floor is indeterminate-dominated (why we ran
+        # semantic in the first place), defer to semantic instead of min()-ing.
+        if ctx.indeterminate_criteria:
+            criteria_conf = semantic
         else:
-            blended = min(floor, semantic)
+            criteria_conf = min(floor, semantic)
+
     if cap_at_half:
-        return min(blended, 0.5)
-    return blended
+        criteria_conf = min(criteria_conf, 0.5)
+
+    completeness = 1.0 if ctx.artifacts_present else 0.5
+    if ctx.budget_exhausted:
+        completeness = min(completeness, 0.5)
+
+    # Graph readiness requires both high criteria signal AND artifact completeness.
+    readiness = criteria_conf if (completeness > 0.9 and criteria_conf > 0.5) else 0.0
+
+    return VerificationSignals(
+        criteria_confidence=criteria_conf,
+        completeness=completeness,
+        graph_readiness=readiness,
+    )
 
 
 def _semantic_criteria_confidence(judgments: list[CriterionJudgment]) -> float:
@@ -277,7 +324,7 @@ MATRIX: list[_MatrixRow] = [
         1,
         _row1,
         Verdict.BLOCKED,
-        _confidence_blocked,
+        _signals_blocked,
         "Complete dependency nodes before re-verification.",
         "Matrix row 1: dependencies incomplete.",
     ),
@@ -285,7 +332,7 @@ MATRIX: list[_MatrixRow] = [
         2,
         _row2,
         Verdict.OUT_OF_SCOPE_CHANGE_DETECTED,
-        _confidence_constraint_violation,
+        _signals_constraint_violation,
         "Revert out-of-scope changes and re-submit for verification.",
         "Matrix row 2: constraint violation detected.",
     ),
@@ -293,7 +340,7 @@ MATRIX: list[_MatrixRow] = [
         3,
         _row3,
         Verdict.FAIL,
-        _confidence_fail_criteria,
+        _signals_fail_criteria,
         "Fix failing acceptance criteria and re-submit.",
         "Matrix row 3: deterministic hard fail.",
     ),
@@ -301,7 +348,7 @@ MATRIX: list[_MatrixRow] = [
         4,
         _row4,
         Verdict.FAIL,
-        lambda ctx: _confidence_semantic_blend(
+        lambda ctx: _signals_semantic_blend(
             ctx, [j for j in ctx.judgments if j.judgment == "judged_fail"]
         ),
         "Address semantic failures and re-submit.",
@@ -311,7 +358,7 @@ MATRIX: list[_MatrixRow] = [
         5,
         _row5,
         Verdict.NEEDS_MORE_EVIDENCE,
-        _confidence_all_criteria,
+        _signals_all_criteria,
         "Provide missing required artifacts and re-submit.",
         "Matrix row 5: all criteria pass but required artifacts missing.",
     ),
@@ -319,7 +366,7 @@ MATRIX: list[_MatrixRow] = [
         6,
         _row6,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments),
         "Provide missing required artifacts and re-submit.",
         "Matrix row 6: semantic pass but required artifacts missing.",
     ),
@@ -327,7 +374,7 @@ MATRIX: list[_MatrixRow] = [
         7,
         _row7,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(
+        lambda ctx: _signals_semantic_blend(
             ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
         ),
         "Provide missing required artifacts and re-run semantic investigation.",
@@ -337,7 +384,7 @@ MATRIX: list[_MatrixRow] = [
         8,
         _row8,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
         "Re-run semantic investigation with sufficient budget.",
         "Matrix row 8: semantic budget exhausted.",
     ),
@@ -345,7 +392,7 @@ MATRIX: list[_MatrixRow] = [
         9,
         _row9,
         Verdict.NEEDS_MORE_EVIDENCE,
-        lambda ctx: _confidence_semantic_blend(ctx, []),
+        lambda ctx: _signals_semantic_blend(ctx, []),
         "Re-run semantic investigation to produce judgments.",
         "Matrix row 9: semantic produced no judgments.",
     ),
@@ -353,7 +400,7 @@ MATRIX: list[_MatrixRow] = [
         10,
         _row10,
         Verdict.NEEDS_HUMAN_REVIEW,
-        lambda ctx: _confidence_semantic_blend(
+        lambda ctx: _signals_semantic_blend(
             ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
         ),
         "Human review required for unresolved semantic judgments.",
@@ -363,7 +410,7 @@ MATRIX: list[_MatrixRow] = [
         11,
         _row11,
         Verdict.PASS,
-        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments),
         "Proceed to accept_node (open evidence PR).",
         "Matrix row 11: semantic pass on indeterminate criteria.",
     ),
@@ -371,7 +418,7 @@ MATRIX: list[_MatrixRow] = [
         12,
         _row12,
         Verdict.PASS,
-        _confidence_all_criteria,
+        _signals_all_criteria,
         "Proceed to accept_node (open evidence PR).",
         "Matrix row 12: deterministic clean pass.",
     ),
@@ -381,10 +428,10 @@ MATRIX: list[_MatrixRow] = [
 def decide(
     deterministic: DeterministicResult,
     semantic: SemanticOutput | None,
-) -> tuple[Verdict, float, str]:
+) -> tuple[Verdict, VerificationSignals, str]:
     """Pure function. No I/O, no LLM, no side effects."""
     ctx = _DecisionContext(deterministic=deterministic, semantic=semantic)
     for row in MATRIX:
         if row.matches(ctx):
-            return row.verdict, row.confidence(ctx), row.required_next_action
+            return row.verdict, row.signals(ctx), row.required_next_action
     raise RuntimeError("decision matrix exhausted without a match")

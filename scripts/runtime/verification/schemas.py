@@ -116,7 +116,10 @@ class VerdictReceipt(BaseModel):
     # Both optional so every existing receipt stays valid.
     criteria_verdict: Verdict | None = None
     integrity: IntegrityOutput | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
     criteria_confidence: float = Field(ge=0.0, le=1.0)
+    completeness: float = Field(ge=0.0, le=1.0)
+    graph_readiness: float = Field(ge=0.0, le=1.0)
     completeness_status: Literal["complete", "partial", "not-run"]
     deterministic: DeterministicResult
     semantic: SemanticOutput | None
@@ -134,6 +137,16 @@ class VerdictReceipt(BaseModel):
         # "confidence"; map it forward so old receipt JSON still loads.
         if "criteria_confidence" not in values and "confidence" in values:
             values["criteria_confidence"] = values["confidence"]
+        elif "confidence" not in values and "criteria_confidence" in values:
+            values["confidence"] = values["criteria_confidence"]
+
+        if "completeness" not in values:
+            # Default for legacy receipts
+            values["completeness"] = 1.0 if values.get("verdict") == "pass" else 0.5
+        if "graph_readiness" not in values:
+            # Default for legacy receipts
+            values["graph_readiness"] = values.get("criteria_confidence", 0.0)
+
         if "completeness_status" not in values:
             values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
         return values
