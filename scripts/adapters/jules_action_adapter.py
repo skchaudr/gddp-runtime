@@ -84,6 +84,35 @@ The previous implementation was reviewed and the following issues were found:
 Please address these findings in your implementation.
 """
 
+        required_artifacts = job.get("required_artifacts", [])
+        artifacts_section = ""
+        if required_artifacts:
+            artifacts_text = "\n".join(f"- `{a}`" for a in required_artifacts)
+            artifacts_section = f"""
+## Required Artifacts
+Your PR must include the following files in the repo root:
+{artifacts_text}
+
+These files are checked by the deterministic verification gate. Missing artifacts will cause the job to fail verification and be re-dispatched. Include all of them in your PR.
+
+(Alternative: a single `executor-receipt.md` covering the rationale, summary, and diff overview is also accepted.)
+"""
+
+        metadata_reminder = (
+            f"\n"
+            f"---\n"
+            f"*Dispatched by GDDP control plane — job_id: {job['job_id']} — node: {job['node_id']}*\n"
+            f"\n"
+            f"**CRITICAL — PR Metadata Block Required:**\n"
+            f"Your PR description MUST end with this exact block:\n"
+            f"```\n"
+            f"node: {job['node_id']}\n"
+            f"job: {job['job_id']}\n"
+            f"```\n"
+            f"Without this block, the GDDP return router cannot link your PR back to this job. "
+            f"The PR will be rejected and the work will not be reviewed. This is not optional.\n"
+        )
+
         return f"""## Goal
 {job['goal']}
 
@@ -95,6 +124,7 @@ Please address these findings in your implementation.
 
 ## Acceptance Criteria
 {criteria_text}
+{artifacts_section}
 {findings_section}
 ## Output Requirements
 - Implement the change
@@ -109,10 +139,7 @@ job: {job['job_id']}
 ```
 
 This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
-
----
-*Dispatched by GDDP control plane — job_id: {job['job_id']} — node: {job['node_id']}*
-"""
+{metadata_reminder}"""
 
     def dispatch(self, job: dict) -> DispatchResult:
         token = self._github_token()

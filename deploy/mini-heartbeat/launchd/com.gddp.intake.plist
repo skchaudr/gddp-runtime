@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  GDDP intake on sab-mini. Dormant by default: RunAtLoad=false, not started
+  until bin/arm.sh. Labels must match arm.sh / disarm.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gddp.intake</string>
+
+  <key>WorkingDirectory</key>
+  <string>__GDDP_RUNTIME_ROOT__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__GDDP_RUNTIME_ROOT__/scripts/intake_server.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:__HOME__/.local/bin</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>GDDP_RUNTIME_ROOT</key>
+    <string>__GDDP_RUNTIME_ROOT__</string>
+    <key>GDDP_CONFIG_PATH</key>
+    <string>__GDDP_CONFIG_PATH__</string>
+    <key>GDDP_REPOS_ROOT</key>
+    <string>__GDDP_REPOS_ROOT__</string>
+    <key>GDDP_DEEPSEEK_KEY_CMD</key>
+    <string>pass show api/deepseek</string>
+    <key>GDDP_WEBHOOK_SECRET_CMD</key>
+    <string>pass show gddp/webhook-secret</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/gddp-intake.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/gddp-intake.err.log</string>
+</dict>
+</plist>
