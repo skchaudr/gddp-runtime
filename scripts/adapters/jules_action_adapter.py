@@ -56,8 +56,10 @@ class JulesActionAdapter:
         Format the job packet as a structured issue body.
         Jules reads this as its task instructions.
         """
-        constraints = json.loads(job.get("constraints") or "[]")
-        criteria    = json.loads(job.get("acceptance_criteria") or "[]")
+        raw_constraints = job.get("constraints")
+        constraints = json.loads(raw_constraints) if isinstance(raw_constraints, str) else (raw_constraints or [])
+        raw_criteria = job.get("acceptance_criteria")
+        criteria = json.loads(raw_criteria) if isinstance(raw_criteria, str) else (raw_criteria or [])
 
         constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
         criteria_text    = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)

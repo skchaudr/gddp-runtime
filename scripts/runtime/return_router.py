@@ -202,11 +202,9 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
 
     # Build the job dict with findings injected
     job_with_findings = dict(job)
-    # Convert constraints/acceptance_criteria from JSON strings if needed
-    if isinstance(job_with_findings.get("constraints"), str):
-        job_with_findings["constraints"] = json.loads(job_with_findings["constraints"])
-    if isinstance(job_with_findings.get("acceptance_criteria"), str):
-        job_with_findings["acceptance_criteria"] = json.loads(job_with_findings["acceptance_criteria"])
+    # NOTE: Do NOT convert constraints/acceptance_criteria from JSON strings to
+    # lists here — the adapter's build_issue_body calls json.loads() on them and
+    # expects JSON strings. Converting them to lists causes a TypeError.
 
     # Add findings to the job for the adapter to include in the issue body
     integrity = verification.get("integrity", {}) if verification.get("verification_status") == "ok" else {}
