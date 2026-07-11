@@ -8,7 +8,7 @@ Branch: main
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
-Hardened the retry loop in both directions (forward dispatch + return path) and kicked off a live dispatch against the gddp-runtime graph. Jules is currently working on dispatched issue #91. The return path (merged PR → evaluator → retry) is wired into the heartbeat for the first time. Infrastructure (intake server, cloudflared tunnel, GitHub webhook) is live on sab-mini.
+Hardened the retry loop in both directions (forward dispatch + return path) and completed a full live round trip: issue #90 → heartbeat dispatch → Jules executor → PR #92 (metadata block bridged, all artifacts present) → merge → return path fired → evaluator PASS (criteria 0.967, integrity 0.92) → job awaiting_review. The return path (merged PR → evaluator → retry) was wired into the heartbeat for the first time and is now proven live end-to-end.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 
@@ -31,18 +31,20 @@ docs/operator-practice/learn-split-axis-verdict.rs — pre-existing untracked fi
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-gddp-runtime: main, pushed to origin (commit f60e6de). 242 tests pass. One pre-existing untracked file (docs/operator-practice/learn-split-axis-verdict.rs) left alone. gddp-config: main, pushed to origin (commit d2e88cb). Pre-existing graphify-out staged files left unstaged.
+gddp-runtime: main, synced with origin (HEAD 54a0196, includes PR #92 merge + Fable's e51e702 reconciliation). 250 tests pass. One pre-existing untracked file (docs/operator-practice/learn-split-axis-verdict.rs) left alone. gddp-config: main, synced with origin (HEAD d2e88cb). verification-runtime-live/ added to .gitignore (runtime state, not graph truth).
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
-db/queue.db — live SQLite DB with job_20260711T16020485 (status=running, attempt=0, node=verdict-confidence-split)
-GitHub issue #90 — trigger issue with node: verdict-confidence-split tag
-GitHub issue #91 — executor dispatch issue with jules label, Required Artifacts section, metadata block
-Cloudflared tunnel — https://alberta-states-risks-micro.trycloudflare.com → localhost:5050 (intake server)
-GitHub webhook 651704334 — on skchaudr/gddp-runtime, events: issues + pull_request, pointing to tunnel
+gddp-config/verification-runtime-live/gddp-runtime/verdict-confidence-split.json — live verdict receipt (PASS, criteria 0.967, integrity 0.92, all 7 criteria judged_pass)
+GitHub issue #90 — trigger issue with node: verdict-confidence-split tag (closed)
+GitHub issue #91 — executor dispatch issue, closed by PR #92 merge
+GitHub PR #92 — Jules implementation, merged, metadata block + all 3 artifacts present
+db/queue.db — job_20260711T16020485 status=awaiting_review, attempt=0, result res_20260711T1631577924
+Cloudflared tunnel — https://alberta-states-risks-micro.trycloudflare.com → localhost:5050 (may have expired)
+GitHub webhook 651704334 — on skchaudr/gddp-runtime, events: issues + pull_request
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
-Jules is working on issue #91. When it opens a PR: verify the PR body includes the node:/job: metadata block (the trust gap). When the PR merges: the webhook fires → intake server → SQLite event → next heartbeat run processes the return path (handle_merged_pr → evaluator with integrity ON → should_retry → redispatch or awaiting_review). The jules.yml workflow needs updating from google/jules (dead 404) to google-labs-code/jules-invoke@v1 with a JULES_API_KEY secret — but Jules is running via a different mechanism (CLI/GitHub App) so this is not blocking the current live loop.
+Live round trip complete: verdict was PASS so retry loop was not exercised (correctly). To observe a live retry, dispatch a node likely to fail first attempt (e.g. a complex multi-file node). jules.yml workflow still references dead google/jules (404) — needs update to google-labs-code/jules-invoke@v1 with JULES_API_KEY secret, but Jules is running via CLI/App so not blocking. Intake server (PID 76956) and cloudflared tunnel (PID 77792) may need restart if session ended.
 
 ------------------------------------------------ Agent Section END
