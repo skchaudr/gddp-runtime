@@ -42,11 +42,11 @@ def _receipt_payload(**overrides):
     return payload
 
 
-def test_verdict_receipt_has_no_confidence_alias_field() -> None:
+def test_verdict_receipt_has_confidence_field() -> None:
     receipt = VerdictReceipt.model_validate(_receipt_payload())
 
     assert receipt.criteria_confidence == 0.8
-    assert "confidence" not in receipt.model_dump()
+    assert receipt.confidence == 0.8
 
 
 def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:

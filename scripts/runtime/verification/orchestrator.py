@@ -52,7 +52,13 @@ def verify(
                 shape_profile=shape_profile,
             )
 
-    verdict, confidence, action = decision_engine.decide(det, semantic)
+    (
+        verdict,
+        criteria_confidence,
+        completeness,
+        graph_readiness,
+        action,
+    ) = decision_engine.decide(det, semantic)
 
     # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
     # adjudication, which only fires on indeterminate evidence). A green
@@ -69,6 +75,9 @@ def verify(
             config_root=config_root,
         )
         verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
+        # Re-evaluate graph readiness if the integrity lane downgraded the verdict
+        if verdict != criteria_verdict:
+            graph_readiness = decision_engine._compute_graph_readiness(verdict)
 
     return VerdictReceipt(
         project_id=project_yaml.get("project_id", ""),
@@ -76,8 +85,10 @@ def verify(
         verdict=verdict,
         criteria_verdict=criteria_verdict,
         integrity=integrity,
-        confidence=confidence,
-        criteria_confidence=confidence,
+        confidence=criteria_confidence,
+        criteria_confidence=criteria_confidence,
+        completeness=completeness,
+        graph_readiness=graph_readiness,
         completeness_status=_completeness_status(semantic),
         deterministic=det,
         semantic=semantic,

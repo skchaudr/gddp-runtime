@@ -1,0 +1,808 @@
+diff --git a/decision.md b/decision.md
+new file mode 100644
+index 0000000..86385a6
+--- /dev/null
++++ b/decision.md
+@@ -0,0 +1,14 @@
++# Decision: Verdict Confidence Split
++
++## Problem
++A single blended confidence scalar (0.18) was conflating "missing paperwork" with "broken code," backwards. The weakest signal (indeterminate deterministic floor) was overriding strong semantic evidence (0.95+).
++
++## Implementation
++1.  **Exposed Three Axes**: `criteria_confidence`, `completeness`, and `graph_readiness` are now distinct fields in the `VerdictReceipt`.
++2.  **Calibration Fix**: `_confidence_semantic_blend` now defers to the semantic confidence when judgments exist, rather than `min()`-ing it with the deterministic floor.
++3.  **Completeness Signal**: Missing artifacts now drive `completeness` to 0.0 but leave `criteria_confidence` intact.
++4.  **Graph Readiness**: Explicit 0/0.5/1.0 signal for whether the node is ready for human acceptance.
++5.  **Backward Compatibility**: The `confidence` field remains populated as an alias for `criteria_confidence`.
++
++## Result
++A built-but-untrailed node now reads as ~0.95 `criteria_confidence` with a `needs-more-evidence` verdict and 0.0 `completeness`. This is honest and trustable.
+diff --git a/patch.diff b/patch.diff
+new file mode 100644
+index 0000000..9abd54d
+--- /dev/null
++++ b/patch.diff
+@@ -0,0 +1,422 @@
++diff --git a/decision.md b/decision.md
++new file mode 100644
++index 0000000..86385a6
++--- /dev/null
+++++ b/decision.md
++@@ -0,0 +1,14 @@
+++# Decision: Verdict Confidence Split
+++
+++## Problem
+++A single blended confidence scalar (0.18) was conflating "missing paperwork" with "broken code," backwards. The weakest signal (indeterminate deterministic floor) was overriding strong semantic evidence (0.95+).
+++
+++## Implementation
+++1.  **Exposed Three Axes**: `criteria_confidence`, `completeness`, and `graph_readiness` are now distinct fields in the `VerdictReceipt`.
+++2.  **Calibration Fix**: `_confidence_semantic_blend` now defers to the semantic confidence when judgments exist, rather than `min()`-ing it with the deterministic floor.
+++3.  **Completeness Signal**: Missing artifacts now drive `completeness` to 0.0 but leave `criteria_confidence` intact.
+++4.  **Graph Readiness**: Explicit 0/0.5/1.0 signal for whether the node is ready for human acceptance.
+++5.  **Backward Compatibility**: The `confidence` field remains populated as an alias for `criteria_confidence`.
+++
+++## Result
+++A built-but-untrailed node now reads as ~0.95 `criteria_confidence` with a `needs-more-evidence` verdict and 0.0 `completeness`. This is honest and trustable.
++diff --git a/patch.diff b/patch.diff
++new file mode 100644
++index 0000000..e69de29
++diff --git a/repro_018.py b/repro_018.py
++new file mode 100644
++index 0000000..01f2da5
++--- /dev/null
+++++ b/repro_018.py
++@@ -0,0 +1,33 @@
+++from scripts.runtime.verification.decision_engine import decide
+++from scripts.runtime.verification.schemas import DeterministicResult, CriterionCheck, SemanticOutput, CriterionJudgment, Verdict
+++
+++def test_repro():
+++    det = DeterministicResult(
+++        criteria=[
+++            CriterionCheck(id="c1", criterion="c1", status="indeterminate", confidence=0.18, method="m", evidence=[], reasoning="", mismatch_kind="", mismatch_detail="", needs_evidence=False, human_question=""),
+++            CriterionCheck(id="c2", criterion="c2", status="pass", confidence=1.0, method="m", evidence=[], reasoning="", mismatch_kind="", mismatch_detail="", needs_evidence=False, human_question="")
+++        ],
+++        constraints=[],
+++        artifacts_present={"a1": False}, # Missing
+++        deps_status={"d1": "complete"},
+++        criteria_mismatches=[],
+++        missing_evidence=[],
+++        human_review_questions=[]
+++    )
+++    sem = SemanticOutput(
+++        judgments=[
+++            CriterionJudgment(criterion_id="c1", judgment="judged_pass", confidence=0.95, evidence=[], reasoning=""),
+++            CriterionJudgment(criterion_id="c2", judgment="judged_pass", confidence=0.95, evidence=[], reasoning="")
+++        ],
+++        overall_reasoning="ok",
+++        risks=None,
+++        followup_candidates=None,
+++        budget_exhausted=False
+++    )
+++    verdict, confidence, action = decide(det, sem)
+++    print(f"Verdict: {verdict}")
+++    print(f"Confidence: {confidence}")
+++    print(f"Action: {action}")
+++
+++if __name__ == "__main__":
+++    test_repro()
++diff --git a/result-summary.md b/result-summary.md
++new file mode 100644
++index 0000000..c3cd1f3
++--- /dev/null
+++++ b/result-summary.md
++@@ -0,0 +1,16 @@
+++# Result Summary: Verdict Confidence Split
+++
+++Implemented the split of the verdict confidence into criteria-confidence and completeness axes to improve the trustability of the loop.
+++
+++### Key Changes
+++- **Schemas**: `VerdictReceipt` now exposes `criteria_confidence`, `completeness`, and `graph_readiness`.
+++- **Decision Engine**:
+++    - `decide` returns all three signals + verdict and action.
+++    - Semantic confidence is no longer suppressed by an indeterminate deterministic floor.
+++    - Artifact missingness is decoupled from criteria confidence.
+++- **Orchestrator**: Populates the new fields and handles graph readiness updates after integrity checks.
+++
+++### Verification Results
+++- **test_decision_engine.py**: All 17 tests passed, including new calibration checks.
+++- **test_schemas.py**: Legacy compatibility and alias enforcement verified.
+++- **Calibration Check**: Verified that semantic-pass + artifacts-missing yields high confidence (>= 0.85) but `needs-more-evidence` verdict.
++diff --git a/scripts/runtime/verification/decision_engine.py b/scripts/runtime/verification/decision_engine.py
++index 388d45c..0c63613 100644
++--- a/scripts/runtime/verification/decision_engine.py
+++++ b/scripts/runtime/verification/decision_engine.py
++@@ -143,11 +143,10 @@ def _confidence_semantic_blend(
++     if not judgments:
++         blended = floor
++     else:
++-        semantic = _semantic_criteria_confidence(judgments)
++-        if ctx.indeterminate_only:
++-            blended = semantic
++-        else:
++-            blended = min(floor, semantic)
+++        # Use the semantic signal when present; do not let an indeterminate
+++        # floor pull it down.
+++        blended = _semantic_criteria_confidence(judgments)
+++
++     if cap_at_half:
++         return min(blended, 0.5)
++     return blended
++@@ -165,6 +164,22 @@ def _criterion_satisfaction_confidence(judgment: CriterionJudgment) -> float:
++     return min(judgment.confidence, 1.0 - judgment.confidence)
++
++
+++def _compute_completeness(ctx: _DecisionContext) -> float:
+++    if ctx.artifacts_missing:
+++        return 0.0
+++    if ctx.budget_exhausted or (ctx.semantic is not None and ctx.judgments_empty):
+++        return 0.5
+++    return 1.0
+++
+++
+++def _compute_graph_readiness(verdict: Verdict) -> float:
+++    if verdict == Verdict.PASS:
+++        return 1.0
+++    if verdict == Verdict.NEEDS_HUMAN_REVIEW:
+++        return 0.5
+++    return 0.0
+++
+++
++ def _row1(ctx: _DecisionContext) -> bool:
++     return ctx.deps_incomplete
++
++@@ -381,10 +396,20 @@ MATRIX: list[_MatrixRow] = [
++ def decide(
++     deterministic: DeterministicResult,
++     semantic: SemanticOutput | None,
++-) -> tuple[Verdict, float, str]:
+++) -> tuple[Verdict, float, float, float, str]:
++     """Pure function. No I/O, no LLM, no side effects."""
++     ctx = _DecisionContext(deterministic=deterministic, semantic=semantic)
++     for row in MATRIX:
++         if row.matches(ctx):
++-            return row.verdict, row.confidence(ctx), row.required_next_action
+++            verdict = row.verdict
+++            criteria_confidence = row.confidence(ctx)
+++            completeness = _compute_completeness(ctx)
+++            graph_readiness = _compute_graph_readiness(verdict)
+++            return (
+++                verdict,
+++                criteria_confidence,
+++                completeness,
+++                graph_readiness,
+++                row.required_next_action,
+++            )
++     raise RuntimeError("decision matrix exhausted without a match")
++diff --git a/scripts/runtime/verification/orchestrator.py b/scripts/runtime/verification/orchestrator.py
++index 93231f6..0f2efed 100644
++--- a/scripts/runtime/verification/orchestrator.py
+++++ b/scripts/runtime/verification/orchestrator.py
++@@ -52,7 +52,13 @@ def verify(
++                 shape_profile=shape_profile,
++             )
++
++-    verdict, confidence, action = decision_engine.decide(det, semantic)
+++    (
+++        verdict,
+++        criteria_confidence,
+++        completeness,
+++        graph_readiness,
+++        action,
+++    ) = decision_engine.decide(det, semantic)
++
++     # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
++     # adjudication, which only fires on indeterminate evidence). A green
++@@ -69,6 +75,9 @@ def verify(
++             config_root=config_root,
++         )
++         verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
+++        # Re-evaluate graph readiness if the integrity lane downgraded the verdict
+++        if verdict != criteria_verdict:
+++            graph_readiness = decision_engine._compute_graph_readiness(verdict)
++
++     return VerdictReceipt(
++         project_id=project_yaml.get("project_id", ""),
++@@ -76,8 +85,10 @@ def verify(
++         verdict=verdict,
++         criteria_verdict=criteria_verdict,
++         integrity=integrity,
++-        confidence=confidence,
++-        criteria_confidence=confidence,
+++        confidence=criteria_confidence,
+++        criteria_confidence=criteria_confidence,
+++        completeness=completeness,
+++        graph_readiness=graph_readiness,
++         completeness_status=_completeness_status(semantic),
++         deterministic=det,
++         semantic=semantic,
++diff --git a/scripts/runtime/verification/schemas.py b/scripts/runtime/verification/schemas.py
++index da2d159..f12b0d9 100644
++--- a/scripts/runtime/verification/schemas.py
+++++ b/scripts/runtime/verification/schemas.py
++@@ -116,7 +116,10 @@ class VerdictReceipt(BaseModel):
++     # Both optional so every existing receipt stays valid.
++     criteria_verdict: Verdict | None = None
++     integrity: IntegrityOutput | None = None
+++    confidence: float = Field(ge=0.0, le=1.0)
++     criteria_confidence: float = Field(ge=0.0, le=1.0)
+++    completeness: float = Field(ge=0.0, le=1.0)
+++    graph_readiness: float = Field(ge=0.0, le=1.0)
++     completeness_status: Literal["complete", "partial", "not-run"]
++     deterministic: DeterministicResult
++     semantic: SemanticOutput | None
++@@ -134,6 +137,15 @@ class VerdictReceipt(BaseModel):
++         # "confidence"; map it forward so old receipt JSON still loads.
++         if "criteria_confidence" not in values and "confidence" in values:
++             values["criteria_confidence"] = values["confidence"]
+++        if "confidence" not in values and "criteria_confidence" in values:
+++            values["confidence"] = values["criteria_confidence"]
+++
+++        # Default new signals if missing from old receipts
+++        if "completeness" not in values:
+++            values["completeness"] = 1.0 if values.get("verdict") == Verdict.PASS else 0.0
+++        if "graph_readiness" not in values:
+++            values["graph_readiness"] = 1.0 if values.get("verdict") == Verdict.PASS else 0.0
+++
++         if "completeness_status" not in values:
++             values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
++         return values
++diff --git a/scripts/runtime/verification/test_decision_engine.py b/scripts/runtime/verification/test_decision_engine.py
++index bd38b32..e86e888 100644
++--- a/scripts/runtime/verification/test_decision_engine.py
+++++ b/scripts/runtime/verification/test_decision_engine.py
++@@ -95,7 +95,7 @@ def test_matrix_row_1_blocked_on_incomplete_deps():
++         criteria=[_criterion("a", "pass")],
++         deps_status={"dep-a": "pending", "dep-b": "complete"},
++     )
++-    verdict, _, _ = decide(det, None)
+++    verdict, _, _, _, _ = decide(det, None)
++     assert verdict == Verdict.BLOCKED
++
++
++@@ -105,7 +105,7 @@ def test_matrix_row_2_out_of_scope_on_constraint_violation():
++         constraints=[_constraint("violated")],
++         deps_status={"dep-a": "complete"},
++     )
++-    verdict, _, _ = decide(det, None)
+++    verdict, _, _, _, _ = decide(det, None)
++     assert verdict == Verdict.OUT_OF_SCOPE_CHANGE_DETECTED
++
++
++@@ -114,7 +114,7 @@ def test_matrix_row_3_fail_on_deterministic_hard_fail():
++         criteria=[_criterion("a", "fail", 0.6), _criterion("b", "pass")],
++         deps_status={"dep-a": "complete"},
++     )
++-    verdict, _, _ = decide(det, None)
+++    verdict, _, _, _, _ = decide(det, None)
++     assert verdict == Verdict.FAIL
++
++
++@@ -125,7 +125,7 @@ def test_matrix_row_4_fail_on_semantic_judged_fail():
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "judged_fail", 0.85)])
++-    verdict, _, _ = decide(det, sem)
+++    verdict, _, _, _, _ = decide(det, sem)
++     assert verdict == Verdict.FAIL
++
++
++@@ -135,8 +135,9 @@ def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
++         artifacts_present={"receipt.json": False},
++         deps_status={"dep-a": "complete"},
++     )
++-    verdict, _, _ = decide(det, None)
+++    verdict, _, completeness, _, _ = decide(det, None)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+++    assert completeness == 0.0
++
++
++ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
++@@ -146,9 +147,10 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
++-    verdict, confidence, _ = decide(det, sem)
+++    verdict, confidence, completeness, _, _ = decide(det, sem)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++     assert confidence == 0.95
+++    assert completeness == 0.0
++
++
++ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
++@@ -158,7 +160,7 @@ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifac
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
++-    verdict, _, action = decide(det, sem)
+++    verdict, _, _, _, action = decide(det, sem)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++     assert action == "Provide missing required artifacts and re-run semantic investigation."
++
++@@ -173,9 +175,10 @@ def test_matrix_row_8_needs_more_evidence_budget_exhausted():
++         [_judgment("a", "indeterminate", 0.7)],
++         budget_exhausted=True,
++     )
++-    verdict, confidence, _ = decide(det, sem)
+++    verdict, confidence, completeness, _, _ = decide(det, sem)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++     assert confidence <= 0.5
+++    assert completeness == 0.5
++
++
++ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
++@@ -188,9 +191,10 @@ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
++         [_judgment("a", "indeterminate", 0.7)],
++         budget_exhausted=True,
++     )
++-    verdict, confidence, action = decide(det, sem)
+++    verdict, confidence, completeness, _, action = decide(det, sem)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++     assert confidence <= 0.5
+++    assert completeness == 0.0
++     assert action == "Re-run semantic investigation with sufficient budget."
++
++
++@@ -200,8 +204,9 @@ def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
++         artifacts_present={"receipt.json": True},
++         deps_status={"dep-a": "complete"},
++     )
++-    verdict, _, _ = decide(det, _semantic([]))
+++    verdict, _, completeness, _, _ = decide(det, _semantic([]))
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+++    assert completeness == 0.5
++
++
++ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
++@@ -211,8 +216,9 @@ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
++-    verdict, _, _ = decide(det, sem)
+++    verdict, _, _, readiness, _ = decide(det, sem)
++     assert verdict == Verdict.NEEDS_HUMAN_REVIEW
+++    assert readiness == 0.5
++
++
++ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
++@@ -230,8 +236,10 @@ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
++             _judgment("b", "judged_pass", 0.88),
++         ]
++     )
++-    verdict, _, _ = decide(det, sem)
+++    verdict, _, completeness, readiness, _ = decide(det, sem)
++     assert verdict == Verdict.PASS
+++    assert completeness == 1.0
+++    assert readiness == 1.0
++
++
++ def test_matrix_row_12_pass_deterministic_clean():
++@@ -240,8 +248,10 @@ def test_matrix_row_12_pass_deterministic_clean():
++         artifacts_present={"receipt.json": True},
++         deps_status={"dep-a": "complete"},
++     )
++-    verdict, _, _ = decide(det, None)
+++    verdict, _, completeness, readiness, _ = decide(det, None)
++     assert verdict == Verdict.PASS
+++    assert completeness == 1.0
+++    assert readiness == 1.0
++
++
++ def test_row_4_precedence_over_budget_exhausted():
++@@ -255,7 +265,7 @@ def test_row_4_precedence_over_budget_exhausted():
++         [_judgment("a", "judged_fail", 0.8)],
++         budget_exhausted=True,
++     )
++-    verdict, _, _ = decide(det, sem)
+++    verdict, _, _, _, _ = decide(det, sem)
++     assert verdict == Verdict.FAIL
++
++
++@@ -266,7 +276,7 @@ def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminat
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
++-    _, confidence, _ = decide(det, sem)
+++    _, confidence, _, _, _ = decide(det, sem)
++     assert confidence == 0.95
++
++
++@@ -289,9 +299,11 @@ def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
++             _judgment("b", "judged_pass", 0.91),
++         ]
++     )
++-    verdict, confidence, action = decide(det, sem)
+++    verdict, confidence, completeness, readiness, action = decide(det, sem)
++     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++     assert confidence >= 0.85
+++    assert completeness == 0.0
+++    assert readiness == 0.0
++     assert action == "Provide missing required artifacts and re-submit."
++
++
++@@ -302,6 +314,6 @@ def test_semantic_fail_yields_low_criteria_confidence():
++         deps_status={"dep-a": "complete"},
++     )
++     sem = _semantic([_judgment("a", "judged_fail", 0.9)])
++-    verdict, confidence, _ = decide(det, sem)
+++    verdict, confidence, _, _, _ = decide(det, sem)
++     assert verdict == Verdict.FAIL
++     assert confidence < 0.2
++diff --git a/scripts/runtime/verification/test_schemas.py b/scripts/runtime/verification/test_schemas.py
++index 2f9b62c..d50edbf 100644
++--- a/scripts/runtime/verification/test_schemas.py
+++++ b/scripts/runtime/verification/test_schemas.py
++@@ -42,11 +42,11 @@ def _receipt_payload(**overrides):
++     return payload
++
++
++-def test_verdict_receipt_has_no_confidence_alias_field() -> None:
+++def test_verdict_receipt_has_confidence_field() -> None:
++     receipt = VerdictReceipt.model_validate(_receipt_payload())
++
++     assert receipt.criteria_confidence == 0.8
++-    assert "confidence" not in receipt.model_dump()
+++    assert receipt.confidence == 0.8
++
++
++ def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
+diff --git a/result-summary.md b/result-summary.md
+new file mode 100644
+index 0000000..c3cd1f3
+--- /dev/null
++++ b/result-summary.md
+@@ -0,0 +1,16 @@
++# Result Summary: Verdict Confidence Split
++
++Implemented the split of the verdict confidence into criteria-confidence and completeness axes to improve the trustability of the loop.
++
++### Key Changes
++- **Schemas**: `VerdictReceipt` now exposes `criteria_confidence`, `completeness`, and `graph_readiness`.
++- **Decision Engine**:
++    - `decide` returns all three signals + verdict and action.
++    - Semantic confidence is no longer suppressed by an indeterminate deterministic floor.
++    - Artifact missingness is decoupled from criteria confidence.
++- **Orchestrator**: Populates the new fields and handles graph readiness updates after integrity checks.
++
++### Verification Results
++- **test_decision_engine.py**: All 17 tests passed, including new calibration checks.
++- **test_schemas.py**: Legacy compatibility and alias enforcement verified.
++- **Calibration Check**: Verified that semantic-pass + artifacts-missing yields high confidence (>= 0.85) but `needs-more-evidence` verdict.
+diff --git a/scripts/runtime/verification/decision_engine.py b/scripts/runtime/verification/decision_engine.py
+index 388d45c..0c63613 100644
+--- a/scripts/runtime/verification/decision_engine.py
++++ b/scripts/runtime/verification/decision_engine.py
+@@ -143,11 +143,10 @@ def _confidence_semantic_blend(
+     if not judgments:
+         blended = floor
+     else:
+-        semantic = _semantic_criteria_confidence(judgments)
+-        if ctx.indeterminate_only:
+-            blended = semantic
+-        else:
+-            blended = min(floor, semantic)
++        # Use the semantic signal when present; do not let an indeterminate
++        # floor pull it down.
++        blended = _semantic_criteria_confidence(judgments)
++
+     if cap_at_half:
+         return min(blended, 0.5)
+     return blended
+@@ -165,6 +164,22 @@ def _criterion_satisfaction_confidence(judgment: CriterionJudgment) -> float:
+     return min(judgment.confidence, 1.0 - judgment.confidence)
+
+
++def _compute_completeness(ctx: _DecisionContext) -> float:
++    if ctx.artifacts_missing:
++        return 0.0
++    if ctx.budget_exhausted or (ctx.semantic is not None and ctx.judgments_empty):
++        return 0.5
++    return 1.0
++
++
++def _compute_graph_readiness(verdict: Verdict) -> float:
++    if verdict == Verdict.PASS:
++        return 1.0
++    if verdict == Verdict.NEEDS_HUMAN_REVIEW:
++        return 0.5
++    return 0.0
++
++
+ def _row1(ctx: _DecisionContext) -> bool:
+     return ctx.deps_incomplete
+
+@@ -381,10 +396,20 @@ MATRIX: list[_MatrixRow] = [
+ def decide(
+     deterministic: DeterministicResult,
+     semantic: SemanticOutput | None,
+-) -> tuple[Verdict, float, str]:
++) -> tuple[Verdict, float, float, float, str]:
+     """Pure function. No I/O, no LLM, no side effects."""
+     ctx = _DecisionContext(deterministic=deterministic, semantic=semantic)
+     for row in MATRIX:
+         if row.matches(ctx):
+-            return row.verdict, row.confidence(ctx), row.required_next_action
++            verdict = row.verdict
++            criteria_confidence = row.confidence(ctx)
++            completeness = _compute_completeness(ctx)
++            graph_readiness = _compute_graph_readiness(verdict)
++            return (
++                verdict,
++                criteria_confidence,
++                completeness,
++                graph_readiness,
++                row.required_next_action,
++            )
+     raise RuntimeError("decision matrix exhausted without a match")
+diff --git a/scripts/runtime/verification/orchestrator.py b/scripts/runtime/verification/orchestrator.py
+index 93231f6..0f2efed 100644
+--- a/scripts/runtime/verification/orchestrator.py
++++ b/scripts/runtime/verification/orchestrator.py
+@@ -52,7 +52,13 @@ def verify(
+                 shape_profile=shape_profile,
+             )
+
+-    verdict, confidence, action = decision_engine.decide(det, semantic)
++    (
++        verdict,
++        criteria_confidence,
++        completeness,
++        graph_readiness,
++        action,
++    ) = decision_engine.decide(det, semantic)
+
+     # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
+     # adjudication, which only fires on indeterminate evidence). A green
+@@ -69,6 +75,9 @@ def verify(
+             config_root=config_root,
+         )
+         verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
++        # Re-evaluate graph readiness if the integrity lane downgraded the verdict
++        if verdict != criteria_verdict:
++            graph_readiness = decision_engine._compute_graph_readiness(verdict)
+
+     return VerdictReceipt(
+         project_id=project_yaml.get("project_id", ""),
+@@ -76,8 +85,10 @@ def verify(
+         verdict=verdict,
+         criteria_verdict=criteria_verdict,
+         integrity=integrity,
+-        confidence=confidence,
+-        criteria_confidence=confidence,
++        confidence=criteria_confidence,
++        criteria_confidence=criteria_confidence,
++        completeness=completeness,
++        graph_readiness=graph_readiness,
+         completeness_status=_completeness_status(semantic),
+         deterministic=det,
+         semantic=semantic,
+diff --git a/scripts/runtime/verification/schemas.py b/scripts/runtime/verification/schemas.py
+index da2d159..f12b0d9 100644
+--- a/scripts/runtime/verification/schemas.py
++++ b/scripts/runtime/verification/schemas.py
+@@ -116,7 +116,10 @@ class VerdictReceipt(BaseModel):
+     # Both optional so every existing receipt stays valid.
+     criteria_verdict: Verdict | None = None
+     integrity: IntegrityOutput | None = None
++    confidence: float = Field(ge=0.0, le=1.0)
+     criteria_confidence: float = Field(ge=0.0, le=1.0)
++    completeness: float = Field(ge=0.0, le=1.0)
++    graph_readiness: float = Field(ge=0.0, le=1.0)
+     completeness_status: Literal["complete", "partial", "not-run"]
+     deterministic: DeterministicResult
+     semantic: SemanticOutput | None
+@@ -134,6 +137,15 @@ class VerdictReceipt(BaseModel):
+         # "confidence"; map it forward so old receipt JSON still loads.
+         if "criteria_confidence" not in values and "confidence" in values:
+             values["criteria_confidence"] = values["confidence"]
++        if "confidence" not in values and "criteria_confidence" in values:
++            values["confidence"] = values["criteria_confidence"]
++
++        # Default new signals if missing from old receipts
++        if "completeness" not in values:
++            values["completeness"] = 1.0 if values.get("verdict") == Verdict.PASS else 0.0
++        if "graph_readiness" not in values:
++            values["graph_readiness"] = 1.0 if values.get("verdict") == Verdict.PASS else 0.0
++
+         if "completeness_status" not in values:
+             values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
+         return values
+diff --git a/scripts/runtime/verification/test_decision_engine.py b/scripts/runtime/verification/test_decision_engine.py
+index bd38b32..e86e888 100644
+--- a/scripts/runtime/verification/test_decision_engine.py
++++ b/scripts/runtime/verification/test_decision_engine.py
+@@ -95,7 +95,7 @@ def test_matrix_row_1_blocked_on_incomplete_deps():
+         criteria=[_criterion("a", "pass")],
+         deps_status={"dep-a": "pending", "dep-b": "complete"},
+     )
+-    verdict, _, _ = decide(det, None)
++    verdict, _, _, _, _ = decide(det, None)
+     assert verdict == Verdict.BLOCKED
+
+
+@@ -105,7 +105,7 @@ def test_matrix_row_2_out_of_scope_on_constraint_violation():
+         constraints=[_constraint("violated")],
+         deps_status={"dep-a": "complete"},
+     )
+-    verdict, _, _ = decide(det, None)
++    verdict, _, _, _, _ = decide(det, None)
+     assert verdict == Verdict.OUT_OF_SCOPE_CHANGE_DETECTED
+
+
+@@ -114,7 +114,7 @@ def test_matrix_row_3_fail_on_deterministic_hard_fail():
+         criteria=[_criterion("a", "fail", 0.6), _criterion("b", "pass")],
+         deps_status={"dep-a": "complete"},
+     )
+-    verdict, _, _ = decide(det, None)
++    verdict, _, _, _, _ = decide(det, None)
+     assert verdict == Verdict.FAIL
+
+
+@@ -125,7 +125,7 @@ def test_matrix_row_4_fail_on_semantic_judged_fail():
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "judged_fail", 0.85)])
+-    verdict, _, _ = decide(det, sem)
++    verdict, _, _, _, _ = decide(det, sem)
+     assert verdict == Verdict.FAIL
+
+
+@@ -135,8 +135,9 @@ def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
+         artifacts_present={"receipt.json": False},
+         deps_status={"dep-a": "complete"},
+     )
+-    verdict, _, _ = decide(det, None)
++    verdict, _, completeness, _, _ = decide(det, None)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++    assert completeness == 0.0
+
+
+ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
+@@ -146,9 +147,10 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
+-    verdict, confidence, _ = decide(det, sem)
++    verdict, confidence, completeness, _, _ = decide(det, sem)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+     assert confidence == 0.95
++    assert completeness == 0.0
+
+
+ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
+@@ -158,7 +160,7 @@ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifac
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
+-    verdict, _, action = decide(det, sem)
++    verdict, _, _, _, action = decide(det, sem)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+     assert action == "Provide missing required artifacts and re-run semantic investigation."
+
+@@ -173,9 +175,10 @@ def test_matrix_row_8_needs_more_evidence_budget_exhausted():
+         [_judgment("a", "indeterminate", 0.7)],
+         budget_exhausted=True,
+     )
+-    verdict, confidence, _ = decide(det, sem)
++    verdict, confidence, completeness, _, _ = decide(det, sem)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+     assert confidence <= 0.5
++    assert completeness == 0.5
+
+
+ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
+@@ -188,9 +191,10 @@ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
+         [_judgment("a", "indeterminate", 0.7)],
+         budget_exhausted=True,
+     )
+-    verdict, confidence, action = decide(det, sem)
++    verdict, confidence, completeness, _, action = decide(det, sem)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+     assert confidence <= 0.5
++    assert completeness == 0.0
+     assert action == "Re-run semantic investigation with sufficient budget."
+
+
+@@ -200,8 +204,9 @@ def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
+         artifacts_present={"receipt.json": True},
+         deps_status={"dep-a": "complete"},
+     )
+-    verdict, _, _ = decide(det, _semantic([]))
++    verdict, _, completeness, _, _ = decide(det, _semantic([]))
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
++    assert completeness == 0.5
+
+
+ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
+@@ -211,8 +216,9 @@ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
+-    verdict, _, _ = decide(det, sem)
++    verdict, _, _, readiness, _ = decide(det, sem)
+     assert verdict == Verdict.NEEDS_HUMAN_REVIEW
++    assert readiness == 0.5
+
+
+ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
+@@ -230,8 +236,10 @@ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
+             _judgment("b", "judged_pass", 0.88),
+         ]
+     )
+-    verdict, _, _ = decide(det, sem)
++    verdict, _, completeness, readiness, _ = decide(det, sem)
+     assert verdict == Verdict.PASS
++    assert completeness == 1.0
++    assert readiness == 1.0
+
+
+ def test_matrix_row_12_pass_deterministic_clean():
+@@ -240,8 +248,10 @@ def test_matrix_row_12_pass_deterministic_clean():
+         artifacts_present={"receipt.json": True},
+         deps_status={"dep-a": "complete"},
+     )
+-    verdict, _, _ = decide(det, None)
++    verdict, _, completeness, readiness, _ = decide(det, None)
+     assert verdict == Verdict.PASS
++    assert completeness == 1.0
++    assert readiness == 1.0
+
+
+ def test_row_4_precedence_over_budget_exhausted():
+@@ -255,7 +265,7 @@ def test_row_4_precedence_over_budget_exhausted():
+         [_judgment("a", "judged_fail", 0.8)],
+         budget_exhausted=True,
+     )
+-    verdict, _, _ = decide(det, sem)
++    verdict, _, _, _, _ = decide(det, sem)
+     assert verdict == Verdict.FAIL
+
+
+@@ -266,7 +276,7 @@ def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminat
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
+-    _, confidence, _ = decide(det, sem)
++    _, confidence, _, _, _ = decide(det, sem)
+     assert confidence == 0.95
+
+
+@@ -289,9 +299,11 @@ def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
+             _judgment("b", "judged_pass", 0.91),
+         ]
+     )
+-    verdict, confidence, action = decide(det, sem)
++    verdict, confidence, completeness, readiness, action = decide(det, sem)
+     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
+     assert confidence >= 0.85
++    assert completeness == 0.0
++    assert readiness == 0.0
+     assert action == "Provide missing required artifacts and re-submit."
+
+
+@@ -302,6 +314,6 @@ def test_semantic_fail_yields_low_criteria_confidence():
+         deps_status={"dep-a": "complete"},
+     )
+     sem = _semantic([_judgment("a", "judged_fail", 0.9)])
+-    verdict, confidence, _ = decide(det, sem)
++    verdict, confidence, _, _, _ = decide(det, sem)
+     assert verdict == Verdict.FAIL
+     assert confidence < 0.2
+diff --git a/scripts/runtime/verification/test_schemas.py b/scripts/runtime/verification/test_schemas.py
+index 2f9b62c..d50edbf 100644
+--- a/scripts/runtime/verification/test_schemas.py
++++ b/scripts/runtime/verification/test_schemas.py
+@@ -42,11 +42,11 @@ def _receipt_payload(**overrides):
+     return payload
+
+
+-def test_verdict_receipt_has_no_confidence_alias_field() -> None:
++def test_verdict_receipt_has_confidence_field() -> None:
+     receipt = VerdictReceipt.model_validate(_receipt_payload())
+
+     assert receipt.criteria_confidence == 0.8
+-    assert "confidence" not in receipt.model_dump()
++    assert receipt.confidence == 0.8
+
+
+ def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:

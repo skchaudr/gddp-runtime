@@ -143,11 +143,10 @@ def _confidence_semantic_blend(
     if not judgments:
         blended = floor
     else:
-        semantic = _semantic_criteria_confidence(judgments)
-        if ctx.indeterminate_only:
-            blended = semantic
-        else:
-            blended = min(floor, semantic)
+        # Use the semantic signal when present; do not let an indeterminate
+        # floor pull it down.
+        blended = _semantic_criteria_confidence(judgments)
+
     if cap_at_half:
         return min(blended, 0.5)
     return blended
@@ -163,6 +162,22 @@ def _criterion_satisfaction_confidence(judgment: CriterionJudgment) -> float:
     if judgment.judgment == "judged_fail":
         return 1.0 - judgment.confidence
     return min(judgment.confidence, 1.0 - judgment.confidence)
+
+
+def _compute_completeness(ctx: _DecisionContext) -> float:
+    if ctx.artifacts_missing:
+        return 0.0
+    if ctx.budget_exhausted or (ctx.semantic is not None and ctx.judgments_empty):
+        return 0.5
+    return 1.0
+
+
+def _compute_graph_readiness(verdict: Verdict) -> float:
+    if verdict == Verdict.PASS:
+        return 1.0
+    if verdict == Verdict.NEEDS_HUMAN_REVIEW:
+        return 0.5
+    return 0.0
 
 
 def _row1(ctx: _DecisionContext) -> bool:
@@ -381,10 +396,20 @@ MATRIX: list[_MatrixRow] = [
 def decide(
     deterministic: DeterministicResult,
     semantic: SemanticOutput | None,
-) -> tuple[Verdict, float, str]:
+) -> tuple[Verdict, float, float, float, str]:
     """Pure function. No I/O, no LLM, no side effects."""
     ctx = _DecisionContext(deterministic=deterministic, semantic=semantic)
     for row in MATRIX:
         if row.matches(ctx):
-            return row.verdict, row.confidence(ctx), row.required_next_action
+            verdict = row.verdict
+            criteria_confidence = row.confidence(ctx)
+            completeness = _compute_completeness(ctx)
+            graph_readiness = _compute_graph_readiness(verdict)
+            return (
+                verdict,
+                criteria_confidence,
+                completeness,
+                graph_readiness,
+                row.required_next_action,
+            )
     raise RuntimeError("decision matrix exhausted without a match")
