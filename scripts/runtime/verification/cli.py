@@ -106,9 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--semantic-provider",
-        choices=["auto", "deepseek", "glm"],
+        choices=["auto", "deepseek", "glm", "gemini", "zai", "openrouter"],
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
-        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM.",
+        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM (zai).",
     )
     parser.add_argument(
         "--semantic-max-turns",
@@ -190,6 +190,27 @@ LIVE_PROVIDER_CONFIG = {
         "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
         "default_model": "glm-4-flash",
     },
+    "zai": {
+        "api_key_env": "GLM_API_KEY",
+        "base_url_env": "GLM_BASE_URL",
+        "model_env": "GLM_MODEL",
+        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "default_model": "glm-4-flash",
+    },
+    "gemini": {
+        "api_key_env": "GEMINI_API_KEY",
+        "base_url_env": "GEMINI_BASE_URL",
+        "model_env": "GEMINI_MODEL",
+        "default_base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "default_model": "gemini-1.5-flash",
+    },
+    "openrouter": {
+        "api_key_env": "OPENROUTER_API_KEY",
+        "base_url_env": "OPENROUTER_BASE_URL",
+        "model_env": "OPENROUTER_MODEL",
+        "default_base_url": "https://openrouter.ai/api/v1",
+        "default_model": "deepseek/deepseek-chat",
+    },
 }
 
 
@@ -223,7 +244,7 @@ def _build_runner(args) -> OfflineFinalizingRunner | OpenAICompatibleRunner:
 def _select_live_provider(requested: str) -> str:
     if requested != "auto":
         return requested
-    for provider in ("deepseek", "glm"):
+    for provider in ("deepseek", "glm", "gemini", "openrouter"):
         config = LIVE_PROVIDER_CONFIG[provider]
         if os.environ.get(config["api_key_env"]):
             return provider
@@ -243,17 +264,21 @@ def _resolve_harness(args) -> str:
 def _pi_provider(args) -> str:
     """Map the gddp --semantic-provider name to a pi provider name."""
     requested = args.semantic_provider
-    if requested == "deepseek":
-        return "deepseek"
+    if requested in ("deepseek", "gemini", "openrouter", "zai"):
+        return requested
     if requested == "glm":
         return "zai"
-    # auto: prefer deepseek if a key is present, else zai (GLM).
+    # auto: prefer deepseek if a key is present, then zai (GLM), then others.
     if os.environ.get("DEEPSEEK_API_KEY"):
         return "deepseek"
     if os.environ.get("GLM_API_KEY"):
         return "zai"
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return "openrouter"
     raise RuntimeError(
-        "--semantic-harness pi needs DEEPSEEK_API_KEY or GLM_API_KEY for provider auto-selection"
+        "--semantic-harness pi needs an API key (DEEPSEEK_API_KEY, GLM_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) for provider auto-selection"
     )
 
 

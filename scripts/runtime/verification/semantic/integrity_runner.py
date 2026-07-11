@@ -24,7 +24,7 @@ from scripts.runtime.verification.schemas import IntegrityOutput
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_integrity.ts"
-GUARD_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier_guard.ts"
+TRACER_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_tracer.ts"
 
 INTEGRITY_SYSTEM_PROMPT = """You are the GDDP integrity reviewer (lane 2: fresh-eyes drift review).
 
@@ -40,13 +40,12 @@ Think like a fresh pair of eyes, not a spec enforcer. Ask: does this change
 make sense for what this node promised to deliver? Could it inadvertently
 break something a dependent node relies on? Is the intent still recognizable?
 
-Tools: you have read, grep, find, ls, bash, and submit_integrity_verdict
-available. edit/write/multi_edit are hard-blocked by the harness (the integrity
-reviewer is read-only). bash is allowed for read-only inspection only;
-destructive verbs, git mutation, and network are hard-blocked.
+Tools: you have read, grep, find, ls, and submit_integrity_verdict
+available. edit/write/multi_edit/bash are hard-excluded by the harness (the
+integrity reviewer is read-only).
 
 Investigate the repo against the node's intent and graph integrity. Prefer cheap
-tools (read, grep, find) before bash. When finished, call submit_integrity_verdict
+tools (read, grep, find) first. When finished, call submit_integrity_verdict
 with arguments matching IntegrityOutput:
 
   verdict: "pass" | "block" | "drift" | "insufficient" | "contradicted" | "unknown"
@@ -167,7 +166,8 @@ class IntegrityHarnessRunner:
             "--no-extensions",
             "--no-session",
             "-e", str(EXTENSION_PATH),
-            "-e", str(GUARD_EXTENSION_PATH),
+            "-e", str(TRACER_EXTENSION_PATH),
+            "--exclude-tools", "edit,write,multi_edit,bash,create,delete,move,replace,multi-edit",
             "--provider", self.provider,
             "--thinking", self.thinking,
             "--system-prompt", system_prompt,

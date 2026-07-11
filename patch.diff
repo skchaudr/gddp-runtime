@@ -1,557 +1,367 @@
-diff --git a/scripts/runtime/verification/decision_engine.py b/scripts/runtime/verification/decision_engine.py
-index 388d45c..09205df 100644
---- a/scripts/runtime/verification/decision_engine.py
-+++ b/scripts/runtime/verification/decision_engine.py
-@@ -100,12 +100,24 @@ class _DecisionContext:
-         return _mean(c.confidence for c in self.deterministic.criteria)
+diff --git a/scripts/runtime/verification/cli.py b/scripts/runtime/verification/cli.py
+index c4fc1e6..8f91cb1 100644
+--- a/scripts/runtime/verification/cli.py
++++ b/scripts/runtime/verification/cli.py
+@@ -106,9 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
+     )
+     parser.add_argument(
+         "--semantic-provider",
+-        choices=["auto", "deepseek", "glm"],
++        choices=["auto", "deepseek", "glm", "gemini", "zai", "openrouter"],
+         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
+-        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM.",
++        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM (zai).",
+     )
+     parser.add_argument(
+         "--semantic-max-turns",
+@@ -190,6 +190,27 @@ LIVE_PROVIDER_CONFIG = {
+         "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+         "default_model": "glm-4-flash",
+     },
++    "zai": {
++        "api_key_env": "GLM_API_KEY",
++        "base_url_env": "GLM_BASE_URL",
++        "model_env": "GLM_MODEL",
++        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
++        "default_model": "glm-4-flash",
++    },
++    "gemini": {
++        "api_key_env": "GEMINI_API_KEY",
++        "base_url_env": "GEMINI_BASE_URL",
++        "model_env": "GEMINI_MODEL",
++        "default_base_url": "https://generativelanguage.googleapis.com/v1beta",
++        "default_model": "gemini-1.5-flash",
++    },
++    "openrouter": {
++        "api_key_env": "OPENROUTER_API_KEY",
++        "base_url_env": "OPENROUTER_BASE_URL",
++        "model_env": "OPENROUTER_MODEL",
++        "default_base_url": "https://openrouter.ai/api/v1",
++        "default_model": "deepseek/deepseek-chat",
++    },
+ }
 
 
-+@dataclass(frozen=True)
-+class VerificationSignals:
-+    criteria_confidence: float
-+    completeness: float
-+    graph_readiness: float
+@@ -223,7 +244,7 @@ def _build_runner(args) -> OfflineFinalizingRunner | OpenAICompatibleRunner:
+ def _select_live_provider(requested: str) -> str:
+     if requested != "auto":
+         return requested
+-    for provider in ("deepseek", "glm"):
++    for provider in ("deepseek", "glm", "gemini", "openrouter"):
+         config = LIVE_PROVIDER_CONFIG[provider]
+         if os.environ.get(config["api_key_env"]):
+             return provider
+@@ -243,17 +264,21 @@ def _resolve_harness(args) -> str:
+ def _pi_provider(args) -> str:
+     """Map the gddp --semantic-provider name to a pi provider name."""
+     requested = args.semantic_provider
+-    if requested == "deepseek":
+-        return "deepseek"
++    if requested in ("deepseek", "gemini", "openrouter", "zai"):
++        return requested
+     if requested == "glm":
+         return "zai"
+-    # auto: prefer deepseek if a key is present, else zai (GLM).
++    # auto: prefer deepseek if a key is present, then zai (GLM), then others.
+     if os.environ.get("DEEPSEEK_API_KEY"):
+         return "deepseek"
+     if os.environ.get("GLM_API_KEY"):
+         return "zai"
++    if os.environ.get("GEMINI_API_KEY"):
++        return "gemini"
++    if os.environ.get("OPENROUTER_API_KEY"):
++        return "openrouter"
+     raise RuntimeError(
+-        "--semantic-harness pi needs DEEPSEEK_API_KEY or GLM_API_KEY for provider auto-selection"
++        "--semantic-harness pi needs an API key (DEEPSEEK_API_KEY, GLM_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) for provider auto-selection"
+     )
+
+
+@@ -352,3 +377,4 @@ def main(argv: list[str] | None = None) -> int:
+
+ if __name__ == "__main__":
+     raise SystemExit(main())
 +
-+    @property
-+    def overall_confidence(self) -> float:
-+        """Compatibility alias for the single scalar expected by legacy callers."""
-+        return min(self.criteria_confidence, self.completeness)
-+
-+
- @dataclass(frozen=True)
- class _MatrixRow:
-     number: int
-     matches: Callable[[_DecisionContext], bool]
-     verdict: Verdict
--    confidence: Callable[[_DecisionContext], float]
-+    signals: Callable[[_DecisionContext], VerificationSignals]
-     required_next_action: str
-     reasoning: str
-
-@@ -117,40 +129,75 @@ def _mean(values) -> float:
-     return sum(items) / len(items)
-
-
--def _confidence_blocked(_ctx: _DecisionContext) -> float:
--    return DEPS_CONFIDENCE
-+def _signals_blocked(_ctx: _DecisionContext) -> VerificationSignals:
-+    return VerificationSignals(
-+        criteria_confidence=DEPS_CONFIDENCE,
-+        completeness=0.5,
-+        graph_readiness=0.0,
-+    )
-
-
--def _confidence_constraint_violation(ctx: _DecisionContext) -> float:
--    return _mean(c.confidence for c in ctx.violated_constraints)
-+def _signals_constraint_violation(ctx: _DecisionContext) -> VerificationSignals:
-+    conf = _mean(c.confidence for c in ctx.violated_constraints)
-+    return VerificationSignals(
-+        criteria_confidence=conf,
-+        completeness=1.0,
-+        graph_readiness=0.0,
-+    )
-
-
--def _confidence_fail_criteria(ctx: _DecisionContext) -> float:
--    return _mean(c.confidence for c in ctx.fail_criteria)
-+def _signals_fail_criteria(ctx: _DecisionContext) -> VerificationSignals:
-+    conf = _mean(c.confidence for c in ctx.fail_criteria)
-+    return VerificationSignals(
-+        criteria_confidence=conf,
-+        completeness=1.0,
-+        graph_readiness=0.0,
-+    )
-
-
--def _confidence_all_criteria(ctx: _DecisionContext) -> float:
--    return _mean(c.confidence for c in ctx.deterministic.criteria)
-+def _signals_all_criteria(ctx: _DecisionContext) -> VerificationSignals:
-+    conf = _mean(c.confidence for c in ctx.deterministic.criteria)
-+    completeness = 1.0 if ctx.artifacts_present else 0.5
-+    return VerificationSignals(
-+        criteria_confidence=conf,
-+        completeness=completeness,
-+        graph_readiness=conf if completeness > 0.9 else 0.0,
-+    )
-
-
--def _confidence_semantic_blend(
-+def _signals_semantic_blend(
-     ctx: _DecisionContext,
-     judgments: list[CriterionJudgment],
-     *,
-     cap_at_half: bool = False,
--) -> float:
-+) -> VerificationSignals:
-     floor = ctx.deterministic_floor_confidence()
-     if not judgments:
--        blended = floor
-+        criteria_conf = floor
-     else:
-         semantic = _semantic_criteria_confidence(judgments)
--        if ctx.indeterminate_only:
--            blended = semantic
-+        # Fix calibration: when the floor is indeterminate-dominated (why we ran
-+        # semantic in the first place), defer to semantic instead of min()-ing.
-+        if ctx.indeterminate_criteria:
-+            criteria_conf = semantic
-         else:
--            blended = min(floor, semantic)
-+            criteria_conf = min(floor, semantic)
-+
-     if cap_at_half:
--        return min(blended, 0.5)
--    return blended
-+        criteria_conf = min(criteria_conf, 0.5)
-+
-+    completeness = 1.0 if ctx.artifacts_present else 0.5
-+    if ctx.budget_exhausted:
-+        completeness = min(completeness, 0.5)
-+
-+    # Graph readiness requires both high criteria signal AND artifact completeness.
-+    readiness = criteria_conf if (completeness > 0.9 and criteria_conf > 0.5) else 0.0
-+
-+    return VerificationSignals(
-+        criteria_confidence=criteria_conf,
-+        completeness=completeness,
-+        graph_readiness=readiness,
-+    )
-
-
- def _semantic_criteria_confidence(judgments: list[CriterionJudgment]) -> float:
-@@ -277,7 +324,7 @@ MATRIX: list[_MatrixRow] = [
-         1,
-         _row1,
-         Verdict.BLOCKED,
--        _confidence_blocked,
-+        _signals_blocked,
-         "Complete dependency nodes before re-verification.",
-         "Matrix row 1: dependencies incomplete.",
-     ),
-@@ -285,7 +332,7 @@ MATRIX: list[_MatrixRow] = [
-         2,
-         _row2,
-         Verdict.OUT_OF_SCOPE_CHANGE_DETECTED,
--        _confidence_constraint_violation,
-+        _signals_constraint_violation,
-         "Revert out-of-scope changes and re-submit for verification.",
-         "Matrix row 2: constraint violation detected.",
-     ),
-@@ -293,7 +340,7 @@ MATRIX: list[_MatrixRow] = [
-         3,
-         _row3,
-         Verdict.FAIL,
--        _confidence_fail_criteria,
-+        _signals_fail_criteria,
-         "Fix failing acceptance criteria and re-submit.",
-         "Matrix row 3: deterministic hard fail.",
-     ),
-@@ -301,7 +348,7 @@ MATRIX: list[_MatrixRow] = [
-         4,
-         _row4,
-         Verdict.FAIL,
--        lambda ctx: _confidence_semantic_blend(
-+        lambda ctx: _signals_semantic_blend(
-             ctx, [j for j in ctx.judgments if j.judgment == "judged_fail"]
-         ),
-         "Address semantic failures and re-submit.",
-@@ -311,7 +358,7 @@ MATRIX: list[_MatrixRow] = [
-         5,
-         _row5,
-         Verdict.NEEDS_MORE_EVIDENCE,
--        _confidence_all_criteria,
-+        _signals_all_criteria,
-         "Provide missing required artifacts and re-submit.",
-         "Matrix row 5: all criteria pass but required artifacts missing.",
-     ),
-@@ -319,7 +366,7 @@ MATRIX: list[_MatrixRow] = [
-         6,
-         _row6,
-         Verdict.NEEDS_MORE_EVIDENCE,
--        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
-+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments),
-         "Provide missing required artifacts and re-submit.",
-         "Matrix row 6: semantic pass but required artifacts missing.",
-     ),
-@@ -327,7 +374,7 @@ MATRIX: list[_MatrixRow] = [
-         7,
-         _row7,
-         Verdict.NEEDS_MORE_EVIDENCE,
--        lambda ctx: _confidence_semantic_blend(
-+        lambda ctx: _signals_semantic_blend(
-             ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
-         ),
-         "Provide missing required artifacts and re-run semantic investigation.",
-@@ -337,7 +384,7 @@ MATRIX: list[_MatrixRow] = [
-         8,
-         _row8,
-         Verdict.NEEDS_MORE_EVIDENCE,
--        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
-+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments, cap_at_half=True),
-         "Re-run semantic investigation with sufficient budget.",
-         "Matrix row 8: semantic budget exhausted.",
-     ),
-@@ -345,7 +392,7 @@ MATRIX: list[_MatrixRow] = [
-         9,
-         _row9,
-         Verdict.NEEDS_MORE_EVIDENCE,
--        lambda ctx: _confidence_semantic_blend(ctx, []),
-+        lambda ctx: _signals_semantic_blend(ctx, []),
-         "Re-run semantic investigation to produce judgments.",
-         "Matrix row 9: semantic produced no judgments.",
-     ),
-@@ -353,7 +400,7 @@ MATRIX: list[_MatrixRow] = [
-         10,
-         _row10,
-         Verdict.NEEDS_HUMAN_REVIEW,
--        lambda ctx: _confidence_semantic_blend(
-+        lambda ctx: _signals_semantic_blend(
-             ctx, [j for j in ctx.judgments if j.judgment == "indeterminate"]
-         ),
-         "Human review required for unresolved semantic judgments.",
-@@ -363,7 +410,7 @@ MATRIX: list[_MatrixRow] = [
-         11,
-         _row11,
-         Verdict.PASS,
--        lambda ctx: _confidence_semantic_blend(ctx, ctx.judgments),
-+        lambda ctx: _signals_semantic_blend(ctx, ctx.judgments),
-         "Proceed to accept_node (open evidence PR).",
-         "Matrix row 11: semantic pass on indeterminate criteria.",
-     ),
-@@ -371,7 +418,7 @@ MATRIX: list[_MatrixRow] = [
-         12,
-         _row12,
-         Verdict.PASS,
--        _confidence_all_criteria,
-+        _signals_all_criteria,
-         "Proceed to accept_node (open evidence PR).",
-         "Matrix row 12: deterministic clean pass.",
-     ),
-@@ -381,10 +428,10 @@ MATRIX: list[_MatrixRow] = [
- def decide(
-     deterministic: DeterministicResult,
-     semantic: SemanticOutput | None,
--) -> tuple[Verdict, float, str]:
-+) -> tuple[Verdict, VerificationSignals, str]:
-     """Pure function. No I/O, no LLM, no side effects."""
-     ctx = _DecisionContext(deterministic=deterministic, semantic=semantic)
-     for row in MATRIX:
-         if row.matches(ctx):
--            return row.verdict, row.confidence(ctx), row.required_next_action
-+            return row.verdict, row.signals(ctx), row.required_next_action
-     raise RuntimeError("decision matrix exhausted without a match")
 diff --git a/scripts/runtime/verification/orchestrator.py b/scripts/runtime/verification/orchestrator.py
-index 93231f6..eca770e 100644
+index eca770e..de35df6 100644
 --- a/scripts/runtime/verification/orchestrator.py
 +++ b/scripts/runtime/verification/orchestrator.py
-@@ -52,7 +52,7 @@ def verify(
-                 shape_profile=shape_profile,
-             )
-
--    verdict, confidence, action = decision_engine.decide(det, semantic)
-+    verdict, signals, action = decision_engine.decide(det, semantic)
-
-     # Lane 2: integrity evaluation ALWAYS runs (unlike semantic criteria
-     # adjudication, which only fires on indeterminate evidence). A green
-@@ -76,8 +76,10 @@ def verify(
-         verdict=verdict,
-         criteria_verdict=criteria_verdict,
-         integrity=integrity,
--        confidence=confidence,
--        criteria_confidence=confidence,
-+        confidence=signals.overall_confidence,
-+        criteria_confidence=signals.criteria_confidence,
-+        completeness=signals.completeness,
-+        graph_readiness=signals.graph_readiness,
-         completeness_status=_completeness_status(semantic),
-         deterministic=det,
-         semantic=semantic,
-diff --git a/scripts/runtime/verification/schemas.py b/scripts/runtime/verification/schemas.py
-index da2d159..ef66d96 100644
---- a/scripts/runtime/verification/schemas.py
-+++ b/scripts/runtime/verification/schemas.py
-@@ -116,7 +116,10 @@ class VerdictReceipt(BaseModel):
-     # Both optional so every existing receipt stays valid.
-     criteria_verdict: Verdict | None = None
-     integrity: IntegrityOutput | None = None
-+    confidence: float = Field(ge=0.0, le=1.0)
-     criteria_confidence: float = Field(ge=0.0, le=1.0)
-+    completeness: float = Field(ge=0.0, le=1.0)
-+    graph_readiness: float = Field(ge=0.0, le=1.0)
-     completeness_status: Literal["complete", "partial", "not-run"]
-     deterministic: DeterministicResult
-     semantic: SemanticOutput | None
-@@ -134,6 +137,16 @@ class VerdictReceipt(BaseModel):
-         # "confidence"; map it forward so old receipt JSON still loads.
-         if "criteria_confidence" not in values and "confidence" in values:
-             values["criteria_confidence"] = values["confidence"]
-+        elif "confidence" not in values and "criteria_confidence" in values:
-+            values["confidence"] = values["criteria_confidence"]
+@@ -103,3 +103,4 @@ def _completeness_status(semantic) -> str:
+     if semantic.budget_exhausted or not semantic.judgments:
+         return "partial"
+     return "complete"
 +
-+        if "completeness" not in values:
-+            # Default for legacy receipts
-+            values["completeness"] = 1.0 if values.get("verdict") == "pass" else 0.5
-+        if "graph_readiness" not in values:
-+            # Default for legacy receipts
-+            values["graph_readiness"] = values.get("criteria_confidence", 0.0)
+diff --git a/scripts/runtime/verification/semantic/integrity_runner.py b/scripts/runtime/verification/semantic/integrity_runner.py
+index 62d0710..930402d 100644
+--- a/scripts/runtime/verification/semantic/integrity_runner.py
++++ b/scripts/runtime/verification/semantic/integrity_runner.py
+@@ -24,7 +24,7 @@ from scripts.runtime.verification.schemas import IntegrityOutput
+
+
+ EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_integrity.ts"
+-GUARD_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier_guard.ts"
++TRACER_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_tracer.ts"
+
+ INTEGRITY_SYSTEM_PROMPT = """You are the GDDP integrity reviewer (lane 2: fresh-eyes drift review).
+
+@@ -40,13 +40,12 @@ Think like a fresh pair of eyes, not a spec enforcer. Ask: does this change
+ make sense for what this node promised to deliver? Could it inadvertently
+ break something a dependent node relies on? Is the intent still recognizable?
+
+-Tools: you have read, grep, find, ls, bash, and submit_integrity_verdict
+-available. edit/write/multi_edit are hard-blocked by the harness (the integrity
+-reviewer is read-only). bash is allowed for read-only inspection only;
+-destructive verbs, git mutation, and network are hard-blocked.
++Tools: you have read, grep, find, ls, and submit_integrity_verdict
++available. edit/write/multi_edit/bash are hard-excluded by the harness (the
++integrity reviewer is read-only).
+
+ Investigate the repo against the node's intent and graph integrity. Prefer cheap
+-tools (read, grep, find) before bash. When finished, call submit_integrity_verdict
++tools (read, grep, find) first. When finished, call submit_integrity_verdict
+ with arguments matching IntegrityOutput:
+
+   verdict: "pass" | "block" | "drift" | "insufficient" | "contradicted" | "unknown"
+@@ -167,7 +166,8 @@ class IntegrityHarnessRunner:
+             "--no-extensions",
+             "--no-session",
+             "-e", str(EXTENSION_PATH),
+-            "-e", str(GUARD_EXTENSION_PATH),
++            "-e", str(TRACER_EXTENSION_PATH),
++            "--exclude-tools", "edit,write,multi_edit,bash,create,delete,move,replace,multi-edit",
+             "--provider", self.provider,
+             "--thinking", self.thinking,
+             "--system-prompt", system_prompt,
+diff --git a/scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts b/scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts
+index c66a03e..f730e73 100644
+--- a/scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts
++++ b/scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts
+@@ -104,3 +104,4 @@ export default function (pi: ExtensionAPI) {
+     },
+   });
+ }
 +
-         if "completeness_status" not in values:
-             values["completeness_status"] = cls._infer_completeness_status(values.get("semantic"))
-         return values
-diff --git a/scripts/runtime/verification/test_decision_engine.py b/scripts/runtime/verification/test_decision_engine.py
-index bd38b32..6e52da6 100644
---- a/scripts/runtime/verification/test_decision_engine.py
-+++ b/scripts/runtime/verification/test_decision_engine.py
-@@ -2,6 +2,8 @@
+diff --git a/scripts/runtime/verification/semantic/pi_harness/gddp_tracer.ts b/scripts/runtime/verification/semantic/pi_harness/gddp_tracer.ts
+new file mode 100644
+index 0000000..3888aa9
+--- /dev/null
++++ b/scripts/runtime/verification/semantic/pi_harness/gddp_tracer.ts
+@@ -0,0 +1,65 @@
++/**
++ * gddp_tracer.ts — Non-blocking audit trail for the GDDP evaluator.
++ *
++ * This extension only logs tool calls and results to $GDDP_TOOL_TRACE (JSONL).
++ * It does NOT block any tools. Enforcement of the read-only invariant is
++ * handled by the runner via pi's --exclude-tools flag.
++ */
++
++import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
++import { env } from "node:process";
++import { appendFileSync, writeFileSync } from "node:fs";
++
++function traceLine(entry: Record<string, unknown>) {
++  const tracePath = env.GDDP_TOOL_TRACE;
++  if (!tracePath) return;
++  try {
++    appendFileSync(tracePath, JSON.stringify(entry) + "\n", { encoding: "utf8" });
++  } catch {
++    // tracing is best-effort
++  }
++}
++
++export default function (pi: ExtensionAPI) {
++  // Log every tool call.
++  pi.on("tool_call", async (event, _ctx) => {
++    const e = event as { toolName?: string; input?: Record<string, unknown> };
++    traceLine({
++      ts: new Date().toISOString(),
++      event: "tool_call",
++      tool: e.toolName,
++      input: e.input,
++    });
++    return undefined;
++  });
++
++  // Log every tool result to the trace (ground-truth evidence for the receipt).
++  pi.on("tool_execution_end", async (event, _ctx) => {
++    const e = event as {
++      toolCallId?: string;
++      toolName?: string;
++      isError?: boolean;
++    };
++    traceLine({
++      ts: new Date().toISOString(),
++      event: "tool_execution_end",
++      toolCallId: e.toolCallId,
++      tool: e.toolName,
++      ok: !e.isError,
++    });
++    return undefined;
++  });
++
++  // Ensure the trace file exists at start.
++  pi.on("session_start", async (_event, _ctx) => {
++    const tracePath = env.GDDP_TOOL_TRACE;
++    if (tracePath) {
++      try {
++        writeFileSync(tracePath, "", { encoding: "utf8" });
++      } catch {
++        // best-effort
++      }
++    }
++    return undefined;
++  });
++}
+diff --git a/scripts/runtime/verification/semantic/pi_harness/gddp_verifier.ts b/scripts/runtime/verification/semantic/pi_harness/gddp_verifier.ts
+index 42da15c..2c0c2a5 100644
+--- a/scripts/runtime/verification/semantic/pi_harness/gddp_verifier.ts
++++ b/scripts/runtime/verification/semantic/pi_harness/gddp_verifier.ts
+@@ -95,3 +95,4 @@ export default function (pi: ExtensionAPI) {
+     },
+   });
+ }
++
+diff --git a/scripts/runtime/verification/semantic/pi_runner.py b/scripts/runtime/verification/semantic/pi_runner.py
+index 88b4021..915018f 100644
+--- a/scripts/runtime/verification/semantic/pi_runner.py
++++ b/scripts/runtime/verification/semantic/pi_runner.py
+@@ -35,9 +35,9 @@ from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 
- from __future__ import annotations
 
+ EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier.ts"
+-GUARD_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier_guard.ts"
+-# Broad inputs: pi's built-in read/grep/find/ls/bash are available; the guard
+-# extension mechanistically blocks mutations, dangerous bash, and network.
++TRACER_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_tracer.ts"
++# Broad inputs: pi's built-in read/grep/find/ls are available.
++# Mutation tools and bash are hard-excluded by the runner via --exclude-tools.
+ # submit_verdict is the typed terminal tool registered by gddp_verifier.ts.
+
+ PI_SYSTEM_PROMPT = """You are the GDDP semantic verification investigator.
+@@ -49,14 +49,12 @@ code matches the node's criteria and the project's stated intent. You do NOT
+ decide the final node status; a human does. You produce evidence and a typed
+ verdict only.
+
+-Tools: you have read, grep, find, ls, bash, and submit_verdict available.
+-edit/write/multi_edit are hard-blocked by the harness (the evaluator is
+-read-only). bash is allowed for read-only inspection only; destructive verbs,
+-git mutation (commit/push/reset/...), and network are hard-blocked. If you
+-call a blocked tool the harness will refuse and tell you why.
++Tools: you have read, grep, find, ls, and submit_verdict available.
++edit/write/multi_edit/bash are hard-excluded by the harness (the evaluator is
++read-only).
+
+ Investigate the repo against the node's acceptance criteria. Prefer cheap
+-tools (read, grep, find) before bash. When finished, call submit_verdict
++tools (read, grep, find) first. When finished, call submit_verdict
+ with arguments matching SemanticOutput: per-criterion judgments
+ (judged_pass | judged_fail | indeterminate + confidence + evidence refs +
+ reasoning), overall_reasoning, risks, followup_candidates, and
+@@ -222,10 +220,10 @@ class PiHarnessRunner:
+             "--no-extensions",
+             "--no-session",
+             "-e", str(EXTENSION_PATH),
+-            "-e", str(GUARD_EXTENSION_PATH),
+-            # Broad tool access: no --tools allowlist, no --exclude-tools cripple.
+-            # The guard extension mechanistically blocks mutations, dangerous
+-            # bash, and network at the tool_call hook.
++            "-e", str(TRACER_EXTENSION_PATH),
++            # Read-only enforcement: mechanistically exclude mutation tools and
++            # bash at the binary level.
++            "--exclude-tools", "edit,write,multi_edit,bash,create,delete,move,replace,multi-edit",
+             "--provider", self.provider,
+             "--thinking", self.thinking,
+             "--system-prompt", system_prompt,
+diff --git a/scripts/runtime/verification/semantic/test_pi_harness.py b/scripts/runtime/verification/semantic/test_pi_harness.py
+new file mode 100644
+index 0000000..e00c96f
+--- /dev/null
++++ b/scripts/runtime/verification/semantic/test_pi_harness.py
+@@ -0,0 +1,87 @@
++import json
++import subprocess
++from pathlib import Path
++from unittest.mock import MagicMock, patch
++
 +import pytest
 +
- from .decision_engine import decide
- from .schemas import (
-     ConstraintCheck,
-@@ -95,8 +97,9 @@ def test_matrix_row_1_blocked_on_incomplete_deps():
-         criteria=[_criterion("a", "pass")],
-         deps_status={"dep-a": "pending", "dep-b": "complete"},
-     )
--    verdict, _, _ = decide(det, None)
-+    verdict, signals, _ = decide(det, None)
-     assert verdict == Verdict.BLOCKED
-+    assert signals.criteria_confidence == 1.0
-
-
- def test_matrix_row_2_out_of_scope_on_constraint_violation():
-@@ -105,8 +108,9 @@ def test_matrix_row_2_out_of_scope_on_constraint_violation():
-         constraints=[_constraint("violated")],
-         deps_status={"dep-a": "complete"},
-     )
--    verdict, _, _ = decide(det, None)
-+    verdict, signals, _ = decide(det, None)
-     assert verdict == Verdict.OUT_OF_SCOPE_CHANGE_DETECTED
-+    assert signals.criteria_confidence == 0.85
-
-
- def test_matrix_row_3_fail_on_deterministic_hard_fail():
-@@ -114,8 +118,9 @@ def test_matrix_row_3_fail_on_deterministic_hard_fail():
-         criteria=[_criterion("a", "fail", 0.6), _criterion("b", "pass")],
-         deps_status={"dep-a": "complete"},
-     )
--    verdict, _, _ = decide(det, None)
-+    verdict, signals, _ = decide(det, None)
-     assert verdict == Verdict.FAIL
-+    assert signals.criteria_confidence == 0.6
-
-
- def test_matrix_row_4_fail_on_semantic_judged_fail():
-@@ -125,8 +130,10 @@ def test_matrix_row_4_fail_on_semantic_judged_fail():
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "judged_fail", 0.85)])
--    verdict, _, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.FAIL
-+    # criteria_confidence for fail is 1.0 - semantic_confidence = 0.15
-+    assert signals.criteria_confidence == pytest.approx(0.15)
-
-
- def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
-@@ -135,8 +142,9 @@ def test_matrix_row_5_needs_more_evidence_all_pass_missing_artifacts():
-         artifacts_present={"receipt.json": False},
-         deps_status={"dep-a": "complete"},
-     )
--    verdict, _, _ = decide(det, None)
-+    verdict, signals, _ = decide(det, None)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-+    assert signals.completeness == 0.5
-
-
- def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
-@@ -146,9 +154,10 @@ def test_matrix_row_6_needs_more_evidence_semantic_pass_missing_artifacts():
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
--    verdict, confidence, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
--    assert confidence == 0.95
-+    assert signals.criteria_confidence == 0.95
-+    assert signals.completeness == 0.5
-
-
- def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifacts():
-@@ -158,9 +167,10 @@ def test_matrix_row_7_needs_more_evidence_semantic_indeterminate_missing_artifac
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
--    verdict, _, action = decide(det, sem)
-+    verdict, signals, action = decide(det, sem)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-     assert action == "Provide missing required artifacts and re-run semantic investigation."
-+    assert signals.completeness == 0.5
-
-
- def test_matrix_row_8_needs_more_evidence_budget_exhausted():
-@@ -173,9 +183,10 @@ def test_matrix_row_8_needs_more_evidence_budget_exhausted():
-         [_judgment("a", "indeterminate", 0.7)],
-         budget_exhausted=True,
-     )
--    verdict, confidence, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
--    assert confidence <= 0.5
-+    assert signals.criteria_confidence <= 0.5
-+    assert signals.completeness <= 0.5
-
-
- def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
-@@ -188,9 +199,9 @@ def test_budget_exhausted_keeps_precedence_over_missing_artifacts():
-         [_judgment("a", "indeterminate", 0.7)],
-         budget_exhausted=True,
-     )
--    verdict, confidence, action = decide(det, sem)
-+    verdict, signals, action = decide(det, sem)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
--    assert confidence <= 0.5
-+    assert signals.criteria_confidence <= 0.5
-     assert action == "Re-run semantic investigation with sufficient budget."
-
-
-@@ -200,8 +211,9 @@ def test_matrix_row_9_needs_more_evidence_empty_semantic_judgments():
-         artifacts_present={"receipt.json": True},
-         deps_status={"dep-a": "complete"},
-     )
--    verdict, _, _ = decide(det, _semantic([]))
-+    verdict, signals, _ = decide(det, _semantic([]))
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
-+    assert signals.criteria_confidence == 0.4
-
-
- def test_matrix_row_10_needs_human_review_semantic_indeterminate():
-@@ -211,8 +223,10 @@ def test_matrix_row_10_needs_human_review_semantic_indeterminate():
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "indeterminate", 0.65)])
--    verdict, _, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.NEEDS_HUMAN_REVIEW
-+    # For indeterminate judgment, confidence is min(c, 1-c) = 0.35
-+    assert signals.criteria_confidence == pytest.approx(0.35)
-
-
- def test_matrix_row_11_pass_semantic_resolves_indeterminate():
-@@ -230,8 +244,9 @@ def test_matrix_row_11_pass_semantic_resolves_indeterminate():
-             _judgment("b", "judged_pass", 0.88),
-         ]
-     )
--    verdict, _, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.PASS
-+    assert signals.criteria_confidence == pytest.approx(0.9)
-
-
- def test_matrix_row_12_pass_deterministic_clean():
-@@ -240,8 +255,11 @@ def test_matrix_row_12_pass_deterministic_clean():
-         artifacts_present={"receipt.json": True},
-         deps_status={"dep-a": "complete"},
-     )
--    verdict, _, _ = decide(det, None)
-+    verdict, signals, _ = decide(det, None)
-     assert verdict == Verdict.PASS
-+    assert signals.criteria_confidence == 0.875
-+    assert signals.completeness == 1.0
-+    assert signals.graph_readiness == 0.875
-
-
- def test_row_4_precedence_over_budget_exhausted():
-@@ -255,8 +273,9 @@ def test_row_4_precedence_over_budget_exhausted():
-         [_judgment("a", "judged_fail", 0.8)],
-         budget_exhausted=True,
-     )
--    verdict, _, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.FAIL
-+    assert signals.criteria_confidence == pytest.approx(0.2)
-
-
- def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminate():
-@@ -266,8 +285,8 @@ def test_semantic_confidence_blend_defers_to_semantic_when_floor_is_indeterminat
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "judged_pass", 0.95)])
--    _, confidence, _ = decide(det, sem)
--    assert confidence == 0.95
-+    _, signals, _ = decide(det, sem)
-+    assert signals.criteria_confidence == 0.95
-
-
- def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
-@@ -289,9 +308,11 @@ def test_semantic_pass_missing_artifacts_keeps_high_criteria_confidence():
-             _judgment("b", "judged_pass", 0.91),
-         ]
-     )
--    verdict, confidence, action = decide(det, sem)
-+    verdict, signals, action = decide(det, sem)
-     assert verdict == Verdict.NEEDS_MORE_EVIDENCE
--    assert confidence >= 0.85
-+    assert signals.criteria_confidence >= 0.85
-+    assert signals.completeness == 0.5
-+    assert signals.graph_readiness == 0.0
-     assert action == "Provide missing required artifacts and re-submit."
-
-
-@@ -302,6 +323,6 @@ def test_semantic_fail_yields_low_criteria_confidence():
-         deps_status={"dep-a": "complete"},
-     )
-     sem = _semantic([_judgment("a", "judged_fail", 0.9)])
--    verdict, confidence, _ = decide(det, sem)
-+    verdict, signals, _ = decide(det, sem)
-     assert verdict == Verdict.FAIL
--    assert confidence < 0.2
-+    assert signals.criteria_confidence < 0.2
-diff --git a/scripts/runtime/verification/test_schemas.py b/scripts/runtime/verification/test_schemas.py
-index 2f9b62c..7d42cef 100644
---- a/scripts/runtime/verification/test_schemas.py
-+++ b/scripts/runtime/verification/test_schemas.py
-@@ -30,7 +30,10 @@ def _receipt_payload(**overrides):
-         "project_id": "project-a",
-         "node_id": "node-a",
-         "verdict": Verdict.PASS,
-+        "confidence": 0.8,
-         "criteria_confidence": 0.8,
-+        "completeness": 1.0,
-+        "graph_readiness": 0.8,
-         "completeness_status": "not-run",
-         "deterministic": _deterministic(),
-         "semantic": None,
-@@ -42,11 +45,17 @@ def _receipt_payload(**overrides):
-     return payload
-
-
--def test_verdict_receipt_has_no_confidence_alias_field() -> None:
--    receipt = VerdictReceipt.model_validate(_receipt_payload())
-+def test_verdict_receipt_populates_multiple_axes() -> None:
-+    payload = _receipt_payload(
-+        criteria_confidence=0.95,
-+        completeness=0.5,
-+        graph_readiness=0.0
-+    )
-+    receipt = VerdictReceipt.model_validate(payload)
-
--    assert receipt.criteria_confidence == 0.8
--    assert "confidence" not in receipt.model_dump()
-+    assert receipt.criteria_confidence == 0.95
-+    assert receipt.completeness == 0.5
-+    assert receipt.graph_readiness == 0.0
-
-
- def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
-@@ -64,6 +73,7 @@ def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
- def test_verdict_receipt_requires_some_confidence_value() -> None:
-     payload = _receipt_payload()
-     del payload["criteria_confidence"]
-+    del payload["confidence"]
-
-     with pytest.raises(ValidationError):
-         VerdictReceipt.model_validate(payload)
++from scripts.runtime.verification.semantic.pi_runner import PiHarnessRunner
++from scripts.runtime.verification.semantic.integrity_runner import IntegrityHarnessRunner
++from scripts.runtime.verification.schemas import SemanticOutput, IntegrityOutput
++
++@patch("subprocess.run")
++@patch("shutil.which", return_value="/usr/bin/pi")
++def test_pi_harness_runner_builds_correct_command(mock_which, mock_run, tmp_path):
++    runner = PiHarnessRunner(provider="deepseek", thinking="medium")
++    repo = tmp_path / "repo"
++    repo.mkdir()
++
++    # Mock verdict file creation and write
++    def side_effect(cmd, env, **kwargs):
++        verdict_path = env["GDDP_VERDICT_OUT"]
++        with open(verdict_path, "w") as f:
++            json.dump({
++                "judgments": [],
++                "overall_reasoning": "Mocked",
++                "risks": None,
++                "followup_candidates": None,
++                "budget_exhausted": False
++            }, f)
++        return MagicMock(returncode=0)
++
++    mock_run.side_effect = side_effect
++
++    node = {"node_id": "test-node"}
++    graph = {"project_id": "test-project"}
++    det_result = MagicMock()
++
++    runner.run(node=node, graph=graph, deterministic_result=det_result, repo=repo)
++
++    args, kwargs = mock_run.call_args
++    cmd = args[0]
++
++    assert cmd[0] == "pi"
++    assert "--exclude-tools" in cmd
++    # Find index of --exclude-tools and check the next element
++    idx = cmd.index("--exclude-tools")
++    assert "bash" in cmd[idx+1]
++    assert "edit" in cmd[idx+1]
++    assert "--provider" in cmd
++    assert "deepseek" in cmd
++
++@patch("subprocess.run")
++@patch("shutil.which", return_value="/usr/bin/pi")
++def test_integrity_harness_runner_builds_correct_command(mock_which, mock_run, tmp_path):
++    runner = IntegrityHarnessRunner(provider="zai", thinking="high")
++    repo = tmp_path / "repo"
++    repo.mkdir()
++
++    def side_effect(cmd, env, **kwargs):
++        verdict_path = env["GDDP_INTEGRITY_OUT"]
++        with open(verdict_path, "w") as f:
++            json.dump({
++                "verdict": "pass",
++                "intent_preserved": True,
++                "graph_integrity_preserved": True,
++                "required_human_review": False,
++                "confidence": 0.9,
++                "findings": [],
++                "reasoning": "Mocked integrity"
++            }, f)
++        return MagicMock(returncode=0)
++
++    mock_run.side_effect = side_effect
++
++    node = {"node_id": "test-node"}
++    graph = {"project_id": "test-project"}
++    det_result = MagicMock()
++
++    runner.run(node=node, graph=graph, deterministic_result=det_result, repo=repo)
++
++    args, kwargs = mock_run.call_args
++    cmd = args[0]
++
++    assert cmd[0] == "pi"
++    assert "--exclude-tools" in cmd
++    assert "--provider" in cmd
++    assert "zai" in cmd
