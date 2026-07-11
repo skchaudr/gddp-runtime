@@ -1,18 +1,18 @@
-# Decision: Split Verdict Confidence
+# Decision: Pi Evaluator Harness Wiring
 
 ## Problem
-The previous single-scalar confidence value conflated two distinct signals: "Does the code meet the criteria?" and "Are all required artifacts present?". This led to high-quality code receiving a low confidence score (e.g., 0.18) simply because artifacts were missing, even if semantic judgments were overwhelmingly positive. Additionally, the min-blending logic allowed an indeterminate deterministic floor to override a confident semantic decision.
+The previous hand-rolled `SemanticAgent` loop was correct but opaque to operators. It only produced a final receipt without showing the investigator's step-by-step thinking or tool calls. This lack of visibility made it difficult to trust and iterate on the evaluator.
 
-## Implementation Choice
-I split the confidence signal into three axes within the `VerdictReceipt`:
-1.  `criteria_confidence`: How sure we are that the code satisfies the functional criteria.
-2.  `completeness`: Whether the required execution trail (artifacts) is present.
-3.  `graph_readiness`: A derived signal indicating if the node has enough evidence to be advanced in the graph (high criteria confidence + high completeness).
+## Implementation Choice: Pi Coding Agent
+We chose to drive the semantic evaluator through the `pi` coding agent. `pi` is agent-agnostic and provides live, streaming visibility into the model's investigation process.
 
-I also introduced a `VerificationSignals` dataclass to pass these values cleanly through the decision engine.
+### Harness Components
+1.  **`pi_runner.py` & `integrity_runner.py`**: These Python runners spawn the `pi` binary with specific flags. We use the `--exclude-tools` flag to mechanistically enforce a read-only environment, blocking `bash` and any mutation tools (`edit`, `write`, `multi_edit`, etc.).
+2.  **`gddp_verifier.ts` & `gddp_integrity.ts`**: These are `pi` extensions that register typed terminal tools (`submit_verdict` and `submit_integrity_verdict`). These tools ensure that the final output matches the required `SemanticOutput` and `IntegrityOutput` schemas exactly.
+3.  **`gddp_tracer.ts`**: A non-blocking audit trail extension that logs every tool call and result to a trace file. This file is then read by the Python runner and included in the `VerdictReceipt`'s `budget_trace`.
 
-## Calibration Fix
-In `scripts/runtime/verification/decision_engine.py`, the `_signals_semantic_blend` function was updated. It now defers directly to the semantic confidence when indeterminate deterministic criteria are present, instead of taking the minimum of the floor and semantic confidence. This ensures that the semantic phase, which is specifically invoked to resolve these indeterminacies, is not undermined by the very uncertainty it was meant to solve.
+## Enforcement vs. Guarding
+Previously, we considered a guard extension that would intercept and block tool calls. We shifted to using `pi`'s native `--exclude-tools` flag for a more robust, binary-level enforcement of the read-only invariant. The `gddp_tracer.ts` extension focuses solely on audit logging, satisfying the requirement for visibility without complicating the enforcement logic.
 
-## Artifact Gate Preservation
-The decision matrix rows remain unchanged. Missing artifacts still result in a `NEEDS_MORE_EVIDENCE` verdict, but the `criteria_confidence` now accurately reflects the high confidence in the implementation if semantic checks pass.
+## Model Agnosticism
+The harness is model-agnostic and supports multiple providers including DeepSeek, GLM (via `zai`), Gemini, and OpenRouter. Provider selection and API key management are handled in `cli.py`.

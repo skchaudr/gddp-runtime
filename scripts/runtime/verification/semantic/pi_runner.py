@@ -35,9 +35,9 @@ from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier.ts"
-GUARD_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier_guard.ts"
-# Broad inputs: pi's built-in read/grep/find/ls/bash are available; the guard
-# extension mechanistically blocks mutations, dangerous bash, and network.
+TRACER_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_tracer.ts"
+# Broad inputs: pi's built-in read/grep/find/ls are available.
+# Mutation tools and bash are hard-excluded by the runner via --exclude-tools.
 # submit_verdict is the typed terminal tool registered by gddp_verifier.ts.
 
 PI_SYSTEM_PROMPT = """You are the GDDP semantic verification investigator.
@@ -49,14 +49,12 @@ code matches the node's criteria and the project's stated intent. You do NOT
 decide the final node status; a human does. You produce evidence and a typed
 verdict only.
 
-Tools: you have read, grep, find, ls, bash, and submit_verdict available.
-edit/write/multi_edit are hard-blocked by the harness (the evaluator is
-read-only). bash is allowed for read-only inspection only; destructive verbs,
-git mutation (commit/push/reset/...), and network are hard-blocked. If you
-call a blocked tool the harness will refuse and tell you why.
+Tools: you have read, grep, find, ls, and submit_verdict available.
+edit/write/multi_edit/bash are hard-excluded by the harness (the evaluator is
+read-only).
 
 Investigate the repo against the node's acceptance criteria. Prefer cheap
-tools (read, grep, find) before bash. When finished, call submit_verdict
+tools (read, grep, find) first. When finished, call submit_verdict
 with arguments matching SemanticOutput: per-criterion judgments
 (judged_pass | judged_fail | indeterminate + confidence + evidence refs +
 reasoning), overall_reasoning, risks, followup_candidates, and
@@ -222,10 +220,10 @@ class PiHarnessRunner:
             "--no-extensions",
             "--no-session",
             "-e", str(EXTENSION_PATH),
-            "-e", str(GUARD_EXTENSION_PATH),
-            # Broad tool access: no --tools allowlist, no --exclude-tools cripple.
-            # The guard extension mechanistically blocks mutations, dangerous
-            # bash, and network at the tool_call hook.
+            "-e", str(TRACER_EXTENSION_PATH),
+            # Read-only enforcement: mechanistically exclude mutation tools and
+            # bash at the binary level.
+            "--exclude-tools", "edit,write,multi_edit,bash,create,delete,move,replace,multi-edit",
             "--provider", self.provider,
             "--thinking", self.thinking,
             "--system-prompt", system_prompt,
