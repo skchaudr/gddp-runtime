@@ -1,0 +1,9 @@
+name: Jules
+on:
+  issues:
+    types: [labeled]
+jobs:
+  jules:
+    if: github.event.label.name == 'jules'
+    uses: google/jules/.github/workflows/jules.yml@main
+    secrets: inherit

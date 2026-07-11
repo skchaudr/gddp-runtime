@@ -3,6 +3,7 @@
 import unittest
 
 from scripts.runtime.verification.retry_budget import (
+    has_criteria_evidence,
     has_evidence_references,
     should_retry,
 )
@@ -46,6 +47,52 @@ class TestHasEvidenceReferences(unittest.TestCase):
 
     def test_empty_findings_and_no_reasoning_returns_false(self):
         self.assertFalse(has_evidence_references({"findings": [], "reasoning": ""}))
+
+    def test_affected_node_ids_returns_true_without_file_path(self):
+        """A finding with non-empty affected_node_ids is actionable evidence
+        even without an explicit file-path reference in its summary text."""
+        integrity = {
+            "findings": [
+                {"summary": "intent drift detected", "affected_node_ids": ["node-x"]},
+            ],
+        }
+        self.assertTrue(has_evidence_references(integrity))
+
+    def test_empty_affected_node_ids_and_no_file_path_returns_false(self):
+        """Empty affected_node_ids AND no file path in summary → no evidence."""
+        integrity = {
+            "findings": [
+                {"summary": "intent drift detected", "affected_node_ids": []},
+            ],
+            "reasoning": "something feels off",
+        }
+        self.assertFalse(has_evidence_references(integrity))
+
+
+class TestHasCriteriaEvidence(unittest.TestCase):
+    def test_evidence_list_with_file_path_returns_true(self):
+        criteria_findings = [
+            {"evidence": ["src/foo.py has bug"], "reasoning": ""},
+        ]
+        self.assertTrue(has_criteria_evidence(criteria_findings))
+
+    def test_reasoning_with_file_path_returns_true(self):
+        criteria_findings = [
+            {"evidence": [], "reasoning": "see scripts/bar.py for issue"},
+        ]
+        self.assertTrue(has_criteria_evidence(criteria_findings))
+
+    def test_empty_list_returns_false(self):
+        self.assertFalse(has_criteria_evidence([]))
+
+    def test_none_returns_false(self):
+        self.assertFalse(has_criteria_evidence(None))
+
+    def test_no_file_paths_returns_false(self):
+        criteria_findings = [
+            {"evidence": ["the implementation is wrong"], "reasoning": "needs more work"},
+        ]
+        self.assertFalse(has_criteria_evidence(criteria_findings))
 
 
 class TestShouldRetry(unittest.TestCase):
@@ -203,6 +250,53 @@ class TestShouldRetry(unittest.TestCase):
                 integrity=self._evidence_integrity(),
                 job=job,
                 project_yaml=project_yaml,
+            )
+        )
+
+    def test_criteria_evidence_with_integrity_none_returns_true(self):
+        """Criteria lane has file paths, integrity lane absent → retry fires."""
+        criteria_findings = [
+            {
+                "criterion_id": "test-1",
+                "judgment": "judged_fail",
+                "evidence": ["src/foo.py"],
+                "reasoning": "",
+            },
+        ]
+        self.assertTrue(
+            should_retry(
+                verdict="fail",
+                integrity=None,
+                job=self._base_job(),
+                project_yaml=self._base_project_yaml(),
+                criteria_findings=criteria_findings,
+            )
+        )
+
+    def test_both_lanes_lack_evidence_returns_false(self):
+        """Neither integrity nor criteria_findings have evidence → no retry."""
+        integrity = {"findings": [{"summary": "feels wrong"}], "reasoning": ""}
+        criteria_findings = [
+            {"evidence": ["no concrete reference"], "reasoning": "vague concern"},
+        ]
+        self.assertFalse(
+            should_retry(
+                verdict="fail",
+                integrity=integrity,
+                job=self._base_job(),
+                project_yaml=self._base_project_yaml(),
+                criteria_findings=criteria_findings,
+            )
+        )
+
+    def test_backward_compat_without_criteria_findings(self):
+        """Calling without criteria_findings param works (integrity-only path)."""
+        self.assertTrue(
+            should_retry(
+                verdict="needs-human-review",
+                integrity=self._evidence_integrity(),
+                job=self._base_job(),
+                project_yaml=self._base_project_yaml(),
             )
         )
 

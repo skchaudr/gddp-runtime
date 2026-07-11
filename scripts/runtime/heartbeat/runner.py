@@ -19,6 +19,7 @@ What it does:
 """
 
 import argparse
+import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,8 @@ from .state_recorder import (
     mark_job_failed,
     mark_job_running,
 )
+
+from ..return_router import handle_merged_pr
 
 # GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
 _default_root = Path(__file__).parent.parent.parent.parent
@@ -68,6 +71,23 @@ def connect() -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     return con
+
+
+def _is_merged_pr_event(event) -> bool:
+    """Check if an event is a merged PR (not just closed)."""
+    event_type = event["event_type"] if "event_type" in event.keys() else ""
+    if "pull_request" not in event_type:
+        return False
+    # Read the raw payload to check merged_at
+    raw_path = event["raw_payload_path"] if "raw_payload_path" in event.keys() else None
+    if not raw_path:
+        return False
+    try:
+        payload = json.loads(Path(raw_path).read_text())
+        pr = payload.get("pull_request", {})
+        return pr.get("merged_at") is not None
+    except (OSError, ValueError):
+        return False
 
 
 def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
@@ -158,6 +178,21 @@ def _plan_dispatches(
             continue
 
         print(f"Processing: {event_id} ({event['event_type']})")
+
+        # Return path: merged PR events go to the return router, not the classifier.
+        if _is_merged_pr_event(event):
+            print(f"  → return path: processing merged PR")
+            try:
+                result = handle_merged_pr(event)
+                print(f"  → return router: {result.get('status', 'unknown')}")
+                if result.get("status") == "redispatched":
+                    print(f"  → retry dispatched: {result.get('issue_url', '')}")
+                mark_event_mapped(con, event_id)
+            except Exception as exc:
+                print(f"  → return router ERROR: {exc}")
+                mark_event_ignored(con, event_id)
+            print()
+            continue
 
         # Classify and reserve jobs on the main thread.
         classification = classify(event, ready_nodes)

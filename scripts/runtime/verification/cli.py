@@ -332,6 +332,20 @@ def main(argv: list[str] | None = None) -> int:
             "findings": [f.model_dump() for f in receipt.integrity.findings],
             "reasoning": receipt.integrity.reasoning,
         }
+    # Surface criteria-lane findings (non-pass judgments) so the return_router
+    # can use them for retry decisions alongside integrity findings.
+    criteria_findings = []
+    if receipt.semantic:
+        for j in receipt.semantic.judgments:
+            if j.judgment != "judged_pass":
+                criteria_findings.append({
+                    "criterion_id": j.criterion_id,
+                    "judgment": j.judgment,
+                    "evidence": j.evidence,
+                    "reasoning": j.reasoning,
+                })
+    if criteria_findings:
+        summary["criteria_findings"] = criteria_findings
     print(json.dumps(summary, indent=2))
     return 0
 

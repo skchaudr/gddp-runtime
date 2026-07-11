@@ -312,7 +312,7 @@ def test_full_cycle_dispatch_to_review(e2e_env):
          patch("scripts.runtime.results_store.DB_PATH", e2e_env["db_path"]), \
          patch("scripts.runtime.return_router.verify_job_return",
                return_value=fake_verification), \
-         patch("scripts.runtime.return_router.ALLOWED_REPOS",
+         patch("scripts.runtime.return_router._FALLBACK_ALLOWED_REPOS",
                ["skchaudr/e2e-test"]):
 
         con = sqlite3.connect(db)

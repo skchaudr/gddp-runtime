@@ -14,7 +14,7 @@ from typing import Optional
 from .results_store import DB_PATH, write_result
 from .verification.bridge import verify_job_return
 
-ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project"]
+_FALLBACK_ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project", "skchaudr/gddp-runtime"]
 
 
 def parse_node_id(pr_body: str) -> Optional[str]:
@@ -37,9 +37,10 @@ def parse_job_id(pr_body: str) -> Optional[str]:
     return None
 
 
-def validate_repo(repo_name: str) -> bool:
-    """Reject repos not in ALLOWED_REPOS."""
-    return repo_name in ALLOWED_REPOS
+def validate_repo(repo_name: str, allowed_repos: list | None = None) -> bool:
+    """Reject repos not in the allowed list."""
+    repos = allowed_repos if allowed_repos else _FALLBACK_ALLOWED_REPOS
+    return repo_name in repos
 
 
 def _connect() -> sqlite3.Connection:
@@ -157,11 +158,18 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         import yaml
         project_yaml = yaml.safe_load(project_yaml_path.read_text()) or {}
 
+    # Secondary validation: if the project declares its own allowed_repos,
+    # re-validate against that list (the initial check used the fallback list).
+    project_allowed = project_yaml.get("execution_policy", {}).get("allowed_repos")
+    if project_allowed and not validate_repo(repo_name, project_allowed):
+        return {"status": "rejected", "reason": "repo_not_allowed_by_project"}
+
     # Extract integrity from the verification result
     integrity = verification.get("integrity") if verification.get("verification_status") == "ok" else None
     verdict = verification.get("verdict", "") if verification.get("verification_status") == "ok" else ""
 
-    if should_retry(verdict=verdict, integrity=integrity, job=job, project_yaml=project_yaml):
+    criteria_findings = verification.get("criteria_findings") if verification.get("verification_status") == "ok" else None
+    if should_retry(verdict=verdict, integrity=integrity, job=job, project_yaml=project_yaml, criteria_findings=criteria_findings):
         result = _redispatch_with_findings(job_id, job, node_id, verification, result_id)
         return result
 
@@ -192,16 +200,6 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     import json
     from .heartbeat.dispatcher import dispatch
 
-    # Increment attempt
-    con = _connect()
-    try:
-        con.execute(
-            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
-        )
-        con.commit()
-    finally:
-        con.close()
-
     # Build the job dict with findings injected
     job_with_findings = dict(job)
     # Convert constraints/acceptance_criteria from JSON strings if needed
@@ -217,6 +215,7 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
         "integrity_verdict": integrity.get("verdict", ""),
         "findings": integrity.get("findings", []),
         "reasoning": integrity.get("reasoning", ""),
+        "criteria_findings": verification.get("criteria_findings", []) if verification.get("verification_status") == "ok" else [],
     }
 
     # Dispatch
@@ -225,6 +224,7 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     if not dispatch_result.success:
         # Dispatch failed — fall back to awaiting_review so the human sees the
         # findings and can re-dispatch manually. The job must not sit unattended.
+        # Attempt is NOT incremented on failure so the retry budget stays intact.
         _mark_job_awaiting_review(job_id)
         return {
             "status": "needs_review",
@@ -236,6 +236,16 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
             "dispatch_success": False,
             "dispatch_error": dispatch_result.error,
         }
+
+    # Dispatch succeeded — increment attempt now that the retry is confirmed.
+    con = _connect()
+    try:
+        con.execute(
+            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
+        )
+        con.commit()
+    finally:
+        con.close()
 
     return {
         "status": "redispatched",

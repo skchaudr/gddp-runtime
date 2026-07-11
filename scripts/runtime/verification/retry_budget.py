@@ -11,7 +11,6 @@ heuristic later without touching the return_router.
 from __future__ import annotations
 
 import re
-import sqlite3
 from typing import Any
 
 
@@ -37,6 +36,10 @@ def has_evidence_references(integrity_output: dict | None) -> bool:
         summary = finding.get("summary", "") if isinstance(finding, dict) else str(finding)
         if _FILE_REF_RE.search(summary):
             return True
+        # A finding with affected node ids is actionable evidence even
+        # without an explicit file-path reference in its text.
+        if isinstance(finding, dict) and finding.get("affected_node_ids"):
+            return True
 
     # Check the integrity output's reasoning
     reasoning = integrity_output.get("reasoning", "")
@@ -46,12 +49,35 @@ def has_evidence_references(integrity_output: dict | None) -> bool:
     return False
 
 
+def has_criteria_evidence(criteria_findings: list | None) -> bool:
+    """Check whether criteria-lane findings contain actionable evidence references.
+
+    Criteria findings come from CriterionJudgment objects with evidence lists
+    and reasoning. File paths in either field count as actionable evidence.
+    """
+    if not criteria_findings:
+        return False
+    for finding in criteria_findings:
+        if not isinstance(finding, dict):
+            continue
+        # Check evidence list for file paths
+        for evidence_item in finding.get("evidence", []):
+            if _FILE_REF_RE.search(str(evidence_item)):
+                return True
+        # Check reasoning for file paths
+        reasoning = finding.get("reasoning", "")
+        if reasoning and _FILE_REF_RE.search(reasoning):
+            return True
+    return False
+
+
 def should_retry(
     *,
     verdict: str,
     integrity: dict | None,
     job: dict,
     project_yaml: dict,
+    criteria_findings: list | None = None,
 ) -> bool:
     """Determine whether a non-pass verdict should trigger an executor retry.
 
@@ -67,7 +93,8 @@ def should_retry(
     if verdict == "pass":
         return False
 
-    if not has_evidence_references(integrity):
+    has_evidence = has_evidence_references(integrity) or has_criteria_evidence(criteria_findings)
+    if not has_evidence:
         return False
 
     execution_policy = project_yaml.get("execution_policy", {})

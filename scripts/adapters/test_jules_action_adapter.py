@@ -46,6 +46,34 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("job: job_123", body)
         self.assertIn("does not advance graph truth automatically", body)
 
+    def test_build_issue_body_with_required_artifacts(self):
+        job = dict(self.sample_job)
+        job["required_artifacts"] = ["decision.md", "result-summary.md", "patch.diff"]
+        body = self.adapter.build_issue_body(job)
+        self.assertIn("## Required Artifacts", body)
+        self.assertIn("decision.md", body)
+        self.assertIn("result-summary.md", body)
+        self.assertIn("patch.diff", body)
+        self.assertIn("executor-receipt.md", body)
+
+    def test_build_issue_body_includes_strengthened_metadata_reminder(self):
+        body = self.adapter.build_issue_body(self.sample_job)
+        self.assertIn("CRITICAL", body)
+        self.assertIn("PR Metadata Block Required", body)
+        self.assertIn("node: node_456", body)
+        self.assertIn("job: job_123", body)
+        self.assertIn("This is not optional", body)
+
+    def test_build_issue_body_without_required_artifacts(self):
+        job = dict(self.sample_job)
+        job.pop("required_artifacts", None)
+        body = self.adapter.build_issue_body(job)
+        self.assertNotIn("## Required Artifacts", body)
+        # Rest of the body is still correct
+        self.assertIn("## Goal\nRepair the leaking pipe", body)
+        self.assertIn("## Why\nWater is everywhere", body)
+        self.assertIn("node: node_456", body)
+
     @patch.dict("os.environ", {}, clear=True)
     @patch("subprocess.run")
     def test_dispatch_requires_explicit_token(self, mock_run):
