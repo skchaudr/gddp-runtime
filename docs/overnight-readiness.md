@@ -27,12 +27,16 @@ before unattended operation.
 
 ## Remaining (live-fire proofs)
 
-- [ ] X1: heartbeat live-fire — one real heartbeat run dispatches a real job to a real executor
-      (needs Sab's explicit go; only hardening item never executed live)
+- [x] X1: heartbeat live-fire (2026-07-11) — full loop ran end-to-end: heartbeat dispatched
+      job_20260711T16020485 to Jules (issue #91), PR #92 merged with metadata block intact,
+      return path (newly wired into runner) parsed it, two-lane evaluator ran, verdict pass,
+      job parked awaiting_review. Verdict receipt on droid machine (gitignored — unversioned).
 - [x] Integrity lane proven live (2026-07-10) — live pi run on vault-doctor/find-duplicates
       produced populated IntegrityReport (integrity verdict `drift`, 3 findings; criteria
       verdict `fail` @0.075; graph truth untouched, receipt in session scratchpad)
 - [ ] Retry loop proven live — one non-pass verdict with evidence refs re-dispatches
+      (2026-07-11 round trip passed first attempt, so should_retry correctly did NOT fire;
+      code hardened + 25 tests, but a real re-dispatch has still never been observed)
 - [x] `retry_budget: 3` added to all gddp-config execution_policy blocks (600a6cc, 2026-07-10)
 - [ ] heartbeat restart-on-crash behavior tested (cron exists; crash-recovery unproven)
 
