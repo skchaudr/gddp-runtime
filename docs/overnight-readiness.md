@@ -34,9 +34,12 @@ before unattended operation.
 - [x] Integrity lane proven live (2026-07-10) — live pi run on vault-doctor/find-duplicates
       produced populated IntegrityReport (integrity verdict `drift`, 3 findings; criteria
       verdict `fail` @0.075; graph truth untouched, receipt in session scratchpad)
-- [ ] Retry loop proven live — one non-pass verdict with evidence refs re-dispatches
-      (2026-07-11 round trip passed first attempt, so should_retry correctly did NOT fire;
-      code hardened + 25 tests, but a real re-dispatch has still never been observed)
+- [x] Retry loop proven live (2026-07-11) — canary-retry-proof node with a hidden
+      criterion (docs/echo-usage.md) drew a fail verdict with file-path evidence;
+      should_retry fired, _redispatch_with_findings created issue #101 with
+      "Previous Attempt Findings" in the body, attempt 0→1 after dispatch. Verdict
+      receipt versioned at .handoffs/artifacts/032-live-retry-proof-canary-fail-verdict.json
+      (240fb84). JSON double-parse bug in the redispatch path found+fixed by the same run.
 - [x] `retry_budget: 3` added to all gddp-config execution_policy blocks (600a6cc, 2026-07-10)
 - [ ] heartbeat restart-on-crash behavior tested (cron exists; crash-recovery unproven)
 
