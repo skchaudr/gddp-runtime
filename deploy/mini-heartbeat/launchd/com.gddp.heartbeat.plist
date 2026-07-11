@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  GDDP heartbeat on sab-mini (every 5 minutes). Dormant until bin/arm.sh.
+  Mirrors big-ssd user crontab: python3 -m scripts.runtime.heartbeat.runner
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gddp.heartbeat</string>
+
+  <key>WorkingDirectory</key>
+  <string>__GDDP_RUNTIME_ROOT__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-m</string>
+    <string>scripts.runtime.heartbeat.runner</string>
+    <string>--project</string>
+    <string>__GDDP_PROJECT_ID__</string>
+    <string>--repo</string>
+    <string>__GDDP_PROJECT_REPO__</string>
+    <string>--config-path</string>
+    <string>__GDDP_CONFIG_PATH__</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:__HOME__/.local/bin</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>GDDP_RUNTIME_ROOT</key>
+    <string>__GDDP_RUNTIME_ROOT__</string>
+    <key>GDDP_CONFIG_PATH</key>
+    <string>__GDDP_CONFIG_PATH__</string>
+    <key>GDDP_REPOS_ROOT</key>
+    <string>__GDDP_REPOS_ROOT__</string>
+    <key>GDDP_REPO_ROOT</key>
+    <string>__GDDP_REPOS_ROOT__</string>
+    <key>GDDP_DEEPSEEK_KEY_CMD</key>
+    <string>pass show api/deepseek</string>
+    <key>PYTHONPATH</key>
+    <string>__GDDP_RUNTIME_ROOT__</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/gddp-heartbeat.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/gddp-heartbeat.err.log</string>
+</dict>
+</plist>

@@ -46,3 +46,6 @@ graphify-out.pi-local-backup
 .brv/
 .aider*
 .vectorcode/
+
+# mini-heartbeat local env (paths only, but keep untracked)
+deploy/mini-heartbeat/env/gddp.env
