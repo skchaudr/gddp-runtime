@@ -30,7 +30,10 @@ def _receipt_payload(**overrides):
         "project_id": "project-a",
         "node_id": "node-a",
         "verdict": Verdict.PASS,
+        "confidence": 0.8,
         "criteria_confidence": 0.8,
+        "completeness": 1.0,
+        "graph_readiness": 0.8,
         "completeness_status": "not-run",
         "deterministic": _deterministic(),
         "semantic": None,
@@ -42,11 +45,17 @@ def _receipt_payload(**overrides):
     return payload
 
 
-def test_verdict_receipt_has_no_confidence_alias_field() -> None:
-    receipt = VerdictReceipt.model_validate(_receipt_payload())
+def test_verdict_receipt_populates_multiple_axes() -> None:
+    payload = _receipt_payload(
+        criteria_confidence=0.95,
+        completeness=0.5,
+        graph_readiness=0.0
+    )
+    receipt = VerdictReceipt.model_validate(payload)
 
-    assert receipt.criteria_confidence == 0.8
-    assert "confidence" not in receipt.model_dump()
+    assert receipt.criteria_confidence == 0.95
+    assert receipt.completeness == 0.5
+    assert receipt.graph_readiness == 0.0
 
 
 def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
@@ -64,6 +73,7 @@ def test_verdict_receipt_accepts_legacy_confidence_only_payload() -> None:
 def test_verdict_receipt_requires_some_confidence_value() -> None:
     payload = _receipt_payload()
     del payload["criteria_confidence"]
+    del payload["confidence"]
 
     with pytest.raises(ValidationError):
         VerdictReceipt.model_validate(payload)
