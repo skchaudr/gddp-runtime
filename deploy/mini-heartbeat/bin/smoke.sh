@@ -48,6 +48,51 @@ else
   echo "  [warn] pi not on PATH (needed for evaluator harness)"
 fi
 
+# Webhook secret resolver (length only — never print secret)
+_webhook_secret_len() {
+  if [[ -n "${GITHUB_WEBHOOK_SECRET:-}" ]]; then
+    echo "${#GITHUB_WEBHOOK_SECRET}"
+    return 0
+  fi
+  local cmd="${GDDP_WEBHOOK_SECRET_CMD:-pass show gddp/webhook-secret}"
+  if [[ -z "$cmd" ]]; then
+    return 1
+  fi
+  local out
+  if ! out="$(bash -c "$cmd" 2>/dev/null | head -1)"; then
+    return 1
+  fi
+  [[ -n "$out" ]] || return 1
+  echo "${#out}"
+}
+
+if ws_len="$(_webhook_secret_len)"; then
+  echo "  [ok] webhook secret resolved (len=${ws_len})"
+else
+  echo "  [FAIL] webhook secret empty or resolver failed"; fail=1
+fi
+
+if curl -sf --max-time 2 http://127.0.0.1:5050/health >/dev/null 2>&1; then
+  hcode="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://127.0.0.1:5050/health)"
+  if [[ "$hcode" == "200" ]]; then
+    echo "  [ok] intake /health 200"
+  else
+    echo "  [FAIL] intake /health returned $hcode (expected 200 when armed)"; fail=1
+  fi
+  sig_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 -X POST http://127.0.0.1:5050/webhook \
+    -H "Content-Type: application/json" \
+    -H "X-GitHub-Event: ping" \
+    -H "X-Hub-Signature-256: sha256=invalid" \
+    -d '{}')"
+  if [[ "$sig_code" == "401" ]]; then
+    echo "  [ok] intake rejects invalid HMAC (401)"
+  else
+    echo "  [FAIL] invalid HMAC returned $sig_code (expected 401)"; fail=1
+  fi
+else
+  echo "  [warn] intake not listening on :5050 — skip /health and HMAC probe (arm first)"
+fi
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
   if launchctl print "gui/$(id -u)/${INTAKE_LABEL}" >/dev/null 2>&1; then
     echo "  [ok] launchd $INTAKE_LABEL registered"

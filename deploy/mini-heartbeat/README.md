@@ -3,8 +3,8 @@
 Dormant control-plane pack for **sab-mini** (macOS). Install anytime; nothing
 ticks until you explicitly arm.
 
-Primary plane today: **big-ssd** (`deploy/BIGPI_RUNBOOK.md`). This kit does not
-replace it by existing in the tree.
+Primary plane today: **pi-big** (transitioning to **sab-mini** per `TOPOLOGY.md`).
+Cutover steps: **`CUTOVER.md`**. This kit does not replace pi-big until armed.
 
 ## What this is
 
@@ -28,6 +28,8 @@ replace it by existing in the tree.
    `disarm-source` on big-ssd (or accept split-brain).
 
 ## Suggested flow
+
+Full checklist: **`CUTOVER.md`**. Short version:
 
 ```bash
 # On sab-mini — once, anytime

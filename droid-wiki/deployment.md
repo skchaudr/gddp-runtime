@@ -1,5 +1,10 @@
 # Deployment
 
+> **Topology canon:** multi-host machine map, queue rules, and pi-big → sab-mini
+> migration live in **`TOPOLOGY.md`** (human-owned, repo root) and
+> **`deploy/mini-heartbeat/CUTOVER.md`**. This page describes the Big Pi
+> deployment model; read those first before live dispatch.
+
 GDDP Runtime runs on a Raspberry Pi control plane (Big Pi). The deployment story is intentionally simple: two repos, a systemd service, and a cron heartbeat. No containers, no orchestrators, no remote state stores.
 
 ## Live topology

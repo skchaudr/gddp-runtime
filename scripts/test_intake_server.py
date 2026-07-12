@@ -71,6 +71,34 @@ def test_verify_signature_missing_prefix():
     finally:
         intake_server.WEBHOOK_SECRET = original_secret
 
+def test_startup_webhook_secret_check_exits_when_unresolved():
+    original = intake_server.WEBHOOK_SECRET
+    original_insecure = intake_server._INTAKE_INSECURE
+    intake_server.WEBHOOK_SECRET = ""
+    intake_server._INTAKE_INSECURE = False
+    try:
+        try:
+            intake_server._startup_webhook_secret_check()
+            assert False, "expected SystemExit"
+        except SystemExit as exc:
+            assert exc.code == 1
+    finally:
+        intake_server.WEBHOOK_SECRET = original
+        intake_server._INTAKE_INSECURE = original_insecure
+
+
+def test_startup_webhook_secret_check_allows_insecure_dev():
+    original = intake_server.WEBHOOK_SECRET
+    original_insecure = intake_server._INTAKE_INSECURE
+    intake_server.WEBHOOK_SECRET = ""
+    intake_server._INTAKE_INSECURE = True
+    try:
+        intake_server._startup_webhook_secret_check()
+    finally:
+        intake_server.WEBHOOK_SECRET = original
+        intake_server._INTAKE_INSECURE = original_insecure
+
+
 def test_verify_signature_wrong_secret():
     """Test when the payload is signed with a different secret."""
     original_secret = intake_server.WEBHOOK_SECRET

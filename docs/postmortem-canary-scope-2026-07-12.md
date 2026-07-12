@@ -56,12 +56,12 @@ authenticated recovery run to finish the canary's return path.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | `TOPOLOGY.md` at repo root, human-owned; supersedes host-roles.md | drafted 2026-07-12, Sab to verify ❓ items |
+| 1 | `TOPOLOGY.md` at repo root, human-owned; supersedes host-roles.md | target+transition draft 2026-07-12; Sab to verify ❓ items |
 | 2 | Plans must open with "Target machine: X" | convention, adopt next dispatch |
 | 3 | Constraint template: carve out artifact-gate paths from file whitelists (or move receipts outside work tree) | backlog |
 | 4 | Feed `changed_files` (already in DB, unused) into integrity lane 2 context so fresh-eyes review always sees the delta | backlog |
 | 5 | Tunnel lifecycle: HMAC-reject test before exposure; teardown + webhook-URL revert is part of done | recorded in TOPOLOGY.md rule 4 |
-| 5b | Extend `deploy/mini-heartbeat/bin/smoke.sh` to exercise `gddp/webhook-secret` resolution and intake's signature path (currently only checks the DeepSeek pass entry) | backlog, first fix of migration |
-| 5c | Intake must fail closed (refuse to start / report unhealthy) when the webhook-secret resolver fails, instead of silently disabling verification | backlog |
+| 5b | Extend `deploy/mini-heartbeat/bin/smoke.sh` to exercise `gddp/webhook-secret` resolution and intake's signature path (currently only checks the DeepSeek pass entry) | done 2026-07-12 night-shift |
+| 5c | Intake must fail closed (refuse to start / report unhealthy) when the webhook-secret resolver fails, instead of silently disabling verification | done 2026-07-12 night-shift (`GDDP_INTAKE_INSECURE=1` for local dev only) |
 | 6 | Reviewer rule: incoming claims are uncorroborated until primary-sourced; label them so in turn one | Claude memory saved |
 | 7 | Mark/retire stale `docs/host-roles.md` | pending Sab (delete needs approval) |

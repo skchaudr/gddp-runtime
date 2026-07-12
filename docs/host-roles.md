@@ -1,5 +1,8 @@
 # Host Roles — OpenClaw Topology
 
+> **Retired for GDDP.** Superseded by **`TOPOLOGY.md`** (2026-07-12). OpenClaw
+> hostnames below are historical only.
+
 Last updated: 2026-03-21
 
 ---

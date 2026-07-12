@@ -53,6 +53,22 @@ def _resolve_webhook_secret() -> str:
 
 WEBHOOK_SECRET = _resolve_webhook_secret()
 
+# Local dev only: allow startup without a secret (verification skipped).
+_INTAKE_INSECURE = os.environ.get("GDDP_INTAKE_INSECURE", "").strip() == "1"
+
+
+def _startup_webhook_secret_check() -> None:
+    """Refuse to run exposed intake when a secret was expected but not resolved."""
+    if WEBHOOK_SECRET or _INTAKE_INSECURE:
+        return
+    print(
+        "ERROR: webhook secret not resolved (set GITHUB_WEBHOOK_SECRET, fix "
+        "GDDP_WEBHOOK_SECRET_CMD, or set GDDP_INTAKE_INSECURE=1 for local dev only).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 app = Flask(__name__)
 
 
@@ -208,7 +224,12 @@ def webhook():
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"}), 200
+    if not WEBHOOK_SECRET and not _INTAKE_INSECURE:
+        return jsonify({
+            "status": "unhealthy",
+            "reason": "webhook_secret_unresolved",
+        }), 503
+    return jsonify({"status": "ok", "webhook_verification": bool(WEBHOOK_SECRET)}), 200
 
 
 if __name__ == "__main__":
@@ -217,10 +238,11 @@ if __name__ == "__main__":
         print("Run: python3 scripts/init_db.py first")
         sys.exit(1)
 
-    if not WEBHOOK_SECRET:
+    _startup_webhook_secret_check()
+
+    if not WEBHOOK_SECRET and _INTAKE_INSECURE:
         print(
-            "WARNING: no webhook secret resolved (env GITHUB_WEBHOOK_SECRET or "
-            "GDDP_WEBHOOK_SECRET_CMD) — signature verification is DISABLED. "
+            "WARNING: GDDP_INTAKE_INSECURE=1 — signature verification is DISABLED. "
             "Do not expose this server publicly in this state."
         )
     print(f"Intake server starting on http://127.0.0.1:5050")
