@@ -1,120 +1,91 @@
-# TOPOLOGY.md — Machine & Queue Map (Human-Owned Canon)
+# TOPOLOGY.md — GDDP Runtime Topology
 
-Last updated: 2026-07-12 (night-shift cutover prep).
-Owner: **Sab**. Agents read this; agents do not edit it unless Sab explicitly
-asks for a draft. Items marked ❓ need Sab confirmation before cutover.
+Where the GDDP runtime runs: control plane, queue, intake, webhooks, and
+agent-session hosts. Lives in `gddp-runtime` because this is **runtime**
+infrastructure — not personal notes, not `gddp-config` graph truth.
 
-**How to use this file during pi-big → sab-mini migration:** read **Target**
-for where we are going, **Transition** for what is true tonight, and
-`deploy/mini-heartbeat/CUTOVER.md` for the ordered steps that move Transition
-→ Target. Update Transition after each cutover phase; when Transition matches
-Target, delete the Transition section.
+Last verified: 2026-07-12 (post cutover to sab-mini).
+
+Cutover procedure (historical): `deploy/mini-heartbeat/CUTOVER.md`.
 
 ---
 
-## Target topology (post-migration)
+## Production (sab-mini)
 
-Single control plane on **sab-mini**. No split-brain intake, no session-scoped
-tunnels for production webhooks.
+Single control plane. No split-brain intake.
 
-| Tailscale name | Hardware | Role in GDDP |
-|---|---|---|
-| `sab-mini` | Mac Mini (16GB) | **Sole production control plane.** launchd `com.gddp.intake` + `com.gddp.heartbeat`, production `db/queue.db`, all 12 repo webhooks, `pass` store (or approved remote resolver), `gh` authenticated, stable signed public intake URL (Tailscale Funnel or named tunnel as a **service**, not a shell PID). Repos: `~/repos/gddp-runtime` + `~/repos/gddp-config`. |
-| `pi-big` | Pi (8GB) | **Retired from GDDP** (standby/archive). No intake, no heartbeat, no production webhooks. May keep repos for read-only reference until Sab deletes. |
-| `sab-air` | M5 MacBook Air (24GB) | Operator workstation. SSH to mini/pi; not a queue host. |
-| `sab-dev` / `sab-dev-2` | Linux VMs | Agent session hosts. Clean clones; **no live queue**, no `gh` auth, no production webhooks. `db/queue.db` = dry-run only. |
-| `pi-small` | Pi (4GB) | Legacy OpenClaw; not part of GDDP. |
-
-### Target paths (sab-mini defaults — confirm ❓)
-
-| What | Path |
+| What | Value |
 |---|---|
-| Runtime checkout | `~/repos/gddp-runtime` ❓ |
-| Config checkout | `~/repos/gddp-config` ❓ |
+| Host | `sab-mini` (Mac Mini, 16GB) |
+| Intake | launchd `com.gddp.intake` → `127.0.0.1:5050` |
+| Heartbeat | launchd `com.gddp.heartbeat` |
+| Public URL | `https://sab-mini.tail02ac6f.ts.net/webhook` (Tailscale Funnel → `:5050`) |
 | Queue DB | `~/repos/gddp-runtime/db/queue.db` |
-| Intake bind | `127.0.0.1:5050` → public funnel/tunnel |
-| Webhook route | `POST /webhook` |
-| Public intake URL | `https://sab-mini.<tailnet>.ts.net/webhook` ❓ (stable funnel) |
-| Secrets | Local `pass`: `gddp/webhook-secret`, `api/deepseek`; automation GPG key migrated from pi-big |
-| GitHub webhooks | All 12 repos → sab-mini public URL; one shared secret |
+| Runtime repo | `~/repos/gddp-runtime` |
+| Config repo | `~/repos/gddp-config` |
+| Webhooks | 12 repos (`skchaudr/*`) → mini URL; shared secret |
+| Secrets (transition) | `GDDP_WEBHOOK_SECRET_CMD` / `GDDP_DEEPSEEK_KEY_CMD` → ssh `sab-ssd@pi-big` `pass show …` |
+| `gh` | Authenticated on mini (`ssh` protocol) |
 
-### Target queue & event rules
+**pi-big** (`sab-ssd@pi-big`): GDDP **disarmed** — intake inactive, heartbeat
+crontab commented. Still holds `pass` store + automation GPG `F0928E218506BB29`
+until migrated to mini. Not a queue host.
 
-1. **One queue, one intake.** Every production job row and every production
-   webhook delivery lands on sab-mini `db/queue.db`.
-2. **Plans name the target machine** in line 1: `Target machine: sab-mini`.
-3. **No session-scoped production infra.** Temporary tunnels are for one-shot
-   proofs only; teardown + webhook revert is part of done.
-4. **Intake fails closed** without a resolved webhook secret (no public
-   exposure with verification disabled).
-5. **Never synthesize intake events** during a live proof. Signed GitHub
-   delivery or operator replay from a saved delivery payload — labeled in the
-   handoff.
-6. **Verdict ≠ acceptance.** Only Sab runs `accept_node`.
+Webhook repoint: `gh api` PATCH needs JSON `config` body — flat `-f url=` does
+not update the hook URL.
 
 ---
 
-## Transition (as of 2026-07-12, post-canary recovery)
+## Other machines
 
-Canary retry proof **completed** on sab-mini (`res_20260712T0837057851` PASS).
-Ephemeral canary webhook `651704334` **deactivated**. pi-big still owns the
-12 production webhooks until cutover.
+| Tailscale name | Role in GDDP |
+|---|---|
+| `sab-air` | Operator workstation. SSH to mini/pi. Not a queue host. |
+| `sab-dev` | Agent session VM. Dry-run `db/queue.db` only. No production webhooks, no `gh` auth for dispatch. Paths: `~/gddp-runtime`, `~/gddp-config`. |
+| `pi-small` | Legacy OpenClaw. Not part of GDDP. |
 
-| Tailscale name | Current role | Queue / webhooks |
-|---|---|---|
-| `pi-big` | **Production control plane (legacy).** systemd `gddp-intake`, heartbeat cron 5m, Tailscale funnel, `pass` + automation GPG `F0928E218506BB29`. | Production `db/queue.db`; **12 repo webhooks** → `https://pi-big.tail02ac6f.ts.net/webhook` |
-| `sab-mini` | **Canary / dev dispatch surface.** launchd kit installed **dormant**; intake ran localhost during canary with `GDDP_WEBHOOK_SECRET_CMD` → ssh pi-big `pass show gddp/webhook-secret`. | Local queue held canary job; **no production webhooks** after canary hook deactivated |
-| `sab-dev` | VM agent host (this doc edited here). | Dry-run `db/queue.db` only |
-| `sab-dev-2` | VM agent host ❓ | Dry-run only ❓ |
-| `sab-air` | Operator | — |
-
-### Transition paths
-
-| Host | Runtime | Config | Notes |
-|---|---|---|---|
-| pi-big | `~/repos/gddp-runtime` (`run-main` + local graphify commit) | `~/repos/gddp-config` | User `sab-ssd` on box |
-| sab-mini | `~/repos/gddp-runtime` | `~/repos/gddp-config` | Handoff 032 worktree; graphify-out dirt OK |
-| sab-dev | `~/gddp-runtime` | `~/gddp-config` | No SSH to mini/pi from here (BatchMode fails) |
-
-### Transition risks (do not repeat)
-
-- Jobs dispatched from shell PIDs / trycloudflare while dormant pack unarmed.
-- VM reviewing Mini worktree claims without naming the machine.
-- Webhook secret on GitHub ≠ secret on intake → 401 (correct) or worse if
-  verification was disabled (fixed: intake now fails closed).
-- pi-big and sab-mini **code drift** — check `git log -1` both sides before
-  assuming parity.
+Machines on Tailscale but **not in this map** (e.g. `sab-dev-2`) are out of
+scope unless they join the runtime control plane.
 
 ---
 
-## Cutover
+## Runtime invariants
 
-Ordered procedure: **`deploy/mini-heartbeat/CUTOVER.md`**.
-
-Summary: smoke (secrets + HMAC) → stable mini public URL → disarm pi-big →
-arm mini → repoint 12 webhooks → one supervised live event → update this file
-(Transition → Target).
-
----
-
-## Agent preflight (every live-dispatch session)
-
-Before trusting a plan or dispatching:
-
-1. Read this file (Transition + Target).
-2. Confirm **target machine** is named in the plan.
-3. On the target host: `git log -1 --oneline`, `git status -sb`, queue DB
-   path, intake health (`curl -s localhost:5050/health`).
-4. Confirm webhook secret resolves (length only) and invalid HMAC → `401`.
-5. Confirm job row exists on **same host** as the webhook that will receive the
-   return-path event.
+1. **One queue, one intake.** Production jobs and webhook deliveries land on
+   sab-mini `db/queue.db`.
+2. **Plans name the target machine** — line 1: `Target machine: sab-mini`
+   (or explicit host during migration).
+3. **No session-scoped production infra.** Ephemeral tunnels are for one-shot
+   proofs; teardown + webhook revert is part of done.
+4. **Intake fails closed** without a resolved webhook secret.
+5. **Never synthesize intake events** during a live proof — signed GitHub
+   delivery or labeled operator replay only.
+6. **Verdict ≠ acceptance.** Graph status changes require human `accept_node`.
 
 ---
 
-## Related canon
+## Preflight (before live dispatch)
 
-- `deploy/mini-heartbeat/README.md` — dormant kit
-- `deploy/mini-heartbeat/CUTOVER.md` — migration checklist
-- `deploy/BIGPI_RUNBOOK.md` — pi-big ops (until retired)
-- `docs/postmortem-canary-scope-2026-07-12.md` — why this file exists
-- `droid-wiki/deployment.md` — **generated reference**; defers here for topology
+On the **target host**:
+
+```bash
+git log -1 --oneline && git status -sb
+curl -s http://127.0.0.1:5050/health
+# invalid HMAC → 401
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:5050/webhook \
+  -H "Content-Type: application/json" -H "X-GitHub-Event: ping" \
+  -H "X-Hub-Signature-256: sha256=deadbeef" -d '{}'
+```
+
+Confirm the job row exists on the **same host** that will receive the return-path
+webhook.
+
+---
+
+## Related
+
+- `deploy/mini-heartbeat/README.md` — launchd kit
+- `deploy/mini-heartbeat/CUTOVER.md` — pi-big → mini checklist
+- `deploy/BIGPI_RUNBOOK.md` — pi-big ops (archive)
+- `docs/postmortem-canary-scope-2026-07-12.md` — why topology discipline exists
+- `droid-wiki/deployment.md` — generated reference; defers here for hosts
