@@ -8,12 +8,12 @@ Three stages covered: intent → planning → execution. See `TOPOLOGY.md` for h
 
 ## 1. Intent (before planning begins)
 
-- [ ] **Have bounded work, want intent preserved**
-- [ ] **Work is decomposable into a node that matches the schema**
-- [ ] **You know which node this is**
-- [ ] **You know which machine holds `db/queue.db` for this job** — `TOPOLOGY.md`; production queue is on `sab-mini` today
-- [ ] **You know which URL GitHub will call for the return path** — same host as that queue
-- [ ] **If this job outlasts your session, you will arm launchd intake and Tailscale funnel on that host before you leave**
+- [ ] **Have bounded work worth preserving as intent** — the reason to open the loop at all
+- [ ] **Work maps to one node in the schema format** — `gddp-config/schemas/v1/node.yaml`; draft with the node CLI (`gddp.py node rapid`), check with `gddp.py node validate`
+- [ ] **Know which node** — it lives in the project's own repo at `gddp/nodes/<node>.yaml`; the repo owns its graph, gddp-config is not its warehouse
+- [ ] **Know which host holds `db/queue.db`** — `TOPOLOGY.md`; production queue on `sab-mini` today
+- [ ] **Know the return-path URL GitHub will call** — same host as that queue; exact URL in `TOPOLOGY.md`
+- [ ] **If the job outlasts your session, arm intake + funnel before you leave** — `deploy/mini-heartbeat/bin/arm.sh` (see §3)
 
 ### When the queue host and the webhook host differ
 
