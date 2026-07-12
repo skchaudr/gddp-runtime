@@ -43,8 +43,9 @@ Machines on Tailscale but not listed here are out of scope for GDDP runtime.
 
 ## Related
 
+- `docs/dispatch-checklist.md` — intent / planning / execution gates
 - `deploy/mini-heartbeat/README.md` — launchd kit
 - `deploy/mini-heartbeat/CUTOVER.md` — pi-big → mini migration
 - `deploy/BIGPI_RUNBOOK.md` — pi-big ops (archive)
 - `docs/postmortem-canary-scope-2026-07-12.md` — Jul 12 incident
-- `AGENTS.md` — runtime workflow and doctrine
+- `AGENTS.md` — agent session workflow
