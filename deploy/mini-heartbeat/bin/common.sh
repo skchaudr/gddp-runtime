@@ -34,11 +34,25 @@ INTAKE_PLIST="$LAUNCH_AGENTS_DIR/${INTAKE_LABEL}.plist"
 HEARTBEAT_PLIST="$LAUNCH_AGENTS_DIR/${HEARTBEAT_LABEL}.plist"
 
 _xml_escape() {
+  local s="$1" r="" i c
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      '&') r+='&amp;' ;;
+      '<') r+='&lt;' ;;
+      '>') r+='&gt;' ;;
+      '"') r+='&quot;' ;;
+      *) r+="$c" ;;
+    esac
+  done
+  printf '%s' "$r"
+}
+
+_sed_replacement_escape() {
+  # sed treats & in the replacement as the matched text
   local s="$1"
-  s="${s//&/&amp;}"
-  s="${s//</&lt;}"
-  s="${s//>/&gt;}"
-  s="${s//\"/&quot;}"
+  s="${s//\\/\\\\}"
+  s="${s//&/\\&}"
   printf '%s' "$s"
 }
 
@@ -46,8 +60,8 @@ render_plist() {
   local src="$1"
   local dest="$2"
   local deepseek_cmd webhook_cmd
-  deepseek_cmd="$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")"
-  webhook_cmd="$(_xml_escape "${GDDP_WEBHOOK_SECRET_CMD:-pass show gddp/webhook-secret}")"
+  deepseek_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")")"
+  webhook_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_WEBHOOK_SECRET_CMD:-pass show gddp/webhook-secret}")")"
   sed \
     -e "s|__HOME__|${HOME}|g" \
     -e "s|__GDDP_RUNTIME_ROOT__|${GDDP_RUNTIME_ROOT}|g" \
