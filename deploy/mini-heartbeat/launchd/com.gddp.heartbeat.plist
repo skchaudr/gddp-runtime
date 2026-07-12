@@ -14,7 +14,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>__GDDP_PYTHON__</string>
     <string>-m</string>
     <string>scripts.runtime.heartbeat.runner</string>
     <string>--project</string>

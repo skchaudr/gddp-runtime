@@ -19,6 +19,13 @@ GDDP_CONFIG_PATH="${GDDP_CONFIG_PATH:-$HOME/repos/gddp-config}"
 GDDP_REPOS_ROOT="${GDDP_REPOS_ROOT:-$HOME/repos}"
 GDDP_PROJECT_ID="${GDDP_PROJECT_ID:-gddp-runtime}"
 GDDP_PROJECT_REPO="${GDDP_PROJECT_REPO:-skchaudr/gddp-runtime}"
+if [[ -z "${GDDP_PYTHON:-}" ]]; then
+  if [[ -x "$GDDP_RUNTIME_ROOT/.venv/bin/python" ]]; then
+    GDDP_PYTHON="$GDDP_RUNTIME_ROOT/.venv/bin/python"
+  else
+    GDDP_PYTHON="/usr/bin/python3"
+  fi
+fi
 
 LAUNCH_AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 INTAKE_LABEL="com.gddp.intake"
@@ -48,6 +55,7 @@ render_plist() {
     -e "s|__GDDP_REPOS_ROOT__|${GDDP_REPOS_ROOT}|g" \
     -e "s|__GDDP_PROJECT_ID__|${GDDP_PROJECT_ID}|g" \
     -e "s|__GDDP_PROJECT_REPO__|${GDDP_PROJECT_REPO}|g" \
+    -e "s|__GDDP_PYTHON__|${GDDP_PYTHON}|g" \
     -e "s|__GDDP_DEEPSEEK_KEY_CMD__|${deepseek_cmd}|g" \
     -e "s|__GDDP_WEBHOOK_SECRET_CMD__|${webhook_cmd}|g" \
     "$src" >"$dest"
