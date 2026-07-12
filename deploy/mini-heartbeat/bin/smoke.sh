@@ -23,17 +23,26 @@ else
   echo "  [ok] project.yaml"
 fi
 
-# DeepSeek via pass (or env) — length only
-if [[ -n "${DEEPSEEK_API_KEY:-}" ]]; then
-  echo "  [ok] DEEPSEEK_API_KEY set (len=${#DEEPSEEK_API_KEY})"
-elif command -v pass >/dev/null 2>&1; then
-  if key="$(pass show api/deepseek 2>/dev/null | head -1)" && [[ -n "$key" ]]; then
-    echo "  [ok] pass api/deepseek (len=${#key})"
-  else
-    echo "  [FAIL] pass api/deepseek empty or locked"; fail=1
+# DeepSeek via env or resolver cmd — length only
+_deepseek_key_len() {
+  if [[ -n "${DEEPSEEK_API_KEY:-}" ]]; then
+    echo "${#DEEPSEEK_API_KEY}"
+    return 0
   fi
+  local cmd="${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}"
+  [[ -n "$cmd" ]] || return 1
+  local out
+  if ! out="$(bash -c "$cmd" 2>/dev/null | head -1)"; then
+    return 1
+  fi
+  [[ -n "$out" ]] || return 1
+  echo "${#out}"
+}
+
+if ds_len="$(_deepseek_key_len)"; then
+  echo "  [ok] DeepSeek key resolved (len=${ds_len})"
 else
-  echo "  [FAIL] no DEEPSEEK_API_KEY and no pass"; fail=1
+  echo "  [FAIL] DeepSeek key empty or resolver failed"; fail=1
 fi
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
