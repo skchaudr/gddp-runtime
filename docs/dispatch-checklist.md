@@ -39,48 +39,56 @@ Then:
 
 ## 3. Executing (before and during the run)
 
-**Before starting intake / pointing webhooks:**
+### Before starting intake or pointing webhooks
+
+These checks happen on the machine that will own the queue — today that is `sab-mini`.
 
 - [ ] `bash deploy/mini-heartbeat/bin/smoke.sh` passes on the target host.
-- [ ] `curl -s http://127.0.0.1:5050/health` → ok with webhook verification enabled.
-- [ ] Bad HMAC on `/webhook` → **401**.
-- [ ] Job row in **`db/queue.db` on the same host** as intake.
+- [ ] `curl -s http://127.0.0.1:5050/health` returns ok with webhook verification enabled.
+- [ ] A POST to `/webhook` with a bad HMAC signature returns **401** (intake is verifying, not open).
+- [ ] The job row you care about is in `db/queue.db` on **that same host** as intake.
 
-**Intake and public URL (jobs that may outlive this session):**
+### Intake and public URL
 
-You can run `arm.sh` and `tailscale funnel` from a shell — that's fine. What matters is **what keeps running after the shell exits**.
+You start launchd and funnel from a shell — that is normal. The question is what still runs after you close the shell or the agent session ends.
 
-- [ ] **Intake via launchd** (`MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh`)
-  - *Effect:* macOS owns the process. Agent disconnects → intake stays up. Reboot → launchd restarts it (if configured).
-  - *vs bare `python3 scripts/intake_server.py`:* process is a child of the session. Session ends → intake stops → GitHub POSTs to a URL nothing is listening on.
+- [ ] **Intake is registered with launchd** — `MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh`
+  - macOS keeps `com.gddp.intake` running after disconnect. On reboot, launchd can restart it.
+  - A bare `python3 scripts/intake_server.py` in a session is only alive while that session's process tree is alive. When the session ends, intake stops. GitHub still POSTs to the hook URL; nothing listens → delivery failures.
 
-- [ ] **Public URL via Tailscale Funnel** (`tailscale funnel --bg --https=443 5050` on mini)
-  - *Effect:* stable hostname (`sab-mini.<tailnet>.ts.net`). GitHub hook URL stays valid across sessions.
-  - *vs trycloudflare one-liner:* new random URL each run; URL dies when that `cloudflared` process dies. Jul 11: webhook still pointed at dead trycloudflare URL → **502**, while `job_*` row still sat in mini's queue waiting.
+- [ ] **Public URL is Tailscale Funnel** — `tailscale funnel --bg --https=443 5050` on mini
+  - GitHub hooks point at a stable hostname: `https://sab-mini.tail02ac6f.ts.net/webhook`.
+  - A trycloudflare one-liner gives a random URL tied to one `cloudflared` process. When that process dies, the URL dies. Jul 11: the hook still pointed at a dead trycloudflare URL (502) while the job row was still waiting in mini's queue.
 
-- [ ] **One control plane armed** — disarm old host before arming new (two intakes + two heartbeats = duplicate dispatch risk).
+- [ ] **Only one control plane is armed** — disarm the old host before arming the new one, so you do not get two intakes and two heartbeats dispatching against each other.
 
-**GitHub webhooks (repoint or new hook):**
+### GitHub webhooks
 
-- [ ] PATCH with JSON `config` body (`url`, `content_type`, `secret`)
-  - *Why:* `gh api … -f url=` does not update hook config; API returns 200 but URL unchanged. Jul 12 cutover looked done until we re-checked and all 12 still pointed at pi-big.
-- [ ] Ping or delivery log shows **200** to the expected URL.
+When you repoint or create a hook, use a JSON body for the `config` block. The flat `gh -f url=` form does not update the URL even when the API looks successful — Jul 12 cutover appeared done until we re-read all 12 hooks and they still pointed at pi-big.
 
-**Return path:**
+- [ ] PATCH includes `url`, `content_type`, and `secret` inside `config` (JSON body).
+- [ ] Ping or a recent delivery in GitHub's hook UI shows **200** to the URL you expect.
 
-- [ ] **GitHub redelivery** of a signed event, or saved payload with valid HMAC
-  - *Why:* proves GitHub → funnel → intake → HMAC verify → `events` row. Skipping that chain only proves you can write to sqlite locally.
-- [ ] New row in `events`; receipt path completes.
+### Return path
 
-**When finished (temporary tunnel/hook only):**
+The return path is the chain you are actually trying to prove: GitHub signs a payload → funnel → intake verifies HMAC → row lands in `events` → heartbeat and router do their work.
 
-- [ ] Tunnel process stopped; temporary hook deactivated
-  - *Why:* GitHub keeps retrying the configured URL. A hook left pointing at a torn-down tunnel generates 502s and false "production is broken" signals.
+- [ ] Use **GitHub redelivery** of a real signed event, or replay a saved payload with a valid HMAC — not a hand-inserted sqlite row.
+- [ ] A new row shows up in `events`, and the receipt path completes for that job.
 
-**Handoff:**
+### When you used a temporary tunnel or hook
 
-- [ ] Target machine, `git log -1`, intake running (launchd label), webhook URL, job id.
-- [ ] **`accept_node`** is human-only — evaluator verdict does not flip graph status.
+If the run used a one-off tunnel or a canary-only hook (not the 12 production hooks), tear those down explicitly when the work is done.
+
+- [ ] Temporary tunnel process stopped; temporary hook deactivated.
+  - GitHub keeps retrying whatever URL is configured. A hook left on a dead tunnel produces 502s in the delivery log and looks like production is broken when it is just stale config.
+
+### Handoff
+
+Leave the next session enough to avoid re-archaeology.
+
+- [ ] Target machine (Tailscale name), `git log -1`, whether intake is running under launchd, webhook URL, job id.
+- [ ] **`accept_node`** remains human-only — an evaluator verdict does not change graph status.
 
 ---
 
