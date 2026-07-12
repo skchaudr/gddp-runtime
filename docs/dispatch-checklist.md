@@ -8,32 +8,42 @@ Three stages covered: intent → planning → execution. See `TOPOLOGY.md` for h
 
 ## 1. Intent (before planning begins)
 
-- [ ] **Which graph node** is this work for?
-- [ ] **Which machine holds `db/queue.db` for this job?** (Tailscale name, e.g. `sab-mini`) — the job row, `events`, and heartbeat all live on that host.
-- [ ] **Will this job still be open after the current session ends?**
-- [ ] **Which URL will GitHub call for the return path?** Must reach intake on the **same host** as that queue DB.
-- [ ] **`TOPOLOGY.md`** — production host and public webhook URL noted.
+Before anyone writes a plan, nail down where the work lives and how long it will run. These are the decisions that prevent a job on one machine from waiting on a webhook that hits another.
 
-**If job host ≠ webhook target:** GitHub delivers fine, but the event lands in a different queue (or gets ignored). The job stays stuck waiting. Jul 12 canary: job on mini, merge webhook hit pi-big — pi-big correctly ignored it; mini's tunnel was already dead.
+### Questions to answer
+
+- [ ] **Which graph node is this work for?**
+- [ ] **Which machine holds `db/queue.db` for this job?** Use the Tailscale name (e.g. `sab-mini`). The job row, `events` table, and heartbeat all live on that host.
+- [ ] **Will this job still be open after the current session ends?** If yes, intake and the public URL need to outlive the session — see section 3.
+- [ ] **Which URL will GitHub call for the return path?** That URL must reach intake on the same host as the queue DB.
+- [ ] **Have you read `TOPOLOGY.md` for the current production host and public webhook URL?**
+
+### When the queue host and the webhook host differ
+
+GitHub will still deliver the event. It just lands in the wrong place — a different `db/queue.db`, or a host that ignores it because there is no matching job row. The job you care about stays stuck waiting for an event that never joins its queue.
+
+That is what happened on Jul 12 with the canary: the job lived in mini's queue, the merged PR webhook hit pi-big (which correctly ignored it), and mini's tunnel was already dead anyway.
 
 ---
 
 ## 2. Planning (before merge, dispatch, or arm)
 
-First line of the plan:
+The plan should make the target machine obvious and leave unverified claims labeled as unverified.
+
+### First line of the plan
 
 ```text
 Target machine: sab-mini
 ```
 
-Then:
+### Before you merge, dispatch, or arm
 
-- [ ] **Node constraint** quoted from `gddp-config` (copy/paste).
-- [ ] **Claims checked on the target machine** via SSH, or marked unverified.
-- [ ] Plan premises treated as unverified until checked on that host (git state, dirty files, handoff age).
-- [ ] Reviewer on another machine: worktree claims about the target need SSH to confirm.
-- [ ] **Webhook URL + hook id** noted if return path uses GitHub delivery.
-- [ ] **Temporary** tunnel or hook: note what gets torn down when done.
+- [ ] **The node constraint is quoted from `gddp-config`** — copy/paste, not paraphrase.
+- [ ] **Claims about the target machine were checked via SSH**, or explicitly marked unverified in the plan.
+- [ ] **Plan premises are treated as unverified** until checked on that host (git state, dirty files, handoff age).
+- [ ] **If the reviewer is on a different machine**, worktree claims about the target require SSH to confirm — not inference from the reviewer's own checkout.
+- [ ] **If the return path uses GitHub delivery**, the plan notes the webhook URL and hook id.
+- [ ] **If the plan uses a temporary tunnel or hook**, it says what gets torn down when the work is done.
 
 ---
 
@@ -41,54 +51,54 @@ Then:
 
 ### Before starting intake or pointing webhooks
 
-These checks happen on the machine that will own the queue — today that is `sab-mini`.
+These checks run on the machine that will own the queue. Today that is `sab-mini`.
 
 - [ ] `bash deploy/mini-heartbeat/bin/smoke.sh` passes on the target host.
 - [ ] `curl -s http://127.0.0.1:5050/health` returns ok with webhook verification enabled.
-- [ ] A POST to `/webhook` with a bad HMAC signature returns **401** (intake is verifying, not open).
-- [ ] The job row you care about is in `db/queue.db` on **that same host** as intake.
+- [ ] A POST to `/webhook` with a bad HMAC signature returns **401** — intake is verifying signatures, not accepting everything.
+- [ ] The job row you care about is in `db/queue.db` on the same host as intake.
 
 ### Intake and public URL
 
-You start launchd and funnel from a shell — that is normal. The question is what still runs after you close the shell or the agent session ends.
+You start launchd and funnel from a shell. That is normal. What matters is what keeps running after the shell or agent session ends.
 
 - [ ] **Intake is registered with launchd** — `MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh`
-  - macOS keeps `com.gddp.intake` running after disconnect. On reboot, launchd can restart it.
-  - A bare `python3 scripts/intake_server.py` in a session is only alive while that session's process tree is alive. When the session ends, intake stops. GitHub still POSTs to the hook URL; nothing listens → delivery failures.
+  - macOS keeps `com.gddp.intake` running after you disconnect. After a reboot, launchd can restart it.
+  - A bare `python3 scripts/intake_server.py` in a session only lives as long as that session's process tree. When the session ends, intake stops. GitHub still POSTs to the hook URL, but nothing is listening — deliveries fail in GitHub's log as 502 or connection errors.
 
-- [ ] **Public URL is Tailscale Funnel** — `tailscale funnel --bg --https=443 5050` on mini
-  - GitHub hooks point at a stable hostname: `https://sab-mini.tail02ac6f.ts.net/webhook`.
-  - A trycloudflare one-liner gives a random URL tied to one `cloudflared` process. When that process dies, the URL dies. Jul 11: the hook still pointed at a dead trycloudflare URL (502) while the job row was still waiting in mini's queue.
+- [ ] **The public URL is Tailscale Funnel** — `tailscale funnel --bg --https=443 5050` on mini
+  - The 12 production hooks point at a stable hostname: `https://sab-mini.tail02ac6f.ts.net/webhook`.
+  - A trycloudflare one-liner gives a random URL tied to one `cloudflared` process. When that process dies, the URL dies. On Jul 11 the hook still pointed at a dead trycloudflare URL while the job row was still sitting in mini's queue.
 
-- [ ] **Only one control plane is armed** — disarm the old host before arming the new one, so you do not get two intakes and two heartbeats dispatching against each other.
+- [ ] **Only one control plane is armed** — disarm the old host before arming the new one, so two intakes and two heartbeats are not dispatching in parallel.
 
 ### GitHub webhooks
 
-When you repoint or create a hook, use a JSON body for the `config` block. The flat `gh -f url=` form does not update the URL even when the API looks successful — Jul 12 cutover appeared done until we re-read all 12 hooks and they still pointed at pi-big.
+When you repoint or create a hook, send a JSON body for the `config` block. The flat `gh -f url=` form does not update the URL even when the API response looks fine. On Jul 12 the cutover looked complete until we re-read all 12 hooks and found they still pointed at pi-big.
 
-- [ ] PATCH includes `url`, `content_type`, and `secret` inside `config` (JSON body).
-- [ ] Ping or a recent delivery in GitHub's hook UI shows **200** to the URL you expect.
+- [ ] The PATCH includes `url`, `content_type`, and `secret` inside `config` (JSON body).
+- [ ] A ping or a recent delivery in GitHub's hook UI shows **200** to the URL you expect.
 
 ### Return path
 
-The return path is the chain you are actually trying to prove: GitHub signs a payload → funnel → intake verifies HMAC → row lands in `events` → heartbeat and router do their work.
+You are proving this chain: GitHub signs a payload → funnel → intake verifies HMAC → a row lands in `events` → heartbeat and the router finish the job.
 
-- [ ] Use **GitHub redelivery** of a real signed event, or replay a saved payload with a valid HMAC — not a hand-inserted sqlite row.
+- [ ] You used **GitHub redelivery** of a real signed event, or replayed a saved payload with a valid HMAC — not a hand-inserted sqlite row.
 - [ ] A new row shows up in `events`, and the receipt path completes for that job.
 
 ### When you used a temporary tunnel or hook
 
-If the run used a one-off tunnel or a canary-only hook (not the 12 production hooks), tear those down explicitly when the work is done.
+If the run used a one-off tunnel or a canary-only hook — not the 12 production hooks — tear those down when the work is done.
 
-- [ ] Temporary tunnel process stopped; temporary hook deactivated.
-  - GitHub keeps retrying whatever URL is configured. A hook left on a dead tunnel produces 502s in the delivery log and looks like production is broken when it is just stale config.
+- [ ] The temporary tunnel process is stopped and the temporary hook is deactivated.
+  - GitHub keeps retrying whatever URL is configured. A hook left pointing at a torn-down tunnel shows 502s in the delivery log and looks like production is broken when it is really stale config.
 
 ### Handoff
 
-Leave the next session enough to avoid re-archaeology.
+Leave the next session enough context that nobody has to re-discover the machine, the URL, or the job id.
 
-- [ ] Target machine (Tailscale name), `git log -1`, whether intake is running under launchd, webhook URL, job id.
-- [ ] **`accept_node`** remains human-only — an evaluator verdict does not change graph status.
+- [ ] The handoff names the target machine (Tailscale name), `git log -1`, whether intake is running under launchd, the webhook URL, and the job id.
+- [ ] **`accept_node` remains human-only** — an evaluator verdict does not change graph status.
 
 ---
 
