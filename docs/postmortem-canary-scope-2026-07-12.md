@@ -17,7 +17,7 @@ Scope: the plan-review and mid-run confusion around retry PR #102 (canary node, 
 - **Plans don't name their machine.** Worktree-state claims are machine-relative; reviewers on other hosts falsify them incorrectly.
 - **Claim laundering.** The reviewer treated a claim embedded in another agent's plan as evidence, amplified it, and flagged the original author for under-handling the very claim it originated. Primary evidence (the constraint text) was one SSH away the whole time — and the VM had no SSH/gh auth to reach it.
 - **Constraint template contradicts the artifact gate.** The whitelist ("Only create or modify …") omits the receipt artifacts the gate obligates the executor to write. Compliant executors are structurally forced to violate the letter of their constraints.
-- **Ephemeral tunnel left registered.** The Mini's public webhook endpoint 502'd because a temporary exposure was never torn down/reverted — undocumented, so it surfaced as a mid-run mystery.
+- **Multi-day job dispatched from single-session infrastructure (the core mechanism, established from handoff 032).** The Jul 11 live-proof session bypassed the dormant mini-heartbeat pack (2e59497, never armed — its dormancy contract held) and hand-rolled a session-lifetime control plane: intake as a bare process (PID 76956), ad-hoc trycloudflare tunnel (PID 77792), GitHub webhook 651704334 pointed at it. The handoff itself warned "may have expired / may need restart if session ended." The session ended; the canary job outlived its own control plane. The webhook kept pointing at the dead tunnel (the 502). Today's intake restart then picked up the dormant pack's `pass show gddp/webhook-secret` resolver — first real execution on a machine with no pass store → verification silently disabled → correct block. Rule: **jobs must not outlive the infrastructure that dispatched them**; cross-session dispatch requires the armed pack, not shell PIDs.
 
 ## What worked
 
@@ -34,5 +34,7 @@ Scope: the plan-review and mid-run confusion around retry PR #102 (canary node, 
 | 3 | Constraint template: carve out artifact-gate paths from file whitelists (or move receipts outside work tree) | backlog |
 | 4 | Feed `changed_files` (already in DB, unused) into integrity lane 2 context so fresh-eyes review always sees the delta | backlog |
 | 5 | Tunnel lifecycle: HMAC-reject test before exposure; teardown + webhook-URL revert is part of done | recorded in TOPOLOGY.md rule 4 |
+| 5b | Extend `deploy/mini-heartbeat/bin/smoke.sh` to exercise `gddp/webhook-secret` resolution and intake's signature path (currently only checks the DeepSeek pass entry) | backlog, first fix of migration |
+| 5c | Intake must fail closed (refuse to start / report unhealthy) when the webhook-secret resolver fails, instead of silently disabling verification | backlog |
 | 6 | Reviewer rule: incoming claims are uncorroborated until primary-sourced; label them so in turn one | Claude memory saved |
 | 7 | Mark/retire stale `docs/host-roles.md` | pending Sab (delete needs approval) |
