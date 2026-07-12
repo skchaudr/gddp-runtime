@@ -26,9 +26,21 @@ HEARTBEAT_LABEL="com.gddp.heartbeat"
 INTAKE_PLIST="$LAUNCH_AGENTS_DIR/${INTAKE_LABEL}.plist"
 HEARTBEAT_PLIST="$LAUNCH_AGENTS_DIR/${HEARTBEAT_LABEL}.plist"
 
+_xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  printf '%s' "$s"
+}
+
 render_plist() {
   local src="$1"
   local dest="$2"
+  local deepseek_cmd webhook_cmd
+  deepseek_cmd="$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")"
+  webhook_cmd="$(_xml_escape "${GDDP_WEBHOOK_SECRET_CMD:-pass show gddp/webhook-secret}")"
   sed \
     -e "s|__HOME__|${HOME}|g" \
     -e "s|__GDDP_RUNTIME_ROOT__|${GDDP_RUNTIME_ROOT}|g" \
@@ -36,6 +48,8 @@ render_plist() {
     -e "s|__GDDP_REPOS_ROOT__|${GDDP_REPOS_ROOT}|g" \
     -e "s|__GDDP_PROJECT_ID__|${GDDP_PROJECT_ID}|g" \
     -e "s|__GDDP_PROJECT_REPO__|${GDDP_PROJECT_REPO}|g" \
+    -e "s|__GDDP_DEEPSEEK_KEY_CMD__|${deepseek_cmd}|g" \
+    -e "s|__GDDP_WEBHOOK_SECRET_CMD__|${webhook_cmd}|g" \
     "$src" >"$dest"
 }
 

@@ -31,9 +31,9 @@
     <key>GDDP_REPOS_ROOT</key>
     <string>__GDDP_REPOS_ROOT__</string>
     <key>GDDP_DEEPSEEK_KEY_CMD</key>
-    <string>pass show api/deepseek</string>
+    <string>__GDDP_DEEPSEEK_KEY_CMD__</string>
     <key>GDDP_WEBHOOK_SECRET_CMD</key>
-    <string>pass show gddp/webhook-secret</string>
+    <string>__GDDP_WEBHOOK_SECRET_CMD__</string>
   </dict>
 
   <key>RunAtLoad</key>

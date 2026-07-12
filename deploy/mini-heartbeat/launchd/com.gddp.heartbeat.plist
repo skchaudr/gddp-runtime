@@ -40,7 +40,7 @@
     <key>GDDP_REPO_ROOT</key>
     <string>__GDDP_REPOS_ROOT__</string>
     <key>GDDP_DEEPSEEK_KEY_CMD</key>
-    <string>pass show api/deepseek</string>
+    <string>__GDDP_DEEPSEEK_KEY_CMD__</string>
     <key>PYTHONPATH</key>
     <string>__GDDP_RUNTIME_ROOT__</string>
   </dict>
