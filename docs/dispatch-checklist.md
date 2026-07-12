@@ -1,10 +1,12 @@
 # Live dispatch checklist
 
-Gates for intent → planning → execution. See `TOPOLOGY.md` for hosts and URLs.
+A reference guide for when you want to run the loop.
+
+Three stages covered: intent → planning → execution. See `TOPOLOGY.md` for hosts and URLs.
 
 ---
 
-## 1. Intent (before anyone writes a plan)
+## 1. Intent (before planning begins)
 
 - [ ] **Which graph node** is this work for?
 - [ ] **Which machine holds `db/queue.db` for this job?** (Tailscale name, e.g. `sab-mini`) — the job row, `events`, and heartbeat all live on that host.
