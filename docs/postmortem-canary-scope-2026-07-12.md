@@ -25,6 +25,33 @@ Scope: the plan-review and mid-run confusion around retry PR #102 (canary node, 
 - Doctrine held under pressure: verdict ≠ acceptance; no synthetic intake events during a live proof; scope evidence preserved rather than normalized.
 - The Mini agent, once topology was supplied, made the right call (signed redelivery, not fabrication).
 
+## Verified recovery outcome
+
+After this postmortem was first written, the operator authorized one
+authenticated recovery run to finish the canary's return path.
+
+1. The Mini intake was restarted with
+   `GDDP_WEBHOOK_SECRET_CMD='ssh -o BatchMode=yes pi-big "pass show gddp/webhook-secret"'`.
+   The resolver was verified without printing the secret.
+2. An invalid-HMAC request returned `401` and created no queue event.
+3. The canary-only GitHub webhook (`651704334`) was reconciled to the same
+   canonical secret and JSON content type, then pointed at a temporary
+   HMAC-protected Cloudflare tunnel. The original signed PR #102 merge
+   delivery was redelivered and returned `200`.
+4. Intake inserted authentic event `evt_20260712T0837057851`. One Mini
+   heartbeat, using a clean checkout of merged `main` as evaluator input,
+   safely scope-blocked and ignored the two stale pending events, then routed
+   the merged PR through the return router.
+5. The return router wrote receipt `res_20260712T0837057851`: verdict
+   `pass`, criteria confidence `1.0`, integrity verdict `pass`, source PR
+   #102. The canary job moved to `awaiting_review` at attempt `1/3`; its graph
+   node remains `ready`, preserving the human-acceptance invariant.
+6. The receipt retains two low-severity integrity findings: the known
+   file-scope/artifact tension and uncommitted local Python cache files. No
+   graph mutation or automated cleanup occurred.
+7. The temporary tunnel was stopped and webhook `651704334` was deactivated.
+   The Mini intake remains localhost-only with its canonical secret resolver.
+
 ## Action items
 
 | # | Item | Status |
