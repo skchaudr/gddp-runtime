@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+import importlib
+import sqlite3
 import sys
 import os
 from pathlib import Path
@@ -13,6 +15,111 @@ from unittest.mock import MagicMock
 sys.modules["flask"] = MagicMock()
 
 import scripts.intake_server as intake_server
+
+
+def _init_events_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(db_path)
+    try:
+        con.executescript(
+            """
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE IF NOT EXISTS events (
+                event_id                TEXT PRIMARY KEY,
+                schema_version          TEXT NOT NULL DEFAULT '1.0',
+                received_at             TEXT NOT NULL,
+                source                  TEXT NOT NULL,
+                event_type              TEXT NOT NULL,
+                actor                   TEXT,
+                branch                  TEXT,
+                base_branch             TEXT,
+                pr_number               INTEGER,
+                issue_number            INTEGER,
+                commit_sha              TEXT,
+                url                     TEXT,
+                repo                    TEXT,
+                project_id              TEXT,
+                project_node_candidates TEXT,
+                scope_status            TEXT DEFAULT 'pending',
+                priority                TEXT DEFAULT 'pending',
+                risk_level              TEXT DEFAULT 'pending',
+                raw_payload_path        TEXT,
+                normalized_payload_path TEXT,
+                classification          TEXT,
+                routing                 TEXT,
+                status                  TEXT DEFAULT 'received',
+                claimed_at              TEXT
+            );
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def reload_intake_server(
+    monkeypatch,
+    tmp_path,
+    *,
+    webhook_secret: str | None = "test-secret",
+    secret_unresolved: bool = False,
+    insecure: bool = False,
+):
+    """Reload intake_server with a fresh tmp runtime root and secret config."""
+    if isinstance(sys.modules.get("flask"), MagicMock):
+        sys.modules.pop("flask", None)
+    sys.modules.pop("scripts.intake_server", None)
+
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    _init_events_db(runtime_root / "db" / "queue.db")
+
+    monkeypatch.setenv("GDDP_RUNTIME_ROOT", str(runtime_root))
+    monkeypatch.delenv("OPCLAW_ROOT", raising=False)
+    if secret_unresolved:
+        monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
+        monkeypatch.setenv("GDDP_WEBHOOK_SECRET_CMD", "/bin/false")
+    elif webhook_secret is not None:
+        monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", webhook_secret)
+    else:
+        monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
+        monkeypatch.delenv("GDDP_WEBHOOK_SECRET_CMD", raising=False)
+    if insecure:
+        monkeypatch.setenv("GDDP_INTAKE_INSECURE", "1")
+    else:
+        monkeypatch.delenv("GDDP_INTAKE_INSECURE", raising=False)
+
+    mod = importlib.import_module("scripts.intake_server")
+    return mod, runtime_root
+
+
+def test_health_returns_ok_with_webhook_verification_when_secret_resolved(
+    monkeypatch, tmp_path
+):
+    mod, _runtime_root = reload_intake_server(monkeypatch, tmp_path, webhook_secret="test-secret")
+    client = mod.app.test_client()
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "ok"
+    assert data["webhook_verification"] is True
+
+
+def test_health_returns_503_when_secret_unresolved(monkeypatch, tmp_path):
+    mod, _runtime_root = reload_intake_server(
+        monkeypatch, tmp_path, secret_unresolved=True
+    )
+    client = mod.app.test_client()
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 503
+    data = resp.get_json()
+    assert data["status"] == "unhealthy"
+    assert data["reason"] == "webhook_secret_unresolved"
+
 
 def test_verify_signature_no_secret():
     """Test when WEBHOOK_SECRET is not set (empty string)."""
