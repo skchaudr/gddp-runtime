@@ -20,12 +20,13 @@ Last verified: 2026-07-12 (production on sab-mini).
 | Runtime repo | `~/repos/gddp-runtime` |
 | Config repo | `~/repos/gddp-config` |
 | Webhooks | 12 repos (`skchaudr/*`) → mini URL; shared secret |
-| Secrets (transition) | `GDDP_WEBHOOK_SECRET_CMD` / `GDDP_DEEPSEEK_KEY_CMD` → ssh `sab-ssd@pi-big` `pass show …` |
+| Secrets (local) | `~/.password-store` + GPG `F0928E218506BB29` on mini; env cmds run `gpg --decrypt` directly (`pass` hangs under launchd — see gddp.env comment) |
 | `gh` | Authenticated on mini (`ssh` protocol) |
 
 **pi-big** (`sab-ssd@pi-big`): GDDP disarmed — intake inactive, heartbeat
-crontab commented. Still holds `pass` store + automation GPG `F0928E218506BB29`
-until migrated to mini. Not a queue host.
+crontab commented. `pass` store + automation GPG `F0928E218506BB29` migrated
+to mini 2026-07-13; pi-big copy retained as offline backup only — production
+no longer depends on pi-big. Not a queue host.
 
 ---
 
