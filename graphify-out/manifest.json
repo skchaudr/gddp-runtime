@@ -20,13 +20,13 @@
     "semantic_hash": ""
   },
   ".remember/tmp/last-ndc.ts": {
-    "mtime": 1778571732.7177057,
-    "ast_hash": "75b21afcebf98856b97555a64a1de5fd",
+    "mtime": 1783938641.561179,
+    "ast_hash": "96455111b7b1e97d2a61ddf058c80ff8",
     "semantic_hash": ""
   },
   ".remember/tmp/last-save.json": {
-    "mtime": 1778573861.8798244,
-    "ast_hash": "4cbd251fdf1233deec1bb0f332494515",
+    "mtime": 1783939772.056154,
+    "ast_hash": "21799c7cb2abd75546bdc4ad66e316c9",
     "semantic_hash": ""
   },
   "deploy/deploy.sh": {
@@ -60,8 +60,8 @@
     "semantic_hash": ""
   },
   "scripts/adapters/jules_action_adapter.py": {
-    "mtime": 1783559119.205975,
-    "ast_hash": "e8972484ca5887345c0dd1c732670f27",
+    "mtime": 1783791530.6105978,
+    "ast_hash": "2994c3b9c550e7a104add636eebf60cc",
     "semantic_hash": ""
   },
   "scripts/adapters/jules_cli_adapter.py": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "scripts/adapters/test_jules_action_adapter.py": {
-    "mtime": 1775884146.4005673,
-    "ast_hash": "e929c7bca8bed7e840b837c3056b4595",
+    "mtime": 1783785548.7484365,
+    "ast_hash": "328069d3be59326d81ea18aed2055f48",
     "semantic_hash": ""
   },
   "scripts/dry_run.py": {
@@ -90,8 +90,8 @@
     "semantic_hash": ""
   },
   "scripts/intake_server.py": {
-    "mtime": 1783559119.2069154,
-    "ast_hash": "e052433a434152f5096d6d9fded728d8",
+    "mtime": 1783863841.3649142,
+    "ast_hash": "609e5901c38f49880f0f016bc9df2efb",
     "semantic_hash": ""
   },
   "scripts/rollback.py": {
@@ -110,13 +110,13 @@
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/context_reader.py": {
-    "mtime": 1783559119.2071755,
-    "ast_hash": "d8efedce5786eb5f57fb23c2eff34fe7",
+    "mtime": 1783679353.152106,
+    "ast_hash": "f804cb79721024699543e8ac94534e5a",
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/engine.py": {
-    "mtime": 1783450979.137428,
-    "ast_hash": "01a54d4d485ebf856712f349a9d2415a",
+    "mtime": 1783679353.1528068,
+    "ast_hash": "934663c954d7e7ab228daf42b8ae77bc",
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/powers/__init__.py": {
@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/powers/dispatch_next.py": {
-    "mtime": 1783559119.2073107,
-    "ast_hash": "76ae44b62d3051dc4751ec1b3358e7ac",
+    "mtime": 1783679353.1529748,
+    "ast_hash": "e8a8c0591abd9260b2be31c8eda0db5a",
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/powers/escalate.py": {
@@ -140,8 +140,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/decision_loop/test_decision_loop.py": {
-    "mtime": 1783559119.2074533,
-    "ast_hash": "36322604fd2653c90b154db2484539c6",
+    "mtime": 1783679353.1533687,
+    "ast_hash": "0e3ac9f30ad89e5a94a5cd8879825c0a",
     "semantic_hash": ""
   },
   "scripts/runtime/graph_updater.py": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/heartbeat/runner.py": {
-    "mtime": 1783559119.2081578,
-    "ast_hash": "533e451c2780deee8497148e6b903024",
+    "mtime": 1783785330.9993634,
+    "ast_hash": "b1729ee3e6c5a63821b607d296b7b07a",
     "semantic_hash": ""
   },
   "scripts/runtime/heartbeat/scope_checker.py": {
@@ -205,8 +205,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/return_router.py": {
-    "mtime": 1783452849.712527,
-    "ast_hash": "341e2d770cdfedff8a9217c624d9d506",
+    "mtime": 1783791524.7862105,
+    "ast_hash": "ea545d73a5dcd3ffb04bd17d08f966ba",
     "semantic_hash": ""
   },
   "scripts/runtime/test_graph_updater.py": {
@@ -225,13 +225,13 @@
     "semantic_hash": ""
   },
   "scripts/runtime/test_return_router.py": {
-    "mtime": 1783436556.304493,
-    "ast_hash": "0816a0550fdc57e1d254b9076a8774dc",
+    "mtime": 1783785519.6752212,
+    "ast_hash": "3925a05c234537ca920b5599dadb9b09",
     "semantic_hash": ""
   },
   "scripts/test_intake_server.py": {
-    "mtime": 1775876870.7773082,
-    "ast_hash": "16e33fb28a562fedb5d6ca0775e055b6",
+    "mtime": 1783938122.8315244,
+    "ast_hash": "3e8e78886a54dc7ab88cb6aaaef0faba",
     "semantic_hash": ""
   },
   "scripts/test_runtime_root_config.py": {
@@ -250,23 +250,13 @@
     "semantic_hash": ""
   },
   ".remember/now.md": {
-    "mtime": 1778573861.8429756,
-    "ast_hash": "0416f361d37cfd0af85f434d94317ccf",
-    "semantic_hash": ""
-  },
-  ".remember/today-2026-05-11.md": {
-    "mtime": 1778492465.3042247,
-    "ast_hash": "0dd4b5f30facb7f1447847f18e46d7ad",
-    "semantic_hash": ""
-  },
-  ".remember/today-2026-05-12.md": {
-    "mtime": 1778571752.3532653,
-    "ast_hash": "e9aee37f79172bd289a6fb52a8be7b17",
+    "mtime": 1783939772.006536,
+    "ast_hash": "cb13c15e5932aecd489c96ec957639e0",
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1783559119.2037861,
-    "ast_hash": "27a4f8e86b726b6a65f32f8b51ac5dd5",
+    "mtime": 1783938150.1498833,
+    "ast_hash": "6cb1780ee1ee1ff99ae68d108e018f09",
     "semantic_hash": ""
   },
   "deploy/BIGPI_RUNBOOK.md": {
@@ -295,8 +285,8 @@
     "semantic_hash": ""
   },
   "docs/host-roles.md": {
-    "mtime": 1774090552.5749843,
-    "ast_hash": "794e5bc6ef8e61576dc676b5b8e8c377",
+    "mtime": 1783863841.363238,
+    "ast_hash": "2bac6f995ecfa1258418e170413d706e",
     "semantic_hash": ""
   },
   "docs/operator-practice/run-checklist.md": {
@@ -355,8 +345,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/test_full_cycle_e2e.py": {
-    "mtime": 1783559119.208808,
-    "ast_hash": "a536e4ec0b0eed44a29ba8e58c2ec576",
+    "mtime": 1783785368.5922062,
+    "ast_hash": "4b6626fdf5bb36158d79939985d95887",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/__init__.py": {
@@ -370,13 +360,13 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/cli.py": {
-    "mtime": 1783451145.5453513,
-    "ast_hash": "9430c67780c40f8565c28cf46dfcb22d",
+    "mtime": 1783785328.8490205,
+    "ast_hash": "e2fa7688d23e2f3775be5c26592d5823",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/decision_engine.py": {
-    "mtime": 1783082363.4884913,
-    "ast_hash": "645dc6ab66074e8ab1a2016b07771a6b",
+    "mtime": 1783787703.5231073,
+    "ast_hash": "402470a133408b7695d72879e1943756",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/deterministic/__init__.py": {
@@ -385,8 +375,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/deterministic/artifacts.py": {
-    "mtime": 1783082363.4887033,
-    "ast_hash": "3499e4fa4ce73e9e41b229e938d13f5b",
+    "mtime": 1783787503.4042504,
+    "ast_hash": "cb899a7aa9f124d945c76c777036946b",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/deterministic/constraints.py": {
@@ -405,8 +395,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/deterministic/test_deterministic.py": {
-    "mtime": 1783559119.2095134,
-    "ast_hash": "e79923b451d644b08da8f54611cfdeba",
+    "mtime": 1783787503.4047801,
+    "ast_hash": "2c0575d9757bba13b114ceadc4f8e379",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/fixtures/verification_receipts/semantic-fail-with-complete-artifacts.json": {
@@ -425,8 +415,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/orchestrator.py": {
-    "mtime": 1783451145.5455701,
-    "ast_hash": "56a44a626a6d08e33c9dc0f52e775a72",
+    "mtime": 1783787703.5234568,
+    "ast_hash": "ffea8d8012ad75e40ab5a84ada9a1ef0",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/receipt_sink.py": {
@@ -435,13 +425,13 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/retry_budget.py": {
-    "mtime": 1783452832.9321127,
-    "ast_hash": "e64243fb180fb5241d66244992f47923",
+    "mtime": 1783785335.5543501,
+    "ast_hash": "7b2b01a004775209f62a17a1f42d6036",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/schemas.py": {
-    "mtime": 1783559119.20968,
-    "ast_hash": "019e432b7fa7ab7ee1609d198f53f3ba",
+    "mtime": 1783787703.5236802,
+    "ast_hash": "24872f2f8758cb185531e16450168e0f",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/semantic/__init__.py": {
@@ -520,8 +510,8 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/test_decision_engine.py": {
-    "mtime": 1783082363.490509,
-    "ast_hash": "b1df808285d31407c654f7e9c7753038",
+    "mtime": 1783787703.524117,
+    "ast_hash": "7c5260df63557b947bce3076771a07a3",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/test_dry_run_e2e.py": {
@@ -545,13 +535,13 @@
     "semantic_hash": ""
   },
   "scripts/runtime/verification/test_retry_budget.py": {
-    "mtime": 1783452861.957285,
-    "ast_hash": "9d92422d64dbbd31a76431e39675c563",
+    "mtime": 1783785488.2672057,
+    "ast_hash": "582da19cb145c27622693bfa5626ad36",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/test_schemas.py": {
-    "mtime": 1783559119.2105489,
-    "ast_hash": "d7b10fe8d0896a7bf75c32eaf5365c5d",
+    "mtime": 1783787703.5243468,
+    "ast_hash": "2e3dbc817c305b02064ce9dd6bfacb31",
     "semantic_hash": ""
   },
   "scripts/runtime/verification/test_shape_profiles.py": {
@@ -815,183 +805,388 @@
     "semantic_hash": ""
   },
   "droid-wiki/.wiki-meta.json": {
-    "mtime": 1783600753.746125,
+    "mtime": 1783679282.0622034,
     "ast_hash": "95f30e3c2c2f52583e3f29e29f671c00",
     "semantic_hash": ""
   },
   "droid-wiki/background/design-decisions.md": {
-    "mtime": 1783600710.4309096,
+    "mtime": 1783679282.0623329,
     "ast_hash": "ae1b4cfede8c36576a9daf8ed5418b5a",
     "semantic_hash": ""
   },
   "droid-wiki/background/doctrine.md": {
-    "mtime": 1783600710.6136942,
+    "mtime": 1783679282.0624297,
     "ast_hash": "574f0c31b8613b990dd0689fc9e93f42",
     "semantic_hash": ""
   },
   "droid-wiki/background/index.md": {
-    "mtime": 1783600710.2430959,
+    "mtime": 1783679282.062513,
     "ast_hash": "67750cc133f160580c6ec82f14172dfe",
     "semantic_hash": ""
   },
   "droid-wiki/by-the-numbers.md": {
-    "mtime": 1783600697.9100466,
+    "mtime": 1783679282.0625968,
     "ast_hash": "d28795f912e01287a683ab627f663c1b",
     "semantic_hash": ""
   },
   "droid-wiki/deployment.md": {
-    "mtime": 1783600710.0571063,
-    "ast_hash": "8737d6ee8bd58fb2bc6523c66477e413",
+    "mtime": 1783863841.3638632,
+    "ast_hash": "9bf9df0c49ff6602883a0df5612823c7",
     "semantic_hash": ""
   },
   "droid-wiki/features/index.md": {
-    "mtime": 1783600717.5938718,
+    "mtime": 1783679282.0628035,
     "ast_hash": "205741e698b3916822c46b5b4171f5c3",
     "semantic_hash": ""
   },
   "droid-wiki/features/natural-guard.md": {
-    "mtime": 1783600717.7834368,
+    "mtime": 1783679282.0629053,
     "ast_hash": "a033e60a552867c804b78fde7fa7da88",
     "semantic_hash": ""
   },
   "droid-wiki/features/receipt-based-return.md": {
-    "mtime": 1783600718.1606326,
+    "mtime": 1783679282.0630026,
     "ast_hash": "4b89da9a6ef9e6e302a576719b5ef722",
     "semantic_hash": ""
   },
   "droid-wiki/features/retry-loop.md": {
-    "mtime": 1783600717.9709234,
+    "mtime": 1783679282.0630994,
     "ast_hash": "375949cc5aaa74f1af5e4a4813c9ea9d",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/debugging.md": {
-    "mtime": 1783600730.981013,
+    "mtime": 1783679282.0632231,
     "ast_hash": "d715ecb9ef15cd5e809767be01a2ff9e",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/development-workflow.md": {
-    "mtime": 1783600730.641104,
+    "mtime": 1783679282.0633118,
     "ast_hash": "ff0129de6698301582b54da71217e04b",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/index.md": {
-    "mtime": 1783600730.469888,
+    "mtime": 1783679282.0633945,
     "ast_hash": "b73252cedcd8360a3ba61baa3e520e94",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/patterns-and-conventions.md": {
-    "mtime": 1783600642.8865108,
+    "mtime": 1783679282.0635471,
     "ast_hash": "2d4420f550570b2b743e9c09ab9b4aed",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/testing.md": {
-    "mtime": 1783600730.8116224,
+    "mtime": 1783679282.0636923,
     "ast_hash": "23d5ca5da14978e03dd40405b89b8ea0",
     "semantic_hash": ""
   },
   "droid-wiki/how-to-contribute/tooling.md": {
-    "mtime": 1783600731.1510146,
+    "mtime": 1783679282.0638347,
     "ast_hash": "509fa99962d917a47b33a730e44e5018",
     "semantic_hash": ""
   },
   "droid-wiki/lore.md": {
-    "mtime": 1783600698.1504662,
+    "mtime": 1783679282.0639205,
     "ast_hash": "35ae9bc144d81d2ca2b92ab29611f87f",
     "semantic_hash": ""
   },
   "droid-wiki/overview/architecture.md": {
-    "mtime": 1783600642.3592193,
+    "mtime": 1783679282.0640492,
     "ast_hash": "ca906a9209ec6a6b6f2924d84ffa586e",
     "semantic_hash": ""
   },
   "droid-wiki/overview/getting-started.md": {
-    "mtime": 1783600642.5277486,
+    "mtime": 1783679282.064139,
     "ast_hash": "a5c2a0d218f9fce5afaf30e8b0ed4706",
     "semantic_hash": ""
   },
   "droid-wiki/overview/glossary.md": {
-    "mtime": 1783600642.700411,
+    "mtime": 1783679282.0642295,
     "ast_hash": "2eae287f1082be95b024ba02f9b55766",
     "semantic_hash": ""
   },
   "droid-wiki/overview/index.md": {
-    "mtime": 1783600642.188243,
+    "mtime": 1783679282.0643048,
     "ast_hash": "79b58c9ad267932f5f2d01193ac7ff9b",
     "semantic_hash": ""
   },
   "droid-wiki/reference/configuration.md": {
-    "mtime": 1783600709.130442,
+    "mtime": 1783679282.0644388,
     "ast_hash": "b837aba042bd69378e7c2a97e43a29c9",
     "semantic_hash": ""
   },
   "droid-wiki/reference/data-models.md": {
-    "mtime": 1783600726.307477,
+    "mtime": 1783679282.0645335,
     "ast_hash": "68d39a6f8e3df616b122515eb13dbb63",
     "semantic_hash": ""
   },
   "droid-wiki/reference/dependencies.md": {
-    "mtime": 1783600731.8105137,
+    "mtime": 1783679282.0646143,
     "ast_hash": "edaad776391190a4adfca7244089f5f5",
     "semantic_hash": ""
   },
   "droid-wiki/reference/index.md": {
-    "mtime": 1783600698.407982,
+    "mtime": 1783679282.0646894,
     "ast_hash": "4b71f3e52619c2cac272610b04c9416b",
     "semantic_hash": ""
   },
   "droid-wiki/systems/decision-loop.md": {
-    "mtime": 1783600718.3831189,
+    "mtime": 1783679282.064817,
     "ast_hash": "d1ef0c0f3caef772fd528eb5ae1d4fda",
     "semantic_hash": ""
   },
   "droid-wiki/systems/executor-adapters.md": {
-    "mtime": 1783600726.867339,
+    "mtime": 1783679282.0649092,
     "ast_hash": "c0269d2ba607596a88eec80e780b9665",
     "semantic_hash": ""
   },
   "droid-wiki/systems/graph-reader.md": {
-    "mtime": 1783600727.0412133,
+    "mtime": 1783679282.0650005,
     "ast_hash": "9e0b35477e99a127aaf0d408673b1e82",
     "semantic_hash": ""
   },
   "droid-wiki/systems/graph-updater.md": {
-    "mtime": 1783600727.3789554,
+    "mtime": 1783679282.0650935,
     "ast_hash": "8e5ecdcef14ad790790171129e5c11d7",
     "semantic_hash": ""
   },
   "droid-wiki/systems/heartbeat.md": {
-    "mtime": 1783600707.393873,
+    "mtime": 1783679282.065189,
     "ast_hash": "ba05c33f178dbf57c3e02f6a4d981b84",
     "semantic_hash": ""
   },
   "droid-wiki/systems/index.md": {
-    "mtime": 1783600707.187616,
+    "mtime": 1783679282.0652666,
     "ast_hash": "b86a5a0817580107914ca9671400bb7e",
     "semantic_hash": ""
   },
   "droid-wiki/systems/intake-server.md": {
-    "mtime": 1783600718.581057,
+    "mtime": 1783679282.0653558,
     "ast_hash": "78aa84c36363f6afd87313f8a39fb9e7",
     "semantic_hash": ""
   },
   "droid-wiki/systems/replay.md": {
-    "mtime": 1783600727.210388,
+    "mtime": 1783679282.0654547,
     "ast_hash": "1ff314a058bc7d9223669f45d8dbaff5",
     "semantic_hash": ""
   },
   "droid-wiki/systems/return-router.md": {
-    "mtime": 1783600718.1888382,
+    "mtime": 1783679282.0655475,
     "ast_hash": "97af0b6601e67d9911381d8c7bb50b06",
     "semantic_hash": ""
   },
   "droid-wiki/systems/state-persistence.md": {
-    "mtime": 1783600726.694955,
+    "mtime": 1783679282.0656438,
     "ast_hash": "40d1dd7dbe83d3438c6d157687e0e034",
     "semantic_hash": ""
   },
   "droid-wiki/systems/verification.md": {
-    "mtime": 1783600718.5838153,
+    "mtime": 1783679282.0657794,
     "ast_hash": "51d86cf6c8bb77041af7eda69b5c3244",
+    "semantic_hash": ""
+  },
+  ".handoffs/artifacts/032-live-retry-proof-canary-fail-verdict.json": {
+    "mtime": 1783791650.0488994,
+    "ast_hash": "e0e727b8444f0737b44860401add918b",
+    "semantic_hash": ""
+  },
+  ".handoffs/artifacts/032-live-round-trip-verdict-confidence-split.json": {
+    "mtime": 1783788653.6340497,
+    "ast_hash": "8c1ca7e973eb46d6f97243249411ca81",
+    "semantic_hash": ""
+  },
+  ".handoffs/artifacts/integrity-proof-live-find-duplicates.json": {
+    "mtime": 1783787503.403747,
+    "ast_hash": "9faef96ac41dd43bab0d9d59ee160f0d",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/arm.sh": {
+    "mtime": 1783760558.2925403,
+    "ast_hash": "5fb25423f9dac58024575ea68b9bda33",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/common.sh": {
+    "mtime": 1783938122.8294265,
+    "ast_hash": "923b0290068dbba3cd36c0a379baa1f8",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/disarm-source.sh": {
+    "mtime": 1783760558.2926843,
+    "ast_hash": "b174029b07eb8d4105a18598805787b1",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/disarm.sh": {
+    "mtime": 1783760558.2927685,
+    "ast_hash": "c5514613240c5b7e3f94e800ba8166b8",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/install-dormant.sh": {
+    "mtime": 1783760558.2929738,
+    "ast_hash": "33f7c7cd6edda7f3d39222381c52add3",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/bin/smoke.sh": {
+    "mtime": 1783864163.1720033,
+    "ast_hash": "d3ff66c80ff4293adfa816d0da6f14e7",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/test_arm_refuse.py": {
+    "mtime": 1783938122.8298311,
+    "ast_hash": "b529b1cc9218b3340d7e1ebcfd661fc3",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/test_render_plist.py": {
+    "mtime": 1783938122.830241,
+    "ast_hash": "c5a4ae892c024894642fb2b7902b9f44",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/test_smoke_dry.py": {
+    "mtime": 1783938122.8306918,
+    "ast_hash": "5756a42170e3f1c83301992fa7141a40",
+    "semantic_hash": ""
+  },
+  "scripts/echo.py": {
+    "mtime": 1783863841.3645148,
+    "ast_hash": "3bc5ebdb4b4c338964b281a512c05f71",
+    "semantic_hash": ""
+  },
+  "scripts/runtime/decision_loop/test_engine_repo_resolution.py": {
+    "mtime": 1783679353.1534848,
+    "ast_hash": "239766342a1fa8efd81157c199fdcd6e",
+    "semantic_hash": ""
+  },
+  "scripts/runtime/heartbeat/test_runner.py": {
+    "mtime": 1783785542.397577,
+    "ast_hash": "8446f9b3528e8d563b3cc5dda6e60b58",
+    "semantic_hash": ""
+  },
+  "scripts/test_intake_webhook_roundtrip.py": {
+    "mtime": 1783938122.8318865,
+    "ast_hash": "0b4808e6056beeab4beac9096de1edfa",
+    "semantic_hash": ""
+  },
+  ".github/workflows/jules.yml": {
+    "mtime": 1783785766.7629964,
+    "ast_hash": "1d20a1f266b8f5fe29e6fc7497509f0a",
+    "semantic_hash": ""
+  },
+  ".handoffs/024-verify-resolver-branches-sab-dev-eval.md": {
+    "mtime": 1783679353.1479118,
+    "ast_hash": "eb8e521d683cf0aae38b5786037169fe",
+    "semantic_hash": ""
+  },
+  ".handoffs/031-verify-resolver-codex-integrated.md": {
+    "mtime": 1783679353.1479971,
+    "ast_hash": "21f68d66f3c4060cb8a70d15344ec03b",
+    "semantic_hash": ""
+  },
+  ".handoffs/032-retry-loop-harden-live-dispatch.md": {
+    "mtime": 1783864139.5423877,
+    "ast_hash": "cd6e5a09b6dbe5e4d3f86b85e8574269",
+    "semantic_hash": ""
+  },
+  ".handoffs/033-aa-cli-reality-survey.md": {
+    "mtime": 1783863841.3606858,
+    "ast_hash": "5bb2e1e35b9e5e182c75ad86f3268461",
+    "semantic_hash": ""
+  },
+  ".handoffs/034-topology-cutover-prep.md": {
+    "mtime": 1783863841.360803,
+    "ast_hash": "4ff150d9bbc934a3333a437e3a350dec",
+    "semantic_hash": ""
+  },
+  ".handoffs/035-baseline-tests-cutover-webhooks.md": {
+    "mtime": 1783938122.827863,
+    "ast_hash": "e418e7365ac4dac477a0897632163d96",
+    "semantic_hash": ""
+  },
+  ".handoffs/036-mini-production-docs-baseline.md": {
+    "mtime": 1783938122.8281662,
+    "ast_hash": "e8b875dfa418dfb7bdc98f41783cd887",
+    "semantic_hash": ""
+  },
+  ".handoffs/037-mini-clean-baseline-startup.md": {
+    "mtime": 1783938122.8285296,
+    "ast_hash": "82505283d2679da9bf2ad15bd170cc39",
+    "semantic_hash": ""
+  },
+  ".remember/archive.md": {
+    "mtime": 1783938405.4827943,
+    "ast_hash": "00d756130df486376a3b91415ec6a9f3",
+    "semantic_hash": ""
+  },
+  ".remember/recent.md": {
+    "mtime": 1783938405.4794142,
+    "ast_hash": "f69ddc9c335bda8e08623cee967a67ab",
+    "semantic_hash": ""
+  },
+  ".remember/today-2026-05-11.done.md": {
+    "mtime": 1778492465.3042247,
+    "ast_hash": "0dd4b5f30facb7f1447847f18e46d7ad",
+    "semantic_hash": ""
+  },
+  ".remember/today-2026-05-12.done.md": {
+    "mtime": 1778571752.3532653,
+    "ast_hash": "e9aee37f79172bd289a6fb52a8be7b17",
+    "semantic_hash": ""
+  },
+  ".remember/today-2026-07-13.md": {
+    "mtime": 1783938715.547054,
+    "ast_hash": "68b13601e2ab009e94c1993b996e2545",
+    "semantic_hash": ""
+  },
+  "TOPOLOGY.md": {
+    "mtime": 1783939097.7373407,
+    "ast_hash": "e548828af39d657b52f48297836165d3",
+    "semantic_hash": ""
+  },
+  "decision.md": {
+    "mtime": 1783863841.3612275,
+    "ast_hash": "a30733aa9c44facfb148a6f02ead5f55",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/CUTOVER.md": {
+    "mtime": 1783863841.3613815,
+    "ast_hash": "6aff49e91f40498b2c8d6ea525752a2d",
+    "semantic_hash": ""
+  },
+  "deploy/mini-heartbeat/README.md": {
+    "mtime": 1783863841.3619108,
+    "ast_hash": "c10ac14cd890e0f97a45bf3d875ca741",
+    "semantic_hash": ""
+  },
+  "docs/dispatch-checklist.md": {
+    "mtime": 1783938122.8310301,
+    "ast_hash": "5d886ee2d1cc3072d226a83b41fa41e1",
+    "semantic_hash": ""
+  },
+  "docs/echo-usage.md": {
+    "mtime": 1783863841.3626523,
+    "ast_hash": "33c98fc1bcc353e6342931c4710e4e77",
+    "semantic_hash": ""
+  },
+  "docs/gddp-reconciliation-review-2026-07-03.md": {
+    "mtime": 1783760502.1973407,
+    "ast_hash": "0322ac553152971e27b37f4aa7e7b5b9",
+    "semantic_hash": ""
+  },
+  "docs/overnight-readiness.md": {
+    "mtime": 1783863841.363419,
+    "ast_hash": "7a2b813432082db45a7d97cc4198743b",
+    "semantic_hash": ""
+  },
+  "docs/postmortem-canary-scope-2026-07-12.md": {
+    "mtime": 1783863841.3635762,
+    "ast_hash": "bd21ed63c89c3304814743a8b2d652d7",
+    "semantic_hash": ""
+  },
+  "result-summary.md": {
+    "mtime": 1783863841.3642979,
+    "ast_hash": "1accae3a578a0d6562c3dc19da8fd349",
+    "semantic_hash": ""
+  },
+  "scripts/node_status.py": {
+    "mtime": 1783939850.6857336,
+    "ast_hash": "b060953c9a351836511bf86f57b67484",
     "semantic_hash": ""
   }
 }
