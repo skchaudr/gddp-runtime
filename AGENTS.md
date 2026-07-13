@@ -53,6 +53,11 @@ appearing done.
 4. If work continues from another branch, first understand whether it should be
    merged, rebased, abandoned, or left as a PR branch. Do not create parallel
    branches for the same task without a reason recorded in the handoff.
+5. **Production host, step zero:** on any armed control plane (`sab-mini`,
+   `pi-big`, etc.), run `git pull --ff-only` before anything else. Repo files
+   on production change only via git — never `scp`, never remote edits. Session
+   is not done until `git status --porcelain` is empty and HEAD matches
+   `origin/main`.
 
 ### During-work rules
 
