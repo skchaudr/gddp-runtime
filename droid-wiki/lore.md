@@ -36,6 +36,18 @@ Two-lane evaluation went into production. The integrity harness runner was added
 
 Live Pi deployment was hardened in this era. The terminology was locked: the GDAD-to-GDDP rename touched code, PR-body templates, and issue titles. Canon documents were declared, settling which sources are authoritative when prose and code disagree.
 
+### Retry proof, incident, and the mini cutover (mid-Jul 2026)
+
+Three days that moved production off the Raspberry Pi and proved the retry loop with a live run.
+
+**The canary retry proof (Jul 11–12).** A deliberately booby-trapped node, `canary-retry-proof` (`job_20260711T17104259`), was dispatched: its third acceptance criterion required a `docs/echo-usage.md` file that was intentionally omitted from the goal and required-artifacts list, so the executor would miss it on attempt one. It did. The evaluator failed the criterion with a file-path evidence reference, the retry loop fired, and attempt two landed with all three criteria met — two result rows in the `results` table (2026-07-11T17:35Z, 2026-07-12T07:16Z). First live proof of the retry mechanism described in [Retry loop](features/retry-loop.md).
+
+**The canary-scope incident (Jul 12).** Intake resolved its webhook secret by ssh-ing to pi-big at startup; that ssh dependency failed silently and took webhook verification down. Full analysis in `docs/postmortem-canary-scope-2026-07-12.md`. During the recovery, a hot-patch was applied to production via `scp` without a matching commit/pull, leaving the mini's checkout desynced from origin — a second, quieter failure discovered only the next day. Both failure classes now have standing countermeasures: `AGENTS.md` mandates git-pull-first (no remote file patches) on production hosts, and `deploy/mini-heartbeat/bin/baseline.sh` checks git sync and secret-resolver locality on every run.
+
+**The pi-big → sab-mini cutover (Jul 12–13).** Production moved from the Pi's systemd/cron model to a Mac Mini running two launchd agents (`com.gddp.intake`, `com.gddp.heartbeat`) behind a Tailscale Funnel URL, with 12 repo webhooks repointed. Runbook: `deploy/mini-heartbeat/CUTOVER.md`; verified state: `TOPOLOGY.md`; session trail: `.handoffs/036-mini-production-docs-baseline.md` and `.handoffs/037-mini-clean-baseline-startup.md`. The secrets migration completed the cutover on Jul 13: the `pass` store and automation GPG key `F0928E218506BB29` moved onto the mini, killing the ssh-to-pi-big resolver. The migration surfaced a platform gotcha worth remembering: Homebrew's `pass` resolves GNU getopt by shelling out to `brew --prefix` at runtime, which hangs forever under launchd — so the production secret commands call `gpg --batch --quiet --decrypt` directly (see the comment in `deploy/mini-heartbeat/env/gddp.env`).
+
+**Human-gate tooling (Jul 13).** Two operator tools landed the same day: `scripts/node_status.py`, the first CLI for the human review gate (list/show/set across all eleven canon queue states, every change writing an audit row to `decision_results` — a table that had zero rows until a human used it), and `deploy/mini-heartbeat/bin/baseline.sh`, a tiered production verifier (OK / DEGRADED / BROKEN) that makes "the baseline is green" an exit code instead of a claim.
+
 ## Longest-standing features
 
 `intake_server.py` and `init_db.py` date from March 2026 and are still actively used. The webhook intake and the SQLite schema they establish have outlived every rewrite around them. `heartbeat.py` is still present in the repo as legacy, replaced by `heartbeat/runner.py` but not deleted.

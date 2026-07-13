@@ -2,10 +2,39 @@
 
 > **Topology canon:** multi-host machine map, queue rules, and pi-big → sab-mini
 > migration live in **`TOPOLOGY.md`** (human-owned, repo root) and
-> **`deploy/mini-heartbeat/CUTOVER.md`**. This page describes the Big Pi
-> deployment model; read those first before live dispatch.
+> **`deploy/mini-heartbeat/CUTOVER.md`**. Read those first before live dispatch.
 
-GDDP Runtime runs on a Raspberry Pi control plane (Big Pi). The deployment story is intentionally simple: two repos, a systemd service, and a cron heartbeat. No containers, no orchestrators, no remote state stores.
+## Production: sab-mini (since 2026-07-12/13)
+
+Production moved from Big Pi to a Mac Mini in the Jul 2026 cutover
+(`deploy/mini-heartbeat/CUTOVER.md`; session trail in
+`.handoffs/036-mini-production-docs-baseline.md` and
+`.handoffs/037-mini-clean-baseline-startup.md`). The shape:
+
+- **Two launchd agents** replace systemd + cron: `com.gddp.intake` (webhook
+  receiver on `127.0.0.1:5050`) and `com.gddp.heartbeat`. Plists are rendered
+  from `deploy/mini-heartbeat/env/gddp.env` by
+  `deploy/mini-heartbeat/bin/install-dormant.sh`, armed with `arm.sh`.
+- **Tailscale Funnel** is the public surface (`https://sab-mini.tail02ac6f.ts.net/webhook`),
+  replacing ngrok; 12 repo webhooks point at it.
+- **Secrets are mini-local** (since 2026-07-13): `~/.password-store` + GPG
+  automation key, resolved via direct `gpg --batch --quiet --decrypt` — not
+  `pass show`, which hangs under launchd (comment in `gddp.env` explains).
+  pi-big holds an offline backup only; production has no remote secret
+  dependency (that dependency caused the 2026-07-12 incident —
+  `docs/postmortem-canary-scope-2026-07-12.md`).
+- **Verification is a script, not a claim:** `deploy/mini-heartbeat/bin/baseline.sh`
+  (tiered OK / DEGRADED / BROKEN — git sync, secret locality, services, HMAC
+  round-trip, queue.db, dispatch tick, executor, evaluator liveness) and
+  `deploy/mini-heartbeat/bin/smoke.sh` (lighter, warn-based).
+- **Git discipline:** production hosts are pull-only — no scp hot-patches, no
+  remote file edits (`AGENTS.md`, rule born from the incident above).
+
+## Archive: Big Pi deployment model (pre-cutover)
+
+Everything below describes the retired Big Pi control plane: two repos, a
+systemd service, and a cron heartbeat. Kept for reference; see also
+`deploy/BIGPI_RUNBOOK.md`.
 
 ## Live topology
 

@@ -18,8 +18,9 @@ The two path variables that matter most are `GDDP_CONFIG_PATH` (where the graph 
 |---|---|---|---|
 | `GITHUB_TOKEN` | GitHub auth token used by the Jules action adapter to create dispatch issues and interact with the GitHub API. | (none) | Yes, for dispatch. Falls back to `GH_TOKEN`. |
 | `GH_TOKEN` | Alternate name for the GitHub auth token. Used only if `GITHUB_TOKEN` is unset. | (none) | No, alternate for `GITHUB_TOKEN`. |
-| `GITHUB_WEBHOOK_SECRET` | Shared secret used by the intake server to verify `X-Hub-Signature-256` on incoming webhooks. When unset, the server falls back to `GDDP_WEBHOOK_SECRET_CMD`. If neither resolves, signature verification is disabled and the server prints a warning. | (none) | Yes in any public-facing deployment. |
-| `GDDP_WEBHOOK_SECRET_CMD` | Shell command that prints the webhook secret to stdout, so the secret never sits in a plaintext env file. Run only when `GITHUB_WEBHOOK_SECRET` is empty. | `pass show gddp/webhook-secret` | No. Used when `GITHUB_WEBHOOK_SECRET` is not set directly. |
+| `GITHUB_WEBHOOK_SECRET` | Shared secret used by the intake server to verify `X-Hub-Signature-256` on incoming webhooks. When unset, the server falls back to `GDDP_WEBHOOK_SECRET_CMD`. If neither resolves, the server exits 1 at startup (unsigned operation requires `GDDP_INTAKE_INSECURE=1`). | (none) | Yes in any public-facing deployment. |
+| `GDDP_WEBHOOK_SECRET_CMD` | Shell command that prints the webhook secret to stdout, so the secret never sits in a plaintext env file. Run only when `GITHUB_WEBHOOK_SECRET` is empty. Production (sab-mini) sets this to a direct `gpg --batch --quiet --decrypt` on the store file — `pass` hangs under launchd (see `deploy/mini-heartbeat/env/gddp.env`). | `pass show gddp/webhook-secret` | No. Used when `GITHUB_WEBHOOK_SECRET` is not set directly. |
+| `GDDP_INTAKE_INSECURE` | Set to `1` to let the intake server start without a webhook secret (signature verification disabled). Local development only; never in production. | (unset) | No. |
 
 ## LLM provider credentials and endpoints
 
@@ -59,6 +60,6 @@ These control the evaluator subprocess the bridge spawns on the return path and 
 - `GDDP_RUNTIME_ROOT` is always checked before `OPCLAW_ROOT`. If both are set, `OPCLAW_ROOT` is ignored.
 - `GITHUB_TOKEN` is always checked before `GH_TOKEN`.
 - The bridge resolves `DEEPSEEK_API_KEY` from the environment first, then from `GDDP_DEEPSEEK_KEY_CMD`. It never tries `pass` if the env var is already present.
-- The intake server resolves `GITHUB_WEBHOOK_SECRET` from the environment first, then from `GDDP_WEBHOOK_SECRET_CMD`. If both are absent, signature verification is silently skipped and a warning is printed at startup.
+- The intake server resolves `GITHUB_WEBHOOK_SECRET` from the environment first, then from `GDDP_WEBHOOK_SECRET_CMD`. If both are absent, the server exits 1 at startup; unsigned operation requires explicitly setting `GDDP_INTAKE_INSECURE=1`.
 
 For the SQLite schema these credentials protect, see [data models](data-models.md). For the libraries that parse these settings, see [dependencies](dependencies.md).

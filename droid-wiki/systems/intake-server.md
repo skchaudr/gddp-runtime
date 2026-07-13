@@ -13,9 +13,9 @@
 
 ## Deployment
 
-The server listens on `127.0.0.1:5050` and is meant to be exposed to GitHub via an ngrok tunnel (`ngrok http 5050`) or a reverse proxy, then registered as a webhook target in the repo's webhook settings. In production it runs as a systemd service. It binds loopback only on purpose; the public surface is whatever tunnel or proxy is put in front of it.
+The server listens on `127.0.0.1:5050` and is exposed to GitHub via a tunnel or proxy, then registered as a webhook target in the repo's webhook settings. In production (sab-mini, since the 2026-07-12/13 cutover — see `TOPOLOGY.md` and `deploy/mini-heartbeat/CUTOVER.md`) it runs as the launchd agent `com.gddp.intake` behind a Tailscale Funnel URL. It binds loopback only on purpose; the public surface is whatever tunnel or proxy is put in front of it.
 
-At startup it refuses to run if `db/queue.db` is missing and tells you to run `scripts/init_db.py` first. If no webhook secret is resolved, it prints a warning that signature verification is disabled and that the server should not be exposed publicly in that state.
+At startup it refuses to run if `db/queue.db` is missing and tells you to run `scripts/init_db.py` first. If no webhook secret resolves, the server **exits with status 1** rather than starting with verification disabled — running unsigned is opt-in only, via `GDDP_INTAKE_INSECURE=1` for local development. (A silently failing secret resolver is the failure class behind the 2026-07-12 incident, `docs/postmortem-canary-scope-2026-07-12.md`.)
 
 ## Request flow
 
@@ -37,7 +37,7 @@ flowchart TD
 
 The handler does four things in order:
 
-1. **Signature check.** `verify_signature` computes `sha256=` + HMAC-SHA256 of the raw body with the webhook secret and compares it against the `X-Hub-Signature-256` header using `hmac.compare_digest` (constant time). If the secret is unset, verification is skipped and the server logs a warning at startup. A mismatch returns `401` and the request ends there.
+1. **Signature check.** `verify_signature` computes `sha256=` + HMAC-SHA256 of the raw body with the webhook secret and compares it against the `X-Hub-Signature-256` header using `hmac.compare_digest` (constant time). A mismatch returns `401` and the request ends there. The unverified path exists only under `GDDP_INTAKE_INSECURE=1`; without a secret the server refuses to start at all.
 2. **Save raw payload.** Regardless of event type, the raw JSON is written to `events/raw/<event_type>_<timestamp>.json` under the runtime state root. This is the audit trail; the runtime never throws away what GitHub sent.
 3. **Normalize.** `normalize_event` maps the GitHub event type and action to the runtime's controlled taxonomy. If there is no mapping, the handler returns `200 ignored` and the event is not inserted. Unknown events are not errors; they are deliberately dropped so the runtime only reasons over event types it understands.
 4. **Insert.** The normalized event dict is inserted into the `events` table with `status="received"`. The response is `200 accepted` with the new `event_id`.
@@ -51,9 +51,9 @@ A simple liveness probe returning `{"status": "ok"}`. Useful for the systemd uni
 The webhook secret is resolved by `_resolve_webhook_secret` in a two-tier pattern:
 
 1. **Env var first.** If `GITHUB_WEBHOOK_SECRET` is set, use it directly.
-2. **Pass password manager fallback.** If the env var is empty, run the command in `GDDP_WEBHOOK_SECRET_CMD` (default `pass show gddp/webhook-secret`) via `subprocess.run` with a 15-second timeout. The command is split with `shlex`, the binary is checked to exist with `shutil.which`, and any failure (missing binary, non-zero exit, timeout) returns an empty string, which disables verification.
+2. **Resolver command fallback.** If the env var is empty, run the command in `GDDP_WEBHOOK_SECRET_CMD` (code default `pass show gddp/webhook-secret`) via `subprocess.run` with a 15-second timeout. The command is split with `shlex`, the binary is checked to exist with `shutil.which`, and any failure (missing binary, non-zero exit, timeout) returns an empty string — which makes the server exit 1 at startup unless `GDDP_INTAKE_INSECURE=1`.
 
-This is the same pattern the verification bridge uses for its LLM API keys (`GDDP_DEEPSEEK_KEY_CMD` and friends): the secret never sits in a plaintext env file, and the runtime degrades safely when the password manager is absent. The priority is always env var > pass > disabled, and disabled is loud about it.
+This is the same pattern the verification bridge uses for its LLM API keys (`GDDP_DEEPSEEK_KEY_CMD` and friends): the secret never sits in a plaintext env file. The priority is env var > resolver command > refuse to start. **Production note (2026-07-13):** on sab-mini the resolver commands call `gpg --batch --quiet --decrypt` on the `~/.password-store` files directly rather than `pass show` — Homebrew's `pass` shells out to `brew --prefix gnu-getopt` at runtime, which hangs under launchd (see the comment in `deploy/mini-heartbeat/env/gddp.env`). `deploy/mini-heartbeat/bin/baseline.sh` verifies on every run that the rendered plist commands are local (no ssh) and actually resolve.
 
 ## Controlled event taxonomy
 

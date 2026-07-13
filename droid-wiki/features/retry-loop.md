@@ -36,6 +36,18 @@ The return from `_redispatch_with_findings()` carries a `redispatched` status wi
 
 The retry loop re-dispatches work to the executor. It does not advance the node, change the project graph, or mark anything as complete. The node stays in its current state. The executor produces another PR, that PR merges, and the return router runs the whole flow again: parse, verify, write receipt, check retry budget. If the budget is exhausted or the findings are still non-pass, the job lands at `awaiting_review` for a human.
 
+## Proven live (2026-07-11/12)
+
+The loop has fired for real once, by design. The canary node `canary-retry-proof`
+(`job_20260711T17104259`) buried one acceptance criterion — a `docs/echo-usage.md`
+file — in the criteria list while omitting it from the goal and required
+artifacts, so the executor would miss it on attempt one. It did; the evaluator
+judged the criterion fail with a file-path evidence reference; `should_retry()`
+said yes; attempt two landed with all three criteria met. Two result rows in
+the `results` table (2026-07-11T17:35Z and 2026-07-12T07:16Z) are the receipt.
+Trail: `.handoffs/037-mini-clean-baseline-startup.md`, artifacts in
+`jobs/job_20260711T17104259/`.
+
 ## Key source files
 
 | File | Purpose |
