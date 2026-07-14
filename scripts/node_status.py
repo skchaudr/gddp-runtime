@@ -4,7 +4,7 @@ node_status.py — Inspect and set job/node queue state (human-operated).
 Usage:
     python3 scripts/node_status.py list [--state awaiting_review]
     python3 scripts/node_status.py show <job_id | node_id> [--full]
-    python3 scripts/node_status.py results
+    python3 scripts/node_status.py results [--all]
     python3 scripts/node_status.py set <job_id | node_id> <state> --reason "..."
 
 States (canon: gddp-config schemas/v1/queue_record.yaml):
@@ -139,6 +139,10 @@ def cmd_show(args):
         print(f"        decision: {d['created_at']}  {d['action']}  {d['reason'] or ''}")
 
 
+def config_root():
+    return Path(os.environ.get("GDDP_CONFIG_PATH", str(RUNTIME_ROOT.parent / "gddp-config")))
+
+
 def cmd_results(args):
     con = connect()
     rows = con.execute(
@@ -148,16 +152,47 @@ def cmd_results(args):
     if not rows:
         print("No evaluator results.")
         return
-    nodes = set()
+
+    if args.all:
+        nodes = set()
+        for r in rows:
+            check = parse_check(r)
+            verdict = check.get("verdict") or "-"
+            nodes.add((r["project_id"], r["node_id"]))
+            print(f"{r['received_at'][:19]}  {verdict:<5} {r['project_id'] or '-':<14} "
+                  f"{r['node_id'] or '-':<26} {r['job_id']}")
+            if check.get("receipt_path"):
+                print(f"{'':21}receipt: {check['receipt_path']}")
+        print(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).")
+        return
+
+    # Default: per-project summary — counts plus where the files live, so the
+    # answer to "how many rows/receipts exist?" doesn't grow with each result.
+    projects = {}
     for r in rows:
-        check = parse_check(r)
-        verdict = check.get("verdict") or "-"
-        nodes.add((r["project_id"], r["node_id"]))
-        print(f"{r['received_at'][:19]}  {verdict:<5} {r['project_id'] or '-':<14} "
-              f"{r['node_id'] or '-':<26} {r['job_id']}")
-        if check.get("receipt_path"):
-            print(f"{'':21}receipt: {check['receipt_path']}")
-    print(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).")
+        p = projects.setdefault(r["project_id"] or "-", {"rows": 0, "nodes": set(), "latest": r})
+        p["rows"] += 1
+        p["nodes"].add(r["node_id"])
+        p["latest"] = r  # rows are ordered by received_at
+
+    live_root = config_root() / "verification-runtime-live"
+    for project_id in sorted(projects):
+        p = projects[project_id]
+        latest_check = parse_check(p["latest"])
+        latest_verdict = latest_check.get("verdict") or "-"
+        print(f"{project_id:<16} {len(p['nodes'])} node(s)  {p['rows']} result row(s)  "
+              f"latest: {latest_verdict} {p['latest']['node_id']} "
+              f"({p['latest']['received_at'][:10]})")
+        proj_dir = live_root / project_id
+        receipts = sorted(proj_dir.glob("*.json")) if proj_dir.exists() else []
+        print(f"{'':17}receipts: {len(receipts)} in {proj_dir}")
+        evals = proj_dir / "evaluations.yaml"
+        if evals.exists():
+            print(f"{'':17}export:   {evals}")
+
+    total_nodes = {(pid, n) for pid, p in projects.items() for n in p["nodes"]}
+    print(f"\n{len(rows)} result row(s), {len(total_nodes)} node(s), "
+          f"{len(projects)} project(s).  (--all for every row)")
 
 
 def cmd_set(args):
@@ -209,7 +244,8 @@ def main():
     p_show.add_argument("--full", action="store_true", help="include full integrity reasoning")
     p_show.set_defaults(fn=cmd_show)
 
-    p_results = sub.add_parser("results", help="every evaluator output that exists, with counts")
+    p_results = sub.add_parser("results", help="evaluator output summary: counts + paths per project")
+    p_results.add_argument("--all", action="store_true", help="list every result row instead of the summary")
     p_results.set_defaults(fn=cmd_results)
 
     p_set = sub.add_parser("set", help="set queue state (accepts job_id or node_id)")
