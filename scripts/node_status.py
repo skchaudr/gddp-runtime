@@ -3,7 +3,8 @@ node_status.py — Inspect and set job/node queue state (human-operated).
 
 Usage:
     python3 scripts/node_status.py list [--state awaiting_review]
-    python3 scripts/node_status.py show <job_id | node_id>
+    python3 scripts/node_status.py show <job_id | node_id> [--full]
+    python3 scripts/node_status.py results
     python3 scripts/node_status.py set <job_id | node_id> <state> --reason "..."
 
 States (canon: gddp-config schemas/v1/queue_record.yaml):
@@ -19,6 +20,7 @@ What `set` does:
 """
 
 import argparse
+import json
 import os
 import sqlite3
 import sys
@@ -85,6 +87,36 @@ def cmd_list(args):
               f"attempt {r['attempt']}/{r['max_attempts']}  {r['created_at'][:10]}")
 
 
+def parse_check(row):
+    try:
+        return json.loads(row["acceptance_check"]) if row["acceptance_check"] else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def print_evaluation(check, full=False):
+    """Print the evaluator's output for one result row — the thing under review."""
+    if not check:
+        print("          (no evaluator output on this result)")
+        return
+    integrity = check.get("integrity") or {}
+    print(f"         verdict: {check.get('verdict')}  "
+          f"(criteria: {check.get('criteria_verdict')} @ {check.get('criteria_confidence')}, "
+          f"integrity: {integrity.get('verdict')} @ {integrity.get('confidence')})")
+    for f in check.get("criteria_findings") or []:
+        print(f"       criterion: {f.get('criterion_id')}  ->  {f.get('judgment')}")
+        for ev in f.get("evidence") or []:
+            print(f"                  evidence: {ev}")
+    for f in integrity.get("findings") or []:
+        print(f"       integrity: [{f.get('severity')}] {f.get('summary')}")
+    if check.get("required_next_action"):
+        print(f"     next action: {check['required_next_action']}  (evaluator template, not a decision)")
+    if check.get("receipt_path"):
+        print(f"         receipt: {check['receipt_path']}")
+    if full and integrity.get("reasoning"):
+        print(f"       reasoning: {integrity['reasoning']}")
+
+
 def cmd_show(args):
     con = connect()
     job = resolve_job(con, args.ref)
@@ -92,17 +124,40 @@ def cmd_show(args):
                 "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
         print(f"{key:>16}: {job[key]}")
     results = con.execute(
-        "SELECT received_at, outcome, status FROM results WHERE job_id = ? ORDER BY received_at",
+        "SELECT received_at, outcome, status, acceptance_check "
+        "FROM results WHERE job_id = ? ORDER BY received_at",
         (job["job_id"],),
     ).fetchall()
     for r in results:
         print(f"          result: {r['received_at']}  {r['outcome']}/{r['status']}")
+        print_evaluation(parse_check(r), full=args.full)
     decisions = con.execute(
         "SELECT created_at, action, reason FROM decision_results WHERE node_id = ? ORDER BY created_at",
         (job["node_id"],),
     ).fetchall()
     for d in decisions:
         print(f"        decision: {d['created_at']}  {d['action']}  {d['reason'] or ''}")
+
+
+def cmd_results(args):
+    con = connect()
+    rows = con.execute(
+        "SELECT r.received_at, r.acceptance_check, j.node_id, j.project_id, r.job_id "
+        "FROM results r JOIN jobs j ON j.job_id = r.job_id ORDER BY r.received_at",
+    ).fetchall()
+    if not rows:
+        print("No evaluator results.")
+        return
+    nodes = set()
+    for r in rows:
+        check = parse_check(r)
+        verdict = check.get("verdict") or "-"
+        nodes.add((r["project_id"], r["node_id"]))
+        print(f"{r['received_at'][:19]}  {verdict:<5} {r['project_id'] or '-':<14} "
+              f"{r['node_id'] or '-':<26} {r['job_id']}")
+        if check.get("receipt_path"):
+            print(f"{'':21}receipt: {check['receipt_path']}")
+    print(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).")
 
 
 def cmd_set(args):
@@ -151,7 +206,11 @@ def main():
 
     p_show = sub.add_parser("show", help="show one job (accepts job_id or node_id)")
     p_show.add_argument("ref")
+    p_show.add_argument("--full", action="store_true", help="include full integrity reasoning")
     p_show.set_defaults(fn=cmd_show)
+
+    p_results = sub.add_parser("results", help="every evaluator output that exists, with counts")
+    p_results.set_defaults(fn=cmd_results)
 
     p_set = sub.add_parser("set", help="set queue state (accepts job_id or node_id)")
     p_set.add_argument("ref")

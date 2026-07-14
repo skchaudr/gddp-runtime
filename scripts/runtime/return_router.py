@@ -50,6 +50,25 @@ def _connect() -> sqlite3.Connection:
     return con
 
 
+def _refresh_evaluations_export() -> None:
+    """Best-effort refresh of the evaluations export after a result lands.
+
+    Runs scripts/export_evaluations.py as a subprocess so nothing it does
+    (yaml errors, missing gddp-config, permissions) can break the return path.
+    """
+    import subprocess
+    import sys
+
+    exporter = Path(__file__).resolve().parent.parent / "export_evaluations.py"
+    try:
+        subprocess.run(
+            [sys.executable, str(exporter)],
+            capture_output=True, timeout=30, check=False,
+        )
+    except Exception:
+        pass
+
+
 def _load_job(job_id: str) -> Optional[dict]:
     con = _connect()
     try:
@@ -145,6 +164,11 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
             "raw_payload_path": str(Path(raw_path)),
         },
     )
+
+    # Live wire: refresh verification-runtime-live/<project>/evaluations.yaml so
+    # every reading surface (node_status.py, graph viewer) sees this result
+    # without a manual export. Best-effort — a broken export never blocks routing.
+    _refresh_evaluations_export()
 
     # Retry loop: if the verdict is non-pass with evidence-referenced findings
     # and the project's retry budget has room, re-dispatch instead of awaiting_review.
