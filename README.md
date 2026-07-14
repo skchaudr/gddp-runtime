@@ -27,22 +27,41 @@ Project truth lives in a separate repository (gddp-config); gddp-runtime reads i
 
 ## Why This Matters
 
-### For Engineers
+This is a working control plane for **bounded agent autonomy**. I use "Graph-Driven Development Pipeline" as shorthand, but more accurately, this project is a semi-autonomous graph-driven agentic development pipeline with human-in-the-loop style review.
 
-This is a working control plane for **bounded agent autonomy**. The interesting word is "bounded."
+If you've used Jules or Devin, you know the async model: write a prompt, get a PR, review the diff, and hope the agent picked the right scope. If you've used Cursor or Claude Code, you know the synchronous model: the agent runs in your editor while you steer turn by turn. Both work. Neither answers a different question: how does a long-running software project decide what work is ready to execute next?
 
-If you've used Jules or Devin, you know the async model: write a prompt, get a PR, review the diff, and hope the agent picked the right scope. If you've used Cursor or Claude Code, you know the synchronous model: agent runs in your editor, you steer turn by turn. Both work. Neither answers the question of *who decides what the agent should do next on a project that spans weeks and multiple repos.*
+GDDP's answer is a human-owned project graph in `gddp-config`. Each node defines its own scope, acceptance criteria, dependencies, and execution constraints. The graph defines what work is possible — but nothing dispatches on its own. A human marks a node ready in the graph and files an implementation request: an issue tagged `node: <id>`. Untagged issues are deliberately ignored, never guessed. The runtime maps that request to the ready node, verifies it is safe to dispatch (all dependencies complete, no job already in flight), builds a job packet from the node specification, and hands it to an executor adapter.
 
-GDDP's answer: a human-owned project graph in `gddp-config`, with each node carrying its own scope, acceptance criteria, and dependency edges. A human marks a node ready in the graph and files an implementation request (an issue tagged `node: <id>` — untagged issues are deliberately ignored, never guessed). The runtime maps that request to the ready node, verifies it is safe to dispatch (all dependencies complete, no job already in flight), builds a job payload from the node spec, and hands it to an executor adapter. Today that adapter files a GitHub issue labeled `jules`, which Jules's GitHub Action in the target repo picks up. The pattern is executor-agnostic — Codex, a local harness, or a custom executor can plug in behind the same dispatch contract.
+Today that adapter files a GitHub issue labeled `jules`; Jules's GitHub Action in the target repo detects the label and runs the task. The dispatch contract is executor-agnostic: Codex, Pi, Droid, or any custom execution harness can implement the same interface while the graph remains the canonical source of project intent.
 
 The system has:
-- **Graph-driven dispatch**: A heartbeat loop reads the project graph from YAML, matches tagged implementation requests to human-marked ready nodes, guards each dispatch (all dependencies complete, no active job — `awaiting_review` counts as active), and dispatches work to executor adapters.
-- **Receipt-based return flow**: When a PR merges, the system converts it into a structured receipt with artifact references and moves the job into `awaiting_review` state. No silent writeback to graph truth.
-- **SQLite state persistence**: Events, jobs, queue records, and results are persisted in a local SQLite database. Replay utilities allow reprocessing or retracing state from recorded history.
-- **Executor adapters**: The system is not married to a single agent. `adapters/jules_action_adapter.py` dispatches work to Jules by filing a GitHub issue labeled `jules`, which Jules's GitHub Action detects. New adapters can route to Codex, Vertex, or custom executors against the same dispatch contract.
-- **Manual review workflow**: When a job lands in `awaiting_review`, the operator reviews the receipt plus artifacts and takes exactly one manual action: accept (update graph truth), retry (re-dispatch from persisted state), block (record the blocker), defer (leave for later), or reopen/supersede (revisit if downstream evidence invalidates it).
 
-No automatic node advancement, no automatic review, no automatic graph writeback in this phase.
+- **Graph-driven dispatch**: A heartbeat loop reads the project graph
+  from YAML, loads human-marked ready nodes, classifies inbound events
+  against them, guards each dispatch (dependencies complete, no active
+  job — `awaiting_review` counts as active), builds job payloads from
+  node specs, and dispatches via executor adapters.
+- **Receipt-based return flow**: When a PR merges, the system converts
+  it into a structured receipt with artifact references and moves the
+  job into `awaiting_review`. No silent writeback to graph truth, no
+  claiming work is valid, complete, or accepted.
+- **SQLite state persistence**: Every event, job, queue record, and
+  result is a row. State is auditable and replayable;
+  `python3 -m runtime.replay` lets you reprocess return events or
+  re-dispatch jobs from persisted state.
+- **Executor adapters**: `adapters/jules_action_adapter.py` is the
+  working adapter. Adding a new executor means writing a new adapter
+  against the same dispatch contract — not rewriting the orchestration
+  layer.
+- **Manual review workflow**: When a job lands in `awaiting_review`,
+  the operator takes exactly one manual action: accept (update graph
+  truth), retry (re-dispatch from persisted state), block (record the
+  blocker), defer (leave for later), or reopen/supersede.
+
+No automatic node advancement. No automatic review. No automatic graph
+writeback. The graph is isolated to preserve human intent; nothing is
+accepted until *you* say so.
 
 ### For Operators & Reviewers
 
