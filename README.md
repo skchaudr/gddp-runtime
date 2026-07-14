@@ -23,6 +23,7 @@ In short: the human operator declares what; the agents determine how. The relati
 Bounded work is dispatched to an agent through a thin adapter, with Jules wired in today and Codex or a local harness ready to take its place tomorrow. Runtime state and structured receipts are stored in SQLite for persistence. Crucially, the executor halts at the review gate, leaving the graph state unchanged.
 
 Project truth lives in a separate repository (gddp-config); gddp-runtime reads it but never writes it.
+
 ---
 
 ## Why This Matters
@@ -79,7 +80,7 @@ This is not a demo. It runs on a live Raspberry Pi control plane, managing work 
 - **Schema-driven architecture**: Project graphs, nodes, jobs, and results follow explicit YAML schemas in the config repository. The runtime reads those schemas; it does not invent its own structure.
 - **Frozen boundaries**: This phase is intentionally frozen at receipt routing plus human review. The system does not attempt richer graph states, auto-review logic, or fully autonomous graph state machines. It stops at a stable contract and documents what is incomplete.
 - **Replay and rollback**: Runtime state is replayable. `python3 -m runtime.replay --result-id <id>` recreates receipt/state routing for a recorded return event. `python3 -m runtime.replay --job-id <id>` re-dispatches a specific job after explicit operator confirmation.
-- **Test coverage**: 42 passing tests covering intake, heartbeat modules, state recording, executor adapters, return routing, and runtime-root configuration.
+- **Test coverage**: 255 passing tests covering intake, heartbeat modules, state recording, executor adapters, return routing, verification, and runtime-root configuration.
 - **Operational hardening**: The live deployment has systemd service units, GitHub webhook signature validation (`GITHUB_WEBHOOK_SECRET`), and a documented review workflow. This is not a prototype running in a tmux session.
 
 ---
@@ -187,10 +188,10 @@ The `--config-path` flag is optional for local development if `gddp-config` is a
 ### Run tests
 
 ```bash
-python3 -m pytest -q
+.venv/bin/python -m pytest -q scripts
 ```
 
-Expected: 42 passing tests.
+Expected: 255 passing tests.
 
 ---
 
@@ -286,7 +287,7 @@ Canon has audiences: AGENTS.md is canon for *executors* and is deliberately excl
 
 ## Status
 
-- **Tests**: 212 passing (`.venv/bin/python -m pytest -q scripts`)
+- **Tests**: 255 passing (`.venv/bin/python -m pytest -q scripts`)
 - **Live deployment**: Raspberry Pi control plane (pi-big) — webhook intake + 5-minute heartbeat cron, two-lane verification (criteria + integrity), manual review workflow
 - **Current phase**: live intake → dispatch → verification → human review; graph truth advances only by human acceptance
 
