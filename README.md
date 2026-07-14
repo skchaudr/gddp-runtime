@@ -2,6 +2,8 @@
 
 **Graph-Driven Agentic Development Control Plane**
 
+Don’t let code define correctness. Don’t let any single artifact define correctness.
+
 ---
 
 ## What This Is
@@ -18,7 +20,7 @@ Both camps share an assumption: the agent owns scope. It figures out what to do,
 
 In short: the human operator declares what; the agents determine how. The relationship is asymmetric — "what" always trumps "how". This repository — gddp-runtime — is all about respecting the how.
 
-It dispatches bounded work to an agent through a thin adapter, with Jules wired in today and Codex or a local harness ready for tomorrow. It persists runtime state and structured receipts in SQLite, and halts at the review gate without mutating graph state.
+Bounded work is dispatched to an agent through a thin adapter, with Jules wired in today and Codex or a local harness ready to take its place tomorrow. Runtime state and structured receipts are stored in SQLite for persistence. Crucially, the executor halts at the review gate, leaving the graph state unchanged.
 
 Project truth lives in a separate repository (gddp-config); gddp-runtime reads it but never writes it.
 ---
