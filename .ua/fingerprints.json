@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "ab0332f3df258e8d67b01d5c80f73ef031ceeb16",
-  "generatedAt": "2026-07-14T08:41:24.698Z",
+  "gitCommitHash": "d6b9ee9c86dcc75f01640bf58590d25938c452ff",
+  "generatedAt": "2026-07-14T13:58:58.216Z",
   "files": {
     ".agents/hooks.json": {
       "filePath": ".agents/hooks.json",
@@ -874,6 +874,16 @@
       "totalLines": 42,
       "hasStructuralAnalysis": true
     },
+    ".handoffs/038-mini-orientation-baseline-evaluator-path.md": {
+      "filePath": ".handoffs/038-mini-orientation-baseline-evaluator-path.md",
+      "contentHash": "f2dcbc18820a4a33df324dbb0a331d60bac0dfcaa59b783dad7d30d7993e83d6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 51,
+      "hasStructuralAnalysis": true
+    },
     ".handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json": {
       "filePath": ".handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json",
       "contentHash": "84f760a2594ed0cf7060ec9d2dd1a3d45fa48e97e5550386633dfb37be9a106b",
@@ -1088,6 +1098,41 @@
       "imports": [],
       "exports": [],
       "totalLines": 58,
+      "hasStructuralAnalysis": true
+    },
+    "deploy/mini-heartbeat/bin/baseline.sh": {
+      "filePath": "deploy/mini-heartbeat/bin/baseline.sh",
+      "contentHash": "62143f9178e4f0c17c232e24570a500d4deaba8402fcc54e4d5b74d021e22c82",
+      "functions": [
+        {
+          "name": "ok",
+          "params": [],
+          "exported": false,
+          "lineCount": 1
+        },
+        {
+          "name": "warn",
+          "params": [],
+          "exported": false,
+          "lineCount": 1
+        },
+        {
+          "name": "crit",
+          "params": [],
+          "exported": false,
+          "lineCount": 1
+        },
+        {
+          "name": "info",
+          "params": [],
+          "exported": false,
+          "lineCount": 1
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 170,
       "hasStructuralAnalysis": true
     },
     "deploy/mini-heartbeat/bin/common.sh": {
@@ -1460,6 +1505,16 @@
       "totalLines": 42,
       "hasStructuralAnalysis": true
     },
+    "docs/A-more-complete-evaluator-7-14-26.md": {
+      "filePath": "docs/A-more-complete-evaluator-7-14-26.md",
+      "contentHash": "f46481448ba20b1f6597aa3dbf1fb48914f6ea065866f42b57f3291be711c3fd",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 54,
+      "hasStructuralAnalysis": true
+    },
     "docs/archive/benchmark_matrix.md": {
       "filePath": "docs/archive/benchmark_matrix.md",
       "contentHash": "27b8cb016b1e2ba281628e5316c6015c53b45ea79a4a0d3576658e9d30a01ebf",
@@ -1598,6 +1653,16 @@
       "imports": [],
       "exports": [],
       "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "docs/evaluator-output-canary-retry-proof.md": {
+      "filePath": "docs/evaluator-output-canary-retry-proof.md",
+      "contentHash": "e92fd71805997f1d6c879cd091d55fe077b8a749ee66ea66de8b1c7dc3418ad2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 619,
       "hasStructuralAnalysis": true
     },
     "docs/gdd.css": {
@@ -1752,12 +1817,12 @@
     },
     "droid-wiki/deployment.md": {
       "filePath": "droid-wiki/deployment.md",
-      "contentHash": "54dd20d049a882c112ba27a2356d9551777221b77685fa2a101d855d3b7434c8",
+      "contentHash": "34044dde4addf2da249342a2979946c9a5584b81de4d309384c7ede2eed11150",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 193,
+      "totalLines": 222,
       "hasStructuralAnalysis": true
     },
     "droid-wiki/features/index.md": {
@@ -1792,12 +1857,12 @@
     },
     "droid-wiki/features/retry-loop.md": {
       "filePath": "droid-wiki/features/retry-loop.md",
-      "contentHash": "b4e6e370d3490eca9616a29e8246f3e7d5886c7a45f9cf52dbbebe9859b71745",
+      "contentHash": "db53d7462a30f96cfaafc479ae016fb7d0f88c088d0729eb842b3cfe2b048280",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 53,
+      "totalLines": 65,
       "hasStructuralAnalysis": true
     },
     "droid-wiki/how-to-contribute/debugging.md": {
@@ -1862,12 +1927,12 @@
     },
     "droid-wiki/lore.md": {
       "filePath": "droid-wiki/lore.md",
-      "contentHash": "071378a02c093477a2667e282a158125f2bc85fdf863e3a48ddd1fa84fc44798",
+      "contentHash": "8bc60d61945c593cde914f486cc29f0a14443a87d92c4530382318d36054da35",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 56,
+      "totalLines": 68,
       "hasStructuralAnalysis": true
     },
     "droid-wiki/overview/architecture.md": {
@@ -1912,12 +1977,12 @@
     },
     "droid-wiki/reference/configuration.md": {
       "filePath": "droid-wiki/reference/configuration.md",
-      "contentHash": "fd8a9a7da541c28dd4f2ac99fb06374c80da3ef80ea4fa974907c78b19ed58e3",
+      "contentHash": "f740eb436a8e16c13dc95953682c9007245f1424a6421c746c7fa28d3273a89d",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 65,
+      "totalLines": 66,
       "hasStructuralAnalysis": true
     },
     "droid-wiki/reference/data-models.md": {
@@ -2012,7 +2077,7 @@
     },
     "droid-wiki/systems/intake-server.md": {
       "filePath": "droid-wiki/systems/intake-server.md",
-      "contentHash": "d36032935283eaa1938479a42034d12117e672c3ea90be8942bd8c3cda93acbb",
+      "contentHash": "15919ea1e6ae55ffd66682828240de3ba0d15afc9c76492785267f2fa050e761",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -2060,76 +2125,6 @@
       "totalLines": 247,
       "hasStructuralAnalysis": true
     },
-    "graphify-out/.graphify_labels.json": {
-      "filePath": "graphify-out/.graphify_labels.json",
-      "contentHash": "3e510ef48c2f422a43e58e4f7ada6f32f015aa04a6fb03a71c8e9fe3954cff70",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 171,
-      "hasStructuralAnalysis": true
-    },
-    "graphify-out/.graphify_root": {
-      "filePath": "graphify-out/.graphify_root",
-      "contentHash": "cdb4ee2aea69cc6a83331bbe96dc2caa9a299d21329efb0336fc02a82e1839a8",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 1,
-      "hasStructuralAnalysis": false
-    },
-    "graphify-out/GRAPH_REPORT.md": {
-      "filePath": "graphify-out/GRAPH_REPORT.md",
-      "contentHash": "5ddcef21bd9e8f5d3f1a5a7b08a19cfc6fe7a7918f560039e168d04da8bad522",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 766,
-      "hasStructuralAnalysis": true
-    },
-    "graphify-out/GRAPH_TREE.html": {
-      "filePath": "graphify-out/GRAPH_TREE.html",
-      "contentHash": "75e4ab0089f866a355664621a4bd7641cd67e34c2ccd55d092aa9e0a87b57a54",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 364,
-      "hasStructuralAnalysis": false
-    },
-    "graphify-out/graph.html": {
-      "filePath": "graphify-out/graph.html",
-      "contentHash": "e35a34035a41fd8a54603641f74534e24128eedfec5c345b71667cf8382b9756",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 307,
-      "hasStructuralAnalysis": false
-    },
-    "graphify-out/graph.json": {
-      "filePath": "graphify-out/graph.json",
-      "contentHash": "17d0c6afdabcc4935814d11e221187cac7a0fbda9c387e76d328b5cac69fb572",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 55895,
-      "hasStructuralAnalysis": true
-    },
-    "graphify-out/manifest.json": {
-      "filePath": "graphify-out/manifest.json",
-      "contentHash": "39207e6745cdd8c5c03a7b6167d4c6af4410401b28a3d69864392c56b5826f55",
-      "functions": [],
-      "classes": [],
-      "imports": [],
-      "exports": [],
-      "totalLines": 997,
-      "hasStructuralAnalysis": true
-    },
     "missions/001-harden-semantic-verification.md": {
       "filePath": "missions/001-harden-semantic-verification.md",
       "contentHash": "bb9ac886490aad55f9bd1d69830b9098fe7ca0cbd5a2ab269724eac12626279b",
@@ -2162,12 +2157,12 @@
     },
     "README.md": {
       "filePath": "README.md",
-      "contentHash": "9569b98abf355e8b4d3f133ae4b8fa7acf258c5fe9ee284c009442f1623c174d",
+      "contentHash": "8c010c47555f218767e265079c0935780937e430dd6670d534e778becf9762b0",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 279,
+      "totalLines": 281,
       "hasStructuralAnalysis": true
     },
     "requirements.txt": {
@@ -2584,6 +2579,91 @@
       "totalLines": 16,
       "hasStructuralAnalysis": true
     },
+    "scripts/export_evaluations.py": {
+      "filePath": "scripts/export_evaluations.py",
+      "contentHash": "c4793994ec52120b8240f5ad7778140f1e01fa911a7000b33054c67244726c1e",
+      "functions": [
+        {
+          "name": "load_rows",
+          "params": [
+            "db_path"
+          ],
+          "returnType": "list[dict]",
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "build_projects",
+          "params": [
+            "rows",
+            "decisions"
+          ],
+          "returnType": "dict[str, dict]",
+          "exported": true,
+          "lineCount": 46
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 39
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "sqlite3",
+          "specifiers": [
+            "sqlite3"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timezone"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "yaml",
+          "specifiers": [
+            "yaml"
+          ]
+        }
+      ],
+      "exports": [
+        "load_rows",
+        "build_projects",
+        "main"
+      ],
+      "totalLines": 145,
+      "hasStructuralAnalysis": true
+    },
     "scripts/heartbeat.py": {
       "filePath": "scripts/heartbeat.py",
       "contentHash": "6b6c6ec177ea628c652808e934bb076d465ad78b260f8ba4fdb96836553a9642",
@@ -2862,6 +2942,154 @@
         "health"
       ],
       "totalLines": 252,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/node_status.py": {
+      "filePath": "scripts/node_status.py",
+      "contentHash": "c7893c58e3d37963396e79e3224deb6b9f927f77a41ba244a33450f7a67c1804",
+      "functions": [
+        {
+          "name": "now",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "connect",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "resolve_job",
+          "params": [
+            "con",
+            "ref"
+          ],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "cmd_list",
+          "params": [
+            "args"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "parse_check",
+          "params": [
+            "row"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "print_evaluation",
+          "params": [
+            "check",
+            "full"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "cmd_show",
+          "params": [
+            "args"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "cmd_results",
+          "params": [
+            "args"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "cmd_set",
+          "params": [
+            "args"
+          ],
+          "exported": true,
+          "lineCount": 33
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 26
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sqlite3",
+          "specifiers": [
+            "sqlite3"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "uuid",
+          "specifiers": [
+            "uuid"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timezone"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        }
+      ],
+      "exports": [
+        "now",
+        "connect",
+        "resolve_job",
+        "cmd_list",
+        "parse_check",
+        "print_evaluation",
+        "cmd_show",
+        "cmd_results",
+        "cmd_set",
+        "main"
+      ],
+      "totalLines": 228,
       "hasStructuralAnalysis": true
     },
     "scripts/rollback.py": {
@@ -5523,7 +5751,7 @@
     },
     "scripts/runtime/return_router.py": {
       "filePath": "scripts/runtime/return_router.py",
-      "contentHash": "a2e3b6307bf209596ba5b8dfca3aa19f99e3c258730dd31d074bd13311089868",
+      "contentHash": "a76f9ee2c653c895bf217afe7ca53949cded0df93839a7ba477395e0dac3c9be",
       "functions": [
         {
           "name": "parse_node_id",
@@ -5561,6 +5789,13 @@
           "lineCount": 5
         },
         {
+          "name": "_refresh_evaluations_export",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
           "name": "_load_job",
           "params": [
             "job_id"
@@ -5585,7 +5820,7 @@
           ],
           "returnType": "dict",
           "exported": true,
-          "lineCount": 102
+          "lineCount": 107
         },
         {
           "name": "_config_root",
@@ -5657,13 +5892,14 @@
         "parse_job_id",
         "validate_repo",
         "_connect",
+        "_refresh_evaluations_export",
         "_load_job",
         "_mark_job_awaiting_review",
         "handle_merged_pr",
         "_config_root",
         "_redispatch_with_findings"
       ],
-      "totalLines": 257,
+      "totalLines": 281,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/test_full_cycle_e2e.py": {
@@ -10579,12 +10815,12 @@
     },
     "TOPOLOGY.md": {
       "filePath": "TOPOLOGY.md",
-      "contentHash": "812db85ad49e0532f8c35f473df3b376817ac803bc4bc597d710f5dbd812d700",
+      "contentHash": "846e21b1c5a45d7819afd06663ddfe023779b8d753878e185c10d74c15765e4c",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 51,
+      "totalLines": 52,
       "hasStructuralAnalysis": true
     }
   }
