@@ -7,6 +7,7 @@ Keeps all job construction logic in one place.
 
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,7 +17,12 @@ def now() -> str:
 
 
 def ts_id() -> str:
-    return now().replace(":", "").replace("-", "").replace(".", "")[:17]
+    # Truncating to [:17] keeps only centiseconds: two jobs built in the
+    # same tick collided on identical ids (UNIQUE constraint, 2026-07-15).
+    # A random suffix makes ids collision-proof; the timestamp prefix
+    # stays first so ids still sort chronologically.
+    ts = now().replace(":", "").replace("-", "").replace(".", "")[:17]
+    return f"{ts}{uuid.uuid4().hex[:12]}"
 
 
 def build_job(
