@@ -140,7 +140,7 @@ nodes:
     status: ready
 execution_policy:
   default_executor: jules
-  max_concurrent_jobs: 1
+  max_concurrent_jobs: 2
 """
         .strip()
         + "\n"
