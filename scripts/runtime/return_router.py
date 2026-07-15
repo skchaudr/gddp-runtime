@@ -47,6 +47,10 @@ def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
+    # Concurrency: WAL lets readers overlap the single writer; busy_timeout
+    # makes a colliding writer wait instead of raising 'database is locked'.
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=5000")
     return con
 
 
