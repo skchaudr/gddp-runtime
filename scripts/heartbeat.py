@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from adapters.jules_action_adapter import JulesActionAdapter
+from runtime.heartbeat.job_factory import ts_id
 
 _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
@@ -44,9 +45,6 @@ def connect():
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     return con
-
-def ts_id():
-    return now().replace(":", "").replace("-", "").replace(".", "")[:17]
 
 
 # ---------------------------------------------------------------------------

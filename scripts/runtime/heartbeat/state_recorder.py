@@ -8,13 +8,11 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
+from .job_factory import ts_id
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def ts_id() -> str:
-    return now().replace(":", "").replace("-", "").replace(".", "")[:17]
 
 
 def mark_event_ignored(con: sqlite3.Connection, event_id: str) -> None:
