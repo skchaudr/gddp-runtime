@@ -284,9 +284,18 @@ class TestReturnRouterRetry(unittest.TestCase):
 
                 self.assertEqual(res["status"], "redispatched")
                 self.assertTrue(res["dispatch_success"])
-                # Attempt was incremented after dispatch success
-                mock_con.execute.assert_called_once_with(
-                    "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?",
+                # Attempt was incremented and status/queue_state set to running after dispatch success
+                self.assertEqual(mock_con.execute.call_count, 2)
+                mock_con.execute.assert_any_call(
+                    """UPDATE jobs
+                  SET attempt = attempt + 1,
+                      status = 'running',
+                      queue_state = 'running'
+                WHERE job_id = ?""",
+                    ("job_123",),
+                )
+                mock_con.execute.assert_any_call(
+                    "UPDATE queue_records SET queue = 'running' WHERE job_id = ?",
                     ("job_123",),
                 )
                 mock_con.commit.assert_called_once()

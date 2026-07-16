@@ -263,11 +263,20 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
             "dispatch_error": dispatch_result.error,
         }
 
-    # Dispatch succeeded — increment attempt now that the retry is confirmed.
+    # Dispatch succeeded — increment attempt and update job/queue state to running
     con = _connect()
     try:
         con.execute(
-            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
+            """UPDATE jobs
+                  SET attempt = attempt + 1,
+                      status = 'running',
+                      queue_state = 'running'
+                WHERE job_id = ?""",
+            (job_id,)
+        )
+        con.execute(
+            "UPDATE queue_records SET queue = 'running' WHERE job_id = ?",
+            (job_id,)
         )
         con.commit()
     finally:

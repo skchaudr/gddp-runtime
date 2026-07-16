@@ -1,11 +1,71 @@
-# Implementation Decision
+# Decision Document - Job State Consistency
 
-## Decision
-Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`. Additionally, created documentation in `docs/echo-usage.md`.
+## 1. Root Cause Analysis for `job_20260711T16542651` Mismatch
 
-## Rationale
-- `echo(msg)`: The requirement specifies returning the message string unchanged. It simply returns the input string.
-- `echo_loud(msg)`: The requirement specifies returning the message uppercased with '!' appended. This can be easily achieved using string manipulation `f"{msg.upper()}!"` for simplicity and readability.
-- `docs/echo-usage.md`: Provides usage examples for both functions to meet the documentation requirement.
-- **Testing**: Embedded tests were added to `scripts/echo.py` under the `if __name__ == "__main__":` block to satisfy the requirement for tests while adhering to the strict file modification constraints.
-- The use of type hints (`str`) helps with potential static type checking and provides clearer documentation of expected argument types.
+During a baseline check, the dashboard reported `running=2` even though only one job was truly active. Investigation of the SQLite database (`queue.db`) revealed that `job_20260711T16542651` (the failed canary attempt) had a state divergence:
+- `status = 'failed'`
+- `queue_state = 'running'`
+
+This divergence made operator-facing counts inaccurate, as different dashboard views and scripts read either `status` or `queue_state`.
+
+### Codebase Write Path Inconsistencies (Code Evidence)
+We identified several live write paths in the codebase that update one column but neglect the other or introduce mismatching values:
+1. **`scripts/runtime/decision_loop/engine.py` (Stale Expiry)**:
+   In `_clean_stale_state`, stale running/dispatched jobs older than 6 hours are expired using:
+   ```sql
+   UPDATE jobs SET status = 'expired'
+   WHERE status IN ('dispatched', 'running')
+   AND created_at < datetime('now', '-6 hours')
+   ```
+   This query sets `status = 'expired'` but leaves `queue_state` untouched (at its prior value, e.g., `'running'`). This is a clear, repeatable path to introducing a mismatch.
+2. **`scripts/rollback.py` (Rollback mismatch)**:
+   The rollback script has a built-in mismatch:
+   ```sql
+   UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?
+   ```
+   This sets `status` to `'failed'` and `queue_state` to `'cancelled'`.
+3. **`scripts/node_status.py` (Selective Command Update)**:
+   The interactive tool only mirrors state updates to `status` if the target state is in a subset of job statuses:
+   ```python
+   con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?", (args.state, job["job_id"]))
+   if args.state in JOB_STATUSES:
+       con.execute("UPDATE jobs SET status = ? WHERE job_id = ?", (args.state, job["job_id"]))
+   ```
+   If a user updates a job to a state not in `JOB_STATUSES`, the `status` column remains mismatched with `queue_state`.
+4. **`scripts/runtime/return_router.py` (Redispatch retry loop)**:
+   When `_redispatch_with_findings` successfully dispatches a retry, it only increments the attempt count (`UPDATE jobs SET attempt = attempt + 1`) but does not set `status` and `queue_state` back to `'running'` or `'dispatched'`.
+
+### Most Probable Origin of `job_20260711T16542651`
+Given the state of the canary job, the mismatch was produced by one of two sequences:
+- **Manual Intervention/Reconciliation**: The operator manually ran `rollback.py` on the canary job (which was stuck/timed out), updating its `status` to `'failed'` and `queue_state` to `'cancelled'`. To attempt a resume or force-mark it back to running without spinning up a new job, a manual SQLite update query was executed:
+  ```sql
+  UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
+  ```
+  This left `status` as `'failed'` while making `queue_state` `'running'`.
+- **Direct Manual Status Force**: Alternatively, the operator manually ran a query to fail the job without setting the queue state:
+  ```sql
+  UPDATE jobs SET status = 'failed' WHERE job_id = 'job_20260711T16542651';
+  ```
+
+---
+
+## 2. Reversible State Reconciliation
+
+To reconcile the existing inconsistent row in production (`queue.db`), we use a documented, reversible SQL migration rather than silent or untracked mutation.
+
+### Correction Step
+This sets the `queue_state` to match the job's actual `'failed'` status.
+```sql
+UPDATE jobs SET queue_state = 'failed' WHERE job_id = 'job_20260711T16542651';
+```
+
+### Reversion Step
+Should we need to restore the state back to its original (diverged) values for auditing:
+```sql
+UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
+```
+
+---
+
+## 3. Rationale for Redundancy Alignment
+To prevent future drift, we align both `status` and `queue_state` to always hold identical, matching values on every write path. This eliminates divergence completely, ensuring that counts on both columns remain perfectly consistent and truthful.
