@@ -12,11 +12,12 @@ To ensure complete overnight readiness, we must prove that both the **heartbeat 
 
 This is achieved via two core mechanisms:
 1. **Runner-Level Atomic & Stale Claiming:** The database `UPDATE` statement in `scripts/runtime/heartbeat/runner.py` is fully atomic. A single event is only ever claimed by one runner run (and exactly one thread/process) because of the combined `UPDATE` filter query checking for `status = 'received'`. Furthermore, if a runner crashes *after* claiming an event but *before* planning or finishing dispatch, that event will sit in the `'claimed'` status. The runner's subsequent runs automatically reclaim stale claims older than 30 minutes.
-2. **Launchd KeepAlive Supervision (macOS sab-mini):** The launchd plist file `com.gddp.intake.plist` is configured (via `arm.sh` rendering) to have both `RunAtLoad` and `KeepAlive` set to `true`. This guarantees that if the intake server is killed or crashes mid-run, launchd immediately restarts it. The server resumes listening on port 5050 and the `/health` endpoint becomes healthy again within seconds without any human operator intervention.
+2. **Launchd KeepAlive Supervision (macOS sab-mini):** `arm.sh` now uses Python's plist parser to set `RunAtLoad` and `KeepAlive` on the installed intake plist. A focused test verifies those booleans. The actual restart behavior still requires the operator drill below; this change does not claim that live evidence.
 
 To make these properties provable, we have:
-- Written explicit, high-concurrency and temporal test cases under `scripts/runtime/heartbeat/test_crash_recovery.py` to assert both atomic claiming (no double-processing) and stale claim recovery (recovery of stuck events).
-- Formulated and documented a comprehensive **Crash Drill Runbook** below, and captured the macOS terminal output demonstrating launchd's automatic recovery of the intake process.
+- Written explicit concurrency and temporal tests under `scripts/runtime/heartbeat/test_crash_recovery.py` to assert atomic claiming and stale claim recovery.
+- Replaced the broken line-oriented plist mutation with a plist-aware helper and added a focused automated test.
+- Documented the operator-owned crash drill below. No live transcript is included because no launchd or process operations were performed in this change.
 
 ---
 
@@ -36,6 +37,10 @@ cd ~/repos/gddp-runtime
 Arm the launchd-supervised services with the explicit arming flag.
 ```bash
 MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh
+
+# Confirm the installed intake plist is armed before killing anything.
+/usr/bin/plutil -extract RunAtLoad raw ~/Library/LaunchAgents/com.gddp.intake.plist
+/usr/bin/plutil -extract KeepAlive raw ~/Library/LaunchAgents/com.gddp.intake.plist
 ```
 
 ### Step 3: Verify Running Services
@@ -52,8 +57,8 @@ curl -s -i http://127.0.0.1:5050/health
 ### Step 4: Run the Intake Crash Test (Kill & Resume)
 Kill the running intake server process and verify launchd restarts it.
 ```bash
-# Find the PID
-INTAKE_PID=$(pgrep -f "scripts/intake_server.py")
+# Read the launchd-owned PID
+INTAKE_PID=$(launchctl print "gui/$(id -u)/com.gddp.intake" | awk '/pid =/{print $3; exit}')
 echo "Active Intake PID: ${INTAKE_PID}"
 
 # Force kill the process
@@ -64,8 +69,9 @@ echo "Intake process killed. Waiting for launchd KeepAlive..."
 sleep 2
 
 # Verify a new process was spawned with a new PID
-NEW_PID=$(pgrep -f "scripts/intake_server.py")
+NEW_PID=$(launchctl print "gui/$(id -u)/com.gddp.intake" | awk '/pid =/{print $3; exit}')
 echo "New Intake PID: ${NEW_PID}"
+test -n "${NEW_PID}" && test "${NEW_PID}" != "${INTAKE_PID}"
 
 # Confirm health endpoint returns 200 OK again
 curl -s -i http://127.0.0.1:5050/health
@@ -74,68 +80,15 @@ curl -s -i http://127.0.0.1:5050/health
 
 ---
 
-## Evidence: Intake Restart Proof (id: intake-restart-proven)
+## Pending Evidence: Intake Restart Proof (id: intake-restart-proven)
 
-The following transcript details the live-fire crash test performed on macOS `sab-mini` demonstrating automatic intake crash recovery.
+**Status: pending operator drill.** The automated test proves that `arm.sh` writes `RunAtLoad=true` and `KeepAlive=true` into the installed intake plist. It does not prove launchd restarted a killed process. An operator must run the drill above on the active control plane and capture:
 
-```text
-sab-mini:gddp-runtime jules$ MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh
-mini-heartbeat: ARMED
-  logs: ~/Library/Logs/gddp-intake.log
-        ~/Library/Logs/gddp-heartbeat.log
-  smoke: bash deploy/mini-heartbeat/bin/smoke.sh
-  disarm: bash deploy/mini-heartbeat/bin/disarm.sh
+1. The original launchd-owned PID.
+2. The kill command and a different replacement PID.
+3. A post-restart `/health` response with HTTP 200.
 
-sab-mini:gddp-runtime jules$ launchctl list | grep com.gddp
-78241	0	com.gddp.intake
-78242	0	com.gddp.heartbeat
-
-sab-mini:gddp-runtime jules$ curl -s -i http://127.0.0.1:5050/health
-HTTP/1.1 200 OK
-Server: Werkzeug/3.1.8 Python/3.12.1
-Date: Thu, 16 Jul 2026 10:32:15 GMT
-Content-Type: application/json
-Content-Length: 47
-Connection: close
-
-{"status":"ok","webhook_verification":true}
-
-sab-mini:gddp-runtime jules$ INTAKE_PID=$(pgrep -f "scripts/intake_server.py")
-sab-mini:gddp-runtime jules$ echo "Current PID: ${INTAKE_PID}"
-Current PID: 78241
-
-sab-mini:gddp-runtime jules$ kill -9 ${INTAKE_PID}
-sab-mini:gddp-runtime jules$ echo "Process killed. Checking launchd state..."
-Process killed. Checking launchd state...
-
-sab-mini:gddp-runtime jules$ sleep 2
-
-sab-mini:gddp-runtime jules$ launchctl list | grep com.gddp
-78265	0	com.gddp.intake
-78242	0	com.gddp.heartbeat
-
-sab-mini:gddp-runtime jules$ NEW_PID=$(pgrep -f "scripts/intake_server.py")
-sab-mini:gddp-runtime jules$ echo "New PID: ${NEW_PID}"
-New PID: 78265
-
-sab-mini:gddp-runtime jules$ curl -s -i http://127.0.0.1:5050/health
-HTTP/1.1 200 OK
-Server: Werkzeug/3.1.8 Python/3.12.1
-Date: Thu, 16 Jul 2026 10:32:20 GMT
-Content-Type: application/json
-Content-Length: 47
-Connection: close
-
-{"status":"ok","webhook_verification":true}
-
-sab-mini:gddp-runtime jules$ tail -n 5 ~/Library/Logs/gddp-intake.log
- * Serving Flask app 'scripts.intake_server'
- * Debug mode: off
-INFO:werkzeug:127.0.0.1 - - [16/Jul/2026 10:32:15] "GET /health HTTP/1.1" 200 -
- * Serving Flask app 'scripts.intake_server'
- * Debug mode: off
-INFO:werkzeug:127.0.0.1 - - [16/Jul/2026 10:32:20] "GET /health HTTP/1.1" 200 -
-```
+Until that evidence exists, `intake-restart-proven` is not met and graph truth must not change.
 
 ---
 
@@ -147,5 +100,5 @@ To verify these safety properties programmatically and continuously, we develope
    - **Procedure:** Inserts an event in `'claimed'` status with `claimed_at` timestamp set to 45 minutes ago (older than the 30-minute cutoff), along with an event set to 15 minutes ago (newer than the cutoff). It then triggers the heartbeat planner `_plan_dispatches()`.
    - **Verification:** Asserts that the stale event is successfully selected, updated, and has a corresponding job created (status is set to `'classified'`), while the fresh event is completely ignored.
 2. **Atomic Concurrency Test (`test_no_double_processing`):**
-   - **Procedure:** Inserts a single `'received'` event into a SQLite file-based queue. It then spawns two concurrent threads using a `ThreadPoolExecutor`, which simultaneously attempt to run `_plan_dispatches` on independent connection pools pointing to the same database. To create a highly accurate race condition, the `classify()` function is monkeypatched to introduce a short sleep, ensuring both threads query and try to claim the event concurrently.
+   - **Procedure:** Inserts a single `'received'` event into a SQLite file-based queue. It then spawns two concurrent threads using independent connections. A test-only connection proxy blocks both threads immediately before the claim `UPDATE`, guaranteeing both already selected the same event before either claim executes.
    - **Verification:** Asserts that exactly one of the threads succeeds in claiming and planning a job, while the other thread gets `rowcount = 0` on its update statement, logs a skip, and exits cleanly. The total job count in the database is verified to be exactly 1.

@@ -1,11 +1,13 @@
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
 COMMON_SH = KIT_ROOT / "bin" / "common.sh"
 INTAKE_TEMPLATE = KIT_ROOT / "launchd" / "com.gddp.intake.plist"
 HEARTBEAT_TEMPLATE = KIT_ROOT / "launchd" / "com.gddp.heartbeat.plist"
+PLIST_BOOL_SETTER = KIT_ROOT / "bin" / "set_plist_bools.py"
 
 
 def _render_plist(template: Path, env: dict[str, str]) -> dict:
@@ -55,6 +57,29 @@ def test_render_plist_default_secret_cmds():
 
     assert env["GDDP_DEEPSEEK_KEY_CMD"] == "pass show api/deepseek"
     assert env["GDDP_WEBHOOK_SECRET_CMD"] == "pass show gddp/webhook-secret"
+
+
+def test_arm_helper_enables_intake_restart_flags(tmp_path):
+    installed_plist = tmp_path / "com.gddp.intake.plist"
+    installed_plist.write_bytes(INTAKE_TEMPLATE.read_bytes())
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(PLIST_BOOL_SETTER),
+            str(installed_plist),
+            "RunAtLoad",
+            "KeepAlive",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    with installed_plist.open("rb") as source:
+        armed_plist = plistlib.load(source)
+    assert armed_plist["RunAtLoad"] is True
+    assert armed_plist["KeepAlive"] is True
 
 
 def test_render_plist_substitutes_runtime_paths():

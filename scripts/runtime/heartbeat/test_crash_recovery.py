@@ -5,11 +5,10 @@ Proves:
 - no-double-processing: concurrent heartbeat runs produce exactly one job for a received event.
 """
 
-import json
+import concurrent.futures
 import sqlite3
 import sys
-import time
-import concurrent.futures
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 from datetime import datetime, timedelta, timezone
@@ -20,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.runtime.heartbeat import runner
-from scripts.runtime.heartbeat.runner import _plan_dispatches, connect, PlannedDispatch, RUNTIME_ROOT
+from scripts.runtime.heartbeat.runner import _plan_dispatches, connect
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
 
@@ -117,7 +116,7 @@ def test_db_path(tmp_path, monkeypatch):
     return db_file
 
 
-def test_stale_claim_recovery_processed(test_db_path, tmp_path, monkeypatch):
+def test_stale_claim_recovery_processed(test_db_path):
     """Proves: an event stuck in 'claimed' past the stale cutoff is re-claimed and processed by a later heartbeat run."""
     con = connect()
 
@@ -201,7 +200,7 @@ def test_stale_claim_recovery_processed(test_db_path, tmp_path, monkeypatch):
     con.close()
 
 
-def test_no_double_processing(test_db_path, tmp_path, monkeypatch):
+def test_no_double_processing(test_db_path):
     """Proves: two concurrent heartbeat runs over the same received event produce exactly one job (atomic claim holds)."""
     con_main = connect()
 
@@ -231,22 +230,32 @@ def test_no_double_processing(test_db_path, tmp_path, monkeypatch):
     ready_nodes = [node_concurrent]
     mock_reader = MagicMock()
 
-    # To simulate a perfect race condition where both threads SELECT the event before either claims/commits,
-    # we can monkeypatch `runner.classify` to perform a short sleep only on the first call.
-    original_classify = runner.classify
-    call_times = []
+    claim_barrier = threading.Barrier(2)
+    claim_attempts = []
+    claim_attempts_lock = threading.Lock()
 
-    def sleep_classify(event, ready_nodes):
-        call_times.append(time.time())
-        time.sleep(0.1)  # allow other thread to proceed with its own transaction / run loop
-        return original_classify(event, ready_nodes)
+    class ClaimBarrierConnection:
+        """Pause both runners after SELECT and immediately before the claim UPDATE."""
 
-    monkeypatch.setattr(runner, "classify", sleep_classify)
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, statement, parameters=()):
+            normalized_statement = " ".join(statement.split())
+            if "UPDATE events SET status = 'claimed'" in normalized_statement:
+                with claim_attempts_lock:
+                    claim_attempts.append(threading.get_ident())
+                claim_barrier.wait(timeout=5)
+            return self.connection.execute(statement, parameters)
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
 
     # 2. Run _plan_dispatches in two concurrent threads on independent connections to the same DB file
     def run_worker():
         # Open an independent database connection for this thread
-        con_thread = connect()
+        sqlite_connection = connect()
+        con_thread = ClaimBarrierConnection(sqlite_connection)
         try:
             planned_dispatches = _plan_dispatches(
                 con=con_thread,
@@ -257,7 +266,7 @@ def test_no_double_processing(test_db_path, tmp_path, monkeypatch):
             )
             return planned_dispatches
         finally:
-            con_thread.close()
+            sqlite_connection.close()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(run_worker), executor.submit(run_worker)]
@@ -266,6 +275,7 @@ def test_no_double_processing(test_db_path, tmp_path, monkeypatch):
     # 3. Assertions
     # One worker must have planned 1 dispatch, and the other must have planned 0.
     total_planned = sum(len(r) for r in results)
+    assert len(claim_attempts) == 2, "Both runners must reach the atomic claim UPDATE"
     assert total_planned == 1, f"Expected exactly 1 planned dispatch in total, got {total_planned}"
 
     # Verify via DB that only 1 job exists
