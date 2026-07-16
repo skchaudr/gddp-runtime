@@ -1,0 +1,18 @@
+// gddp-watch — isolated zellij profile for the 6-pane dispatch rig.
+// Loaded via ZELLIJ_CONFIG_DIR in watch-dispatch.sh (main ~/.config/zellij untouched).
+
+pane_frames true
+simplified_ui true
+default_mode "normal"
+
+keybinds {
+    normal {
+        bind "h" { MoveFocus "Left"; }
+        bind "j" { MoveFocus "Down"; }
+        bind "k" { MoveFocus "Up"; }
+        bind "l" { MoveFocus "Right"; }
+        bind "p" { SwitchFocus; }
+        bind "Tab" { FocusNextPane; }
+        bind "Shift Tab" { FocusPreviousPane; }
+    }
+}
