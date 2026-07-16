@@ -172,6 +172,10 @@ def build_parser() -> argparse.ArgumentParser:
             "including row-12 deterministic clean passes."
         ),
     )
+    # Phase 1 provenance: pin the exact change being judged.
+    parser.add_argument("--merge-commit-sha", default=None, help="Merge commit SHA from the webhook payload.")
+    parser.add_argument("--pr-ref", default=None, help="PR number or URL.")
+    parser.add_argument("--job-id", default=None, help="SQLite job_id for per-attempt receipt path.")
     return parser
 
 
@@ -309,8 +313,11 @@ def main(argv: list[str] | None = None) -> int:
         },
         semantic_harness=semantic_harness,
         integrity_harness=integrity_harness,
+        merge_commit_sha=args.merge_commit_sha,
+        pr_ref=args.pr_ref,
+        job_id=args.job_id,
     )
-    path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
+    path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir, job_id=args.job_id)
     summary = {
         "receipt_path": str(path),
         "verdict": receipt.verdict.value,
@@ -318,6 +325,16 @@ def main(argv: list[str] | None = None) -> int:
         "completeness_status": receipt.completeness_status,
         "required_next_action": receipt.required_next_action,
     }
+    # Phase 1 provenance: surface in the summary so node_status.py can display it.
+    if receipt.evaluated_tree_sha:
+        summary["evaluated_tree_sha"] = receipt.evaluated_tree_sha
+    if receipt.merge_commit_sha:
+        summary["merge_commit_sha"] = receipt.merge_commit_sha
+    if receipt.pr_ref:
+        summary["pr_ref"] = receipt.pr_ref
+    # Phase 2 coverage: surface the quick signal + raw evidence.
+    if receipt.context_coverage:
+        summary["context_coverage"] = receipt.context_coverage.model_dump()
     # Two-lane evaluation: include criteria_verdict and integrity when present
     # so the bridge and return_router can see both lanes.
     if receipt.criteria_verdict is not None:
@@ -332,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
             "findings": [f.model_dump() for f in receipt.integrity.findings],
             "reasoning": receipt.integrity.reasoning,
         }
+        # Phase 3: include graph_observations when present.
+        if receipt.integrity.graph_observations:
+            summary["integrity"]["graph_observations"] = [
+                o.model_dump() for o in receipt.integrity.graph_observations
+            ]
     # Surface criteria-lane findings (non-pass judgments) so the return_router
     # can use them for retry decisions alongside integrity findings.
     criteria_findings = []

@@ -20,7 +20,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from scripts.runtime.verification.schemas import IntegrityOutput
+from scripts.runtime.verification.schemas import IntegrityOutput, LaneExecutionStatus
+from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_integrity.ts"
@@ -56,6 +57,17 @@ with arguments matching IntegrityOutput:
   confidence: 0.0-1.0
   findings: [{severity: "low"|"medium"|"high", summary: "...", affected_node_ids: [...]}]
   reasoning: "..."
+  graph_observations: [{severity, summary, affected_node_ids}] (optional — see below)
+
+Findings vs graph_observations:
+  - findings: affect the CURRENT node's verdict. If you put a finding here and
+    set intent_preserved=false or graph_integrity_preserved=false, the combined
+    verdict floors to needs-human-review. Use findings for current-node problems.
+  - graph_observations: forward-looking observations about graph trajectory,
+    upcoming convergence risk, or execution strategy. These do NOT affect the
+    current verdict. Use them when the current work is fine but you notice
+    something about the graph's future. Example: "Upcoming nodes converge on
+    the scheduler; serialize this region." The current node still passes.
 
 Call submit_integrity_verdict exactly once; it ends the run.
 
@@ -110,9 +122,15 @@ class IntegrityHarnessRunner:
             raise RuntimeError(f"gddp_integrity extension missing: {EXTENSION_PATH}")
 
         sys_prompt = system_prompt or INTEGRITY_SYSTEM_PROMPT
+        # Phase 2: use the same canonical baseline as the semantic lane
+        # (README, PROJECT-BRIEF, foundational node, DAG neighbors) instead of
+        # only neighbor pointers. Both lanes must be offered the same menu.
+        canonical = build_canonical_pointers(
+            node=node, graph=graph, repo=repo, config_root=config_root,
+        )
         neighbors = _neighbor_pointers(node, graph, config_root)
         user_prompt = _build_integrity_prompt(
-            node, graph, deterministic_result, neighbors, config_root
+            node, graph, deterministic_result, neighbors, config_root, canonical,
         )
 
         with tempfile.NamedTemporaryFile(
@@ -134,24 +152,40 @@ class IntegrityHarnessRunner:
         env["HOME"] = sandbox_home
 
         cmd = self._build_command(sys_prompt, user_prompt, repo)
+        # Phase 4: tee stdout/stderr to terminal + durable log. Do NOT raise
+        # on non-zero exit — return a typed fallback instead so the other
+        # lane's evidence is preserved in the receipt.
+        stdout_path = tempfile.mktemp(prefix="gddp-integrity-stdout-")
+        stderr_path = tempfile.mktemp(prefix="gddp-integrity-stderr-")
         try:
-            proc = subprocess.run(
-                cmd,
-                env=env,
-                cwd=str(repo),
-                stdin=None,
-                stdout=None,
-                stderr=None,
-                check=False,
-            )
+            proc = _tee_subprocess(cmd, env, str(repo), stdout_path, stderr_path)
         finally:
             shutil.rmtree(sandbox_home, ignore_errors=True)
+
         if proc.returncode != 0:
-            raise RuntimeError(f"pi exited with code {proc.returncode}")
+            stderr_tail = _read_tail(stderr_path, 500)
+            trace = _read_trace(trace_path)
+            return _empty_integrity(
+                f"pi exited with code {proc.returncode}: {stderr_tail}",
+                tool_trace=trace,
+                lane_status=LaneExecutionStatus.CRASHED,
+                harness_error=f"pi exited with code {proc.returncode}: {stderr_tail}",
+            )
 
         if not Path(verdict_path).exists():
-            return _empty_integrity("pi completed without calling submit_integrity_verdict; no verdict recorded.")
+            trace = _read_trace(trace_path)
+            return _empty_integrity(
+                "pi completed without calling submit_integrity_verdict; no verdict recorded.",
+                tool_trace=trace,
+                lane_status=LaneExecutionStatus.NO_VERDICT,
+                harness_error="pi completed without calling submit_integrity_verdict",
+            )
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
+        # Phase 2: attach ground-truth tool trace to the integrity output.
+        trace = _read_trace(trace_path)
+        if trace:
+            raw["tool_trace"] = trace
+        raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
         return IntegrityOutput.model_validate(raw)
 
     def _build_command(self, system_prompt: str, user_prompt: str, repo: Path) -> list[str]:
@@ -213,6 +247,7 @@ def _build_integrity_prompt(
     deterministic_result: Any,
     neighbors: dict[str, str],
     config_root: Path | None,
+    canonical: dict[str, str] | None = None,
 ) -> str:
     context = {
         "node": node,
@@ -226,6 +261,12 @@ def _build_integrity_prompt(
         if config_root
         else ""
     )
+    canonical_block = ""
+    if canonical:
+        canonical_block = (
+            "\n\n--- Canonical Context (file pointers — read what you need) ---\n"
+            + json.dumps(canonical, indent=2, sort_keys=True)
+        )
     return (
         "Perform a fresh-eyes integrity review of the following GDDP verification context. "
         "Your focus: does the work preserve the node's intended role in the project and "
@@ -237,10 +278,28 @@ def _build_integrity_prompt(
         "Does it preserve graph integrity?\n\n"
         f"{graph_access}"
         f"{json.dumps(context, indent=2, sort_keys=True, default=str)}"
+        f"{canonical_block}"
     )
 
 
-def _empty_integrity(reason: str) -> IntegrityOutput:
+def _read_trace(trace_path: str) -> list[dict[str, Any]]:
+    """Read a JSONL tool trace file. Same logic as pi_runner._read_trace."""
+    p = Path(trace_path)
+    if not p.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _empty_integrity(reason: str, tool_trace: list[dict[str, Any]] | None = None, lane_status: LaneExecutionStatus | None = None, harness_error: str | None = None) -> IntegrityOutput:
     return IntegrityOutput(
         verdict="unknown",
         intent_preserved=False,
@@ -249,4 +308,52 @@ def _empty_integrity(reason: str) -> IntegrityOutput:
         confidence=0.0,
         findings=[],
         reasoning=reason,
+        tool_trace=tool_trace,
+        lane_status=lane_status,
+        harness_error=harness_error,
     )
+
+
+def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path):
+    """Run a subprocess, teeing stdout/stderr to terminal + durable log files.
+
+    Live output goes to sys.stdout/sys.stderr (operator visibility).
+    Durable copy goes to stdout_path/stderr_path (receipt evidence).
+    """
+    import sys as _sys
+    import threading
+
+    proc = subprocess.Popen(
+        cmd, env=env, cwd=cwd, stdin=None,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+
+    def _tee(stream, file_path, out_stream):
+        with open(file_path, "w", encoding="utf-8") as f:
+            for line in iter(stream.readline, b""):
+                text = line.decode("utf-8", errors="replace")
+                f.write(text)
+                out_stream.write(text)
+                out_stream.flush()
+        stream.close()
+
+    t_out = threading.Thread(target=_tee, args=(proc.stdout, stdout_path, _sys.stdout), daemon=True)
+    t_err = threading.Thread(target=_tee, args=(proc.stderr, stderr_path, _sys.stderr), daemon=True)
+    t_out.start()
+    t_err.start()
+    proc.wait()
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
+    return proc
+
+
+def _read_tail(path: str, max_chars: int = 500) -> str:
+    """Read the last N characters of a file. Best-effort."""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return ""
+        text = p.read_text(encoding="utf-8", errors="replace")
+        return text[-max_chars:] if len(text) > max_chars else text
+    except OSError:
+        return ""

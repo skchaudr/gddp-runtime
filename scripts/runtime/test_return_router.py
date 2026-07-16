@@ -97,7 +97,10 @@ class TestReturnRouter(unittest.TestCase):
                 "verification": verification,
             },
         )
-        mock_verify.assert_called_once_with("vault-doctor", "auth-node")
+        mock_verify.assert_called_once_with(
+            "vault-doctor", "auth-node",
+            merge_commit_sha=None, pr_ref="12", job_id="job_123",
+        )
         mock_write.assert_called_once_with(
             result_id="res_123456",
             job_id="job_123",

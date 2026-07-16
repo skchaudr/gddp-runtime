@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import integrity_combiner
-from .schemas import IntegrityFinding, IntegrityOutput, Verdict
+from .schemas import GraphObservation, IntegrityFinding, IntegrityOutput, Verdict
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +142,82 @@ def test_floor_mapping_exhaustive() -> None:
         assert floors[v] == Verdict.NEEDS_HUMAN_REVIEW
     # insufficient floors at needs-more-evidence
     assert floors["insufficient"] == Verdict.NEEDS_MORE_EVIDENCE
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: graph_observations do NOT floor the verdict
+# ---------------------------------------------------------------------------
+
+
+def test_graph_observations_do_not_floor_pass() -> None:
+    """Integrity pass with graph_observations should NOT downgrade the verdict."""
+    integrity = IntegrityOutput(
+        verdict="pass",
+        intent_preserved=True,
+        graph_integrity_preserved=True,
+        required_human_review=False,
+        confidence=0.9,
+        findings=[],
+        reasoning="Current node passes.",
+        graph_observations=[
+            GraphObservation(
+                severity="medium",
+                summary="Upcoming nodes converge on the scheduler; serialize this region.",
+                affected_node_ids=["downstream-a", "downstream-b"],
+            )
+        ],
+    )
+    combined, action = integrity_combiner.combine(Verdict.PASS, integrity, "proceed")
+    assert combined == Verdict.PASS
+    assert action == "proceed"
+
+
+def test_graph_observations_with_findings_still_floors() -> None:
+    """When findings ARE present (affecting flags), the verdict still floors."""
+    integrity = IntegrityOutput(
+        verdict="drift",
+        intent_preserved=False,
+        graph_integrity_preserved=True,
+        required_human_review=True,
+        confidence=0.85,
+        findings=[
+            IntegrityFinding(
+                severity="high",
+                summary="Scope creep detected.",
+                affected_node_ids=["current-node"],
+            )
+        ],
+        reasoning="Current node has drift.",
+        graph_observations=[
+            GraphObservation(
+                severity="low",
+                summary="Future convergence risk.",
+                affected_node_ids=["downstream-a"],
+            )
+        ],
+    )
+    combined, action = integrity_combiner.combine(Verdict.PASS, integrity, "proceed")
+    assert combined == Verdict.NEEDS_HUMAN_REVIEW
+
+
+def test_graph_observations_only_no_findings_pass() -> None:
+    """Only graph_observations, no findings, verdict pass -> combined stays pass."""
+    integrity = IntegrityOutput(
+        verdict="pass",
+        intent_preserved=True,
+        graph_integrity_preserved=True,
+        required_human_review=False,
+        confidence=0.95,
+        findings=[],
+        reasoning="Clean pass with forward-looking note.",
+        graph_observations=[
+            GraphObservation(
+                severity="low",
+                summary="Node arrival rate suggests aggressive parallel dispatch.",
+                affected_node_ids=["downstream-a", "downstream-b", "downstream-c"],
+            )
+        ],
+    )
+    combined, action = integrity_combiner.combine(Verdict.PASS, integrity, "proceed")
+    assert combined == Verdict.PASS
+    assert action == "proceed"

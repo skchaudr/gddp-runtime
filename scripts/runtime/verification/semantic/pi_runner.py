@@ -29,7 +29,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from scripts.runtime.verification.schemas import SemanticOutput
+from scripts.runtime.verification.schemas import LaneExecutionStatus, SemanticOutput
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
 from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 
@@ -173,27 +173,33 @@ class PiHarnessRunner:
         env["HOME"] = sandbox_home
 
         cmd = self._build_command(sys_prompt, user_prompt, repo)
+        # Phase 4: tee stdout/stderr to terminal + durable log. Do NOT raise
+        # on non-zero exit — return a typed fallback so partial evidence
+        # from the other lane is preserved in the receipt.
+        stdout_path = tempfile.mktemp(prefix="gddp-pi-stdout-")
+        stderr_path = tempfile.mktemp(prefix="gddp-pi-stderr-")
         try:
-            proc = subprocess.run(
-                cmd,
-                env=env,
-                cwd=str(repo),
-                stdin=None,
-                stdout=None,
-                stderr=None,
-                check=False,
-            )
+            proc = _tee_subprocess(cmd, env, str(repo), stdout_path, stderr_path)
         finally:
-            # Clean up the sandbox home — the evaluator leaves nothing behind.
             shutil.rmtree(sandbox_home, ignore_errors=True)
+
         if proc.returncode != 0:
-            raise RuntimeError(f"pi exited with code {proc.returncode}")
+            stderr_tail = _read_tail(stderr_path, 500)
+            trace = _read_trace(trace_path)
+            return _empty_verdict(
+                f"pi exited with code {proc.returncode}: {stderr_tail}",
+                trace,
+                lane_status=LaneExecutionStatus.CRASHED,
+                harness_error=f"pi exited with code {proc.returncode}: {stderr_tail}",
+            )
 
         trace = _read_trace(trace_path)
         if not Path(verdict_path).exists():
             return _empty_verdict(
                 "pi completed without calling submit_verdict; no verdict recorded.",
                 trace,
+                lane_status=LaneExecutionStatus.NO_VERDICT,
+                harness_error="pi completed without calling submit_verdict",
             )
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
         # Ground-truth trace wins over whatever the model put in budget_trace
@@ -203,6 +209,7 @@ class PiHarnessRunner:
             raw["budget_trace"] = {"tool_calls": trace}
         else:
             raw.setdefault("budget_trace", None)
+        raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
         return SemanticOutput.model_validate(raw)
 
     def _build_command(self, system_prompt: str, user_prompt: str, repo: Path) -> list[str]:
@@ -244,7 +251,7 @@ def _extract_user_prompt(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
-def _empty_verdict(reason: str, trace: list[dict[str, Any]] | None = None) -> SemanticOutput:
+def _empty_verdict(reason: str, trace: list[dict[str, Any]] | None = None, lane_status: LaneExecutionStatus | None = None, harness_error: str | None = None) -> SemanticOutput:
     return SemanticOutput(
         judgments=[],
         overall_reasoning=reason,
@@ -252,6 +259,8 @@ def _empty_verdict(reason: str, trace: list[dict[str, Any]] | None = None) -> Se
         followup_candidates=None,
         budget_exhausted=True,
         budget_trace={"tool_calls": trace} if trace else None,
+        lane_status=lane_status,
+        harness_error=harness_error,
     )
 
 
@@ -269,3 +278,44 @@ def _read_trace(trace_path: str) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
     return out
+
+
+def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path):
+    """Run a subprocess, teeing stdout/stderr to terminal + durable log files."""
+    import sys as _sys
+    import threading
+
+    proc = subprocess.Popen(
+        cmd, env=env, cwd=cwd, stdin=None,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+
+    def _tee(stream, file_path, out_stream):
+        with open(file_path, "w", encoding="utf-8") as f:
+            for line in iter(stream.readline, b""):
+                text = line.decode("utf-8", errors="replace")
+                f.write(text)
+                out_stream.write(text)
+                out_stream.flush()
+        stream.close()
+
+    t_out = threading.Thread(target=_tee, args=(proc.stdout, stdout_path, _sys.stdout), daemon=True)
+    t_err = threading.Thread(target=_tee, args=(proc.stderr, stderr_path, _sys.stderr), daemon=True)
+    t_out.start()
+    t_err.start()
+    proc.wait()
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
+    return proc
+
+
+def _read_tail(path: str, max_chars: int = 500) -> str:
+    """Read the last N characters of a file. Best-effort."""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return ""
+        text = p.read_text(encoding="utf-8", errors="replace")
+        return text[-max_chars:] if len(text) > max_chars else text
+    except OSError:
+        return ""

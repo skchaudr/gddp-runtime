@@ -109,8 +109,25 @@ def print_evaluation(check, full=False):
             print(f"                  evidence: {ev}")
     for f in integrity.get("findings") or []:
         print(f"       integrity: [{f.get('severity')}] {f.get('summary')}")
+    # Phase 3: graph observations (forward-looking, do not affect verdict)
+    for o in integrity.get("graph_observations") or []:
+        print(f"       graph obs: [{o.get('severity')}] {o.get('summary')}")
     if check.get("required_next_action"):
         print(f"     next action: {check['required_next_action']}  (evaluator template, not a decision)")
+    # Phase 1 provenance: show the exact tree the evaluator judged.
+    tree_sha = check.get("evaluated_tree_sha")
+    merge_sha = check.get("merge_commit_sha")
+    if tree_sha or merge_sha:
+        match = "  (match)" if tree_sha and merge_sha and tree_sha == merge_sha else ""
+        print(f"      provenance: tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}{match}")
+    if check.get("pr_ref"):
+        print(f"            PR: {check['pr_ref']}")
+    # Phase 2 coverage: quick signal for the operator
+    cov = check.get("context_coverage")
+    if cov:
+        crit = cov.get("criteria", "n/a")
+        integ = cov.get("integrity", {}).get("rating", "n/a") if isinstance(cov.get("integrity"), dict) else "n/a"
+        print(f"       coverage: criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}")
     if check.get("receipt_path"):
         print(f"         receipt: {check['receipt_path']}")
     if full and integrity.get("reasoning"):

@@ -7,6 +7,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+class LaneExecutionStatus(str, Enum):
+    """Typed status of a lane's harness execution (Phase 4)."""
+    COMPLETED = "completed"        # model called submit tool, verdict recorded
+    NO_VERDICT = "no-verdict"      # pi exited 0 but no verdict file
+    CRASHED = "crashed"            # pi exited non-zero
+    TIMED_OUT = "timed-out"        # subprocess timeout
+
+
 class Verdict(str, Enum):
     PASS = "pass"
     FAIL = "fail"
@@ -87,9 +95,25 @@ class SemanticOutput(BaseModel):
     followup_candidates: str | None
     budget_exhausted: bool
     budget_trace: dict[str, Any] | None = None
+    # Phase 4: typed liveness/error reporting.
+    lane_status: LaneExecutionStatus | None = None
+    harness_error: str | None = None
 
 
 class IntegrityFinding(BaseModel):
+    severity: Literal["low", "medium", "high"]
+    summary: str
+    affected_node_ids: list[str]
+
+
+class GraphObservation(BaseModel):
+    """Forward-looking graph observation that does NOT affect the current verdict.
+
+    Findings that affect the current node's verdict go in IntegrityOutput.findings.
+    Forward-looking observations about graph trajectory, upcoming convergence
+    risk, or execution strategy go in graph_observations. The combiner ignores
+    them; they are operator-visible evidence only.
+    """
     severity: Literal["low", "medium", "high"]
     summary: str
     affected_node_ids: list[str]
@@ -105,6 +129,30 @@ class IntegrityOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     findings: list[IntegrityFinding]
     reasoning: str
+    # Phase 2: ground-truth tool trace (what the integrity reviewer read).
+    tool_trace: list[dict[str, Any]] | None = None
+    # Phase 3: forward-looking graph observations that do NOT affect the verdict.
+    graph_observations: list[GraphObservation] | None = None
+    # Phase 4: typed liveness/error reporting.
+    lane_status: LaneExecutionStatus | None = None
+    harness_error: str | None = None
+
+
+class LaneCoverage(BaseModel):
+    """Per-lane context coverage rating with raw evidence beneath the label."""
+    rating: Literal["none", "low", "medium", "high"]
+    offered: int
+    content_accessed: int
+    not_observed: int
+    accessed_paths: list[str]
+    not_observed_paths: list[str]
+
+
+class ContextCoverage(BaseModel):
+    """Per-lane coverage summary. criteria can be 'not_run' when semantic is skipped."""
+    criteria: LaneCoverage | Literal["not_run"]
+    integrity: LaneCoverage
+    overall: Literal["none", "low", "medium", "high"]
 
 
 class VerdictReceipt(BaseModel):
@@ -126,6 +174,15 @@ class VerdictReceipt(BaseModel):
     decision_reasoning: str
     required_next_action: str
     generated_at: str
+    # Provenance: the exact tree the evaluator judged (Phase 1 hardening).
+    # All default None so every existing receipt stays valid.
+    evaluated_tree_sha: str | None = None
+    merge_commit_sha: str | None = None
+    pr_ref: str | None = None
+    job_id: str | None = None
+    # Phase 2: canonical context offered + per-lane coverage signal.
+    canonical_context: dict[str, str] | None = None
+    context_coverage: ContextCoverage | None = None
 
     @model_validator(mode="before")
     @classmethod

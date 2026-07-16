@@ -43,3 +43,49 @@ def test_prompt_includes_pointers_not_contents(tmp_path: Path) -> None:
     assert "node-a.yaml" in prompt
     assert str(root) in prompt
     assert "zz-neighbor-body-sentinel" not in prompt  # contents stay on disk; the agent reads them
+
+
+def test_prompt_includes_canonical_context_block(tmp_path: Path) -> None:
+    """Phase 2: integrity prompt includes the shared canonical context block."""
+    root = _config_root(tmp_path)
+    pointers = _neighbor_pointers(NODE, GRAPH, root)
+    canonical = {
+        "readme": str(tmp_path / "README.md"),
+        "project_brief": str(tmp_path / "PROJECT-BRIEF.md"),
+        "foundational_node": str(root / "graphs" / "proj" / "nodes" / "node-a.yaml"),
+        "neighbor:node-a": str(root / "graphs" / "proj" / "nodes" / "node-a.yaml"),
+    }
+    prompt = _build_integrity_prompt(NODE, GRAPH, None, pointers, root, canonical)
+    assert "Canonical Context" in prompt
+    assert "README.md" in prompt
+    assert "PROJECT-BRIEF.md" in prompt
+
+
+def test_empty_integrity_accepts_tool_trace() -> None:
+    """Phase 2: _empty_integrity accepts and carries a tool_trace."""
+    from scripts.runtime.verification.semantic.integrity_runner import _empty_integrity
+
+    trace = [{"tool": "read", "path": "/some/file.py", "blocked": False}]
+    result = _empty_integrity("test reason", tool_trace=trace)
+    assert result.tool_trace == trace
+
+    result_no_trace = _empty_integrity("test reason")
+    assert result_no_trace.tool_trace is None
+
+
+def test_empty_integrity_accepts_lane_status_and_harness_error() -> None:
+    """Phase 4: _empty_integrity accepts lane_status and harness_error."""
+    from scripts.runtime.verification.semantic.integrity_runner import _empty_integrity
+    from scripts.runtime.verification.schemas import LaneExecutionStatus
+
+    result = _empty_integrity(
+        "pi crashed",
+        lane_status=LaneExecutionStatus.CRASHED,
+        harness_error="pi exited with code 1",
+    )
+    assert result.lane_status == LaneExecutionStatus.CRASHED
+    assert result.harness_error == "pi exited with code 1"
+
+    result_clean = _empty_integrity("ok")
+    assert result_clean.lane_status is None
+    assert result_clean.harness_error is None

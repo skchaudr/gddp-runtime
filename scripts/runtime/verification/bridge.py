@@ -37,28 +37,29 @@ def _repos_root() -> Path:
     return Path(os.environ.get("GDDP_REPOS_ROOT", str(_RUNTIME_ROOT.parent)))
 
 
-def verify_job_return(project_id: str, node_id: str) -> dict:
+def verify_job_return(project_id: str, node_id: str, merge_commit_sha: str | None = None, pr_ref: str | None = None, job_id: str | None = None) -> dict:
     """Run verification for a returned job. Always returns a dict, never raises.
 
     Success: {"verification_status": "ok", "receipt_path", "verdict",
               "criteria_confidence", "required_next_action"}
     Failure: {"verification_status": "error", "error": <why>}
+    Subject-mismatch: {"verification_status": "subject_mismatch", "error": <why>}
 
     Transient failures (timeout, crash, garbled output) get exactly one retry;
     missing config/repo paths do not — those need a human, not a rerun.
     """
-    first = _verify_once(project_id, node_id)
+    first = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id)
     if first["verification_status"] == "ok" or first.get("retryable") is False:
         first.pop("retryable", None)
         return first
-    second = _verify_once(project_id, node_id)
+    second = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id)
     second.pop("retryable", None)
     if second["verification_status"] == "error":
         second["error"] = f"(after 1 retry) {second['error']}; first attempt: {first['error']}"
     return second
 
 
-def _verify_once(project_id: str, node_id: str) -> dict:
+def _verify_once(project_id: str, node_id: str, merge_commit_sha: str | None = None, pr_ref: str | None = None, job_id: str | None = None) -> dict:
     if not project_id or not node_id:
         return {
             "verification_status": "error",
@@ -80,6 +81,75 @@ def _verify_once(project_id: str, node_id: str) -> dict:
                 "error": f"{label} not found: {path}",
             }
 
+    # Phase 1: enforce evaluation subject identity. If merge_commit_sha is
+    # provided, materialize that exact commit in an isolated git worktree so
+    # the evaluator judges the merged state, not whatever is on disk. If the
+    # SHA is provided but the worktree cannot be created, return a subject-
+    # mismatch error. If the SHA is missing (not in the webhook payload),
+    # fall back to evaluating the working tree — backward compatible with
+    # pre-hardening behavior. The receipt's evaluated_tree_sha records what
+    # was actually evaluated, so the operator can detect the fallback.
+    worktree_path = None
+    eval_repo = repo
+    if merge_commit_sha:
+        worktree_path = _create_worktree(repo, merge_commit_sha)
+        if worktree_path is None:
+            return {
+                "verification_status": "subject_mismatch",
+                "retryable": False,
+                "error": f"could not materialize merge_commit_sha {merge_commit_sha} in worktree",
+            }
+        eval_repo = worktree_path
+    try:
+        return _run_cli(
+            eval_repo, node_yaml, project_yaml, config_root, receipt_dir,
+            merge_commit_sha, pr_ref, job_id,
+        )
+    finally:
+        if worktree_path is not None:
+            _remove_worktree(worktree_path)
+
+
+def _create_worktree(repo: Path, commit_sha: str) -> Path | None:
+    """Create an isolated git worktree at the given commit. Returns path or None."""
+    import tempfile
+    try:
+        tmpdir = tempfile.mkdtemp(prefix="gddp-eval-wt-")
+        # Remove the empty dir so git worktree add can create it
+        import os
+        os.rmdir(tmpdir)
+        proc = subprocess.run(
+            ["git", "worktree", "add", "--detach", tmpdir, commit_sha],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        return Path(tmpdir)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _remove_worktree(path: Path) -> None:
+    """Clean up an isolated worktree. Best-effort."""
+    import shutil
+    try:
+        subprocess.run(
+            ["git", "worktree", "remove", str(path), "--force"],
+            cwd=str(path.parent) if path.parent.exists() else None,
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, pr_ref, job_id) -> dict:
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
     )
@@ -88,16 +158,20 @@ def _verify_once(project_id: str, node_id: str) -> dict:
         str(_RUNTIME_ROOT / "scripts" / "runtime" / "verification" / "cli.py"),
         "--node-yaml", str(node_yaml),
         "--project-yaml", str(project_yaml),
-        "--repo", str(repo),
+        "--repo", str(eval_repo),
         "--config-root", str(config_root),
         "--receipt-dir", str(receipt_dir),
         *semantic_args,
-        # Integrity lane (lane 2) defaults ON for the live bridge — the whole
-        # point of the return path is that every merged PR gets a fresh-eyes
-        # integrity review, including deterministic clean passes. Override with
-        # GDDP_INTEGRITY_MODE=off for dev/test runs.
         "--integrity", "off" if os.environ.get("GDDP_INTEGRITY_MODE", "on").lower() == "off" else "on",
     ]
+    # Phase 1 provenance: pass merge commit SHA, PR ref, and job_id to the CLI.
+    if merge_commit_sha:
+        cmd += ["--merge-commit-sha", merge_commit_sha]
+    if pr_ref:
+        cmd += ["--pr-ref", pr_ref]
+    if job_id:
+        cmd += ["--job-id", job_id]
+
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)
     # The evaluator pi runs with a sandboxed HOME (no ~/.pi/agent/models.json),

@@ -119,6 +119,16 @@ export default function (pi: ExtensionAPI) {
     }
 
     // 3. Read-only tools (read, grep, find, ls, submit_verdict): allow.
+    // Phase 2: log the input path so traces can establish context coverage.
+    if (toolName === "read" || toolName === "grep" || toolName === "find" || toolName === "ls") {
+      const path = extractPath(input);
+      traceLine({
+        ts: new Date().toISOString(),
+        tool: toolName,
+        blocked: false,
+        path,
+      });
+    }
     return undefined;
   });
 

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -209,6 +210,67 @@ class TestIntegrityFlag(unittest.TestCase):
             self.assertEqual(cmd[idx + 1], "off")
         finally:
             os.environ.pop("GDDP_INTEGRITY_MODE", None)
+
+
+class TestProvenancePassthrough(unittest.TestCase):
+    """Phase 1: merge_commit_sha triggers worktree + provenance CLI args."""
+
+    def test_no_merge_sha_skips_worktree(self):
+        """Without merge_commit_sha, no worktree is created (backward compat)."""
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
+        ) as mock_run, patch(
+            "scripts.runtime.verification.bridge._create_worktree"
+        ) as mock_wt:
+            res = bridge.verify_job_return("vault-doctor", "auth-node")
+        self.assertEqual(res["verification_status"], "ok")
+        mock_wt.assert_not_called()
+
+    def test_merge_sha_creates_worktree_and_passes_args(self):
+        """With merge_commit_sha, worktree is created and CLI gets --merge-commit-sha."""
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli_proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge._create_worktree", return_value=Path("/tmp/fake-wt")
+        ), patch(
+            "scripts.runtime.verification.bridge._remove_worktree"
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", return_value=cli_proc
+        ) as mock_run:
+            res = bridge.verify_job_return(
+                "vault-doctor", "auth-node",
+                merge_commit_sha="abc123",
+                pr_ref="42",
+                job_id="job_001",
+            )
+        self.assertEqual(res["verification_status"], "ok")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--merge-commit-sha", cmd)
+        idx = cmd.index("--merge-commit-sha")
+        self.assertEqual(cmd[idx + 1], "abc123")
+        self.assertIn("--pr-ref", cmd)
+        self.assertIn("--job-id", cmd)
+
+    def test_worktree_failure_returns_subject_mismatch(self):
+        """If worktree creation fails, return subject_mismatch, don't evaluate."""
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge._create_worktree", return_value=None
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run"
+        ) as mock_run:
+            res = bridge.verify_job_return(
+                "vault-doctor", "auth-node",
+                merge_commit_sha="abc123",
+            )
+        self.assertEqual(res["verification_status"], "subject_mismatch")
+        self.assertIn("abc123", res["error"])
+        mock_run.assert_not_called()
 
 
 if __name__ == "__main__":
