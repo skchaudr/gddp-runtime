@@ -176,6 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--merge-commit-sha", default=None, help="Merge commit SHA from the webhook payload.")
     parser.add_argument("--pr-ref", default=None, help="PR number or URL.")
     parser.add_argument("--job-id", default=None, help="SQLite job_id for per-attempt receipt path.")
+    parser.add_argument("--attempt", type=int, default=None, help="Persisted zero-based jobs.attempt value.")
     return parser
 
 
@@ -317,7 +318,13 @@ def main(argv: list[str] | None = None) -> int:
         pr_ref=args.pr_ref,
         job_id=args.job_id,
     )
-    path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir, job_id=args.job_id)
+    path = write_receipt(
+        receipt,
+        receipt.project_id,
+        base=args.receipt_dir,
+        job_id=args.job_id,
+        attempt=args.attempt,
+    )
     summary = {
         "receipt_path": str(path),
         "verdict": receipt.verdict.value,

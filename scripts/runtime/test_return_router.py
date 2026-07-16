@@ -66,6 +66,7 @@ class TestReturnRouter(unittest.TestCase):
                 "body": "node: auth-node\njob: job_123",
                 "merged_at": "2024-03-20T10:00:00Z",
                 "html_url": "https://github.com/skchaudr/vault-doctor/pull/12",
+                "merge_commit_sha": "abc123",
             },
         }
         mock_load_job.return_value = {
@@ -74,6 +75,7 @@ class TestReturnRouter(unittest.TestCase):
             "node_id": "auth-node",
             "executor": "jules",
             "project_id": "vault-doctor",
+            "attempt": 0,
         }
         verification = {
             "verification_status": "ok",
@@ -99,7 +101,7 @@ class TestReturnRouter(unittest.TestCase):
         )
         mock_verify.assert_called_once_with(
             "vault-doctor", "auth-node",
-            merge_commit_sha=None, pr_ref="12", job_id="job_123",
+            merge_commit_sha="abc123", pr_ref="12", job_id="job_123", attempt=0,
         )
         mock_write.assert_called_once_with(
             result_id="res_123456",

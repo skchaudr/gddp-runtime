@@ -37,7 +37,14 @@ def _repos_root() -> Path:
     return Path(os.environ.get("GDDP_REPOS_ROOT", str(_RUNTIME_ROOT.parent)))
 
 
-def verify_job_return(project_id: str, node_id: str, merge_commit_sha: str | None = None, pr_ref: str | None = None, job_id: str | None = None) -> dict:
+def verify_job_return(
+    project_id: str,
+    node_id: str,
+    merge_commit_sha: str | None = None,
+    pr_ref: str | None = None,
+    job_id: str | None = None,
+    attempt: int | None = None,
+) -> dict:
     """Run verification for a returned job. Always returns a dict, never raises.
 
     Success: {"verification_status": "ok", "receipt_path", "verdict",
@@ -48,18 +55,25 @@ def verify_job_return(project_id: str, node_id: str, merge_commit_sha: str | Non
     Transient failures (timeout, crash, garbled output) get exactly one retry;
     missing config/repo paths do not — those need a human, not a rerun.
     """
-    first = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id)
+    first = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id, attempt)
     if first["verification_status"] == "ok" or first.get("retryable") is False:
         first.pop("retryable", None)
         return first
-    second = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id)
+    second = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id, attempt)
     second.pop("retryable", None)
     if second["verification_status"] == "error":
         second["error"] = f"(after 1 retry) {second['error']}; first attempt: {first['error']}"
     return second
 
 
-def _verify_once(project_id: str, node_id: str, merge_commit_sha: str | None = None, pr_ref: str | None = None, job_id: str | None = None) -> dict:
+def _verify_once(
+    project_id: str,
+    node_id: str,
+    merge_commit_sha: str | None = None,
+    pr_ref: str | None = None,
+    job_id: str | None = None,
+    attempt: int | None = None,
+) -> dict:
     if not project_id or not node_id:
         return {
             "verification_status": "error",
@@ -81,33 +95,29 @@ def _verify_once(project_id: str, node_id: str, merge_commit_sha: str | None = N
                 "error": f"{label} not found: {path}",
             }
 
-    # Phase 1: enforce evaluation subject identity. If merge_commit_sha is
-    # provided, materialize that exact commit in an isolated git worktree so
-    # the evaluator judges the merged state, not whatever is on disk. If the
-    # SHA is provided but the worktree cannot be created, return a subject-
-    # mismatch error. If the SHA is missing (not in the webhook payload),
-    # fall back to evaluating the working tree — backward compatible with
-    # pre-hardening behavior. The receipt's evaluated_tree_sha records what
-    # was actually evaluated, so the operator can detect the fallback.
-    worktree_path = None
-    eval_repo = repo
-    if merge_commit_sha:
-        worktree_path = _create_worktree(repo, merge_commit_sha)
-        if worktree_path is None:
-            return {
-                "verification_status": "subject_mismatch",
-                "retryable": False,
-                "error": f"could not materialize merge_commit_sha {merge_commit_sha} in worktree",
-            }
-        eval_repo = worktree_path
+    # A receipt without a pinned merge SHA could judge mutable repository state
+    # and appear valid for code that was never evaluated.
+    if not merge_commit_sha:
+        return {
+            "verification_status": "subject_mismatch",
+            "retryable": False,
+            "error": "merge_commit_sha is required to pin the evaluation subject",
+        }
+
+    worktree_path = _create_worktree(repo, merge_commit_sha)
+    if worktree_path is None:
+        return {
+            "verification_status": "subject_mismatch",
+            "retryable": False,
+            "error": f"could not materialize merge_commit_sha {merge_commit_sha} in worktree",
+        }
     try:
         return _run_cli(
-            eval_repo, node_yaml, project_yaml, config_root, receipt_dir,
-            merge_commit_sha, pr_ref, job_id,
+            worktree_path, node_yaml, project_yaml, config_root, receipt_dir,
+            merge_commit_sha, pr_ref, job_id, attempt,
         )
     finally:
-        if worktree_path is not None:
-            _remove_worktree(worktree_path)
+        _remove_worktree(repo, worktree_path)
 
 
 def _create_worktree(repo: Path, commit_sha: str) -> Path | None:
@@ -133,23 +143,38 @@ def _create_worktree(repo: Path, commit_sha: str) -> Path | None:
         return None
 
 
-def _remove_worktree(path: Path) -> None:
+def _remove_worktree(repo: Path, path: Path) -> None:
     """Clean up an isolated worktree. Best-effort."""
-    import shutil
+    removed = False
+    try:
+        proc = subprocess.run(
+            ["git", "worktree", "remove", str(path), "--force"],
+            cwd=str(repo),
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        removed = proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    if removed:
+        return
+
+    shutil.rmtree(path, ignore_errors=True)
     try:
         subprocess.run(
-            ["git", "worktree", "remove", str(path), "--force"],
-            cwd=str(path.parent) if path.parent.exists() else None,
+            ["git", "worktree", "prune", "--expire", "now"],
+            cwd=str(repo),
             capture_output=True,
             timeout=15,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         pass
-    shutil.rmtree(path, ignore_errors=True)
 
 
-def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, pr_ref, job_id) -> dict:
+def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, pr_ref, job_id, attempt) -> dict:
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
     )
@@ -171,6 +196,8 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
         cmd += ["--pr-ref", pr_ref]
     if job_id:
         cmd += ["--job-id", job_id]
+    if attempt is not None:
+        cmd += ["--attempt", str(attempt)]
 
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)

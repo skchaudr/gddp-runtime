@@ -155,6 +155,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         merge_commit_sha=merge_commit_sha,
         pr_ref=pr_ref,
         job_id=job_id,
+        attempt=job.get("attempt", 0),
     )
 
     write_result(

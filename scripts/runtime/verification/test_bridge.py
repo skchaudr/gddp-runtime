@@ -3,7 +3,9 @@
 import json
 import os
 import subprocess
+import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +22,21 @@ from scripts.runtime.verification import bridge
 def _fake_paths_exist():
     """Patch the yaml/repo existence checks to pass."""
     return patch("scripts.runtime.verification.bridge.Path.exists", return_value=True)
+
+
+@contextmanager
+def _pinned_subject():
+    """Make bridge tests evaluate a pinned subject without creating a real worktree."""
+    with _fake_paths_exist(), patch(
+        "scripts.runtime.verification.bridge._create_worktree",
+        return_value=Path("/tmp/fake-wt"),
+    ), patch("scripts.runtime.verification.bridge._remove_worktree"):
+        yield
+
+
+def _verify_return(project_id="vault-doctor", node_id="auth-node", **kwargs):
+    kwargs.setdefault("merge_commit_sha", "abc123")
+    return bridge.verify_job_return(project_id, node_id, **kwargs)
 
 
 class TestParseCliSummary(unittest.TestCase):
@@ -54,30 +71,30 @@ class TestVerifyJobReturn(unittest.TestCase):
         proc = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=json.dumps(summary, indent=2), stderr=""
         )
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
         ):
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "ok")
         self.assertEqual(res["verdict"], "pass")
         self.assertEqual(res["receipt_path"], "/tmp/r.json")
 
     def test_nonzero_exit_is_error(self):
         proc = subprocess.CompletedProcess(args=[], returncode=3, stdout="", stderr="boom")
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
         ):
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "error")
         self.assertIn("exited 3", res["error"])
         self.assertIn("boom", res["error"])
 
     def test_timeout_is_error(self):
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="cli", timeout=1),
         ):
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "error")
         self.assertIn("timed out", res["error"])
 
@@ -87,10 +104,10 @@ class TestVerifyJobReturn(unittest.TestCase):
         ok = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=json.dumps(summary), stderr=""
         )
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", side_effect=[fail, ok]
         ) as mock_run:
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "ok")
         self.assertEqual(mock_run.call_count, 2)
 
@@ -103,20 +120,20 @@ class TestVerifyJobReturn(unittest.TestCase):
 
     def test_double_failure_reports_both_attempts(self):
         fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", side_effect=[fail, fail]
         ):
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "error")
         self.assertIn("after 1 retry", res["error"])
         self.assertIn("first attempt", res["error"])
 
     def test_unparseable_stdout_is_error(self):
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="garbage", stderr="")
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
         ):
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "error")
         self.assertIn("no parseable", res["error"])
 
@@ -141,11 +158,11 @@ class TestCredentialFetch(unittest.TestCase):
         cli = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=json.dumps(summary), stderr=""
         )
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run",
             side_effect=[cred, cli],
         ) as mock_run:
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "ok")
         # The first subprocess.run call is the credential fetch; it must use
         # the shlex-split custom command.
@@ -160,12 +177,12 @@ class TestCredentialFetch(unittest.TestCase):
         cli = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=json.dumps(summary), stderr=""
         )
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.shutil.which", return_value=None
         ), patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=cli
         ) as mock_run:
-            res = bridge.verify_job_return("vault-doctor", "auth-node")
+            res = _verify_return()
         self.assertEqual(res["verification_status"], "ok")
         # The credential fetch must not have invoked subprocess.run; only the
         # verifier CLI call should have occurred.
@@ -182,10 +199,10 @@ class TestIntegrityFlag(unittest.TestCase):
         proc = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=json.dumps(summary), stderr=""
         )
-        with _fake_paths_exist(), patch(
+        with _pinned_subject(), patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
         ) as mock_run:
-            bridge.verify_job_return("vault-doctor", "auth-node")
+            _verify_return()
 
         cmd = mock_run.call_args[0][0]
         # Find --integrity in the command list
@@ -200,10 +217,10 @@ class TestIntegrityFlag(unittest.TestCase):
             proc = subprocess.CompletedProcess(
                 args=[], returncode=0, stdout=json.dumps(summary), stderr=""
             )
-            with _fake_paths_exist(), patch(
+            with _pinned_subject(), patch(
                 "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
             ) as mock_run:
-                bridge.verify_job_return("vault-doctor", "auth-node")
+                _verify_return()
 
             cmd = mock_run.call_args[0][0]
             idx = cmd.index("--integrity")
@@ -215,20 +232,18 @@ class TestIntegrityFlag(unittest.TestCase):
 class TestProvenancePassthrough(unittest.TestCase):
     """Phase 1: merge_commit_sha triggers worktree + provenance CLI args."""
 
-    def test_no_merge_sha_skips_worktree(self):
-        """Without merge_commit_sha, no worktree is created (backward compat)."""
-        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
-        proc = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
-        )
+    def test_missing_merge_sha_fails_closed_without_cli(self):
+        """An unpinned subject must not produce a valid-looking receipt."""
         with _fake_paths_exist(), patch(
-            "scripts.runtime.verification.bridge.subprocess.run", return_value=proc
-        ) as mock_run, patch(
+            "scripts.runtime.verification.bridge._run_cli"
+        ) as mock_cli, patch(
             "scripts.runtime.verification.bridge._create_worktree"
         ) as mock_wt:
             res = bridge.verify_job_return("vault-doctor", "auth-node")
-        self.assertEqual(res["verification_status"], "ok")
+        self.assertEqual(res["verification_status"], "subject_mismatch")
+        self.assertIn("merge_commit_sha", res["error"])
         mock_wt.assert_not_called()
+        mock_cli.assert_not_called()
 
     def test_merge_sha_creates_worktree_and_passes_args(self):
         """With merge_commit_sha, worktree is created and CLI gets --merge-commit-sha."""
@@ -240,7 +255,7 @@ class TestProvenancePassthrough(unittest.TestCase):
             "scripts.runtime.verification.bridge._create_worktree", return_value=Path("/tmp/fake-wt")
         ), patch(
             "scripts.runtime.verification.bridge._remove_worktree"
-        ), patch(
+        ) as mock_remove, patch(
             "scripts.runtime.verification.bridge.subprocess.run", return_value=cli_proc
         ) as mock_run:
             res = bridge.verify_job_return(
@@ -248,6 +263,7 @@ class TestProvenancePassthrough(unittest.TestCase):
                 merge_commit_sha="abc123",
                 pr_ref="42",
                 job_id="job_001",
+                attempt=0,
             )
         self.assertEqual(res["verification_status"], "ok")
         cmd = mock_run.call_args[0][0]
@@ -256,6 +272,11 @@ class TestProvenancePassthrough(unittest.TestCase):
         self.assertEqual(cmd[idx + 1], "abc123")
         self.assertIn("--pr-ref", cmd)
         self.assertIn("--job-id", cmd)
+        self.assertIn("--attempt", cmd)
+        self.assertEqual(cmd[cmd.index("--attempt") + 1], "0")
+        mock_remove.assert_called_once_with(
+            bridge._repos_root() / "vault-doctor", Path("/tmp/fake-wt")
+        )
 
     def test_worktree_failure_returns_subject_mismatch(self):
         """If worktree creation fails, return subject_mismatch, don't evaluate."""
@@ -271,6 +292,45 @@ class TestProvenancePassthrough(unittest.TestCase):
         self.assertEqual(res["verification_status"], "subject_mismatch")
         self.assertIn("abc123", res["error"])
         mock_run.assert_not_called()
+
+
+class TestWorktreeLifecycle(unittest.TestCase):
+    def test_create_and_remove_clears_worktree_registration(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                    "commit", "--allow-empty", "-m", "initial", "-q",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            commit_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+            worktree = bridge._create_worktree(repo, commit_sha)
+            self.assertIsNotNone(worktree)
+            self.assertTrue(worktree.exists())
+
+            bridge._remove_worktree(repo, worktree)
+
+            self.assertFalse(worktree.exists())
+            registered = subprocess.run(
+                ["git", "worktree", "list", "--porcelain"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            self.assertNotIn(str(worktree), registered)
 
 
 if __name__ == "__main__":
