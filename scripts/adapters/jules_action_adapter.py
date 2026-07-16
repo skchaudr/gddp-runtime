@@ -6,7 +6,7 @@ The jules-action in the target repo detects the label and triggers Jules.
 
 Requires:
     - gh CLI installed
-    - GITHUB_TOKEN or GH_TOKEN set to a GitHub PAT with issue write access
+    - GITHUB_TOKEN/GH_TOKEN set, or gh CLI authenticated with issue write access
 
 Usage:
     from adapters.jules_action_adapter import JulesActionAdapter
@@ -49,7 +49,23 @@ class JulesActionAdapter:
 
     @staticmethod
     def _github_token() -> str | None:
-        return os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        if token:
+            return token
+
+        try:
+            result = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
 
     def build_issue_body(self, job: dict) -> str:
         """
@@ -150,7 +166,7 @@ This block is parsed by the GDDP return router to create a structured review rec
                 success=False,
                 issue_url=None,
                 issue_number=None,
-                error="Missing GitHub token: set GITHUB_TOKEN or GH_TOKEN",
+                error="Missing GitHub token: set GITHUB_TOKEN/GH_TOKEN or authenticate gh",
             )
 
         title = f"[GDDP] {job['title']}"

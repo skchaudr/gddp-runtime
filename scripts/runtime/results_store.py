@@ -17,6 +17,19 @@ RUNTIME_ROOT = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLA
 DB_PATH = RUNTIME_ROOT / "db" / "queue.db"
 
 
+def _connect() -> sqlite3.Connection:
+    """Create a WAL-mode connection with busy timeout for concurrent writes.
+
+    Concurrency: WAL lets readers overlap the single writer; busy_timeout
+    makes a colliding writer wait instead of raising 'database is locked'.
+    """
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=5000")
+    return con
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -31,7 +44,7 @@ def _json_or_none(value):
 
 def init_db() -> None:
     """Ensure the canonical review-receipt table exists."""
-    con = sqlite3.connect(DB_PATH)
+    con = _connect()
     try:
         con.execute(
             """
@@ -80,7 +93,7 @@ def write_result(
 ):
     """Insert or update a structured review receipt in the canonical results table."""
     init_db()
-    con = sqlite3.connect(DB_PATH)
+    con = _connect()
     try:
         cur = con.cursor()
         cur.execute("SELECT 1 FROM results WHERE result_id = ?", (result_id,))
@@ -155,7 +168,7 @@ def init_decision_results() -> None:
     runtime decision loop *did* (dispatch / escalate / no_op), which may have no
     associated job (e.g. a no_op or a stale-state clean). No FK to jobs.
     """
-    con = sqlite3.connect(DB_PATH)
+    con = _connect()
     try:
         con.execute(
             """
@@ -184,7 +197,7 @@ def write_decision_result(
 ) -> None:
     """Insert a decision-loop result row. Does NOT touch graph truth."""
     init_decision_results()
-    con = sqlite3.connect(DB_PATH)
+    con = _connect()
     try:
         con.execute(
             """

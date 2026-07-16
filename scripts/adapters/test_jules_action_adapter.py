@@ -76,13 +76,57 @@ class TestJulesActionAdapter(unittest.TestCase):
 
     @patch.dict("os.environ", {}, clear=True)
     @patch("subprocess.run")
-    def test_dispatch_requires_explicit_token(self, mock_run):
+    def test_dispatch_reports_missing_token_when_gh_auth_fails(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not logged in")
+
         result = self.adapter.dispatch(self.sample_job)
 
         self.assertFalse(result.success)
         self.assertIsNone(result.issue_url)
-        self.assertEqual(result.error, "Missing GitHub token: set GITHUB_TOKEN or GH_TOKEN")
-        mock_run.assert_not_called()
+        self.assertEqual(
+            result.error,
+            "Missing GitHub token: set GITHUB_TOKEN/GH_TOKEN or authenticate gh",
+        )
+        mock_run.assert_called_once_with(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("subprocess.run")
+    def test_dispatch_uses_gh_auth_token_fallback(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="keychain-token\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout="https://github.com/owner/repo/issues/42\n",
+                stderr="",
+            ),
+        ]
+
+        result = self.adapter.dispatch(self.sample_job)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.issue_number, 42)
+        self.assertEqual(mock_run.call_count, 2)
+        issue_call = mock_run.call_args_list[1]
+        self.assertEqual(issue_call.args[0][:3], ["gh", "issue", "create"])
+        self.assertEqual(issue_call.kwargs["env"]["GH_TOKEN"], "keychain-token")
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("subprocess.run")
+    def test_dispatch_reports_missing_token_when_gh_auth_times_out(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh", "auth", "token"], timeout=10)
+
+        result = self.adapter.dispatch(self.sample_job)
+
+        self.assertFalse(result.success)
+        self.assertEqual(
+            result.error,
+            "Missing GitHub token: set GITHUB_TOKEN/GH_TOKEN or authenticate gh",
+        )
 
     @patch.dict("os.environ", {"GITHUB_TOKEN": "github-token-value"}, clear=True)
     @patch("subprocess.run")
