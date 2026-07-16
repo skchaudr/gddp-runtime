@@ -8,50 +8,47 @@ During a baseline check, the dashboard reported `running=2` even though only one
 
 This divergence made operator-facing counts inaccurate, as different dashboard views and scripts read either `status` or `queue_state`.
 
-### Codebase Write Path Inconsistencies (Code Evidence)
-We identified several live write paths in the codebase that update one column but neglect the other or introduce mismatching values:
-1. **`scripts/runtime/decision_loop/engine.py` (Stale Expiry)**:
-   In `_clean_stale_state`, stale running/dispatched jobs older than 6 hours are expired using:
-   ```sql
-   UPDATE jobs SET status = 'expired'
-   WHERE status IN ('dispatched', 'running')
-   AND created_at < datetime('now', '-6 hours')
-   ```
-   This query sets `status = 'expired'` but leaves `queue_state` untouched (at its prior value, e.g., `'running'`). This is a clear, repeatable path to introducing a mismatch.
-2. **`scripts/rollback.py` (Rollback mismatch)**:
-   The rollback script has a built-in mismatch:
-   ```sql
-   UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?
-   ```
-   This sets `status` to `'failed'` and `queue_state` to `'cancelled'`.
-3. **`scripts/node_status.py` (Selective Command Update)**:
-   The interactive tool only mirrors state updates to `status` if the target state is in a subset of job statuses:
-   ```python
-   con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?", (args.state, job["job_id"]))
-   if args.state in JOB_STATUSES:
-       con.execute("UPDATE jobs SET status = ? WHERE job_id = ?", (args.state, job["job_id"]))
-   ```
-   If a user updates a job to a state not in `JOB_STATUSES`, the `status` column remains mismatched with `queue_state`.
-4. **`scripts/runtime/return_router.py` (Redispatch retry loop)**:
-   When `_redispatch_with_findings` successfully dispatches a retry, it only increments the attempt count (`UPDATE jobs SET attempt = attempt + 1`) but does not set `status` and `queue_state` back to `'running'` or `'dispatched'`.
+### Proven Origin
 
-### Most Probable Origin of `job_20260711T16542651`
-Given the state of the canary job, the mismatch was produced by one of two sequences:
-- **Manual Intervention/Reconciliation**: The operator manually ran `rollback.py` on the canary job (which was stuck/timed out), updating its `status` to `'failed'` and `queue_state` to `'cancelled'`. To attempt a resume or force-mark it back to running without spinning up a new job, a manual SQLite update query was executed:
-  ```sql
-  UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
-  ```
-  This left `status` as `'failed'` while making `queue_state` `'running'`.
-- **Direct Manual Status Force**: Alternatively, the operator manually ran a query to fail the job without setting the queue state:
-  ```sql
-  UPDATE jobs SET status = 'failed' WHERE job_id = 'job_20260711T16542651';
-  ```
+The mismatch was created by a direct status-only SQLite update, not by a runtime
+writer. At `2026-07-11T17:10:35.380Z`, Factory/Droid session
+`00e978de-f147-4492-88d3-c13dcc5a4f5e` ran:
+
+```sql
+UPDATE jobs SET status = 'failed'
+WHERE job_id = 'job_20260711T16542651';
+```
+
+The session recorded exit code `0` and the follow-up row
+`job_20260711T16542651|canary-retry-proof|test-project|failed`. Its stated
+purpose was to remove this stale test-project job from the active-job guard so a
+new gddp-runtime canary could dispatch. Because the command did not update
+`queue_state`, its previous value, `running`, remained.
+
+Primary evidence is local Factory history:
+
+- `~/.factory/sessions/-Users-sab-mini-repos-gddp-runtime/00e978de-f147-4492-88d3-c13dcc5a4f5e.jsonl`, records 695 and 698
+- `~/.factory/logs/droid-log-single.log.2026-07-11`, lines 37345 and 37355-37356
+
+### Write Paths Hardened
+
+The patch prevents the same class of divergence in the targeted runtime and
+operator update paths:
+
+1. `decision_loop/engine.py` moves stale jobs to canonical `failed/failed`.
+   `expired` remains an event state and is not introduced into the job vocabulary.
+2. `rollback.py` moves rolled-back jobs to `failed/failed`.
+3. `node_status.py` treats the canonical queue-state list as the shared job
+   lifecycle vocabulary and writes both job columns together.
+4. `return_router.py` moves a successful retry to `running/running` and updates
+   its queue record.
 
 ---
 
 ## 2. Reversible State Reconciliation
 
-To reconcile the existing inconsistent row in production (`queue.db`), we use a documented, reversible SQL migration rather than silent or untracked mutation.
+The code change does not mutate the live database. The operator can reconcile
+the existing row with this documented, reversible SQL step.
 
 ### Correction Step
 This sets the `queue_state` to match the job's actual `'failed'` status.
@@ -68,4 +65,8 @@ UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
 ---
 
 ## 3. Rationale for Redundancy Alignment
-To prevent future drift, we align both `status` and `queue_state` to always hold identical, matching values on every write path. This eliminates divergence completely, ensuring that counts on both columns remain perfectly consistent and truthful.
+
+`jobs.status` and `jobs.queue_state` remain redundant for compatibility, so the
+targeted writers update them atomically to the same canonical lifecycle value.
+The baseline probe reports any remaining mismatch for operator review. Human
+acceptance remains the only source of graph truth.

@@ -1,8 +1,8 @@
 diff --git a/decision.md b/decision.md
-index a309693..074148c 100644
+index a309693..022571b 100644
 --- a/decision.md
 +++ b/decision.md
-@@ -1,11 +1,71 @@
+@@ -1,11 +1,72 @@
 -# Implementation Decision
 +# Decision Document - Job State Consistency
  
@@ -22,50 +22,47 @@ index a309693..074148c 100644
 +
 +This divergence made operator-facing counts inaccurate, as different dashboard views and scripts read either `status` or `queue_state`.
 +
-+### Codebase Write Path Inconsistencies (Code Evidence)
-+We identified several live write paths in the codebase that update one column but neglect the other or introduce mismatching values:
-+1. **`scripts/runtime/decision_loop/engine.py` (Stale Expiry)**:
-+   In `_clean_stale_state`, stale running/dispatched jobs older than 6 hours are expired using:
-+   ```sql
-+   UPDATE jobs SET status = 'expired'
-+   WHERE status IN ('dispatched', 'running')
-+   AND created_at < datetime('now', '-6 hours')
-+   ```
-+   This query sets `status = 'expired'` but leaves `queue_state` untouched (at its prior value, e.g., `'running'`). This is a clear, repeatable path to introducing a mismatch.
-+2. **`scripts/rollback.py` (Rollback mismatch)**:
-+   The rollback script has a built-in mismatch:
-+   ```sql
-+   UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?
-+   ```
-+   This sets `status` to `'failed'` and `queue_state` to `'cancelled'`.
-+3. **`scripts/node_status.py` (Selective Command Update)**:
-+   The interactive tool only mirrors state updates to `status` if the target state is in a subset of job statuses:
-+   ```python
-+   con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?", (args.state, job["job_id"]))
-+   if args.state in JOB_STATUSES:
-+       con.execute("UPDATE jobs SET status = ? WHERE job_id = ?", (args.state, job["job_id"]))
-+   ```
-+   If a user updates a job to a state not in `JOB_STATUSES`, the `status` column remains mismatched with `queue_state`.
-+4. **`scripts/runtime/return_router.py` (Redispatch retry loop)**:
-+   When `_redispatch_with_findings` successfully dispatches a retry, it only increments the attempt count (`UPDATE jobs SET attempt = attempt + 1`) but does not set `status` and `queue_state` back to `'running'` or `'dispatched'`.
++### Proven Origin
 +
-+### Most Probable Origin of `job_20260711T16542651`
-+Given the state of the canary job, the mismatch was produced by one of two sequences:
-+- **Manual Intervention/Reconciliation**: The operator manually ran `rollback.py` on the canary job (which was stuck/timed out), updating its `status` to `'failed'` and `queue_state` to `'cancelled'`. To attempt a resume or force-mark it back to running without spinning up a new job, a manual SQLite update query was executed:
-+  ```sql
-+  UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
-+  ```
-+  This left `status` as `'failed'` while making `queue_state` `'running'`.
-+- **Direct Manual Status Force**: Alternatively, the operator manually ran a query to fail the job without setting the queue state:
-+  ```sql
-+  UPDATE jobs SET status = 'failed' WHERE job_id = 'job_20260711T16542651';
-+  ```
++The mismatch was created by a direct status-only SQLite update, not by a runtime
++writer. At `2026-07-11T17:10:35.380Z`, Factory/Droid session
++`00e978de-f147-4492-88d3-c13dcc5a4f5e` ran:
++
++```sql
++UPDATE jobs SET status = 'failed'
++WHERE job_id = 'job_20260711T16542651';
++```
++
++The session recorded exit code `0` and the follow-up row
++`job_20260711T16542651|canary-retry-proof|test-project|failed`. Its stated
++purpose was to remove this stale test-project job from the active-job guard so a
++new gddp-runtime canary could dispatch. Because the command did not update
++`queue_state`, its previous value, `running`, remained.
++
++Primary evidence is local Factory history:
++
++- `~/.factory/sessions/-Users-sab-mini-repos-gddp-runtime/00e978de-f147-4492-88d3-c13dcc5a4f5e.jsonl`, records 695 and 698
++- `~/.factory/logs/droid-log-single.log.2026-07-11`, lines 37345 and 37355-37356
++
++### Write Paths Hardened
++
++The patch prevents the same class of divergence in the targeted runtime and
++operator update paths:
++
++1. `decision_loop/engine.py` moves stale jobs to canonical `failed/failed`.
++   `expired` remains an event state and is not introduced into the job vocabulary.
++2. `rollback.py` moves rolled-back jobs to `failed/failed`.
++3. `node_status.py` treats the canonical queue-state list as the shared job
++   lifecycle vocabulary and writes both job columns together.
++4. `return_router.py` moves a successful retry to `running/running` and updates
++   its queue record.
 +
 +---
 +
 +## 2. Reversible State Reconciliation
 +
-+To reconcile the existing inconsistent row in production (`queue.db`), we use a documented, reversible SQL migration rather than silent or untracked mutation.
++The code change does not mutate the live database. The operator can reconcile
++the existing row with this documented, reversible SQL step.
 +
 +### Correction Step
 +This sets the `queue_state` to match the job's actual `'failed'` status.
@@ -82,7 +79,11 @@ index a309693..074148c 100644
 +---
 +
 +## 3. Rationale for Redundancy Alignment
-+To prevent future drift, we align both `status` and `queue_state` to always hold identical, matching values on every write path. This eliminates divergence completely, ensuring that counts on both columns remain perfectly consistent and truthful.
++
++`jobs.status` and `jobs.queue_state` remain redundant for compatibility, so the
++targeted writers update them atomically to the same canonical lifecycle value.
++The baseline probe reports any remaining mismatch for operator review. Human
++acceptance remains the only source of graph truth.
 diff --git a/deploy/mini-heartbeat/bin/baseline.sh b/deploy/mini-heartbeat/bin/baseline.sh
 index b2e6ffc..ebeff54 100755
 --- a/deploy/mini-heartbeat/bin/baseline.sh
@@ -101,40 +102,87 @@ index b2e6ffc..ebeff54 100755
    info "last event received: $(sqlite3 "$DB" "SELECT COALESCE(MAX(received_at),'never') FROM events;")"
  else
    crit "queue.db missing: $DB"
+diff --git a/graph-update.yaml b/graph-update.yaml
+new file mode 100644
+index 0000000..8354530
+--- /dev/null
++++ b/graph-update.yaml
+@@ -0,0 +1,4 @@
++# Graph Update Proposal
++# Graph truth stays human-owned; this node produces evidence only.
++# No automatic graph updates are requested for node job-state-consistency.
++updates: []
 diff --git a/result-summary.md b/result-summary.md
-index b1ccae3..4c45eca 100644
+index b1ccae3..4b1162a 100644
 --- a/result-summary.md
 +++ b/result-summary.md
-@@ -1,7 +1,18 @@
+@@ -1,7 +1,20 @@
 -# Result Summary
 +# Result Summary - Job State Consistency
-
+ 
 -- Updated `scripts/echo.py` with `echo` and `echo_loud` functions and embedded tests.
 -- Created `docs/echo-usage.md` containing usage examples for both functions.
 -- Wrote `decision.md` to document the decision-making process for the implementation.
 -- Generated `patch.diff` recording the total patch of all changes made.
 -- Created `result-summary.md` (this file) briefly summarising the actions taken.
-+We have resolved the inconsistency between `jobs.status` and `jobs.queue_state` by harmonizing all database write paths and providing documented, reversible recovery steps for `job_20260711T16542651`.
++This change closes the targeted `jobs.status`/`jobs.queue_state` divergence paths
++and documents a reversible operator step for the existing inconsistent row. It
++does not mutate the live database or advance graph truth.
 +
 +### Key Changes
 +1. **Root Cause Documentation (`decision.md`)**:
-+   - Diagnosed how `job_20260711T16542651` became inconsistent (`status=failed`, `queue_state=running`).
-+   - Highlighted the mismatched write paths (engine expiry, rollback, manual status commands, return router redispatches).
-+   - Provided production-safe, reversible SQL queries to correct the record and reverse the change.
++   - Traced `job_20260711T16542651` to the exact Factory/Droid session and status-only SQL command that created `status=failed`, `queue_state=running`.
++   - Recorded the timestamp, session id, successful exit, command purpose, and primary local evidence paths.
++   - Provided reversible operator SQL without silently changing the live row.
 +2. **Write Paths Alignment**:
-+   - Updated `scripts/runtime/decision_loop/engine.py` to set both `status` and `queue_state` to `'expired'` during stale job cleanup.
++   - Updated `scripts/runtime/decision_loop/engine.py` to set stale jobs to canonical `'failed'` in both columns; `'expired'` remains event-only.
 +   - Updated `scripts/rollback.py` to set both `status` and `queue_state` to `'failed'`.
-+   - Updated `scripts/node_status.py` to set both columns to `args.state` during a manual state transition, ensuring they remain identical.
++   - Updated `scripts/node_status.py` to use the queue-state list as the shared job lifecycle vocabulary and set both columns together.
 +   - Updated `scripts/runtime/return_router.py` to set both columns to `'running'` (and the `queue_records` table `queue` state to `'running'`) when successfully redispatched.
 +3. **Consistency Check & Test Safety**:
 +   - Added a critical consistency check probe to the deployment baseline script `deploy/mini-heartbeat/bin/baseline.sh` that detects and fails if any rows have mismatched `status` and `queue_state`.
-+   - Added a robust python unit test `test_jobs_status_and_queue_state_consistency` inside `scripts/runtime/decision_loop/test_decision_loop.py` to programmatically assert this.
-+   - Fixed all mock sqlite tables in unit tests to support the new database column logic and keep the entire pytest suite completely green.
++   - Added focused stale-job and operator-transition regression coverage.
++   - Kept the baseline mismatch probe that fails when any job row diverges.
+diff --git a/scripts/init_db.py b/scripts/init_db.py
+index a9f3ecc..a237016 100644
+--- a/scripts/init_db.py
++++ b/scripts/init_db.py
+@@ -79,7 +79,7 @@ def init_db():
+         priority            TEXT DEFAULT 'medium',
+         risk_level          TEXT DEFAULT 'low',
+         estimated_effort    TEXT DEFAULT 'medium',
+-        status              TEXT DEFAULT 'ready',       -- ready | running | awaiting_result | awaiting_review | complete | failed
++        status              TEXT DEFAULT 'ready',       -- mirrors queue_state for job lifecycle
+         attempt             INTEGER DEFAULT 0,
+         max_attempts        INTEGER DEFAULT 3,
+         artifacts_dir       TEXT,
 diff --git a/scripts/node_status.py b/scripts/node_status.py
-index cf534bb..0d9713b 100644
+index cf534bb..131ed49 100644
 --- a/scripts/node_status.py
 +++ b/scripts/node_status.py
-@@ -210,11 +210,8 @@ def cmd_set(args):
+@@ -13,8 +13,8 @@ States (canon: gddp-config schemas/v1/queue_record.yaml):
+ 
+ What `set` does:
+     1. Shows current state and asks for confirmation
+-    2. Updates jobs.queue_state (+ jobs.status when the state is a valid
+-       job status) and any queue_records rows for the job
++    2. Updates jobs.queue_state, jobs.status, and any queue_records rows to the
++       same canonical job lifecycle state
+     3. Writes a decision_results audit row — action 'accept_node' for
+        awaiting_review → complete, 'manual_status_change' otherwise
+ """
+@@ -38,10 +38,6 @@ QUEUE_STATES = [
+     "awaiting_result", "awaiting_review", "complete", "failed",
+     "deferred", "cancelled",
+ ]
+-# jobs.status is a narrower enum; only mirror queue_state into it when valid
+-JOB_STATUSES = {"ready", "running", "awaiting_result", "awaiting_review", "complete", "failed"}
+-
+-
+ def now():
+     return datetime.now(timezone.utc).isoformat()
+ 
+@@ -210,11 +206,8 @@ def cmd_set(args):
          if input("Proceed? [y/N] ").strip().lower() != "y":
              sys.exit("Aborted.")
  
@@ -147,13 +195,13 @@ index cf534bb..0d9713b 100644
 +                (args.state, args.state, job["job_id"]))
      con.execute("UPDATE queue_records SET queue = ? WHERE job_id = ?",
                  (args.state, job["job_id"]))
-
+ 
 diff --git a/scripts/rollback.py b/scripts/rollback.py
 index 54af0bd..ca75e0d 100644
 --- a/scripts/rollback.py
 +++ b/scripts/rollback.py
 @@ -63,7 +63,7 @@ def rollback(job_id: str):
-
+ 
      # Revert job and queue record
      con.execute(
 -        "UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?",
@@ -162,20 +210,23 @@ index 54af0bd..ca75e0d 100644
      )
      if queue:
 diff --git a/scripts/runtime/decision_loop/engine.py b/scripts/runtime/decision_loop/engine.py
-index e7d6381..83b0227 100644
+index e7d6381..bdc59b0 100644
 --- a/scripts/runtime/decision_loop/engine.py
 +++ b/scripts/runtime/decision_loop/engine.py
-@@ -56,7 +56,7 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
-
-     # Expire stale jobs
+@@ -54,9 +54,9 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
+     cur = con.cursor()
+     cleaned = 0
+ 
+-    # Expire stale jobs
++    # Failed is the canonical terminal job state; "expired" is event-only.
      cur.execute("""
 -        UPDATE jobs SET status = 'expired'
-+        UPDATE jobs SET status = 'expired', queue_state = 'expired'
++        UPDATE jobs SET status = 'failed', queue_state = 'failed'
          WHERE status IN ('dispatched', 'running')
          AND created_at < datetime('now', '-6 hours')
      """)
 diff --git a/scripts/runtime/decision_loop/test_decision_loop.py b/scripts/runtime/decision_loop/test_decision_loop.py
-index c0bfee5..fc4771f 100644
+index c0bfee5..78a9503 100644
 --- a/scripts/runtime/decision_loop/test_decision_loop.py
 +++ b/scripts/runtime/decision_loop/test_decision_loop.py
 @@ -74,6 +74,7 @@ def in_memory_db():
@@ -194,7 +245,32 @@ index c0bfee5..fc4771f 100644
              created_at TEXT
          )
      """)
-@@ -323,3 +325,31 @@ def test_accept_result_status_must_be_acceptance_proposed():
+@@ -221,6 +223,24 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
+     con.close()
+ 
+ 
++def test_clean_stale_state_uses_canonical_failed_job_state(in_memory_db):
++    from .engine import _clean_stale_state
++
++    in_memory_db.execute(
++        """INSERT INTO jobs
++           (job_id, project_id, node_id, status, queue_state, created_at)
++           VALUES ('job_stale', 'test-project', 'node-b', 'running', 'running',
++                   datetime('now', '-7 hours'))"""
++    )
++    in_memory_db.commit()
++
++    assert _clean_stale_state(in_memory_db) == 1
++    job = in_memory_db.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = 'job_stale'"
++    ).fetchone()
++    assert (job["status"], job["queue_state"]) == ("failed", "failed")
++
++
+ # --- Test Pydantic schema enforcement ---
+ 
+ def test_dispatch_result_rejects_bad_data():
+@@ -323,3 +343,31 @@ def test_accept_result_status_must_be_acceptance_proposed():
              status="acceptance_candidate",  # old status — now rejected
              ok=True,
          )
@@ -233,7 +309,7 @@ index 0282b10..f9c5926 100644
 @@ -263,11 +263,20 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
              "dispatch_error": dispatch_result.error,
          }
-
+ 
 -    # Dispatch succeeded — increment attempt now that the retry is confirmed.
 +    # Dispatch succeeded — increment attempt and update job/queue state to running
      con = _connect()
@@ -258,7 +334,7 @@ index 431a119..54b5ccf 100644
 --- a/scripts/runtime/test_return_router.py
 +++ b/scripts/runtime/test_return_router.py
 @@ -284,9 +284,18 @@ class TestReturnRouterRetry(unittest.TestCase):
-
+ 
                  self.assertEqual(res["status"], "redispatched")
                  self.assertTrue(res["dispatch_success"])
 -                # Attempt was incremented after dispatch success
@@ -279,3 +355,66 @@ index 431a119..54b5ccf 100644
                      ("job_123",),
                  )
                  mock_con.commit.assert_called_once()
+diff --git a/scripts/test_node_status.py b/scripts/test_node_status.py
+new file mode 100644
+index 0000000..c9c31fb
+--- /dev/null
++++ b/scripts/test_node_status.py
+@@ -0,0 +1,57 @@
++import argparse
++import sqlite3
++
++from scripts import node_status
++
++
++def test_set_uses_shared_job_lifecycle_vocabulary(tmp_path, monkeypatch):
++    db_path = tmp_path / "queue.db"
++    con = sqlite3.connect(db_path)
++    con.executescript(
++        """
++        CREATE TABLE jobs (
++            job_id TEXT PRIMARY KEY,
++            node_id TEXT,
++            project_id TEXT,
++            queue_state TEXT,
++            status TEXT,
++            created_at TEXT
++        );
++        CREATE TABLE queue_records (job_id TEXT, queue TEXT);
++        CREATE TABLE decision_results (
++            result_id TEXT PRIMARY KEY,
++            action TEXT,
++            node_id TEXT,
++            project_id TEXT,
++            reason TEXT,
++            created_at TEXT
++        );
++        INSERT INTO jobs VALUES (
++            'job_1', 'node-1', 'project-1', 'running', 'running',
++            '2026-07-16T00:00:00+00:00'
++        );
++        INSERT INTO queue_records VALUES ('job_1', 'running');
++        """
++    )
++    con.commit()
++    con.close()
++    monkeypatch.setattr(node_status, "DB_PATH", db_path)
++
++    node_status.cmd_set(argparse.Namespace(
++        ref="job_1",
++        state="deferred",
++        reason="operator pause",
++        yes=True,
++    ))
++
++    con = sqlite3.connect(db_path)
++    job = con.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = 'job_1'"
++    ).fetchone()
++    queue = con.execute(
++        "SELECT queue FROM queue_records WHERE job_id = 'job_1'"
++    ).fetchone()[0]
++    con.close()
++
++    assert job == ("deferred", "deferred")
++    assert queue == "deferred"

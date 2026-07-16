@@ -79,7 +79,7 @@ def init_db():
         priority            TEXT DEFAULT 'medium',
         risk_level          TEXT DEFAULT 'low',
         estimated_effort    TEXT DEFAULT 'medium',
-        status              TEXT DEFAULT 'ready',       -- ready | running | awaiting_result | awaiting_review | complete | failed
+        status              TEXT DEFAULT 'ready',       -- mirrors queue_state for job lifecycle
         attempt             INTEGER DEFAULT 0,
         max_attempts        INTEGER DEFAULT 3,
         artifacts_dir       TEXT,
