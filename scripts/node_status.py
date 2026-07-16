@@ -13,8 +13,8 @@ States (canon: gddp-config schemas/v1/queue_record.yaml):
 
 What `set` does:
     1. Shows current state and asks for confirmation
-    2. Updates jobs.queue_state, jobs.status, and any queue_records rows to the
-       same canonical job lifecycle state
+    2. Updates jobs.queue_state (+ jobs.status when the state is a valid
+       job status) and any queue_records rows for the job
     3. Writes a decision_results audit row — action 'accept_node' for
        awaiting_review → complete, 'manual_status_change' otherwise
 """
@@ -38,6 +38,10 @@ QUEUE_STATES = [
     "awaiting_result", "awaiting_review", "complete", "failed",
     "deferred", "cancelled",
 ]
+# jobs.status is a narrower enum; only mirror queue_state into it when valid
+JOB_STATUSES = {"ready", "running", "awaiting_result", "awaiting_review", "complete", "failed"}
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
