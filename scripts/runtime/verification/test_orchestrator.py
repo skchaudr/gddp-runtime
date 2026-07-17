@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -446,7 +447,12 @@ def test_integrity_harness_receives_node_and_graph(
 # Phase 2: Context coverage tests
 # ---------------------------------------------------------------------------
 
-from scripts.runtime.verification.orchestrator import _compute_context_coverage, _rate_lane
+from scripts.runtime.verification.orchestrator import (
+    _capture_commit_sha,
+    _capture_tree_sha,
+    _compute_context_coverage,
+    _rate_lane,
+)
 from scripts.runtime.verification.schemas import LaneCoverage
 
 
@@ -656,6 +662,39 @@ def test_coverage_raw_evidence_present() -> None:
     assert lane.not_observed == 2
     assert "/repo/README.md" in lane.accessed_paths
     assert "/repo/PROJECT-BRIEF.md" in lane.not_observed_paths
+
+
+def test_coverage_excludes_failed_and_blocked_content_operations() -> None:
+    """Only a completed read/grep establishes canonical-context coverage."""
+    canonical = {"readme": "/repo/README.md"}
+    semantic = _semantic_with_trace([
+        {"tool": "read", "path": "/repo/README.md", "blocked": True},
+        {"tool": "grep", "path": "/repo/README.md", "toolCallId": "failed"},
+        {"event": "tool_execution_end", "toolCallId": "failed", "tool": "grep", "ok": False},
+    ])
+    integrity = _integrity_with_trace([])
+
+    coverage = _compute_context_coverage(canonical, semantic, integrity)
+    assert coverage.criteria.rating == "none"
+    assert coverage.criteria.content_accessed == 0
+
+
+def test_provenance_keeps_tree_and_commit_shas_separate(tmp_path: Path) -> None:
+    """The merge commit must be compared to HEAD, never to HEAD's tree."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "evidence.txt").write_text("evidence\n")
+    subprocess.run(["git", "add", "evidence.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+    assert _capture_commit_sha(tmp_path) == commit_sha
+    assert _capture_tree_sha(tmp_path) != commit_sha
 
 
 def test_receipt_carries_canonical_context_and_coverage(monkeypatch, tmp_path: Path) -> None:

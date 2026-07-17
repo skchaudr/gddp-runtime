@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,11 +23,11 @@ from typing import Any
 
 from scripts.runtime.verification.schemas import IntegrityOutput, LaneExecutionStatus
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
+from scripts.runtime.verification.semantic.timeouts import PI_TIMEOUT_SECONDS
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_integrity.ts"
 GUARD_EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier_guard.ts"
-
 INTEGRITY_SYSTEM_PROMPT = """You are the GDDP integrity reviewer (lane 2: fresh-eyes drift review).
 
 Your job: evaluate whether the work in this repo preserves the node's intended
@@ -158,7 +159,15 @@ class IntegrityHarnessRunner:
         stdout_path = tempfile.mktemp(prefix="gddp-integrity-stdout-")
         stderr_path = tempfile.mktemp(prefix="gddp-integrity-stderr-")
         try:
-            proc = _tee_subprocess(cmd, env, str(repo), stdout_path, stderr_path)
+            proc = _tee_subprocess(cmd, env, str(repo), stdout_path, stderr_path, PI_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            trace = _read_trace(trace_path)
+            return _empty_integrity(
+                f"pi timed out after {PI_TIMEOUT_SECONDS}s",
+                tool_trace=trace,
+                lane_status=LaneExecutionStatus.TIMED_OUT,
+                harness_error=f"pi timed out after {PI_TIMEOUT_SECONDS}s",
+            )
         finally:
             shutil.rmtree(sandbox_home, ignore_errors=True)
 
@@ -314,7 +323,7 @@ def _empty_integrity(reason: str, tool_trace: list[dict[str, Any]] | None = None
     )
 
 
-def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path):
+def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path, timeout_seconds=PI_TIMEOUT_SECONDS):
     """Run a subprocess, teeing stdout/stderr to terminal + durable log files.
 
     Live output goes to sys.stdout/sys.stderr (operator visibility).
@@ -326,6 +335,7 @@ def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path):
     proc = subprocess.Popen(
         cmd, env=env, cwd=cwd, stdin=None,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        start_new_session=True,
     )
 
     def _tee(stream, file_path, out_stream):
@@ -341,10 +351,41 @@ def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path):
     t_err = threading.Thread(target=_tee, args=(proc.stderr, stderr_path, _sys.stderr), daemon=True)
     t_out.start()
     t_err.start()
-    proc.wait()
-    t_out.join(timeout=5)
-    t_err.join(timeout=5)
+    try:
+        proc.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(proc)
+        raise
+    finally:
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
     return proc
+
+
+def _terminate_process_group(proc) -> None:
+    """Terminate the pi process group so a timed-out pi child cannot survive."""
+    if os.name == "posix":
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except OSError:
+            return
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        # The leader can exit on SIGTERM while a descendant ignores it. Kill
+        # the group anyway so that descendant cannot outlive the timed-out run.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
 
 
 def _read_tail(path: str, max_chars: int = 500) -> str:

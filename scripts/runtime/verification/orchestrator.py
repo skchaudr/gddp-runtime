@@ -98,6 +98,7 @@ def verify(
         required_next_action=action,
         generated_at=now(),
         evaluated_tree_sha=_capture_tree_sha(repo),
+        evaluated_commit_sha=_capture_commit_sha(repo),
         merge_commit_sha=merge_commit_sha,
         pr_ref=pr_ref,
         job_id=job_id,
@@ -109,14 +110,38 @@ def verify(
 def _capture_tree_sha(repo: Path) -> str | None:
     """Best-effort capture of the git tree SHA at the repo path.
 
-    Returns the tree SHA (not commit SHA) so the invariant
-    evaluated_tree_sha == merge_commit_sha is checkable. Returns None if the
-    repo is not a git repo or git is unavailable — never raises.
+    This is a tree object SHA, not a commit SHA. It remains for receipt
+    provenance; compare merge_commit_sha to evaluated_commit_sha instead.
+    Returns None if the repo is not a git repo or git is unavailable — never
+    raises.
     """
     import subprocess
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return proc.stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _capture_commit_sha(repo: Path) -> str | None:
+    """Best-effort capture of the exact commit evaluated at ``repo``.
+
+    ``merge_commit_sha`` is a commit SHA, while ``HEAD^{tree}`` is a tree
+    object SHA. Keep both receipt fields, but only compare commit to commit.
+    """
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -255,8 +280,9 @@ def _extract_accessed_paths(output, is_semantic: bool, repo: Path | None = None)
         # Pi path: trace has 'tool_calls' list
         tool_calls = trace.get("tool_calls") if isinstance(trace, dict) else None
         if tool_calls:
+            tool_results = _tool_results(tool_calls)
             for entry in tool_calls:
-                if entry.get("tool") in ("read", "grep") and not entry.get("blocked"):
+                if _successful_content_access(entry, tool_results):
                     path = entry.get("path")
                     if path and isinstance(path, str):
                         accessed.add(_resolve(path))
@@ -272,13 +298,38 @@ def _extract_accessed_paths(output, is_semantic: bool, repo: Path | None = None)
         trace = output.tool_trace
         if not trace:
             return accessed
+        tool_results = _tool_results(trace)
         for entry in trace:
-            if entry.get("tool") in ("read", "grep") and not entry.get("blocked"):
+            if _successful_content_access(entry, tool_results):
                 path = entry.get("path")
                 if path and isinstance(path, str):
                     accessed.add(_resolve(path))
 
     return accessed
+
+
+def _tool_results(trace: list[dict[str, Any]]) -> dict[str, bool]:
+    """Map tool call IDs to their actual execution outcome."""
+    return {
+        entry["toolCallId"]: bool(entry.get("ok"))
+        for entry in trace
+        if entry.get("event") == "tool_execution_end"
+        and isinstance(entry.get("toolCallId"), str)
+    }
+
+
+def _successful_content_access(entry: dict[str, Any], results: dict[str, bool]) -> bool:
+    """Only successful read/grep calls establish content coverage.
+
+    Older traces have no execution event or toolCallId; retain their previous
+    meaning unless they explicitly report ``ok: false``.
+    """
+    if entry.get("tool") not in ("read", "grep") or entry.get("blocked"):
+        return False
+    call_id = entry.get("toolCallId")
+    if isinstance(call_id, str):
+        return results.get(call_id) is True
+    return entry.get("ok") is not False
 
 
 def _rate_lane(

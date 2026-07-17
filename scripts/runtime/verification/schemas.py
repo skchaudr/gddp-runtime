@@ -174,9 +174,11 @@ class VerdictReceipt(BaseModel):
     decision_reasoning: str
     required_next_action: str
     generated_at: str
-    # Provenance: the exact tree the evaluator judged (Phase 1 hardening).
-    # All default None so every existing receipt stays valid.
+    # Provenance: keep the original tree object field for receipts already
+    # written, and record the evaluated commit separately for a truthful
+    # comparison with merge_commit_sha. All default None for legacy receipts.
     evaluated_tree_sha: str | None = None
+    evaluated_commit_sha: str | None = None
     merge_commit_sha: str | None = None
     pr_ref: str | None = None
     job_id: str | None = None

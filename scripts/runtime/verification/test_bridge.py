@@ -17,6 +17,11 @@ def setUpModule():
     os.environ.setdefault("DEEPSEEK_API_KEY", "test-key-not-real")
 
 from scripts.runtime.verification import bridge
+from scripts.runtime.verification.semantic.timeouts import (
+    BRIDGE_TIMEOUT_OVERHEAD_SECONDS,
+    PI_TIMEOUT_SECONDS,
+    bridge_timeout_seconds,
+)
 
 
 def _fake_paths_exist():
@@ -47,6 +52,13 @@ class TestParseCliSummary(unittest.TestCase):
 
     def test_returns_none_when_no_json(self):
         self.assertIsNone(bridge._parse_cli_summary("no json here"))
+
+
+class TestTimeoutBudget(unittest.TestCase):
+    def test_outer_timeout_covers_two_pi_lanes_and_bounded_overhead(self):
+        minimum = 2 * PI_TIMEOUT_SECONDS + BRIDGE_TIMEOUT_OVERHEAD_SECONDS
+        self.assertEqual(bridge_timeout_seconds(1), minimum)
+        self.assertGreaterEqual(bridge.VERIFY_TIMEOUT_SECONDS, minimum)
 
 
 class TestVerifyJobReturn(unittest.TestCase):

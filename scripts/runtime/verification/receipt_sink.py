@@ -37,8 +37,23 @@ def write_receipt(
         project_id, receipt.node_id, base=base, job_id=job_id, attempt=attempt
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(receipt.model_dump_json(indent=2), encoding="utf-8")
-    return path
+    payload = receipt.model_dump_json(indent=2)
+    # Only a job ID plus attempt identifies an immutable receipt. Older
+    # node-only and job-only callers intentionally overwrite their receipt.
+    if not job_id or attempt is None:
+        path.write_text(payload, encoding="utf-8")
+        return path
+    collision = 0
+    while True:
+        candidate = path if collision == 0 else path.with_name(
+            f"{path.stem}-rerun{collision}{path.suffix}"
+        )
+        try:
+            with candidate.open("x", encoding="utf-8") as receipt_file:
+                receipt_file.write(payload)
+            return candidate
+        except FileExistsError:
+            collision += 1
 
 
 def receipt_exists(

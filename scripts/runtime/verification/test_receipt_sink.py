@@ -52,3 +52,44 @@ def test_writing_retry_receipt_preserves_first_attempt():
         assert first_path != second_path
         assert first_path.read_text() == '{"attempt": 0}'
         assert second_path.read_text() == '{"attempt": 1}'
+
+
+def test_same_attempt_rerun_gets_deterministic_collision_suffix():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        first_path = write_receipt(
+            FakeReceipt("node-a", '{"run": 1}'), "project-a", base=base,
+            job_id="job_123", attempt=0,
+        )
+        rerun_path = write_receipt(
+            FakeReceipt("node-a", '{"run": 2}'), "project-a", base=base,
+            job_id="job_123", attempt=0,
+        )
+
+        assert rerun_path.name == "job_123-attempt0-rerun1.json"
+        assert first_path.read_text() == '{"run": 1}'
+        assert rerun_path.read_text() == '{"run": 2}'
+
+
+def test_node_only_receipt_overwrites_legacy_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        first_path = write_receipt(FakeReceipt("node-a", '{"run": 1}'), "project-a", base=base)
+        second_path = write_receipt(FakeReceipt("node-a", '{"run": 2}'), "project-a", base=base)
+
+        assert second_path == first_path
+        assert first_path.read_text() == '{"run": 2}'
+
+
+def test_job_id_only_receipt_overwrites_legacy_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        first_path = write_receipt(
+            FakeReceipt("node-a", '{"run": 1}'), "project-a", base=base, job_id="job_123",
+        )
+        second_path = write_receipt(
+            FakeReceipt("node-a", '{"run": 2}'), "project-a", base=base, job_id="job_123",
+        )
+
+        assert second_path == first_path
+        assert first_path.read_text() == '{"run": 2}'

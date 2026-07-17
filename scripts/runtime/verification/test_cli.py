@@ -12,6 +12,8 @@ from scripts.runtime.verification.schemas import VerdictReceipt
 def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
+    (repo / "README.md").write_text("# Project\n", encoding="utf-8")
+    (repo / "PROJECT-BRIEF.md").write_text("Brief\n", encoding="utf-8")
     node_yaml = tmp_path / "node.yaml"
     project_yaml = tmp_path / "project.yaml"
     receipt_dir = tmp_path / "receipts"
@@ -59,6 +61,11 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
     assert receipt.verdict.value == output["verdict"]
     assert receipt.completeness_status == output["completeness_status"]
     assert receipt.required_next_action == output["required_next_action"]
+    assert output["context_coverage"] == {
+        "criteria": "none", "integrity": "none", "overall": "none",
+    }
+    assert output["lane_status"] == {"criteria": "completed", "integrity": "not_run"}
+    assert output["harness_error"] == {"criteria": None, "integrity": None}
 
 
 def test_live_runner_auto_prefers_deepseek(monkeypatch) -> None:

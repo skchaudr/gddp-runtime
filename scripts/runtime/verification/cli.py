@@ -335,13 +335,24 @@ def main(argv: list[str] | None = None) -> int:
     # Phase 1 provenance: surface in the summary so node_status.py can display it.
     if receipt.evaluated_tree_sha:
         summary["evaluated_tree_sha"] = receipt.evaluated_tree_sha
+    if receipt.evaluated_commit_sha:
+        summary["evaluated_commit_sha"] = receipt.evaluated_commit_sha
     if receipt.merge_commit_sha:
         summary["merge_commit_sha"] = receipt.merge_commit_sha
     if receipt.pr_ref:
         summary["pr_ref"] = receipt.pr_ref
-    # Phase 2 coverage: surface the quick signal + raw evidence.
+    # Summaries are operator-facing; raw coverage evidence remains in receipt.
     if receipt.context_coverage:
-        summary["context_coverage"] = receipt.context_coverage.model_dump()
+        criteria_coverage = receipt.context_coverage.criteria
+        summary["context_coverage"] = {
+            "criteria": (
+                criteria_coverage
+                if isinstance(criteria_coverage, str)
+                else criteria_coverage.rating
+            ),
+            "integrity": receipt.context_coverage.integrity.rating,
+            "overall": receipt.context_coverage.overall,
+        }
     # Two-lane evaluation: include criteria_verdict and integrity when present
     # so the bridge and return_router can see both lanes.
     if receipt.criteria_verdict is not None:
@@ -355,12 +366,31 @@ def main(argv: list[str] | None = None) -> int:
             "confidence": receipt.integrity.confidence,
             "findings": [f.model_dump() for f in receipt.integrity.findings],
             "reasoning": receipt.integrity.reasoning,
+            "lane_status": (
+                receipt.integrity.lane_status.value
+                if receipt.integrity.lane_status else None
+            ),
+            "harness_error": receipt.integrity.harness_error,
         }
         # Phase 3: include graph_observations when present.
         if receipt.integrity.graph_observations:
             summary["integrity"]["graph_observations"] = [
                 o.model_dump() for o in receipt.integrity.graph_observations
             ]
+    summary["lane_status"] = {
+        "criteria": (
+            receipt.semantic.lane_status.value if receipt.semantic and receipt.semantic.lane_status
+            else "completed" if receipt.semantic else "not_run"
+        ),
+        "integrity": (
+            receipt.integrity.lane_status.value if receipt.integrity and receipt.integrity.lane_status
+            else "completed" if receipt.integrity else "not_run"
+        ),
+    }
+    summary["harness_error"] = {
+        "criteria": receipt.semantic.harness_error if receipt.semantic else None,
+        "integrity": receipt.integrity.harness_error if receipt.integrity else None,
+    }
     # Surface criteria-lane findings (non-pass judgments) so the return_router
     # can use them for retry decisions alongside integrity findings.
     criteria_findings = []

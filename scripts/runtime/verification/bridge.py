@@ -19,12 +19,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.runtime.verification.semantic.timeouts import bridge_timeout_seconds
+
 # Same semantic settings proven in live runs; override via env for reruns.
 DEFAULT_SEMANTIC_ARGS = (
     "--semantic-mode live --semantic-harness pi --semantic-provider deepseek "
     "--semantic-pi-model deepseek-v4-flash --semantic-thinking medium"
 )
-VERIFY_TIMEOUT_SECONDS = int(os.environ.get("GDDP_VERIFY_TIMEOUT_SECONDS", "1500"))
+VERIFY_TIMEOUT_SECONDS = bridge_timeout_seconds(
+    int(os.environ.get("GDDP_VERIFY_TIMEOUT_SECONDS", "0"))
+)
 
 _RUNTIME_ROOT = Path(__file__).resolve().parents[3]
 

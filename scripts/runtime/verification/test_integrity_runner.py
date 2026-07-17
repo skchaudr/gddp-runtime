@@ -1,8 +1,16 @@
 """Tests for integrity_runner graph access: neighbor pointers into the prompt."""
 
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
+from unittest.mock import patch
 
+from scripts.runtime.verification.schemas import LaneExecutionStatus
+from scripts.runtime.verification.semantic import integrity_runner, pi_runner
 from scripts.runtime.verification.semantic.integrity_runner import (
+    IntegrityHarnessRunner,
     _build_integrity_prompt,
     _neighbor_pointers,
 )
@@ -76,8 +84,6 @@ def test_empty_integrity_accepts_tool_trace() -> None:
 def test_empty_integrity_accepts_lane_status_and_harness_error() -> None:
     """Phase 4: _empty_integrity accepts lane_status and harness_error."""
     from scripts.runtime.verification.semantic.integrity_runner import _empty_integrity
-    from scripts.runtime.verification.schemas import LaneExecutionStatus
-
     result = _empty_integrity(
         "pi crashed",
         lane_status=LaneExecutionStatus.CRASHED,
@@ -89,3 +95,68 @@ def test_empty_integrity_accepts_lane_status_and_harness_error() -> None:
     result_clean = _empty_integrity("ok")
     assert result_clean.lane_status is None
     assert result_clean.harness_error is None
+
+
+def test_integrity_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> None:
+    """A timed-out integrity subprocess becomes receipt evidence, not a crash."""
+    monkeypatch.setattr(integrity_runner.shutil, "which", lambda _: "/usr/bin/pi")
+    monkeypatch.setattr(
+        integrity_runner,
+        "_tee_subprocess",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("pi", 1)),
+    )
+
+    result = IntegrityHarnessRunner(provider="deepseek").run(
+        node={"node_id": "node-a"}, graph={"project_id": "project-a"},
+        deterministic_result={}, repo=tmp_path,
+    )
+
+    assert result.lane_status == LaneExecutionStatus.TIMED_OUT
+    assert result.harness_error == "pi timed out after 1200s"
+
+
+def test_semantic_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> None:
+    """The criteria lane uses the same typed timeout contract."""
+    monkeypatch.setattr(pi_runner.shutil, "which", lambda _: "/usr/bin/pi")
+    monkeypatch.setattr(
+        pi_runner,
+        "_tee_subprocess",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("pi", 1)),
+    )
+
+    result = pi_runner.PiHarnessRunner(provider="deepseek").run(
+        node={"node_id": "node-a"}, graph={"project_id": "project-a"},
+        deterministic_result={}, repo=tmp_path,
+    )
+
+    assert result.lane_status == LaneExecutionStatus.TIMED_OUT
+    assert result.harness_error == "pi timed out after 1200s"
+
+
+def test_timeout_kills_stubborn_descendant_after_group_leader_exits(tmp_path: Path) -> None:
+    """A descendant that ignores SIGTERM cannot outlive its terminated leader."""
+    child_pid_path = tmp_path / "child.pid"
+    program = (
+        "import subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)']); "
+        "open(sys.argv[1], 'w').write(str(child.pid)); time.sleep(30)"
+    )
+    with patch.object(sys, "stdout"), patch.object(sys, "stderr"):
+        try:
+            pi_runner._tee_subprocess(
+                [sys.executable, "-c", program, str(child_pid_path)],
+                dict(os.environ), str(tmp_path), str(tmp_path / "out.log"), str(tmp_path / "err.log"), 0.2,
+            )
+        except subprocess.TimeoutExpired:
+            pass
+        else:
+            raise AssertionError("expected timeout")
+
+    child_pid = int(child_pid_path.read_text())
+    time.sleep(0.1)
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        return
+    raise AssertionError(f"timed-out pi child {child_pid} is still running")
