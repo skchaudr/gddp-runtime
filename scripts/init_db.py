@@ -161,6 +161,25 @@ def init_db():
         reason              TEXT,
         created_at          TEXT NOT NULL
     );
+
+    -- -----------------------------------------------------------------------
+    -- executor_sessions: tracks remote executor sessions (Jules CLI, etc.)
+    -- One job can have multiple sessions (retries, parallel candidates).
+    -- -----------------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS executor_sessions (
+        session_db_id              TEXT PRIMARY KEY,
+        job_id                     TEXT NOT NULL,
+        executor                   TEXT NOT NULL,      -- jules_cli | jules_api | droid | etc.
+        session_id                 TEXT NOT NULL,      -- executor-specific ID
+        state                      TEXT DEFAULT 'dispatched', -- dispatched | running | needs_operator | completed | failed | collected | evaluated
+        expected_base_commit_sha   TEXT,               -- commit visible at dispatch time
+        result_commit_sha          TEXT,               -- commit after patch application (set by runtime)
+        patch_path                 TEXT,               -- path to retrieved patch file
+        error                      TEXT,
+        created_at                 TEXT NOT NULL,
+        updated_at                 TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+    );
     """)
 
     # One-time migration: add claimed_at to pre-existing events tables.
@@ -180,7 +199,7 @@ def init_db():
     con.commit()
     con.close()
     print(f"Initialized: {DB_PATH}")
-    print("Tables: events, jobs, queue_records, results, artifact_verifications, decision_results")
+    print("Tables: events, jobs, queue_records, results, artifact_verifications, decision_results, executor_sessions")
 
 
 if __name__ == "__main__":

@@ -108,3 +108,62 @@ def mark_job_failed(con: sqlite3.Connection, job_id: str) -> None:
         "UPDATE queue_records SET queue = 'failed' WHERE job_id = ?",
         (job_id,),
     )
+
+
+def insert_executor_session(
+    con: sqlite3.Connection,
+    job_id: str,
+    executor: str,
+    session_id: str,
+    expected_base_commit_sha: str | None = None,
+) -> str:
+    """Insert a new executor session record. Returns the session_db_id."""
+    session_db_id = f"ses_{ts_id()}"
+    ts = now()
+    con.execute(
+        """INSERT INTO executor_sessions
+           (session_db_id, job_id, executor, session_id, state,
+            expected_base_commit_sha, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'dispatched', ?, ?, ?)""",
+        (session_db_id, job_id, executor, session_id,
+         expected_base_commit_sha, ts, ts),
+    )
+    return session_db_id
+
+
+def update_executor_session_state(
+    con: sqlite3.Connection,
+    session_db_id: str,
+    state: str,
+    error: str | None = None,
+    result_commit_sha: str | None = None,
+    patch_path: str | None = None,
+) -> None:
+    """Update an executor session's state and optional fields."""
+    con.execute(
+        """UPDATE executor_sessions
+              SET state = ?, error = ?, result_commit_sha = ?,
+                  patch_path = ?, updated_at = ?
+            WHERE session_db_id = ?""",
+        (state, error, result_commit_sha, patch_path, now(), session_db_id),
+    )
+
+
+def get_active_executor_sessions(con: sqlite3.Connection) -> list:
+    """Get all sessions in dispatched/running/needs_operator state."""
+    return con.execute(
+        """SELECT * FROM executor_sessions
+            WHERE state IN ('dispatched', 'running', 'needs_operator')
+            ORDER BY created_at"""
+    ).fetchall()
+
+
+def get_executor_session_by_id(
+    con: sqlite3.Connection,
+    session_db_id: str,
+):
+    """Get a single executor session by its DB id."""
+    return con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = ?",
+        (session_db_id,),
+    ).fetchone()
