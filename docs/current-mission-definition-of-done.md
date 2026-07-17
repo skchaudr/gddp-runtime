@@ -1,4 +1,4 @@
-# Current Mission: Definition of Done
+# GDDP Runtime Recovery, Evaluator Hardening, and Executor Boundary
 
 Date: 2026-07-16
 
