@@ -35,9 +35,17 @@ intent and graph-integrity layer; only Sab changes graph truth.
   main; full tests pass; main equals `origin/main`; after fresh inspection and
   approval, sanctioned SQL reconciles only stale runtime rows. Sab alone updates
   `gddp-config` node status.
-- [ ] **Evaluator hardening:** update `evaluator-hardening` from decided main;
+- [x] **Evaluator hardening:** update `evaluator-hardening` from decided main;
   preserve completed P1 fixes; resolve or explicitly defer known P2 gaps; pass
   focused/full tests; commit and push for Sab's merge decision.
+  Merged to main at `08fbf2a` (306 tests pass). Five P2 issues found and fixed
+  through two-agent review (Codex found+fixed, Factory verified): provenance
+  tree-vs-commit SHA mismatch, failed reads inflating coverage, TIMED_OUT
+  status unreachable, lane status missing from operator summary, and receipt
+  overwrite on rerun. Regression fix: timeout budget now contains 2 sequential
+  lanes + cleanup; receipt collision avoidance scoped to job-attempt only.
+  P2 gaps deferred: commit/tree SHA display in external v5 spec, built-in agent
+  path coverage underreporting.
 - [ ] **Executor boundary:** accept a small contract for durable sessions,
   transcripts, message/pause/resume/cancel, structured results, model/effort and
   mutation policies, retries, and recovery. Git remains the artifact layer;
