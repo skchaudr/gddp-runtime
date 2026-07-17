@@ -142,7 +142,7 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
         human_review_questions=[],
     )
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    semantic_json = SemanticOutput(
+    expected_semantic = SemanticOutput(
         judgments=[
             {
                 "criterion_id": "c1",
@@ -156,19 +156,25 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
         risks=None,
         followup_candidates=None,
         budget_exhausted=False,
-    ).model_dump_json()
-    runner = MockRunner(semantic_json)
+    )
+    harness_calls = 0
+
+    def _mock_semantic_harness(**kwargs):
+        nonlocal harness_calls
+        harness_calls += 1
+        return expected_semantic
 
     receipt = orchestrator.verify(
         node_yaml={"node_id": "node-semantic"},
         project_yaml={"project_id": "project-semantic"},
         repo=tmp_path,
-        runner=runner,
+        runner=MockRunner("{}"),
         toolbox=SemanticToolbox(tmp_path),
+        semantic_harness=_mock_semantic_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
 
-    assert runner.calls == 1
+    assert harness_calls == 1
     assert receipt.semantic is not None
     assert receipt.verdict == Verdict.PASS
     assert receipt.criteria_confidence == 0.7
@@ -178,7 +184,14 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
     assert receipt.required_next_action == "Proceed to accept_node (open evidence PR)."
 
 
-def test_orchestrator_passes_semantic_agent_budget_kwargs(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_passes_correct_args_to_semantic_harness(monkeypatch, tmp_path: Path) -> None:
+    """The pi harness (semantic_harness) receives node, graph, det, repo, shape_profile.
+
+    The built-in SemanticAgent fallback was removed; the orchestrator now calls
+    the wired semantic_harness directly. This test verifies the harness receives
+    the orchestrator's standard kwargs (the old test checked budget_trace
+    passthrough to the deleted built-in agent).
+    """
     det = DeterministicResult(
         criteria=[
             CriterionCheck(
@@ -203,23 +216,50 @@ def test_orchestrator_passes_semantic_agent_budget_kwargs(monkeypatch, tmp_path:
         human_review_questions=[],
     )
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = CapturingRunner()
+
+    received_kwargs: dict[str, Any] = {}
+
+    def _capturing_semantic_harness(**kwargs):
+        received_kwargs.update(kwargs)
+        return SemanticOutput(
+            judgments=[
+                {
+                    "criterion_id": "c1",
+                    "judgment": "judged_pass",
+                    "confidence": 0.7,
+                    "evidence": ["module.py:1"],
+                    "reasoning": "Mock semantic evidence matched the criterion.",
+                }
+            ],
+            overall_reasoning="Semantic mock passed.",
+            risks=None,
+            followup_candidates=None,
+            budget_exhausted=False,
+        )
+
+    node_yaml = {"node_id": "node-semantic"}
+    project_yaml = {"project_id": "project-semantic"}
+    shape_profile = {"shape": "test"}
 
     receipt = orchestrator.verify(
-        node_yaml={"node_id": "node-semantic"},
-        project_yaml={"project_id": "project-semantic"},
+        node_yaml=node_yaml,
+        project_yaml=project_yaml,
         repo=tmp_path,
-        runner=runner,
+        runner=MockRunner("{}"),
         toolbox=SemanticToolbox(tmp_path),
+        shape_profile=shape_profile,
         semantic_agent_kwargs={"max_turns": 1, "max_tool_calls": 3, "max_tokens": 50_000},
+        semantic_harness=_capturing_semantic_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
 
     assert receipt.semantic is not None
-    assert receipt.semantic.budget_trace is not None
-    assert receipt.semantic.budget_trace["max_turns"] == 1
-    assert receipt.semantic.budget_trace["max_tool_calls"] == 3
-    assert receipt.semantic.budget_trace["max_tokens"] == 50_000
+    # The pi harness receives the orchestrator's standard kwargs.
+    assert received_kwargs["node"] == node_yaml
+    assert received_kwargs["graph"] == project_yaml
+    assert received_kwargs["repo"] == tmp_path
+    assert received_kwargs["deterministic_result"] is det
+    assert received_kwargs["shape_profile"] == shape_profile
 
 
 # ---------------------------------------------------------------------------

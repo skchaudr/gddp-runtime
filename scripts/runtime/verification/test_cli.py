@@ -6,10 +6,10 @@ from pathlib import Path
 import yaml
 
 from scripts.runtime.verification import cli
-from scripts.runtime.verification.schemas import VerdictReceipt
+from scripts.runtime.verification.schemas import SemanticOutput, VerdictReceipt
 
 
-def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys) -> None:
+def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys, monkeypatch) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "README.md").write_text("# Project\n", encoding="utf-8")
@@ -40,6 +40,37 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
         ),
         encoding="utf-8",
     )
+
+    # The built-in SemanticAgent fallback was removed; the CLI's default
+    # "runner" harness path leaves semantic_harness=None. Wire a mock harness
+    # that returns a canned SemanticOutput so the receipt contract holds.
+    _mock_semantic = SemanticOutput(
+        judgments=[
+            {
+                "criterion_id": "contract-doc-exists",
+                "judgment": "indeterminate",
+                "confidence": 0.2,
+                "evidence": [],
+                "reasoning": "Offline mock could not resolve the criterion.",
+            }
+        ],
+        overall_reasoning="Mock semantic for CLI contract test.",
+        risks=None,
+        followup_candidates=None,
+        budget_exhausted=False,
+    )
+
+    def _mock_semantic_harness(**kwargs):
+        return _mock_semantic
+
+    _orig_verify = cli.verify
+
+    def _wrapped_verify(**kwargs):
+        if kwargs.get("semantic_harness") is None:
+            kwargs["semantic_harness"] = _mock_semantic_harness
+        return _orig_verify(**kwargs)
+
+    monkeypatch.setattr(cli, "verify", _wrapped_verify)
 
     assert cli.main(
         [

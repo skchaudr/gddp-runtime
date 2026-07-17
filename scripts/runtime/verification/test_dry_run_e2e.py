@@ -125,7 +125,7 @@ def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(tmp_path: Pat
 
 def test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes(tmp_path: Path) -> None:
     node_yaml, project_yaml = _indeterminate_fixtures(tmp_path)
-    semantic_json = SemanticOutput(
+    expected_semantic = SemanticOutput(
         judgments=[
             {
                 "criterion_id": "acceptance-test-covers-grk",
@@ -139,8 +139,13 @@ def test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes(tmp_path:
         risks=None,
         followup_candidates=None,
         budget_exhausted=False,
-    ).model_dump_json()
-    runner = MockRunner(semantic_json)
+    )
+    harness_calls = 0
+
+    def _mock_semantic_harness(**kwargs):
+        nonlocal harness_calls
+        harness_calls += 1
+        return expected_semantic
 
     receipt = _assert_zero_repo_writes(
         tmp_path,
@@ -148,8 +153,9 @@ def test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes(tmp_path:
             node_yaml=node_yaml,
             project_yaml=project_yaml,
             repo=tmp_path,
-            runner=runner,
+            runner=MockRunner("{}"),
             toolbox=SemanticToolbox(tmp_path),
+            semantic_harness=_mock_semantic_harness,
             now=lambda: "2026-06-30T00:00:00+00:00",
         ),
     )
@@ -159,6 +165,6 @@ def test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes(tmp_path:
         project_id="dry-run-project",
         node_id="dry-run-indeterminate",
     )
-    assert runner.calls == 1
+    assert harness_calls == 1
     assert receipt.semantic is not None
     assert receipt.verdict == Verdict.PASS

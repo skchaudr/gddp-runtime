@@ -41,21 +41,21 @@ def verify(
     )
     semantic = None
     if _should_run_semantic(det):
-        if semantic_harness is not None:
-            semantic = semantic_harness(
-                node=node_yaml,
-                graph=project_yaml,
-                deterministic_result=det,
-                shape_profile=shape_profile,
-                repo=repo,
+        # The built-in SemanticAgent fallback was removed: pi is the only
+        # evaluator path. If no pi harness is wired, hard-fail rather than
+        # silently run the weaker agent with broken coverage traces.
+        if semantic_harness is None:
+            raise RuntimeError(
+                "semantic_harness (pi) is required — the built-in agent "
+                "fallback was removed. Wire PiHarnessRunner in the bridge."
             )
-        else:
-            semantic = SemanticAgent(runner=runner, toolbox=toolbox, **(semantic_agent_kwargs or {})).run(
-                node=node_yaml,
-                graph=project_yaml,
-                deterministic_result=det,
-                shape_profile=shape_profile,
-            )
+        semantic = semantic_harness(
+            node=node_yaml,
+            graph=project_yaml,
+            deterministic_result=det,
+            shape_profile=shape_profile,
+            repo=repo,
+        )
 
     verdict, signals, action = decision_engine.decide(det, semantic)
 

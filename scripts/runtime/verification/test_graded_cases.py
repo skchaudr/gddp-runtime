@@ -72,6 +72,26 @@ class MockRunner:
         )
 
 
+class MockSemanticHarness:
+    """Returns a canned SemanticOutput (no live pi)."""
+
+    def __init__(self, output: SemanticOutput) -> None:
+        self.output = output
+        self.calls = 0
+
+    def __call__(
+        self,
+        *,
+        node: dict[str, Any],
+        graph: dict[str, Any],
+        deterministic_result: Any,
+        shape_profile: dict[str, Any] | None = None,
+        repo: Path,
+    ) -> SemanticOutput:
+        self.calls += 1
+        return self.output
+
+
 class MockIntegrityHarness:
     """Returns a canned IntegrityOutput (no live pi)."""
 
@@ -223,6 +243,10 @@ def _run_case(
 
     runner = MockRunner(semantic) if semantic else MockRunner(_semantic_pass())
     integrity_harness = MockIntegrityHarness(integrity) if integrity else None
+    # Wire a mock semantic harness when a canned SemanticOutput is provided.
+    # The built-in SemanticAgent fallback was removed; the orchestrator requires
+    # a semantic_harness when the semantic lane runs (indeterminate criteria).
+    semantic_harness = MockSemanticHarness(semantic) if semantic else None
 
     return verify(
         node_yaml={"node_id": "graded-case", "acceptance_criteria": [{"id": "c1", "criterion": "test"}]},
@@ -230,6 +254,7 @@ def _run_case(
         repo=tmp_path,
         runner=runner,
         toolbox=SemanticToolbox(tmp_path),
+        semantic_harness=semantic_harness,
         integrity_harness=integrity_harness,
         now=lambda: "2026-07-16T00:00:00+00:00",
     )
