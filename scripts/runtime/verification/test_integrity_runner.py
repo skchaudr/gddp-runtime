@@ -112,7 +112,10 @@ def test_integrity_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> 
     )
 
     assert result.lane_status == LaneExecutionStatus.TIMED_OUT
-    assert result.harness_error == "pi timed out after 1200s"
+    assert result.harness_error.startswith("pi timed out after 1200s")
+    # Failure path: log files are preserved and their paths linked into harness_error.
+    assert "stdout=" in result.harness_error
+    assert "stderr=" in result.harness_error
 
 
 def test_semantic_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> None:
@@ -130,7 +133,10 @@ def test_semantic_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> N
     )
 
     assert result.lane_status == LaneExecutionStatus.TIMED_OUT
-    assert result.harness_error == "pi timed out after 1200s"
+    assert result.harness_error.startswith("pi timed out after 1200s")
+    # Failure path: log files are preserved and their paths linked into harness_error.
+    assert "stdout=" in result.harness_error
+    assert "stderr=" in result.harness_error
 
 
 def test_timeout_kills_stubborn_descendant_after_group_leader_exits(tmp_path: Path) -> None:

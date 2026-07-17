@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -23,6 +22,11 @@ from typing import Any
 
 from scripts.runtime.verification.schemas import IntegrityOutput, LaneExecutionStatus
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
+from scripts.runtime.verification.semantic.subprocess_utils import (
+    read_tail as _read_tail,
+    read_trace as _read_trace,
+    tee_subprocess as _tee_subprocess,
+)
 from scripts.runtime.verification.semantic.timeouts import PI_TIMEOUT_SECONDS
 
 
@@ -166,7 +170,9 @@ class IntegrityHarnessRunner:
                 f"pi timed out after {PI_TIMEOUT_SECONDS}s",
                 tool_trace=trace,
                 lane_status=LaneExecutionStatus.TIMED_OUT,
-                harness_error=f"pi timed out after {PI_TIMEOUT_SECONDS}s",
+                harness_error=_harness_error_with_logs(
+                    f"pi timed out after {PI_TIMEOUT_SECONDS}s", stdout_path, stderr_path,
+                ),
             )
         finally:
             shutil.rmtree(sandbox_home, ignore_errors=True)
@@ -178,7 +184,10 @@ class IntegrityHarnessRunner:
                 f"pi exited with code {proc.returncode}: {stderr_tail}",
                 tool_trace=trace,
                 lane_status=LaneExecutionStatus.CRASHED,
-                harness_error=f"pi exited with code {proc.returncode}: {stderr_tail}",
+                harness_error=_harness_error_with_logs(
+                    f"pi exited with code {proc.returncode}: {stderr_tail}",
+                    stdout_path, stderr_path,
+                ),
             )
 
         if not Path(verdict_path).exists():
@@ -187,7 +196,10 @@ class IntegrityHarnessRunner:
                 "pi completed without calling submit_integrity_verdict; no verdict recorded.",
                 tool_trace=trace,
                 lane_status=LaneExecutionStatus.NO_VERDICT,
-                harness_error="pi completed without calling submit_integrity_verdict",
+                harness_error=_harness_error_with_logs(
+                    "pi completed without calling submit_integrity_verdict",
+                    stdout_path, stderr_path,
+                ),
             )
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
         # Phase 2: attach ground-truth tool trace to the integrity output.
@@ -195,6 +207,10 @@ class IntegrityHarnessRunner:
         if trace:
             raw["tool_trace"] = trace
         raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
+        # Success: the verdict was recorded, so the temp stdout/stderr logs are
+        # no longer needed. Best-effort cleanup; never raise. On failure paths
+        # the logs are preserved and linked into harness_error instead.
+        _cleanup_logs(stdout_path, stderr_path)
         return IntegrityOutput.model_validate(raw)
 
     def _build_command(self, system_prompt: str, user_prompt: str, repo: Path) -> list[str]:
@@ -291,23 +307,6 @@ def _build_integrity_prompt(
     )
 
 
-def _read_trace(trace_path: str) -> list[dict[str, Any]]:
-    """Read a JSONL tool trace file. Same logic as pi_runner._read_trace."""
-    p = Path(trace_path)
-    if not p.exists():
-        return []
-    out: list[dict[str, Any]] = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
-
-
 def _empty_integrity(reason: str, tool_trace: list[dict[str, Any]] | None = None, lane_status: LaneExecutionStatus | None = None, harness_error: str | None = None) -> IntegrityOutput:
     return IntegrityOutput(
         verdict="unknown",
@@ -323,78 +322,25 @@ def _empty_integrity(reason: str, tool_trace: list[dict[str, Any]] | None = None
     )
 
 
-def _tee_subprocess(cmd, env, cwd, stdout_path, stderr_path, timeout_seconds=PI_TIMEOUT_SECONDS):
-    """Run a subprocess, teeing stdout/stderr to terminal + durable log files.
+def _harness_error_with_logs(harness_error: str, stdout_path: str, stderr_path: str) -> str:
+    """Append preserved temp log paths to harness_error so operators can find them.
 
-    Live output goes to sys.stdout/sys.stderr (operator visibility).
-    Durable copy goes to stdout_path/stderr_path (receipt evidence).
+    Used on failure paths (crash / no-verdict / timeout) where the stdout/stderr
+    log files are intentionally left on disk for post-mortem inspection instead
+    of being cleaned up by _cleanup_logs.
     """
-    import sys as _sys
-    import threading
-
-    proc = subprocess.Popen(
-        cmd, env=env, cwd=cwd, stdin=None,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
-
-    def _tee(stream, file_path, out_stream):
-        with open(file_path, "w", encoding="utf-8") as f:
-            for line in iter(stream.readline, b""):
-                text = line.decode("utf-8", errors="replace")
-                f.write(text)
-                out_stream.write(text)
-                out_stream.flush()
-        stream.close()
-
-    t_out = threading.Thread(target=_tee, args=(proc.stdout, stdout_path, _sys.stdout), daemon=True)
-    t_err = threading.Thread(target=_tee, args=(proc.stderr, stderr_path, _sys.stderr), daemon=True)
-    t_out.start()
-    t_err.start()
-    try:
-        proc.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        _terminate_process_group(proc)
-        raise
-    finally:
-        t_out.join(timeout=5)
-        t_err.join(timeout=5)
-    return proc
+    return f"{harness_error} (preserved logs: stdout={stdout_path} stderr={stderr_path})"
 
 
-def _terminate_process_group(proc) -> None:
-    """Terminate the pi process group so a timed-out pi child cannot survive."""
-    if os.name == "posix":
+def _cleanup_logs(stdout_path: str, stderr_path: str) -> None:
+    """Best-effort unlink of temp stdout/stderr log files. Never raise.
+
+    Called on the success (COMPLETED) path — the logs are not needed once a
+    verdict was recorded. On failure paths the logs are preserved and their
+    paths are linked into harness_error via _harness_error_with_logs.
+    """
+    for p in (stdout_path, stderr_path):
         try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except OSError:
-            return
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
-        # The leader can exit on SIGTERM while a descendant ignores it. Kill
-        # the group anyway so that descendant cannot outlive the timed-out run.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
+            Path(p).unlink(missing_ok=True)
         except OSError:
             pass
-    else:
-        proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-
-
-def _read_tail(path: str, max_chars: int = 500) -> str:
-    """Read the last N characters of a file. Best-effort."""
-    try:
-        p = Path(path)
-        if not p.exists():
-            return ""
-        text = p.read_text(encoding="utf-8", errors="replace")
-        return text[-max_chars:] if len(text) > max_chars else text
-    except OSError:
-        return ""
