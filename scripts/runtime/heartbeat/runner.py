@@ -128,7 +128,7 @@ def run_heartbeat(
         # CLI-based executors complete asynchronously without webhooks, so
         # every tick must poll for completion even when there are no new
         # intake events.
-        reconcile_sessions(con, Path(repo_path) if repo_path else None)
+        reconcile_sessions(con, Path(repo_path) if repo_path else None, repo=repo)
 
         # Phase A-C: Plan and dispatch new events.
         planned_dispatches = _plan_dispatches(

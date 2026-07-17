@@ -356,6 +356,13 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
     FakeAdapter = _make_fake_adapter(status_state="completed")
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
 
+    # The evaluator bridge is mocked: real verification needs config/repo
+    # checkouts that the test fixture does not provide.
+    monkeypatch.setattr(
+        reconciler, "verify_job_return",
+        lambda **kw: {"verification_status": "ok", "verdict": "pass"},
+    )
+
     reconciler.reconcile_sessions(con, repo)
 
     row = get_executor_session_by_id(con, ses_id)
@@ -501,7 +508,7 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
 
     called = {"reconcile": False}
 
-    def fake_reconcile(c, repo_path):
+    def fake_reconcile(c, repo_path, repo=None):
         called["reconcile"] = True
 
     monkeypatch.setattr(runner, "reconcile_sessions", fake_reconcile)
