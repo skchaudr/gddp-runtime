@@ -54,9 +54,9 @@ index 022571b..7405a32 100644
 --- a/decision.md
 +++ b/decision.md
 @@ -8,47 +8,48 @@ During a baseline check, the dashboard reported `running=2` even though only one
- 
+
  This divergence made operator-facing counts inaccurate, as different dashboard views and scripts read either `status` or `queue_state`.
- 
+
 -### Proven Origin
 +### Codebase Write Path Inconsistencies (Code Evidence)
 +We identified several live write paths in the codebase that update one column but neglect the other or introduce mismatching values:
@@ -82,7 +82,7 @@ index 022571b..7405a32 100644
 +   This avoids operator-driven mismatches.
 +4. **`scripts/runtime/return_router.py` (Redispatch retry loop)**:
 +   On successful redispatch, the writer increments attempt and sets both `status` and `queue_state` to `'running'`.
- 
+
 -The mismatch was created by a direct status-only SQLite update, not by a runtime
 -writer. At `2026-07-11T17:10:35.380Z`, Factory/Droid session
 -`00e978de-f147-4492-88d3-c13dcc5a4f5e` ran:
@@ -126,20 +126,20 @@ index 022571b..7405a32 100644
 +  ```sql
 +  UPDATE jobs SET status = 'failed' WHERE job_id = 'job_20260711T16542651';
 +  ```
- 
+
  ---
- 
+
  ## 2. Reversible State Reconciliation
- 
+
 -The code change does not mutate the live database. The operator can reconcile
 -the existing row with this documented, reversible SQL step.
 +To reconcile the existing inconsistent row in production (`queue.db`), we use a documented, reversible SQL migration rather than silent or untracked mutation.
- 
+
  ### Correction Step
  This sets the `queue_state` to match the job's actual `'failed'` status.
 @@ -65,8 +66,4 @@ UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
  ---
- 
+
  ## 3. Rationale for Redundancy Alignment
 -
 -`jobs.status` and `jobs.queue_state` remain redundant for compatibility, so the
@@ -153,12 +153,12 @@ index 4b1162a..4fe2d55 100644
 +++ b/result-summary.md
 @@ -1,20 +1,15 @@
  # Result Summary - Job State Consistency
- 
+
 -This change closes the targeted `jobs.status`/`jobs.queue_state` divergence paths
 -and documents a reversible operator step for the existing inconsistent row. It
 -does not mutate the live database or advance graph truth.
 +We closed PR #108’s job state drift by restoring the terminal stale-cleanup invariant and re-establishing focused regression checks for state coherence.
- 
+
  ### Key Changes
  1. **Root Cause Documentation (`decision.md`)**:
 -   - Traced `job_20260711T16542651` to the exact Factory/Droid session and status-only SQL command that created `status=failed`, `queue_state=running`.
@@ -199,7 +199,7 @@ index 131ed49..0d9713b 100644
 --- a/scripts/node_status.py
 +++ b/scripts/node_status.py
 @@ -13,8 +13,8 @@ States (canon: gddp-config schemas/v1/queue_record.yaml):
- 
+
  What `set` does:
      1. Shows current state and asks for confirmation
 -    2. Updates jobs.queue_state, jobs.status, and any queue_records rows to the
@@ -219,7 +219,7 @@ index 131ed49..0d9713b 100644
 +
  def now():
      return datetime.now(timezone.utc).isoformat()
- 
+
 diff --git a/scripts/runtime/decision_loop/engine.py b/scripts/runtime/decision_loop/engine.py
 index bdc59b0..498c7cf 100644
 --- a/scripts/runtime/decision_loop/engine.py
@@ -227,7 +227,7 @@ index bdc59b0..498c7cf 100644
 @@ -54,7 +54,7 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
      cur = con.cursor()
      cleaned = 0
- 
+
 -    # Failed is the canonical terminal job state; "expired" is event-only.
 +    # Expire stale jobs to canonical terminal failed state.
      cur.execute("""
