@@ -1,4 +1,4 @@
-# GDDP Runtime Recovery, Evaluator Hardening, and Executor Boundary
+# GDDP Jules Dispatch Recovery and Remote Async Executor Architecture - 2026-07-16
 
 Date: 2026-07-16
 
