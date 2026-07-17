@@ -11,17 +11,27 @@ from pathlib import Path
 # Ensure adapters directory is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from adapters.jules_action_adapter import JulesActionAdapter
+from adapters.jules_cli_adapter import JulesCliAdapter
+from adapters.executor_protocol import SessionRef
 
 
 class DispatchResult:
-    def __init__(self, success: bool, issue_url: str = "", error: str = ""):
+    def __init__(
+        self,
+        success: bool,
+        issue_url: str = "",
+        error: str = "",
+        session_ref: SessionRef | None = None,
+    ):
         self.success = success
         self.issue_url = issue_url
         self.error = error
+        self.session_ref = session_ref
 
 
 ADAPTERS = {
     "jules": JulesActionAdapter,
+    "jules_cli": JulesCliAdapter,
 }
 
 
@@ -36,10 +46,17 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
 
     adapter = adapter_cls(repo=repo)
     result = adapter.dispatch(_build_adapter_payload(job))
+    # Adapters return their own result types:
+    #   - JulesActionAdapter returns its own DispatchResult (issue_url-based)
+    #   - JulesCliAdapter returns executor_protocol.DispatchResult (session_ref-based)
+    # Normalize into this module's DispatchResult, passing session_ref through
+    # when the adapter produced one.
+    session_ref = getattr(result, "session_ref", None)
     return DispatchResult(
         success=result.success,
-        issue_url=result.issue_url or "",
-        error=result.error or "",
+        issue_url=getattr(result, "issue_url", "") or "",
+        error=getattr(result, "error", "") or "",
+        session_ref=session_ref,
     )
 
 
