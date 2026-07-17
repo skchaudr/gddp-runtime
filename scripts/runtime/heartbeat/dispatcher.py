@@ -5,6 +5,7 @@ Dispatch stays executor-driven. Runtime routes packets; it does not infer graph
 truth from executor choice.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,14 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
     executor = job.get("executor")
     if not executor:
         return DispatchResult(success=False, error="Job is missing executor")
+
+    # Allow operator override for canary testing without changing graph truth.
+    # Existing graph nodes carry executor: jules; setting
+    # GDDP_EXECUTOR_OVERRIDE=jules_cli reroutes dispatch through the CLI
+    # adapter without mutating the human-owned graph.
+    override = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "")
+    if override:
+        executor = override
 
     adapter_cls = ADAPTERS.get(executor)
     if adapter_cls is None:

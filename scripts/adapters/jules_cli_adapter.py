@@ -233,6 +233,12 @@ class JulesCliAdapter:
             if keyword in line_blob:
                 return SessionStatus(state=state)  # type: ignore[arg-type]
 
+        # "Awaiting User Feedback" (truncated as "Awaiting User F" in the
+        # table) means the executor is blocked waiting for a human. Map to
+        # needs_operator rather than letting it fall through to running.
+        if "awaiting" in line_blob:
+            return SessionStatus(state="needs_operator")
+
         # Session line exists but we do not recognize the status keyword.
         # Treat as still running rather than guessing a terminal state.
         return SessionStatus(state="running")

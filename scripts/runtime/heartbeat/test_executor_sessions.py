@@ -289,6 +289,29 @@ def test_get_active_executor_sessions(con):
     assert len(active) == 2
 
 
+def test_get_active_executor_sessions_filters_by_repo(con):
+    """Issue #7: cross-repo guard — repo filter isolates sessions by job repo."""
+    # Two jobs in different repos.
+    _insert_job(con, job_id="job_repo_a", repo="owner/repo-a")
+    _insert_job(con, job_id="job_repo_b", repo="owner/repo-b")
+
+    s_a = insert_executor_session(con, "job_repo_a", "jules_cli", "sess-a")
+    s_b = insert_executor_session(con, "job_repo_b", "jules_cli", "sess-b")
+
+    # No filter (backward-compatible): both active sessions returned.
+    all_active = get_active_executor_sessions(con)
+    all_ids = {row["session_db_id"] for row in all_active}
+    assert s_a in all_ids
+    assert s_b in all_ids
+
+    # Filter by repo-a: only the repo-a session is returned.
+    repo_a_active = get_active_executor_sessions(con, repo="owner/repo-a")
+    repo_a_ids = {row["session_db_id"] for row in repo_a_active}
+    assert s_a in repo_a_ids
+    assert s_b not in repo_a_ids
+    assert len(repo_a_active) == 1
+
+
 def test_get_executor_session_by_id(con):
     _insert_job(con, job_id="job_d")
     ses_id = insert_executor_session(
@@ -561,3 +584,110 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
     assert result.issue_url == "https://github.com/owner/repo/issues/1"
     # Action adapter path produces no durable session_ref.
     assert result.session_ref is None
+
+
+# =========================================================================== #
+# 6. Issue #4 — "Awaiting User Feedback" parses as needs_operator
+# =========================================================================== #
+
+def test_jules_cli_status_awaiting_maps_to_needs_operator(monkeypatch):
+    """Live Jules output shows "Awaiting User F" (truncated). It must not fall
+    through to running; it means the executor is blocked on a human."""
+    import adapters.jules_cli_adapter as jca
+    from types import SimpleNamespace
+
+    session_id = "16944924106855934613"
+    list_output = (
+        f"{session_id}\tUpdate old...\tskchaudr/saboorkc.dev\t"
+        "6 days ago\tAwaiting User F\n"
+    )
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=list_output, stderr="")
+
+    monkeypatch.setattr(jca.subprocess, "run", fake_run)
+
+    adapter = JulesCliAdapter(repo="skchaudr/saboorkc.dev")
+    status = adapter.status(
+        SessionRef(executor="jules_cli", session_id=session_id)
+    )
+    assert status.state == "needs_operator"
+
+
+def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
+    """Regression guard: an unrecognized keyword that is not "awaiting" still
+    falls through to running (the original fail-safe behaviour)."""
+    import adapters.jules_cli_adapter as jca
+    from types import SimpleNamespace
+
+    session_id = "16944924106855934614"
+    list_output = f"{session_id}\tsome task\towner/repo\t1 day ago\tIn Review\n"
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=list_output, stderr="")
+
+    monkeypatch.setattr(jca.subprocess, "run", fake_run)
+
+    adapter = JulesCliAdapter(repo="owner/repo")
+    status = adapter.status(
+        SessionRef(executor="jules_cli", session_id=session_id)
+    )
+    assert status.state == "running"
+
+
+# =========================================================================== #
+# 7. Issue #6 — GDDP_EXECUTOR_OVERRIDE reroutes dispatch without graph changes
+# =========================================================================== #
+
+def test_dispatcher_executor_override_env_var(monkeypatch):
+    """A job carrying executor: jules is rerouted to jules_cli when
+    GDDP_EXECUTOR_OVERRIDE is set, so the canary can test the CLI path
+    without mutating the human-owned graph."""
+    job = _sample_job(executor="jules")
+    monkeypatch.setenv("GDDP_EXECUTOR_OVERRIDE", "jules_cli")
+
+    cli_dispatch = MagicMock(
+        return_value=ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef(
+                executor="jules_cli", session_id="1234567890123456"
+            ),
+        )
+    )
+    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
+    # Guard: the action adapter must not be selected despite executor: jules.
+    action_dispatch = MagicMock()
+    monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
+
+    result = dispatch(job, "owner/repo")
+
+    cli_dispatch.assert_called_once()
+    action_dispatch.assert_not_called()
+    assert result.success is True
+    assert result.session_ref is not None
+    assert result.session_ref.executor == "jules_cli"
+
+
+def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
+    """Without the override env var, executor: jules still routes to the
+    action adapter (the override is opt-in only)."""
+    job = _sample_job(executor="jules")
+    monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
+
+    action_dispatch = MagicMock(
+        return_value=ActionDispatchResult(
+            success=True,
+            issue_url="https://github.com/owner/repo/issues/2",
+            issue_number=2,
+            error=None,
+        )
+    )
+    monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
+    cli_dispatch = MagicMock()
+    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
+
+    result = dispatch(job, "owner/repo")
+
+    action_dispatch.assert_called_once()
+    cli_dispatch.assert_not_called()
+    assert result.success is True

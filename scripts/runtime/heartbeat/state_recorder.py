@@ -159,8 +159,29 @@ def update_executor_session_state(
     )
 
 
-def get_active_executor_sessions(con: sqlite3.Connection) -> list:
-    """Get all sessions in dispatched/running/needs_operator state."""
+def get_active_executor_sessions(
+    con: sqlite3.Connection,
+    repo: str | None = None,
+) -> list:
+    """Get sessions in dispatched/running/needs_operator state.
+
+    If ``repo`` is provided (GitHub owner/name, e.g. "skchaudr/gddp-runtime"),
+    only return sessions whose job matches that repo. This is the cross-repo
+    reconciliation guard: a heartbeat operating on one repo_path must never
+    apply patches belonging to a session for a different repo.
+
+    Backward-compatible: callers that omit ``repo`` get all active sessions,
+    preserving the original behaviour.
+    """
+    if repo:
+        return con.execute(
+            """SELECT es.* FROM executor_sessions es
+               JOIN jobs j ON es.job_id = j.job_id
+               WHERE es.state IN ('dispatched', 'running', 'needs_operator')
+                 AND j.repo = ?
+               ORDER BY es.created_at""",
+            (repo,),
+        ).fetchall()
     return con.execute(
         """SELECT * FROM executor_sessions
             WHERE state IN ('dispatched', 'running', 'needs_operator')
