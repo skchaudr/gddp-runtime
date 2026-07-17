@@ -22,9 +22,10 @@ intent and graph-integrity layer; only Sab changes graph truth.
 
 - [x] **Foundation recovered:** concurrent dispatch proved; ID collisions, SQLite
   contention, and GitHub auth fixed; PR #107/#108 independently audited.
-- [ ] **PR #108 - state consistency:** undo `f01d5ba`'s regression; ensure a failed
+- [x] **PR #108 - state consistency:** undo `f01d5ba`'s regression; ensure a failed
   job cannot retain `queue_state=running`; restore direct tests and truthful
   artifacts; focused/full tests pass; commit and push for Sab's merge decision.
+  Verified at `1f1e16d` (`2` focused and `269` full tests passed).
 - [ ] **PR #107 - crash recovery:** reconfirm tests; with Sab's approval run the
   intake-only live drill; record PID replacement and `/health` HTTP 200 without
   dispatching unrelated events; commit and push for Sab's merge decision.
