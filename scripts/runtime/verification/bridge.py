@@ -125,9 +125,22 @@ def _verify_once(
 
 
 def _create_worktree(repo: Path, commit_sha: str) -> Path | None:
-    """Create an isolated git worktree at the given commit. Returns path or None."""
+    """Create an isolated git worktree at the given commit. Returns path or None.
+
+    Fetches from origin first: the webhook that triggers evaluation fires within
+    seconds of the merge, before the local repo has necessarily downloaded the
+    new commit. Without this fetch, git worktree add fails and the evaluator
+    returns subject_mismatch, producing no verdict.
+    """
     import tempfile
     try:
+        subprocess.run(
+            ["git", "fetch", "origin"],
+            cwd=str(repo),
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
         tmpdir = tempfile.mkdtemp(prefix="gddp-eval-wt-")
         # Remove the empty dir so git worktree add can create it
         import os

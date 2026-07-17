@@ -344,6 +344,39 @@ class TestWorktreeLifecycle(unittest.TestCase):
             ).stdout
             self.assertNotIn(str(worktree), registered)
 
+    def test_create_worktree_fetches_origin_before_add(self):
+        """_create_worktree must fetch from origin so the merge commit is local."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                 "commit", "--allow-empty", "-m", "initial", "-q"],
+                cwd=repo, check=True,
+            )
+            commit_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo,
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+
+            calls = []
+            original_run = subprocess.run
+
+            def tracking_run(cmd, *args, **kwargs):
+                calls.append(cmd)
+                return original_run(cmd, *args, **kwargs)
+
+            with patch("scripts.runtime.verification.bridge.subprocess.run", side_effect=tracking_run):
+                bridge._create_worktree(repo, commit_sha)
+
+            git_commands = [" ".join(c[:3]) for c in calls if c[0] == "git"]
+            self.assertIn("git fetch origin", git_commands)
+            self.assertIn("git worktree add", git_commands)
+            fetch_idx = next(i for i, c in enumerate(git_commands) if "fetch" in c)
+            wt_idx = next(i for i, c in enumerate(git_commands) if "worktree" in c)
+            self.assertLess(fetch_idx, wt_idx, "fetch must happen before worktree add")
+
 
 if __name__ == "__main__":
     unittest.main()
