@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -31,8 +32,10 @@ from .classifier import classify
 from .dispatcher import dispatch
 from .graph_reader import GraphReader
 from .job_factory import build_job
+from .reconciler import reconcile_sessions
 from .scope_checker import check_scope
 from .state_recorder import (
+    insert_executor_session,
     insert_job,
     insert_queue_record,
     mark_event_classified,
@@ -64,6 +67,7 @@ class DispatchOutcome:
     success: bool
     issue_url: str = ""
     error: str = ""
+    session_ref: object = None  # adapters.executor_protocol.SessionRef | None
 
 
 def connect() -> sqlite3.Connection:
@@ -94,8 +98,22 @@ def _is_merged_pr_event(event) -> bool:
         return False
 
 
-def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
+def run_heartbeat(
+    project_id: str,
+    repo: str,
+    config_path: str = None,
+    repo_path: str = None,
+) -> None:
     reader = GraphReader(config_path=config_path)
+
+    # Derive the local checkout path if the caller did not provide one.
+    # The reconcile phase needs a filesystem path (not the GitHub owner/name).
+    if repo_path is None:
+        repos_root = os.environ.get("GDDP_REPOS_ROOT")
+        if repos_root:
+            derived = Path(repos_root) / repo.split("/")[-1]
+            if derived.exists():
+                repo_path = str(derived)
 
     # Load ready nodes from the graph (replaces hardcoded PHASE3_NODE)
     ready_nodes = reader.get_ready_nodes(project_id)
@@ -106,6 +124,13 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
 
     con = connect()
     try:
+        # Phase 0: Reconcile active executor sessions (runs every tick).
+        # CLI-based executors complete asynchronously without webhooks, so
+        # every tick must poll for completion even when there are no new
+        # intake events.
+        reconcile_sessions(con, Path(repo_path) if repo_path else None)
+
+        # Phase A-C: Plan and dispatch new events.
         planned_dispatches = _plan_dispatches(
             con, project_id, repo, ready_nodes, reader
         )
@@ -115,7 +140,7 @@ def run_heartbeat(project_id: str, repo: str, config_path: str = None) -> None:
             return
 
         outcomes_by_job_id = _execute_dispatches(planned_dispatches, repo)
-        _record_outcomes(con, planned_dispatches, outcomes_by_job_id)
+        _record_outcomes(con, planned_dispatches, outcomes_by_job_id, repo_path)
 
         print("Heartbeat complete.")
     finally:
@@ -274,6 +299,7 @@ def _execute_dispatches(
                     success=result.success,
                     issue_url=result.issue_url,
                     error=result.error,
+                    session_ref=getattr(result, "session_ref", None),
                 )
             except Exception as exc:
                 outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
@@ -288,10 +314,15 @@ def _record_outcomes(
     con: sqlite3.Connection,
     planned_dispatches: list[PlannedDispatch],
     outcomes_by_job_id: dict[str, DispatchOutcome],
+    repo_path: str | None = None,
 ) -> None:
     """
     Phase C: Record results sequentially on the main thread.
     """
+    # Capture the current HEAD as the expected base commit for CLI-dispatched
+    # sessions. This pins the worktree the reconcile phase will create.
+    head_sha = _get_head_sha(repo_path)
+
     for planned in planned_dispatches:
         outcome = outcomes_by_job_id[planned.job["job_id"]]
         event_id = planned.event_id
@@ -304,6 +335,20 @@ def _record_outcomes(
             print(f"  → dispatched to {planned.classification['executor_recommendation']}")
             if outcome.issue_url:
                 print(f"  → issue: {outcome.issue_url}")
+            # CLI-based executors return a session_ref; record it so the
+            # reconcile phase can poll for completion on subsequent ticks.
+            if outcome.session_ref is not None:
+                session_db_id = insert_executor_session(
+                    con,
+                    job_id,
+                    outcome.session_ref.executor,
+                    outcome.session_ref.session_id,
+                    expected_base_commit_sha=head_sha,
+                )
+                print(
+                    f"  → executor session: "
+                    f"{outcome.session_ref.executor}/{outcome.session_ref.session_id}"
+                )
         else:
             mark_job_failed(con, job_id)
             print(f"  → DISPATCH FAILED: {outcome.error}")
@@ -312,17 +357,39 @@ def _record_outcomes(
     con.commit()
 
 
+def _get_head_sha(repo_path: str | None) -> str | None:
+    """Get the current HEAD commit SHA of the local repo, or None."""
+    if not repo_path:
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return proc.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="GDDP Heartbeat vNext")
     parser.add_argument("--project",     required=True, help="Project ID (e.g. vault-doctor)")
     parser.add_argument("--repo",        required=True, help="GitHub repo (owner/name)")
     parser.add_argument("--config-path", default=None,  help="Path to gddp-config checkout")
+    parser.add_argument("--repo-path",   default=None,  help="Local filesystem path to the repo checkout (enables reconcile)")
     args = parser.parse_args()
 
     run_heartbeat(
         project_id=args.project,
         repo=args.repo,
         config_path=args.config_path,
+        repo_path=args.repo_path,
     )
 
 
