@@ -68,6 +68,7 @@ export default function (pi: ExtensionAPI) {
   // Block mutations and dangerous commands BEFORE execution.
   pi.on("tool_call", async (event, _ctx) => {
     const toolName = (event as { toolName?: string }).toolName ?? "";
+    const toolCallId = (event as { toolCallId?: string }).toolCallId;
     const input = ((event as { input?: Record<string, unknown> }).input) ?? {};
 
     // 1. Hard-block all write/edit/create tools. The evaluator is read-only;
@@ -80,6 +81,7 @@ export default function (pi: ExtensionAPI) {
         ts: new Date().toISOString(),
         tool: toolName,
         blocked: true,
+        toolCallId,
         reason: "write tool hard-blocked (evaluator is read-only)",
         path,
       });
@@ -98,6 +100,7 @@ export default function (pi: ExtensionAPI) {
             ts: new Date().toISOString(),
             tool: "bash",
             blocked: true,
+            toolCallId,
             reason: "command matched blocked pattern",
             command,
             pattern: pattern.source,
@@ -113,12 +116,24 @@ export default function (pi: ExtensionAPI) {
         ts: new Date().toISOString(),
         tool: "bash",
         blocked: false,
+        toolCallId,
         command,
       });
       return undefined;
     }
 
     // 3. Read-only tools (read, grep, find, ls, submit_verdict): allow.
+    // Phase 2: log the input path so traces can establish context coverage.
+    if (toolName === "read" || toolName === "grep" || toolName === "find" || toolName === "ls") {
+      const path = extractPath(input);
+      traceLine({
+        ts: new Date().toISOString(),
+        tool: toolName,
+        blocked: false,
+        toolCallId,
+        path,
+      });
+    }
     return undefined;
   });
 

@@ -98,3 +98,38 @@ def test_ambiguity_receipt_fixtures_validate_contract() -> None:
     assert semantic_fail_complete_artifacts.semantic.judgments[0].judgment == "judged_fail"
     assert all(semantic_fail_complete_artifacts.deterministic.artifacts_present.values())
     assert semantic_fail_complete_artifacts.verdict == Verdict.FAIL
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Provenance fields
+# ---------------------------------------------------------------------------
+
+
+def test_receipt_provenance_fields_default_none_for_legacy() -> None:
+    """Legacy receipts without provenance fields load with None."""
+    payload = _receipt_payload()
+    receipt = VerdictReceipt.model_validate(payload)
+    assert receipt.evaluated_tree_sha is None
+    assert receipt.merge_commit_sha is None
+    assert receipt.pr_ref is None
+    assert receipt.job_id is None
+
+
+def test_receipt_provenance_fields_round_trip() -> None:
+    """New receipts with provenance fields round-trip correctly."""
+    payload = _receipt_payload(
+        evaluated_tree_sha="abc123tree",
+        merge_commit_sha="abc123commit",
+        pr_ref="42",
+        job_id="job_20260716",
+    )
+    receipt = VerdictReceipt.model_validate(payload)
+    assert receipt.evaluated_tree_sha == "abc123tree"
+    assert receipt.merge_commit_sha == "abc123commit"
+    assert receipt.pr_ref == "42"
+    assert receipt.job_id == "job_20260716"
+    # Round-trip through JSON
+    js = receipt.model_dump_json()
+    restored = VerdictReceipt.model_validate_json(js)
+    assert restored.evaluated_tree_sha == "abc123tree"
+    assert restored.merge_commit_sha == "abc123commit"

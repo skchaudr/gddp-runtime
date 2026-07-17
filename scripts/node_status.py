@@ -109,8 +109,37 @@ def print_evaluation(check, full=False):
             print(f"                  evidence: {ev}")
     for f in integrity.get("findings") or []:
         print(f"       integrity: [{f.get('severity')}] {f.get('summary')}")
+    # Phase 3: graph observations (forward-looking, do not affect verdict)
+    for o in integrity.get("graph_observations") or []:
+        print(f"       graph obs: [{o.get('severity')}] {o.get('summary')}")
     if check.get("required_next_action"):
         print(f"     next action: {check['required_next_action']}  (evaluator template, not a decision)")
+    # Phase 1 provenance: show the exact tree the evaluator judged.
+    tree_sha = check.get("evaluated_tree_sha")
+    commit_sha = check.get("evaluated_commit_sha")
+    merge_sha = check.get("merge_commit_sha")
+    if commit_sha or tree_sha or merge_sha:
+        if commit_sha:
+            match = "  (match)" if merge_sha and commit_sha == merge_sha else "  (mismatch)" if merge_sha else ""
+            print(f"      provenance: commit={commit_sha}  merge={merge_sha or 'n/a'}{match}")
+        else:
+            print(f"      provenance: tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}  (different SHA types; not compared)")
+    if check.get("pr_ref"):
+        print(f"            PR: {check['pr_ref']}")
+    # Phase 2 coverage: quick signal for the operator
+    cov = check.get("context_coverage")
+    if cov:
+        crit_raw = cov.get("criteria", "n/a")
+        crit = crit_raw.get("rating", "n/a") if isinstance(crit_raw, dict) else crit_raw
+        integ = cov.get("integrity", {}).get("rating", "n/a") if isinstance(cov.get("integrity"), dict) else "n/a"
+        print(f"       coverage: criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}")
+    lane_status = check.get("lane_status") or {}
+    harness_error = check.get("harness_error") or {}
+    if lane_status:
+        print(f"    lane status: criteria={lane_status.get('criteria', 'n/a')}  integrity={lane_status.get('integrity', 'n/a')}")
+    for lane in ("criteria", "integrity"):
+        if harness_error.get(lane):
+            print(f"  harness error: {lane}={harness_error[lane]}")
     if check.get("receipt_path"):
         print(f"         receipt: {check['receipt_path']}")
     if full and integrity.get("reasoning"):

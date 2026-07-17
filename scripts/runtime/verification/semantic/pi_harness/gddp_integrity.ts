@@ -26,6 +26,16 @@ const IntegrityFindingSchema = Type.Object({
   affected_node_ids: Type.Array(Type.String()),
 });
 
+const GraphObservationSchema = Type.Object({
+  severity: Type.Union([
+    Type.Literal("low"),
+    Type.Literal("medium"),
+    Type.Literal("high"),
+  ]),
+  summary: Type.String(),
+  affected_node_ids: Type.Array(Type.String()),
+});
+
 const SubmitIntegrityVerdictParams = Type.Object({
   verdict: Type.Union([
     Type.Literal("pass"),
@@ -41,6 +51,7 @@ const SubmitIntegrityVerdictParams = Type.Object({
   confidence: Type.Number({ minimum: 0, maximum: 1 }),
   findings: Type.Array(IntegrityFindingSchema),
   reasoning: Type.String(),
+  graph_observations: Type.Optional(Type.Array(GraphObservationSchema)),
 });
 
 export type SubmitIntegrityVerdictArgs = Static<typeof SubmitIntegrityVerdictParams>;
@@ -78,7 +89,7 @@ export default function (pi: ExtensionAPI) {
       const nonPass = args.verdict !== "pass";
       const effectiveHumanReview = nonPass || Boolean(args.required_human_review);
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         verdict: args.verdict,
         intent_preserved: Boolean(args.intent_preserved),
         graph_integrity_preserved: Boolean(args.graph_integrity_preserved),
@@ -87,6 +98,10 @@ export default function (pi: ExtensionAPI) {
         findings: args.findings,
         reasoning: args.reasoning,
       };
+      // Phase 3: include graph_observations when the model provides them.
+      if (args.graph_observations) {
+        payload.graph_observations = args.graph_observations;
+      }
       try {
         writeFileSync(outPath, JSON.stringify(payload), { encoding: "utf8" });
       } catch (err) {

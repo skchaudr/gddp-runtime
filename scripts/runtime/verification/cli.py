@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
             "including row-12 deterministic clean passes."
         ),
     )
+    # Phase 1 provenance: pin the exact change being judged.
+    parser.add_argument("--merge-commit-sha", default=None, help="Merge commit SHA from the webhook payload.")
+    parser.add_argument("--pr-ref", default=None, help="PR number or URL.")
+    parser.add_argument("--job-id", default=None, help="SQLite job_id for per-attempt receipt path.")
+    parser.add_argument("--attempt", type=int, default=None, help="Persisted zero-based jobs.attempt value.")
     return parser
 
 
@@ -309,8 +314,17 @@ def main(argv: list[str] | None = None) -> int:
         },
         semantic_harness=semantic_harness,
         integrity_harness=integrity_harness,
+        merge_commit_sha=args.merge_commit_sha,
+        pr_ref=args.pr_ref,
+        job_id=args.job_id,
     )
-    path = write_receipt(receipt, receipt.project_id, base=args.receipt_dir)
+    path = write_receipt(
+        receipt,
+        receipt.project_id,
+        base=args.receipt_dir,
+        job_id=args.job_id,
+        attempt=args.attempt,
+    )
     summary = {
         "receipt_path": str(path),
         "verdict": receipt.verdict.value,
@@ -318,6 +332,27 @@ def main(argv: list[str] | None = None) -> int:
         "completeness_status": receipt.completeness_status,
         "required_next_action": receipt.required_next_action,
     }
+    # Phase 1 provenance: surface in the summary so node_status.py can display it.
+    if receipt.evaluated_tree_sha:
+        summary["evaluated_tree_sha"] = receipt.evaluated_tree_sha
+    if receipt.evaluated_commit_sha:
+        summary["evaluated_commit_sha"] = receipt.evaluated_commit_sha
+    if receipt.merge_commit_sha:
+        summary["merge_commit_sha"] = receipt.merge_commit_sha
+    if receipt.pr_ref:
+        summary["pr_ref"] = receipt.pr_ref
+    # Summaries are operator-facing; raw coverage evidence remains in receipt.
+    if receipt.context_coverage:
+        criteria_coverage = receipt.context_coverage.criteria
+        summary["context_coverage"] = {
+            "criteria": (
+                criteria_coverage
+                if isinstance(criteria_coverage, str)
+                else criteria_coverage.rating
+            ),
+            "integrity": receipt.context_coverage.integrity.rating,
+            "overall": receipt.context_coverage.overall,
+        }
     # Two-lane evaluation: include criteria_verdict and integrity when present
     # so the bridge and return_router can see both lanes.
     if receipt.criteria_verdict is not None:
@@ -331,7 +366,31 @@ def main(argv: list[str] | None = None) -> int:
             "confidence": receipt.integrity.confidence,
             "findings": [f.model_dump() for f in receipt.integrity.findings],
             "reasoning": receipt.integrity.reasoning,
+            "lane_status": (
+                receipt.integrity.lane_status.value
+                if receipt.integrity.lane_status else None
+            ),
+            "harness_error": receipt.integrity.harness_error,
         }
+        # Phase 3: include graph_observations when present.
+        if receipt.integrity.graph_observations:
+            summary["integrity"]["graph_observations"] = [
+                o.model_dump() for o in receipt.integrity.graph_observations
+            ]
+    summary["lane_status"] = {
+        "criteria": (
+            receipt.semantic.lane_status.value if receipt.semantic and receipt.semantic.lane_status
+            else "completed" if receipt.semantic else "not_run"
+        ),
+        "integrity": (
+            receipt.integrity.lane_status.value if receipt.integrity and receipt.integrity.lane_status
+            else "completed" if receipt.integrity else "not_run"
+        ),
+    }
+    summary["harness_error"] = {
+        "criteria": receipt.semantic.harness_error if receipt.semantic else None,
+        "integrity": receipt.integrity.harness_error if receipt.integrity else None,
+    }
     # Surface criteria-lane findings (non-pass judgments) so the return_router
     # can use them for retry decisions alongside integrity findings.
     criteria_findings = []

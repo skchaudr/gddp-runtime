@@ -119,6 +119,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     pr_body = pr.get("body", "")
     merged_at = pr.get("merged_at")
     merged_pr_url = pr.get("html_url")
+    merge_commit_sha = pr.get("merge_commit_sha")
 
     result_id = f"res_{event['event_id'][4:]}"
 
@@ -146,7 +147,16 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
     # E1: run the evaluator automatically so the human reviews a receipt, not a
     # raw diff. The verdict is evidence only — the job routes to awaiting_review
     # regardless of outcome, and an evaluator failure is recorded, never fatal.
-    verification = verify_job_return(job["project_id"], node_id)
+    # Phase 1: pass merge_commit_sha and pr_ref so the evaluator judges the
+    # exact merged state in an isolated worktree, not whatever is on disk.
+    pr_ref = str(pr_number) if pr_number else merged_pr_url
+    verification = verify_job_return(
+        job["project_id"], node_id,
+        merge_commit_sha=merge_commit_sha,
+        pr_ref=pr_ref,
+        job_id=job_id,
+        attempt=job.get("attempt", 0),
+    )
 
     write_result(
         result_id=result_id,
