@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from adapters.executor_protocol import SessionRef
 
+from ..results_store import write_result
 from ..verification.bridge import verify_job_return
 from .dispatcher import ADAPTERS
 from .state_recorder import (
@@ -101,8 +102,18 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
     adapter = adapter_cls(repo=job_row["repo"] or "")
     session_ref = SessionRef(executor=executor, session_id=session_id)
 
-    # Poll the session.
-    status = adapter.status(session_ref)
+    # Poll the session. A transient polling error (CLI timeout, network blip)
+    # must NOT kill the job — the session may be fine, we just couldn't reach
+    # the executor this tick. Leave session and job as-is for the next tick.
+    try:
+        status = adapter.status(session_ref)
+    except Exception as exc:
+        print(
+            f"[reconcile] {session_db_id}: poll error (transient, will retry "
+            f"next tick): {exc}"
+        )
+        return
+
     print(
         f"[reconcile] {session_db_id} ({executor}/{session_id}): {status.state}"
     )
@@ -172,14 +183,22 @@ def _handle_completed(
             # 5. Create a durable ref so the result commit is not garbage
             #    collected after the worktree is removed.  The worktree shares
             #    the main repo's object store, so the commit SHA is valid here.
-            ref_name = f"gddp/result-{job_id}"
-            subprocess.run(
+            #    The ref includes the session id so each session attempt gets
+            #    its own ref; retries no longer collide with a dangling ref
+            #    from a previous attempt.
+            ref_name = f"gddp/result-{job_id}-{session['session_id']}"
+            ref_proc = subprocess.run(
                 ["git", "branch", ref_name, result_sha],
                 cwd=str(repo_path),
                 capture_output=True,
+                text=True,
                 timeout=10,
                 check=False,  # non-fatal if it fails
             )
+            if ref_proc.returncode != 0:
+                print(
+                    f"  ⚠ ref creation failed: {ref_proc.stderr.strip()}"
+                )
 
             # 6. Trigger evaluation: run the evaluator, then mark job
             #    awaiting_review and session evaluated.
@@ -262,6 +281,34 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
     except Exception as exc:
         print(f"  → evaluation ERROR (non-fatal): {exc}")
         verification = {"verification_status": "error", "error": str(exc)}
+
+    # Write a results row so node_status.py can display the evaluator output
+    # for human review. The verification dict from verify_job_return carries
+    # verdict/criteria/risks evidence; fields the dict does not provide get
+    # safe defaults. The important invariant is that a results row exists.
+    result_id = f"res_{session['session_id'][:16]}"
+    v_status = verification.get("verification_status", "unknown")
+    # outcome reflects the evaluator's verdict; status reflects the job's
+    # routing state. A verification error is still routed to awaiting_review
+    # — the human is the final gate.
+    outcome = verification.get("verdict") or v_status
+    try:
+        write_result(
+            result_id=result_id,
+            job_id=job_id,
+            executor=session["executor"],
+            outcome=outcome,
+            status="awaiting_review",
+            changed_files=verification.get("changed_files", []),
+            acceptance_check=verification.get("acceptance_check"),
+            risks=verification.get("risks"),
+            followup_candidates=verification.get("followup_candidates"),
+            github_action=verification.get("github_action"),
+        )
+    except Exception as exc:
+        # Non-fatal: the verdict is already printed; a missing results row
+        # is a display gap, not a graph-truth issue.
+        print(f"  → write_result ERROR (non-fatal): {exc}")
 
     # Update session to evaluated.
     update_executor_session_state(con, session["session_db_id"], state="evaluated")

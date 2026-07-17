@@ -362,6 +362,11 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
         reconciler, "verify_job_return",
         lambda **kw: {"verification_status": "ok", "verdict": "pass"},
     )
+    # write_result opens its own connection to the real DB_PATH; the test
+    # uses an in-memory DB, so mock it to avoid writing to disk.
+    monkeypatch.setattr(
+        reconciler, "write_result", lambda **kw: None
+    )
 
     reconciler.reconcile_sessions(con, repo)
 
