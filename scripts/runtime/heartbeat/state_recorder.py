@@ -139,11 +139,21 @@ def update_executor_session_state(
     result_commit_sha: str | None = None,
     patch_path: str | None = None,
 ) -> None:
-    """Update an executor session's state and optional fields."""
+    """Update an executor session's state and optional fields.
+
+    Optional fields (error, result_commit_sha, patch_path) are only overwritten
+    when explicitly passed; omitting one (or passing None) preserves the
+    existing value. This lets a state-only transition (e.g. collected ->
+    evaluated) keep the result commit SHA recorded by an earlier step instead
+    of clobbering it back to NULL.
+    """
     con.execute(
         """UPDATE executor_sessions
-              SET state = ?, error = ?, result_commit_sha = ?,
-                  patch_path = ?, updated_at = ?
+              SET state = ?,
+                  error = COALESCE(?, error),
+                  result_commit_sha = COALESCE(?, result_commit_sha),
+                  patch_path = COALESCE(?, patch_path),
+                  updated_at = ?
             WHERE session_db_id = ?""",
         (state, error, result_commit_sha, patch_path, now(), session_db_id),
     )
