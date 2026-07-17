@@ -223,6 +223,24 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
     con.close()
 
 
+def test_clean_stale_state_uses_canonical_failed_job_state(in_memory_db):
+    from .engine import _clean_stale_state
+
+    in_memory_db.execute(
+        """INSERT INTO jobs
+           (job_id, project_id, node_id, status, queue_state, created_at)
+           VALUES ('job_stale', 'test-project', 'node-b', 'running', 'running',
+                   datetime('now', '-7 hours'))"""
+    )
+    in_memory_db.commit()
+
+    assert _clean_stale_state(in_memory_db) == 1
+    job = in_memory_db.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = 'job_stale'"
+    ).fetchone()
+    assert (job["status"], job["queue_state"]) == ("failed", "failed")
+
+
 # --- Test Pydantic schema enforcement ---
 
 def test_dispatch_result_rejects_bad_data():

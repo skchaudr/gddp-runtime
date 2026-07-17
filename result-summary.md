@@ -1,18 +1,15 @@
 # Result Summary - Job State Consistency
 
-We have resolved the inconsistency between `jobs.status` and `jobs.queue_state` by harmonizing all database write paths and providing documented, reversible recovery steps for `job_20260711T16542651`.
+We closed PR #108’s job state drift by restoring the terminal stale-cleanup invariant and re-establishing focused regression checks for state coherence.
 
 ### Key Changes
 1. **Root Cause Documentation (`decision.md`)**:
-   - Diagnosed how `job_20260711T16542651` became inconsistent (`status=failed`, `queue_state=running`).
-   - Highlighted the mismatched write paths (engine expiry, rollback, manual status commands, return router redispatches).
-   - Provided production-safe, reversible SQL queries to correct the record and reverse the change.
-2. **Write Paths Alignment**:
-   - Updated `scripts/runtime/decision_loop/engine.py` to set both `status` and `queue_state` to `'expired'` during stale job cleanup.
-   - Updated `scripts/rollback.py` to set both `status` and `queue_state` to `'failed'`.
-   - Updated `scripts/node_status.py` to set both columns to `args.state` during a manual state transition, ensuring they remain identical.
-   - Updated `scripts/runtime/return_router.py` to set both columns to `'running'` (and the `queue_records` table `queue` state to `'running'`) when successfully redispatched.
+   - Updated `scripts/runtime/decision_loop/engine.py` to canonicalize stale running/dispatched jobs to `failed/failed`.
+   - Kept `scripts/rollback.py`, `scripts/node_status.py`, and `scripts/runtime/return_router.py` aligned so terminal/active transitions write coherent job lifecycle states.
+2. **Write Path Alignment**:
+   - Ensured stale cleanup now produces `status='failed'` and `queue_state='failed'`, preventing terminal `failed/running`.
+   - Restored `scripts/test_node_status.py` regression coverage for manual operator transitions.
+   - Restored stale job regression in `scripts/runtime/decision_loop/test_decision_loop.py`.
 3. **Consistency Check & Test Safety**:
-   - Added a critical consistency check probe to the deployment baseline script `deploy/mini-heartbeat/bin/baseline.sh` that detects and fails if any rows have mismatched `status` and `queue_state`.
-   - Added a robust python unit test `test_jobs_status_and_queue_state_consistency` inside `scripts/runtime/decision_loop/test_decision_loop.py` to programmatically assert this.
-   - Fixed all mock sqlite tables in unit tests to support the new database column logic and keep the entire pytest suite completely green.
+   - Kept baseline stale/queue mismatch checks and write-path coherence.
+   - Restored focused tests that directly cover the repaired behavior.

@@ -11,29 +11,27 @@ This divergence made operator-facing counts inaccurate, as different dashboard v
 ### Codebase Write Path Inconsistencies (Code Evidence)
 We identified several live write paths in the codebase that update one column but neglect the other or introduce mismatching values:
 1. **`scripts/runtime/decision_loop/engine.py` (Stale Expiry)**:
-   In `_clean_stale_state`, stale running/dispatched jobs older than 6 hours are expired using:
+   In `_clean_stale_state`, stale running/dispatched jobs older than 6 hours are now canonicalized to terminal failed state using:
    ```sql
-   UPDATE jobs SET status = 'expired'
+   UPDATE jobs SET status = 'failed', queue_state = 'failed'
    WHERE status IN ('dispatched', 'running')
    AND created_at < datetime('now', '-6 hours')
    ```
-   This query sets `status = 'expired'` but leaves `queue_state` untouched (at its prior value, e.g., `'running'`). This is a clear, repeatable path to introducing a mismatch.
-2. **`scripts/rollback.py` (Rollback mismatch)**:
-   The rollback script has a built-in mismatch:
-   ```sql
-   UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?
-   ```
-   This sets `status` to `'failed'` and `queue_state` to `'cancelled'`.
-3. **`scripts/node_status.py` (Selective Command Update)**:
-   The interactive tool only mirrors state updates to `status` if the target state is in a subset of job statuses:
+   This prevents stale cleanup from producing terminal drift.
+2. **`scripts/rollback.py` (Rollback reconciliation)**:
+   The rollback path now writes both columns as `failed`:
    ```python
-   con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?", (args.state, job["job_id"]))
-   if args.state in JOB_STATUSES:
-       con.execute("UPDATE jobs SET status = ? WHERE job_id = ?", (args.state, job["job_id"]))
+   UPDATE jobs SET status='failed', queue_state='failed' WHERE job_id=?
    ```
-   If a user updates a job to a state not in `JOB_STATUSES`, the `status` column remains mismatched with `queue_state`.
+   This keeps rollback terminal writes coherent.
+3. **`scripts/node_status.py` (Manual operator transition)**:
+   The interactive tool now updates both lifecycle columns together:
+   ```python
+   con.execute("UPDATE jobs SET queue_state = ?, status = ? WHERE job_id = ?", (args.state, args.state, job["job_id"]))
+   ```
+   This avoids operator-driven mismatches.
 4. **`scripts/runtime/return_router.py` (Redispatch retry loop)**:
-   When `_redispatch_with_findings` successfully dispatches a retry, it only increments the attempt count (`UPDATE jobs SET attempt = attempt + 1`) but does not set `status` and `queue_state` back to `'running'` or `'dispatched'`.
+   On successful redispatch, the writer increments attempt and sets both `status` and `queue_state` to `'running'`.
 
 ### Most Probable Origin of `job_20260711T16542651`
 Given the state of the canary job, the mismatch was produced by one of two sequences:
@@ -68,4 +66,4 @@ UPDATE jobs SET queue_state = 'running' WHERE job_id = 'job_20260711T16542651';
 ---
 
 ## 3. Rationale for Redundancy Alignment
-To prevent future drift, we align both `status` and `queue_state` to always hold identical, matching values on every write path. This eliminates divergence completely, ensuring that counts on both columns remain perfectly consistent and truthful.
+To prevent future drift, we align both `status` and `queue_state` to hold matching values on terminal and active write paths. This prevents terminal drift such as `failed/running`.
