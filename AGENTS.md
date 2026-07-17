@@ -23,6 +23,34 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 - [`docs/Tests-can-fail-nodes-can-pass.md`](docs/Tests-can-fail-nodes-can-pass.md) — node status reflects accepted graph progress, not temporary implementation perfection. Tests are evidence, not graph truth. Criteria are evidence, not graph truth. Evaluator verdicts are evidence, not graph truth. Only human-accepted node status is graph truth. Do not reinterpret a failing implementation test as proof that an accepted node is false.
 - [`docs/GDDP-becomes-small-and-real.md`](docs/GDDP-becomes-small-and-real.md) — GDDP is the intent-preservation and graph-integrity layer around work, not the executor and not the agent harness. GDDP does not rebuild the loop; it constrains, interprets, and verifies the loop.
 
+## Canonical node workflow
+
+`current-runtime-baseline` is the accepted boundary between inherited system
+state and graph-governed development. It establishes Node 1. From that boundary
+forward, all substantive project work must be represented by Node 1-N in the
+graph before implementation begins.
+
+- Treat a node as the unit of project intent. Jobs, sessions, commits, tests,
+  artifacts, and verdicts are evidence from attempts to satisfy it.
+- Never mark a node complete from executor success, passing tests, or an
+  evaluator verdict. Only the human accepts a node.
+- Attach discoveries to the current node as evidence. Create a new dependency,
+  follow-up, or corrective node when the discovery creates bounded work.
+- Keep infrastructure subordinate to the operating loop. It must improve node
+  turnaround, concurrency, durable return, recovery, observability, or
+  integrity.
+- Move real project nodes as soon as the minimum loop supports them. Do not wait
+  for every supporting subsystem to be theoretically complete.
+- Dispatch independent ready nodes concurrently within declared capacity and
+  isolation constraints.
+- Preserve the distinction between dependency edges and evidence links. The
+  graph remains a DAG; receipts and traces explain why its frontier changed.
+- Treat GitHub, Jules, Codex, and other executors as replaceable transports and
+  workers. They do not own graph truth.
+- When work is discovered outside the graph, stop before further implementation,
+  record the current evidence, and put the remaining work into the graph. Do not
+  retroactively claim the earlier work was graph-governed.
+
 ## Project snapshot
 
 - **Language:** Python 3.11+ (stdlib + Flask)

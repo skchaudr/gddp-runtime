@@ -1,94 +1,233 @@
-# GDDP — Brief
+# GDDP - Project Brief
 
-Graph-driven agentic development control plane. Turns projects into maps of work; agents traverse them without losing human control.
+GDDP makes small, bounded project nodes economically viable and moves many of
+them quickly without losing user intent, project integrity, auditability, or
+human control.
 
-## Narrative
+## Purpose
 
-GDDP is a two-repo system for preserving agentic forward momentum by turning a software project into an explicit,
-traversable map of work, then driving agents across that map with a human
-review gate feature by feature, mutation by mutation. `gddp-config` is the source of truth —
-schemas, graphs, nodes, constraints, and acceptance criteria as declarative
-YAML. `gddp-runtime` is the execution engine: it reads that truth, runs a
-heartbeat decision loop, dispatches bounded jobs to executors (Jules via
-GitHub issues today, but agent agnostic), records jobs/results/receipts in SQLite, and converts merged PRs into review receipts — never silently rewriting the graph. The
-inversion that matters: the runtime is forbidden from mutating config
-truth; `scripts/runtime/graph_updater.py` exists only as a disabled stub.
-Graph state moves only after human review. GDDP is one of three portfolio
-pieces (with .pi and MyAPI-rebuild) demonstrating 2026 agent-era
-infrastructure built solo.
+GDDP is the intent-preservation and graph-integrity layer around agentic work.
+It turns a project into an explicit graph, determines which nodes are ready,
+observes implementation attempts, evaluates returned evidence, and presents the
+human with precise review decisions. It does not make an executor authoritative
+and it does not silently convert successful execution into project truth.
 
-## Ground state
+`gddp-config` owns the human-authored graph: nodes, dependencies, constraints,
+and acceptance criteria. `gddp-runtime` reads that truth, moves jobs through the
+operating loop, records durable evidence, and evaluates criteria and integrity.
+Only human acceptance advances graph truth.
 
-Pulled from `graphify-out/GRAPH_REPORT.md` (2026-06-18, commit `bb1997ed`).
+The unit of project intent is the **node**. A job, executor session, commit, test
+run, or evaluator receipt describes an attempt to satisfy a node. None of those
+objects replaces the node or completes it automatically.
 
-- **Languages:** Python 3.11+ (runtime — stdlib + Flask), YAML (config graph
-  truth + schemas), Bash (`deploy/setup.sh`, `deploy/deploy.sh`), Markdown
-- **Graph:** 539 nodes · 833 edges · 48 communities (39 shown) · 71 files ·
-  ~32.5k words · 97% EXTRACTED / 3% INFERRED
-- **Top god nodes:** GraphReader (19), handle_merged_pr() (16),
-  _plan_dispatches() (14), GDDP Runtime (14), evaluate_pre_tool_use() (13),
-  JulesActionAdapter (13), TestJulesActionAdapter (13), handle_event() (12),
-  run() (12), NodeData (12)
-- **Structure:** webhook intake → classify → scope → queue → dispatch →
-  execute → return_router → receipt → human review. Layers visible as
-  communities: decision-loop/context reader, heartbeat classifier +
-  dispatcher, Jules adapter, return router + results store, intake server,
-  replay, rollback, paste-marker guard hooks (borrowed from .pi)
-- **Executor adapters:** JulesActionAdapter (Option A, GitHub issues — live),
-  JulesCliAdapter (Option B, CLI — stub)
+## Canon Model
 
-## Current direction
+Four kinds of truth must remain separate:
 
-Operational trials and production trials-ready. 
+- **Canon** defines the invariants and architectural boundaries that must remain
+  true.
+- **Graph** defines the work that currently exists, its dependencies, and its
+  ready frontier.
+- **Evidence** describes the outcome of execution attempts: commits, tests,
+  artifacts, traces, and evaluator verdicts.
+- **Human acceptance** decides whether that evidence is sufficient to change
+  canonical graph state.
 
-Done means: overnight runs are stable, boringly reliable 
+```mermaid
+flowchart TB
+    canon["Canon<br/>invariants and architectural boundaries"]
+    graph["Graph<br/>current nodes, dependencies, and frontier"]
+    job["Job / executor session<br/>one implementation attempt"]
+    evidence["Evidence<br/>tests, artifacts, receipts, verdicts"]
+    evaluator["Evaluator<br/>criteria + integrity judgments"]
+    human["Human acceptance"]
+    truth["Updated graph truth"]
 
-In order to accomplish this, the deterministic evaluators  and *semantic evaluator* has to be fully implemented. The verification loop amounts to creating an agentic harness for verification, observing graph state and invariants, and catching project drift and flagging to the human operator the state of the graph node-by-node.  
+    canon --> graph
+    graph --> job
+    job --> evidence
+    evidence --> evaluator
+    canon --> evaluator
+    evaluator --> human
+    graph --> human
+    human --> truth
+    truth --> graph
+```
 
-That frames the control-plane idea honestly for mixed senior-engineer /
-recruiter / lay audiences; the "runtime cannot mutate config truth" rule
-visible as architecture, not accident; the receipt-based return path and
-review gate explained end-to-end; both repos cross-referenced; v1 schemas
-documented. Drafts only — no push until Sab signs off.
+## Canonical Operating Loop
 
-## Known gaps / risks
+The central spine of GDDP is the node round trip:
 
-- `docs/host-roles.md` and handoffs leak operator topology (ssd-big,
-  ssd-small, mac, SSH paths, Big Pi legacy `~/opclaw` execution surface) — scrub
-  before public
-- `scripts/runtime/graph_updater.py` is an intentional disabled stub —
-  README must explain WHY or it reads as broken code
-- Decision-loop review/accept powers are draft/future, not the stable
-  contract — must be labeled as such
-- `gddp-config` is currently on `main`; `feat/openclaw-nodes` is historical
-  and confusing because the active objects now use decision-loop naming
-- `.agents/hooks/ag_natural_guard.py` (paste-marker guard) is borrowed from
-  .pi — needs attribution or a clarifying note on the cross-project reuse
-- Unclassified local edits in either repo are graph evidence until proven
-  otherwise. `gddp-runtime` and `gddp-config` must classify inherited state
-  before dispatching, accepting, or declaring the graph ready.
+```mermaid
+stateDiagram-v2
+    [*] --> Authored
+    Authored --> Ready: dependencies satisfied
+    Ready --> Dispatched
+    Dispatched --> Executing
+    Executing --> EvidenceReturned
+    EvidenceReturned --> Evaluated
+    Evaluated --> Ready: precise retry required
+    Evaluated --> HumanReview: evidence ready
+    HumanReview --> Accepted: human accepts
+    HumanReview --> Ready: human requests correction
+    Accepted --> [*]
+    Accepted --> Authored: newly unlocked nodes emerge
+```
 
-## Canonical documents
+Infrastructure exists to make this loop faster, more durable, more concurrent,
+more observable, or more trustworthy. Infrastructure completion is never the
+project's destination.
 
-The canon list, in order: **foundational node** (first node in each project's
-`project.yaml` — node order there is semantically meaningful), **README.md**,
-**PROJECT-BRIEF.md** (this file), **AGENTS.md**. Canon is small, human-owned,
-and wins over any other prose when they disagree.
+## Evaluator Boundary
 
-Canon has audiences. AGENTS.md is executor-canon and is deliberately excluded
-from evaluator context; evaluators judge against graph truth (node
-`acceptance_criteria`, constraints) plus README/brief context only. Vocabulary
-doctrine: **verdict** = evaluator output; **acceptance** = the human act that
-advances graph truth; **decision** = the human's status call on a node. The
-verification decision matrix's row order encodes intentional severity — do not
-reorder rows casually. Generated artifacts (wikis, receipts, handoffs) capture
-canon; they are never canon themselves.
+The evaluator answers two bounded questions:
 
-## Deeper docs
+1. **Criteria verdict:** Did this attempt satisfy the node's acceptance
+   criteria?
+2. **Integrity verdict:** Does the implementation preserve project canon, user
+   intent, and structural health?
+
+Both verdicts produce evidence for human review. Neither verdict completes a
+node. Tests are evidence, criteria are evidence, and evaluator verdicts are
+evidence. Only a human-accepted node status is graph truth.
+
+Integrity evaluation should test explicit invariants:
+
+- The node remains the unit of project intent.
+- Executor sessions remain attempts rather than project truth.
+- Durable evidence returns before evaluation.
+- Human authority over node completion remains intact.
+- Infrastructure improves turnaround, concurrency, recovery, observability, or
+  integrity.
+- Real project nodes can move before all supporting infrastructure is
+  theoretically complete.
+
+## Current System Baseline
+
+The graph begins again from current system truth:
+
+- Direct Jules execution exists.
+- Executor-neutral session abstractions exist.
+- The durable result-return path remains incomplete.
+- The evaluator and intent/integrity lane exist in working form.
+- The production control plane, heartbeat, queue, and intake exist.
+- The full round trip remains too fragile and expensive.
+- The system has not yet demonstrated many small nodes moving concurrently
+  through execution, evaluation, retry, and acceptance.
+
+`current-runtime-baseline` establishes the temporal boundary. Existing work is
+inventoried as present state with supporting evidence; it is not ignored, and it
+is not retroactively described as graph-governed. Human acceptance of that
+baseline establishes Node 1. All substantive work from that boundary forward is
+represented by Node 1-N in the graph.
+
+## Initial Graph Direction
+
+The first graph grows around operating outcomes, then widens into real project
+work as soon as the minimum round trip is usable:
+
+```mermaid
+flowchart LR
+    baseline["Node 1<br/>current-runtime-baseline<br/>human accepted"]
+    roundtrip["fast-node-round-trip"]
+    evaluator["immediate-evaluator-round-trip"]
+    concurrency["concurrent-node-flow"]
+    frontier["graph-frontier-operations"]
+    choice["executor-choice"]
+
+    baseline --> roundtrip
+    baseline --> evaluator
+    baseline --> concurrency
+    baseline --> frontier
+    baseline --> choice
+    roundtrip --> concurrency
+    evaluator --> concurrency
+
+    roundtrip --> projectA["real project node A"]
+    evaluator --> projectA
+    roundtrip --> projectB["real project node B"]
+    evaluator --> projectB
+    concurrency --> projectC["real project node C"]
+    frontier --> projectC
+
+    projectA --> discoveredA["discovered capability A1"]
+    projectB --> integrationAB["integration node AB"]
+
+    projectA -. returned evidence .-> evidenceA["durable-return failure"]
+    evidenceA -. reveals .-> returnFix["durable-result-return correction"]
+    returnFix --> retryA["project A retry"]
+
+    projectC -. returned evidence .-> evidenceC["session-recovery failure"]
+    evidenceC -. reveals .-> recovery["orphaned-session recovery"]
+    recovery --> retryC["project C retry"]
+```
+
+Capability regions such as resilience and executor expansion are useful views,
+not sequential roadmap phases. Their nodes coexist with real project work and
+connect through actual dependency edges. The graph may widen, branch, reveal
+missing prerequisites, and acquire corrective nodes. Its order comes from
+dependency direction, not visual tidiness.
+
+The development pattern is progressive:
+
+1. Make the minimum direct return reliable enough to move one node.
+2. Run several real nodes immediately.
+3. Turn observed failures into evidence or narrowly scoped corrective nodes.
+4. Run more independent nodes concurrently.
+5. Expand the graph from discovered reality.
+
+GitHub, Jules, Codex, and future executors are replaceable transports and
+workers. GitHub may provide durable artifacts and review surfaces, but it is not
+required to be the command bus. Direct Jules execution is a pressure-release
+mechanism for lowering the cost and latency of nodes, not a destination.
+
+## Success Condition
+
+GDDP succeeds when smaller nodes are economically viable; several can move
+without continuous supervision; evidence returns quickly and durably;
+evaluation follows immediately; failures create precise corrective work; and
+accepted work continuously expands the ready frontier.
+
+The useful operating view answers:
+
+- How many nodes are ready?
+- How many are executing?
+- How many returned evidence?
+- How many require correction?
+- How many await human acceptance?
+- Which acceptances will unlock the next frontier?
+
+Success is **more nodes moving faster**, with intent, provenance, graph
+integrity, and human control preserved. It is not direct dispatch implemented,
+an executor-neutral interface merged, or a large test count.
+
+## Canonical Documents
+
+The canon list, in order: **foundational node** (the first node in a project's
+`project.yaml`; order is semantically meaningful), **README.md**,
+**PROJECT-BRIEF.md** (this file), and **AGENTS.md**. Canon is small,
+human-owned, and wins over other prose when they disagree.
+
+Canon has audiences. `AGENTS.md` is executor canon and is deliberately excluded
+from evaluator context. Evaluators judge against graph truth (node acceptance
+criteria and constraints) plus README and project-brief context.
+
+Vocabulary:
+
+- **Verdict:** evaluator output.
+- **Acceptance:** the human act that advances graph truth.
+- **Decision:** the human's status call on a node.
+
+Generated artifacts such as wikis, receipts, and handoffs capture canon; they
+are never canon themselves.
+
+## Deeper Documents
 
 - README: [`README.md`](README.md)
-- Pi README handoff: [`.handoffs/002-pi-readme-handoff.md`](.handoffs/002-pi-readme-handoff.md)
-- Decision-loop spec: [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md)
-- Big Pi runbook: [`deploy/BIGPI_RUNBOOK.md`](deploy/BIGPI_RUNBOOK.md)
-- Handoffs: [`docs/handoffs/`](docs/handoffs/) (001 reality-check, 002 return-path vocabulary lock)
-- Config repo (source of truth): [`../gddp-config/`](../gddp-config/)
+- Tests and graph truth:
+  [`docs/Tests-can-fail-nodes-can-pass.md`](docs/Tests-can-fail-nodes-can-pass.md)
+- GDDP boundary:
+  [`docs/GDDP-becomes-small-and-real.md`](docs/GDDP-becomes-small-and-real.md)
+- Decision loop: [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md)
+- Config repository: [`../gddp-config/`](../gddp-config/)
