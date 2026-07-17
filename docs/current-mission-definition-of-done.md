@@ -26,9 +26,11 @@ intent and graph-integrity layer; only Sab changes graph truth.
   job cannot retain `queue_state=running`; restore direct tests and truthful
   artifacts; focused/full tests pass; commit and push for Sab's merge decision.
   Verified at `1f1e16d` (`2` focused and `269` full tests passed).
-- [ ] **PR #107 - crash recovery:** reconfirm tests; with Sab's approval run the
+- [x] **PR #107 - crash recovery:** reconfirm tests; with Sab's approval run the
   intake-only live drill; record PID replacement and `/health` HTTP 200 without
   dispatching unrelated events; commit and push for Sab's merge decision.
+  Drill complete at `dfbfc6c`: PID 46896 killed, PID 46948 respawned, `/health`
+  200 on both, event hash unchanged (28/6), heartbeat never armed, restored dormant.
 - [ ] **Land and reconcile:** Sab accepts/rejects both PRs; accepted work lands on
   main; full tests pass; main equals `origin/main`; after fresh inspection and
   approval, sanctioned SQL reconciles only stale runtime rows. Sab alone updates
