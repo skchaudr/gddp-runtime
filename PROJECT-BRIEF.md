@@ -103,84 +103,80 @@ Integrity evaluation should test explicit invariants:
 - Real project nodes can move before all supporting infrastructure is
   theoretically complete.
 
-## Current System Baseline
+## Current System Starting Point
 
-The graph begins again from current system truth:
+The canonical graph begins from inherited system truth:
 
-- Direct Jules execution exists.
-- Executor-neutral session abstractions exist.
-- The durable result-return path remains incomplete.
-- The evaluator and intent/integrity lane exist in working form.
+- The GitHub-mediated Jules issue, Action, pull-request, and webhook pathway
+  exists but creates a long and expensive node round trip.
+- Executor-neutral session work already provides implementation context for a
+  shared dispatch and result-return contract.
+- Direct Jules API and Jules Relay work provide the basis for a shorter Jules
+  pathway.
+- The evaluator and separate intent/integrity lane exist in working form.
 - The production control plane, heartbeat, queue, and intake exist.
-- The full round trip remains too fragile and expensive.
-- The system has not yet demonstrated many small nodes moving concurrently
-  through execution, evaluation, retry, and acceptance.
+- The system has not yet accepted the complete neutral-executor contract,
+  demonstrated the complete direct Jules round trip, or moved several small
+  nodes concurrently through evaluation and human review.
 
-`current-runtime-baseline` establishes the temporal boundary. Existing work is
-inventoried as present state with supporting evidence; it is not ignored, and it
-is not retroactively described as graph-governed. Human acceptance of that
-baseline establishes Node 1. All substantive work from that boundary forward is
-represented by Node 1-N in the graph.
+Inherited implementation remains present system context and evidence. It is not
+retroactively described as graph-governed work. The new canonical graph begins
+with `neutral-executor-contract`; there is no `current-runtime-baseline` node.
 
-## Initial Graph Direction
+## Draft Canonical Graph Direction
 
-The first graph grows around operating outcomes, then widens into real project
-work as soon as the minimum round trip is usable:
+The current draft capability spine contains five named nodes:
+
+1. `neutral-executor-contract` defines one executor-neutral node packet,
+   execution-attempt identity, and returned-result shape.
+2. `direct-jules-round-trip` uses the Jules API to dispatch and recover one real
+   node without the GitHub issue, Action, pull-request, and webhook chain.
+3. `immediate-evaluator-round-trip` turns returned evidence into separate
+   criteria and intent/integrity judgments for human review.
+4. `concurrent-node-flow` proves that independent execution and evaluation work
+   can move simultaneously without mixing state or evidence.
+5. `graph-frontier-operations` shows what is ready, what is already moving, and
+   what human acceptance would unlock next.
 
 ```mermaid
 flowchart LR
-    baseline["Node 1<br/>current-runtime-baseline<br/>human accepted"]
-    roundtrip["fast-node-round-trip"]
-    evaluator["immediate-evaluator-round-trip"]
-    concurrency["concurrent-node-flow"]
-    frontier["graph-frontier-operations"]
-    choice["executor-choice"]
+    contract["1. neutral-executor-contract"]
+    jules["2. direct-jules-round-trip"]
+    evaluator["3. immediate-evaluator-round-trip"]
+    concurrency["4. concurrent-node-flow"]
+    frontier["5. graph-frontier-operations"]
 
-    baseline --> roundtrip
-    baseline --> evaluator
-    baseline --> concurrency
-    baseline --> frontier
-    baseline --> choice
-    roundtrip --> concurrency
+    contract --> jules
+    jules --> evaluator
     evaluator --> concurrency
-
-    roundtrip --> projectA["real project node A"]
-    evaluator --> projectA
-    roundtrip --> projectB["real project node B"]
-    evaluator --> projectB
-    concurrency --> projectC["real project node C"]
-    frontier --> projectC
-
-    projectA --> discoveredA["discovered capability A1"]
-    projectB --> integrationAB["integration node AB"]
-
-    projectA -. returned evidence .-> evidenceA["durable-return failure"]
-    evidenceA -. reveals .-> returnFix["durable-result-return correction"]
-    returnFix --> retryA["project A retry"]
-
-    projectC -. returned evidence .-> evidenceC["session-recovery failure"]
-    evidenceC -. reveals .-> recovery["orphaned-session recovery"]
-    recovery --> retryC["project C retry"]
+    evaluator --> frontier
 ```
 
-Capability regions such as resilience and executor expansion are useful views,
-not sequential roadmap phases. Their nodes coexist with real project work and
-connect through actual dependency edges. The graph may widen, branch, reveal
-missing prerequisites, and acquire corrective nodes. Its order comes from
-dependency direction, not visual tidiness.
+These five nodes are the current draft spine. Their acceptance criteria remain
+draft until the complete node set has been reviewed and explicitly accepted by
+the human operator.
 
-The development pattern is progressive:
+Real project nodes should begin moving as soon as the direct executor and
+evaluator round trips are usable. The graph then expands from observed work:
 
-1. Make the minimum direct return reliable enough to move one node.
-2. Run several real nodes immediately.
-3. Turn observed failures into evidence or narrowly scoped corrective nodes.
-4. Run more independent nodes concurrently.
-5. Expand the graph from discovered reality.
+- **Real project nodes** perform useful project work.
+- **Discovered capability nodes** represent missing capabilities revealed by
+  real attempts.
+- **Integration nodes** connect pieces when an actual integration dependency
+  appears.
+- **Corrective nodes** address specific failures demonstrated by returned
+  evidence.
+- **Retry attempts or retry nodes** revisit original work after a correction;
+  their final representation remains an explicit graph-design decision.
+
+Capability and project nodes coexist in one dependency graph. Infrastructure
+remains subordinate to moving useful work. New nodes come from actual
+dependencies and evidence rather than a predicted infrastructure roadmap.
 
 GitHub, Jules, Codex, and future executors are replaceable transports and
 workers. GitHub may provide durable artifacts and review surfaces, but it is not
-required to be the command bus. Direct Jules execution is a pressure-release
-mechanism for lowering the cost and latency of nodes, not a destination.
+required to be the command bus. Direct Jules execution lowers the cost and
+latency of moving nodes through the operating loop.
 
 ## Success Condition
 

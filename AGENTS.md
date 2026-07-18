@@ -25,17 +25,30 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 
 ## Canonical node workflow
 
-`current-runtime-baseline` is the accepted boundary between inherited system
-state and graph-governed development. It establishes Node 1. From that boundary
-forward, all substantive project work must be represented by Node 1-N in the
-graph before implementation begins.
+The draft canonical graph begins with `neutral-executor-contract`, followed by
+the direct Jules and evaluator round trips. `concurrent-node-flow` and
+`graph-frontier-operations` build on the usable evaluator loop.
+
+The five capability nodes remain drafts until Sab has reviewed the complete set
+and explicitly accepted their final definitions. Discussion, draft text,
+discovered implementation context, and requested revisions do not constitute
+node approval or authorization to implement, commit, or publish them.
 
 - Treat a node as the unit of project intent. Jobs, sessions, commits, tests,
   artifacts, and verdicts are evidence from attempts to satisfy it.
 - Never mark a node complete from executor success, passing tests, or an
   evaluator verdict. Only the human accepts a node.
+- Use one executor-neutral node packet and returned-result contract across
+  Jules and future executors.
+- Prefer the direct Jules API path for the short node round trip. Preserve the
+  GitHub-mediated pathway as inherited infrastructure rather than the required
+  command bus.
 - Attach discoveries to the current node as evidence. Create a new dependency,
   follow-up, or corrective node when the discovery creates bounded work.
+- Treat real project work as the source of discovered capability, integration,
+  corrective, and retry work.
+- Preserve the distinction between a retry attempt against an existing node and
+  a newly authored retry node until the graph design explicitly chooses one.
 - Keep infrastructure subordinate to the operating loop. It must improve node
   turnaround, concurrency, durable return, recovery, observability, or
   integrity.
