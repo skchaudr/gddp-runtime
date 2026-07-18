@@ -107,16 +107,16 @@ Integrity evaluation should test explicit invariants:
 
 The canonical graph begins from inherited system truth:
 
-- The GitHub-mediated Jules issue, Action, pull-request, and webhook pathway
-  exists but creates a long and expensive node round trip.
+- The GitHub-mediated issue, Action, pull-request, and webhook pathway exists
+  but creates a long and expensive node round trip.
 - Executor-neutral session work already provides implementation context for a
   shared dispatch and result-return contract.
-- Direct Jules API and Jules Relay work provide the basis for a shorter Jules
-  pathway.
+- Direct executor transport work provides the basis for a shorter round trip
+  than the mediated path.
 - The evaluator and separate intent/integrity lane exist in working form.
 - The production control plane, heartbeat, queue, and intake exist.
 - The system has not yet accepted the complete neutral-executor contract,
-  demonstrated the complete direct Jules round trip, or moved several small
+  demonstrated the complete direct executor round trip, or moved several small
   nodes concurrently through evaluation and human review.
 
 Inherited implementation remains present system context and evidence. It is not
@@ -129,8 +129,9 @@ The current draft capability spine contains five named nodes:
 
 1. `neutral-executor-contract` defines one executor-neutral node packet,
    execution-attempt identity, and returned-result shape.
-2. `direct-jules-round-trip` uses the Jules API to dispatch and recover one real
-   node without the GitHub issue, Action, pull-request, and webhook chain.
+2. `direct-executor-round-trip` uses a direct executor transport to dispatch
+   and recover one real node without the GitHub issue, Action, pull-request,
+   and webhook chain.
 3. `immediate-evaluator-round-trip` turns returned evidence into separate
    criteria and intent/integrity judgments for human review.
 4. `concurrent-node-flow` proves that independent execution and evaluation work
@@ -141,15 +142,17 @@ The current draft capability spine contains five named nodes:
 ```mermaid
 flowchart LR
     contract["1. neutral-executor-contract"]
-    jules["2. direct-jules-round-trip"]
+    direct["2. direct-executor-round-trip"]
     evaluator["3. immediate-evaluator-round-trip"]
     concurrency["4. concurrent-node-flow"]
     frontier["5. graph-frontier-operations"]
 
-    contract --> jules
-    jules --> evaluator
+    contract --> direct
+    direct --> evaluator
     evaluator --> concurrency
     evaluator --> frontier
+    direct --> concurrency
+    concurrency --> frontier
 ```
 
 These five nodes are the current draft spine. Their acceptance criteria remain
@@ -173,9 +176,9 @@ Capability and project nodes coexist in one dependency graph. Infrastructure
 remains subordinate to moving useful work. New nodes come from actual
 dependencies and evidence rather than a predicted infrastructure roadmap.
 
-GitHub, Jules, Codex, and future executors are replaceable transports and
+GitHub, Jules, Codex, and other executors are replaceable transports and
 workers. GitHub may provide durable artifacts and review surfaces, but it is not
-required to be the command bus. Direct Jules execution lowers the cost and
+required to be the command bus. Direct executor transport lowers the cost and
 latency of moving nodes through the operating loop.
 
 ## Success Condition

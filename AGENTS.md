@@ -26,8 +26,9 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 ## Canonical node workflow
 
 The draft canonical graph begins with `neutral-executor-contract`, followed by
-the direct Jules and evaluator round trips. `concurrent-node-flow` and
-`graph-frontier-operations` build on the usable evaluator loop.
+`direct-executor-round-trip` and `immediate-evaluator-round-trip`.
+`concurrent-node-flow` and `graph-frontier-operations` build on the usable
+evaluator loop.
 
 The five capability nodes remain drafts until Sab has reviewed the complete set
 and explicitly accepted their final definitions. Discussion, draft text,
@@ -39,9 +40,9 @@ node approval or authorization to implement, commit, or publish them.
 - Never mark a node complete from executor success, passing tests, or an
   evaluator verdict. Only the human accepts a node.
 - Use one executor-neutral node packet and returned-result contract across
-  Jules and future executors.
-- Prefer the direct Jules API path for the short node round trip. Preserve the
-  GitHub-mediated pathway as inherited infrastructure rather than the required
+  all current and future executors.
+- Prefer a direct executor transport for the short node round trip. Preserve
+  any mediated pathway as inherited infrastructure rather than the required
   command bus.
 - Attach discoveries to the current node as evidence. Create a new dependency,
   follow-up, or corrective node when the discovery creates bounded work.
