@@ -219,8 +219,8 @@ class JulesCliAdapter:
     def status(self, session_ref: SessionRef) -> SessionStatus:
         """Poll session status via `jules remote list --session`.
 
-        Only a parsed terminal state from the matching remote row is
-        authoritative. CLI and lookup failures are transient polling errors.
+        A successful list with no matching session is reported separately from
+        transient CLI and infrastructure polling errors.
         """
         session_id = session_ref.session_id
         cmd = [self.jules_bin, "remote", "list", "--session"]
@@ -259,8 +259,8 @@ class JulesCliAdapter:
         ]
         if not session_lines:
             return SessionStatus(
-                state="poll_error",
-                error="session not found in jules list",
+                state="missing",
+                error="session not found in successful jules list",
             )
 
         # Inspect the matching line(s) for known status keywords.

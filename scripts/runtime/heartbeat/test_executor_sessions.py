@@ -727,6 +727,183 @@ def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
     retry_dispatch.assert_not_called()
 
 
+
+def test_jules_successful_list_without_session_is_missing(monkeypatch):
+    import adapters.jules_cli_adapter as jca
+
+    monkeypatch.setattr(
+        jca.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="ID  STATUS\nother-session  Running\n",
+            stderr="",
+        ),
+    )
+
+    status = JulesCliAdapter(repo="owner/repo").status(
+        SessionRef("jules_cli", "expected-session")
+    )
+
+    assert status.state == "missing"
+    assert "not found" in (status.error or "")
+
+
+def test_reconcile_fresh_missing_session_stays_active(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_missing_fresh", status="running")
+    session_id = insert_executor_session(
+        con, "job_missing_fresh", "jules_cli", "missing-fresh"
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:50:00+00:00",
+            "2026-07-18T11:50:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_fresh",),
+    ).fetchone()
+    assert tuple(job) == (0, "running")
+    retry_dispatch.assert_not_called()
+
+
+def test_reconcile_aged_missing_session_retries_below_cap(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_missing_retry", status="running")
+    session_id = insert_executor_session(
+        con,
+        "job_missing_retry",
+        "jules_cli",
+        "missing-stale",
+        expected_base_commit_sha=base_sha,
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:29:00+00:00",
+            "2026-07-18T11:29:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock(
+        return_value=ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "replacement-session"),
+        )
+    )
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    stale = get_executor_session_by_id(con, session_id)
+    assert stale["state"] == "failed"
+    assert "not found" in stale["error"]
+    replacement = con.execute(
+        "SELECT state, session_id, attempt_index FROM executor_sessions "
+        "WHERE job_id = ? AND attempt_index = 1",
+        ("job_missing_retry",),
+    ).fetchone()
+    assert tuple(replacement) == ("dispatched", "replacement-session", 1)
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_retry",),
+    ).fetchone()
+    assert tuple(job) == (1, "running")
+
+
+def test_reconcile_aged_missing_session_stops_at_attempt_cap(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_missing_exhausted",
+        status="running",
+        attempt=3,
+        max_attempts=3,
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_missing_exhausted",
+        "jules_cli",
+        "missing-exhausted",
+        attempt_index=3,
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:29:00+00:00",
+            "2026-07-18T11:29:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "failed"
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_exhausted",),
+    ).fetchone()
+    assert tuple(job) == (3, "failed")
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_missing_exhausted",),
+    ).fetchone()[0] == 1
+    retry_dispatch.assert_not_called()
+
 def test_reconcile_running_session_stays_active(con, tmp_path, monkeypatch):
     repo, _ = _make_git_repo(tmp_path)
     _insert_job(con, job_id="job_run", executor="jules_cli", status="running")
@@ -924,6 +1101,20 @@ def test_jules_cancellation_persists_unsupported_without_claiming_remote_success
 def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
     con, monkeypatch, capsys
 ):
+    con.execute(
+        "INSERT INTO events "
+        "(event_id, received_at, source, event_type, repo, project_id, status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "evt_cancel_race",
+            "2026-07-18T12:00:00+00:00",
+            "github",
+            "issues",
+            "owner/repo",
+            "proj-1",
+            "classified",
+        ),
+    )
     _insert_job(con, job_id="job_cancel_race", status="ready")
     session_db_id = insert_executor_session(
         con,
@@ -990,6 +1181,17 @@ def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
         ("job_cancel_race",),
     ).fetchone()[0] == "cancelled"
     assert FakeJules.cancelled_session_ids == ["late-remote-session"]
+    assert con.execute(
+        "SELECT status FROM events WHERE event_id = ?",
+        ("evt_cancel_race",),
+    ).fetchone()[0] == "mapped"
+    assert runner._plan_dispatches(
+        con,
+        "proj-1",
+        "owner/repo",
+        [],
+        MagicMock(),
+    ) == []
     output = capsys.readouterr().out.lower()
     assert "unsupported" in output
     assert "cancellation accepted" not in output
@@ -1284,9 +1486,8 @@ def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
         FileNotFoundError("jules"),
         OSError("subprocess unavailable"),
         SimpleNamespace(returncode=2, stdout="", stderr="service unavailable"),
-        SimpleNamespace(returncode=0, stdout="other session only", stderr=""),
     ],
-    ids=["timeout", "missing-binary", "subprocess-error", "nonzero", "missing-session"],
+    ids=["timeout", "missing-binary", "subprocess-error", "nonzero"],
 )
 def test_jules_cli_status_infrastructure_failure_is_transient(
     monkeypatch, poll_result

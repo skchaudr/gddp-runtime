@@ -368,6 +368,7 @@ def _record_outcomes(
                         outcome.session_ref,
                         str(planned.job.get("repo") or ""),
                     )
+                mark_event_mapped(con, event_id)
                 print(f"  → late dispatch result ignored: {cancellation}")
                 print()
                 continue
@@ -395,6 +396,7 @@ def _record_outcomes(
                 expected_base_commit_sha=head_sha,
             )
             if not finalized:
+                mark_event_mapped(con, event_id)
                 print(
                     "  → late dispatch failure ignored: reservation is no "
                     "longer dispatching"

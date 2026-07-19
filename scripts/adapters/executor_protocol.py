@@ -129,6 +129,7 @@ class SessionStatus:
         "needs_operator",
         "completed",
         "failed",
+        "missing",
         "poll_error",
     ]
     error: str | None = None

@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Ensure adapters directory is importable (same pattern as dispatcher.py).
@@ -46,6 +46,7 @@ def reconcile_sessions(
     *,
     current_time: datetime | None = None,
     dispatching_stale_after: timedelta = timedelta(minutes=30),
+    missing_stale_after: timedelta = timedelta(minutes=30),
 ) -> None:
     """Main entry point for the reconcile phase.
 
@@ -59,6 +60,7 @@ def reconcile_sessions(
 
     A failure reconciling one session does not stop others.
     """
+    current_time = current_time or datetime.now(timezone.utc)
     recovered = recover_stale_dispatching_sessions(
         con,
         current_time=current_time,
@@ -87,7 +89,13 @@ def reconcile_sessions(
 
     for session in sessions:
         try:
-            _reconcile_one(con, session, repo_path)
+            _reconcile_one(
+                con,
+                session,
+                repo_path,
+                current_time=current_time,
+                missing_stale_after=missing_stale_after,
+            )
         except Exception as exc:
             # A failed reconcile for one session must not stop others.
             print(
@@ -182,7 +190,14 @@ def cancel_executor_session(con, session_db_id: str) -> str:
     return result_state
 
 
-def _reconcile_one(con, session, repo_path: Path) -> None:
+def _reconcile_one(
+    con,
+    session,
+    repo_path: Path,
+    *,
+    current_time: datetime,
+    missing_stale_after: timedelta,
+) -> None:
     """Reconcile a single executor session."""
     session_db_id = session["session_db_id"]
     job_id = session["job_id"]
@@ -228,6 +243,19 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
     if status.state == "completed":
         _handle_completed(con, adapter, session_ref, session, repo_path, job_row)
     elif status.state == "failed":
+        _handle_failed(con, session, job_row, status.error, repo_path)
+    elif status.state == "missing":
+        created_at = datetime.fromisoformat(
+            str(session["created_at"]).replace("Z", "+00:00")
+        )
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if current_time - created_at < missing_stale_after:
+            print(
+                f"[reconcile] {session_db_id}: missing from successful executor "
+                f"list within {missing_stale_after} grace; will retry next tick"
+            )
+            return
         _handle_failed(con, session, job_row, status.error, repo_path)
     elif status.state == "poll_error":
         print(
