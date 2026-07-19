@@ -57,6 +57,6 @@ def build_job(
         "attempt":             0,
         "max_attempts":        3,
         "artifacts_dir":       str(artifacts_dir) + "/",
-        # These are passed to the adapter — not stored in the DB directly
-        "_required_artifacts": node.required_artifacts,
+        "required_artifacts":  json.dumps(node.required_artifacts),
+        "previous_findings":   None,
     }

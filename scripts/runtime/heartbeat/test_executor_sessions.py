@@ -12,10 +12,12 @@ in a temp dir for worktree/patch-application tests, and mocked subprocess-free
 adapters (the Jules CLI is never actually invoked).
 """
 
+import json
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -35,8 +37,10 @@ from adapters.jules_cli_adapter import JulesCliAdapter
 from scripts.runtime.heartbeat import reconciler, runner
 from scripts.runtime.heartbeat.dispatcher import dispatch
 from scripts.runtime.heartbeat.state_recorder import (
+    allocate_retry_attempt,
     get_active_executor_sessions,
     get_executor_session_by_id,
+    insert_job,
     insert_executor_session,
     update_executor_session_state,
 )
@@ -60,6 +64,7 @@ CREATE TABLE events (
 
 CREATE TABLE jobs (
     job_id              TEXT PRIMARY KEY,
+    event_id            TEXT,
     created_at          TEXT NOT NULL,
     project_id          TEXT,
     repo                TEXT,
@@ -76,7 +81,9 @@ CREATE TABLE jobs (
     status              TEXT DEFAULT 'ready',
     attempt             INTEGER DEFAULT 0,
     max_attempts        INTEGER DEFAULT 3,
-    artifacts_dir       TEXT
+    artifacts_dir       TEXT,
+    required_artifacts  TEXT NOT NULL DEFAULT '[]',
+    previous_findings   TEXT
 );
 
 CREATE TABLE queue_records (
@@ -91,6 +98,8 @@ CREATE TABLE executor_sessions (
     job_id                   TEXT NOT NULL,
     executor                 TEXT NOT NULL,
     session_id               TEXT NOT NULL,
+    execution_attempt_id     TEXT NOT NULL,
+    attempt_index            INTEGER NOT NULL,
     state                    TEXT DEFAULT 'dispatched',
     expected_base_commit_sha TEXT,
     result_commit_sha        TEXT,
@@ -125,15 +134,23 @@ def _insert_job(
     status="running",
     project_id="proj-1",
     node_id="node-1",
+    attempt=0,
+    max_attempts=3,
+    required_artifacts=None,
+    previous_findings=None,
 ):
     """Insert a minimal job + queue record (no event needed; FKs off in tests)."""
     con.execute(
         "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
-        "job_type, executor, queue_state, title, goal, status) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "job_type, executor, queue_state, title, goal, status, attempt, "
+        "max_attempts, required_artifacts, previous_findings) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             job_id, "2026-07-17T00:00:00+00:00", project_id, repo, node_id,
             "implementation", executor, status, "Test", "Test goal", status,
+            attempt, max_attempts,
+            json.dumps(required_artifacts or []),
+            json.dumps(previous_findings) if previous_findings is not None else None,
         ),
     )
     con.execute(
@@ -164,24 +181,29 @@ def _make_fake_adapter(
     *,
     status_state="completed",
     status_error=None,
+    status_exception=None,
     patch_text=_PATCH_ADD_RESULT,
     collect_success=True,
+    cancel_result=False,
 ):
     """Build a configurable fake adapter class.
 
-    The reconciler instantiates ``adapter_cls(repo=...)`` and calls
-    ``.status()`` / ``.collect()``, so we track call counts at the class level.
+    The reconciler instantiates ``adapter_cls(repo=...)`` and calls lifecycle
+    methods, so call counts live at the class level.
     """
 
     class FakeAdapter:
         status_calls = 0
         collect_calls = 0
+        cancel_calls = 0
 
         def __init__(self, repo=""):
             self.repo = repo
 
         def status(self, session_ref):
             FakeAdapter.status_calls += 1
+            if status_exception is not None:
+                raise status_exception
             return SessionStatus(state=status_state, error=status_error)
 
         def collect(self, session_ref, dest_path):
@@ -198,7 +220,8 @@ def _make_fake_adapter(
             )
 
         def cancel(self, session_ref):
-            return False
+            FakeAdapter.cancel_calls += 1
+            return cancel_result
 
     return FakeAdapter
 
@@ -247,6 +270,8 @@ def test_insert_executor_session_creates_row(con):
     assert row["expected_base_commit_sha"] == "abc123"
     assert row["result_commit_sha"] is None
     assert row["error"] is None
+    assert row["attempt_index"] == 0
+    assert row["execution_attempt_id"] == "job_a:attempt:0"
 
 
 def test_update_executor_session_state(con):
@@ -327,6 +352,100 @@ def test_get_executor_session_by_id(con):
     assert row["state"] == "dispatched"
 
 
+def test_retry_allocation_persists_findings_for_db_replay(con):
+    findings = {
+        "verdict": "changes_requested",
+        "findings": [{"severity": "medium", "summary": "src/a.py:8"}],
+    }
+    _insert_job(
+        con,
+        job_id="job_replay",
+        required_artifacts=["decision.md", "result-summary.md"],
+    )
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
+    ).fetchone()
+
+    allocated = allocate_retry_attempt(
+        con,
+        job,
+        executor="jules_cli",
+        previous_findings=findings,
+    )
+    con.commit()
+
+    assert allocated is not None
+    replayed_job = dict(
+        con.execute(
+            "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
+        ).fetchone()
+    )
+    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
+
+    packet = _build_node_packet(replayed_job)
+    assert packet.attempt_index == 1
+    assert packet.execution_attempt_id == "job_replay:attempt:1"
+    assert packet.required_artifacts == ("decision.md", "result-summary.md")
+    assert packet.previous_findings["findings"][0]["severity"] == "medium"
+
+
+def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
+    from scripts import init_db as init_db_module
+
+    db_path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(db_path)
+    legacy.executescript(
+        """
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            attempt INTEGER DEFAULT 0
+        );
+        CREATE TABLE executor_sessions (
+            session_db_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            executor TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            state TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO jobs (job_id, attempt) VALUES ('job_old', 1);
+        INSERT INTO executor_sessions VALUES
+            ('ses_old_0', 'job_old', 'jules_cli', 'remote-0', 'failed',
+             '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+            ('ses_old_1', 'job_old', 'jules_cli', 'remote-1', 'running',
+             '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z');
+        """
+    )
+    legacy.commit()
+    legacy.close()
+    monkeypatch.setattr(init_db_module, "DB_PATH", db_path)
+
+    init_db_module.init_db()
+    init_db_module.init_db()
+
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    job_columns = {
+        row["name"] for row in migrated.execute("PRAGMA table_info(jobs)")
+    }
+    session_columns = {
+        row["name"]
+        for row in migrated.execute("PRAGMA table_info(executor_sessions)")
+    }
+    assert {"required_artifacts", "previous_findings"} <= job_columns
+    assert {"execution_attempt_id", "attempt_index"} <= session_columns
+    rows = migrated.execute(
+        "SELECT attempt_index, execution_attempt_id "
+        "FROM executor_sessions ORDER BY created_at"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (0, "job_old:attempt:0"),
+        (1, "job_old:attempt:1"),
+    ]
+    migrated.close()
+
+
 # =========================================================================== #
 # 2. Reconciler tests
 # =========================================================================== #
@@ -389,25 +508,187 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
     assert qr["queue"] == "awaiting_review"
 
 
-def test_reconcile_failed_session_marks_job_failed(con, tmp_path, monkeypatch):
-    repo, _ = _make_git_repo(tmp_path)
-    _insert_job(con, job_id="job_fail", executor="jules_cli", status="running")
-    ses_id = insert_executor_session(con, "job_fail", "jules_cli", "sess-fail")
+def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    findings = {
+        "verdict": "changes_requested",
+        "findings": [{"severity": "high", "summary": "src/a.py:4 is wrong"}],
+    }
+    _insert_job(
+        con,
+        job_id="job_fail",
+        executor="jules_cli",
+        status="running",
+        required_artifacts=["decision.md", "patch.diff"],
+        previous_findings=findings,
+    )
+    original_id = insert_executor_session(
+        con,
+        "job_fail",
+        "jules_cli",
+        "sess-fail",
+        expected_base_commit_sha=base_sha,
+    )
     FakeAdapter = _make_fake_adapter(status_state="failed", status_error="boom")
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatched_jobs = []
+
+    def retry_dispatch(job, repo_name):
+        dispatched_jobs.append(dict(job))
+        return ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "sess-retry"),
+        )
+
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
 
     reconciler.reconcile_sessions(con, repo)
 
-    row = get_executor_session_by_id(con, ses_id)
-    assert row["state"] == "failed"
-    assert "boom" in (row["error"] or "")
-    assert FakeAdapter.collect_calls == 0
+    original = get_executor_session_by_id(con, original_id)
+    assert original["state"] == "failed"
+    assert original["session_id"] == "sess-fail"
+    assert original["attempt_index"] == 0
+    assert original["execution_attempt_id"] == "job_fail:attempt:0"
+    assert original["error"] == "boom"
+
+    rows = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
+        ("job_fail",),
+    ).fetchall()
+    assert len(rows) == 2
+    replacement = rows[1]
+    assert replacement["state"] == "dispatched"
+    assert replacement["session_id"] == "sess-retry"
+    assert replacement["attempt_index"] == 1
+    assert replacement["execution_attempt_id"] == "job_fail:attempt:1"
 
     job = con.execute(
-        "SELECT status, queue_state FROM jobs WHERE job_id = ?", ("job_fail",)
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_fail",)
     ).fetchone()
-    assert job["status"] == "failed"
-    assert job["queue_state"] == "failed"
+    assert job["attempt"] == 1
+    assert job["status"] == "running"
+    assert job["queue_state"] == "running"
+    assert len(dispatched_jobs) == 1
+
+    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
+
+    packet = _build_node_packet(dispatched_jobs[0])
+    assert packet.execution_attempt_id == "job_fail:attempt:1"
+    assert packet.required_artifacts == ("decision.md", "patch.diff")
+    assert packet.previous_findings["findings"][0]["severity"] == "high"
+
+
+def test_retry_dispatch_failure_is_visible_and_idempotent(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_dispatch_fail", status="running")
+    original_id = insert_executor_session(
+        con,
+        "job_dispatch_fail",
+        "jules_cli",
+        "sess-original",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="remote failed")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatch_calls = []
+
+    def failed_dispatch(job, repo_name):
+        dispatch_calls.append(job["attempt"])
+        return ProtocolDispatchResult(success=False, error="retry transport failed")
+
+    monkeypatch.setattr(reconciler, "dispatch", failed_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+    reconciler.reconcile_sessions(con, repo)
+
+    rows = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
+        ("job_dispatch_fail",),
+    ).fetchall()
+    assert len(rows) == 2
+    assert rows[0]["session_db_id"] == original_id
+    assert rows[0]["state"] == "failed"
+    assert rows[1]["state"] == "dispatch_failed"
+    assert rows[1]["error"] == "retry transport failed"
+    assert rows[1]["execution_attempt_id"] == "job_dispatch_fail:attempt:1"
+    assert dispatch_calls == [1]
+
+    job = con.execute(
+        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_dispatch_fail",),
+    ).fetchone()
+    assert tuple(job) == (1, "failed", "failed")
+
+
+def test_reconcile_failed_session_at_attempt_cap_does_not_dispatch(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_exhausted",
+        status="running",
+        attempt=3,
+        max_attempts=3,
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_exhausted",
+        "jules_cli",
+        "sess-last",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="last failure")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "failed"
+    assert row["attempt_index"] == 3
+    retry_dispatch.assert_not_called()
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_exhausted",),
+    ).fetchone()[0] == 1
+    job = con.execute(
+        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_exhausted",),
+    ).fetchone()
+    assert tuple(job) == (3, "failed", "failed")
+
+
+def test_reconcile_poll_exception_does_not_allocate_replacement(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_poll", status="running")
+    session_id = insert_executor_session(
+        con, "job_poll", "jules_cli", "sess-poll"
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_exception=RuntimeError("temporary network failure")
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_poll",)
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll",)
+    ).fetchone()[0] == 0
+    retry_dispatch.assert_not_called()
 
 
 def test_reconcile_running_session_stays_active(con, tmp_path, monkeypatch):
@@ -458,6 +739,75 @@ def test_reconcile_needs_operator_persists_state(con, tmp_path, monkeypatch):
     assert job["status"] == "running"
     active = get_active_executor_sessions(con)
     assert any(r["session_db_id"] == ses_id for r in active)
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_op",)
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_op",)
+    ).fetchone()[0] == 0
+
+
+def test_persisted_local_cancellation_is_terminal_across_reconciler_restart(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_cancel_local",
+        executor="local_subprocess",
+        status="running",
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_cancel_local",
+        "local_subprocess",
+        "local-session",
+    )
+    FakeLocal = _make_fake_adapter(status_state="running", cancel_result=True)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"local_subprocess": FakeLocal})
+
+    result = reconciler.cancel_executor_session(con, session_id)
+
+    assert result == "cancelled"
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "cancelled"
+    assert FakeLocal.cancel_calls == 1
+    assert get_active_executor_sessions(con) == []
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_cancel_local",),
+    ).fetchone()
+    assert tuple(job) == ("cancelled", "cancelled")
+
+    reconciler.reconcile_sessions(con, repo)
+    assert FakeLocal.status_calls == 0
+    assert FakeLocal.collect_calls == 0
+
+
+def test_jules_cancellation_persists_unsupported_without_claiming_remote_success(
+    con, monkeypatch
+):
+    _insert_job(con, job_id="job_cancel_jules", status="running")
+    session_id = insert_executor_session(
+        con,
+        "job_cancel_jules",
+        "jules_cli",
+        "jules-session",
+    )
+    FakeJules = _make_fake_adapter(status_state="running", cancel_result=False)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeJules})
+
+    result = reconciler.cancel_executor_session(con, session_id)
+
+    assert result == "cancel_unsupported"
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "cancel_unsupported"
+    assert "unsupported" in row["error"].lower()
+    assert "cancelled" not in row["error"].lower()
+    assert get_active_executor_sessions(con) == []
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", ("job_cancel_jules",)
+    ).fetchone()[0] == "cancelled"
 
 
 # =========================================================================== #
@@ -525,6 +875,75 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
     )
 
     assert called["reconcile"] is True
+
+
+def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
+    con.execute(
+        """INSERT INTO events
+           (event_id, received_at, source, event_type, repo, project_id, status)
+           VALUES ('evt_initial', '2026-01-01T00:00:00Z', 'manual',
+                   'issue.opened', 'owner/repo', 'proj-1', 'received')"""
+    )
+    con.commit()
+    node = SimpleNamespace(node_id="node-1")
+    monkeypatch.setattr(
+        runner,
+        "classify",
+        lambda event, nodes: {
+            "matched_node_id": "node-1",
+            "executor_recommendation": "jules_cli",
+        },
+    )
+    monkeypatch.setattr(runner, "mark_event_classified", lambda *args: None)
+    monkeypatch.setattr(runner, "check_scope", lambda *args: True)
+    monkeypatch.setattr(
+        runner,
+        "build_job",
+        lambda *args: {
+            "job_id": "job_initial",
+            "created_at": "2026-01-01T00:00:00Z",
+            "event_id": "evt_initial",
+            "project_id": "proj-1",
+            "repo": "owner/repo",
+            "node_id": "node-1",
+            "job_type": "implementation",
+            "executor": "jules_cli",
+            "queue_state": "ready",
+            "title": "Initial",
+            "goal": "Dispatch once",
+            "why": "",
+            "constraints": "[]",
+            "acceptance_criteria": "[]",
+            "priority": "medium",
+            "status": "ready",
+            "attempt": 0,
+            "max_attempts": 3,
+            "artifacts_dir": "/tmp/job_initial/",
+            "required_artifacts": '["decision.md"]',
+            "previous_findings": None,
+        },
+    )
+
+    planned = runner._plan_dispatches(
+        con,
+        "proj-1",
+        "owner/repo",
+        [node],
+        SimpleNamespace(),
+    )
+
+    assert len(planned) == 1
+    assert planned[0].session_db_id
+    row = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = 'job_initial'"
+    ).fetchone()
+    assert row["state"] == "dispatching"
+    assert row["attempt_index"] == 0
+    assert row["execution_attempt_id"] == "job_initial:attempt:0"
+    persisted_job = con.execute(
+        "SELECT required_artifacts FROM jobs WHERE job_id = 'job_initial'"
+    ).fetchone()
+    assert json.loads(persisted_job["required_artifacts"]) == ["decision.md"]
 
 
 # =========================================================================== #

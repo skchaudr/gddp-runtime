@@ -15,6 +15,19 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent.parent / "db" / "queue.db"
 
 
+def _ensure_column(
+    con: sqlite3.Connection,
+    table: str,
+    column: str,
+    declaration: str,
+) -> None:
+    existing = {
+        row[1] for row in con.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
+
 def init_db():
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
@@ -83,6 +96,8 @@ def init_db():
         attempt             INTEGER DEFAULT 0,
         max_attempts        INTEGER DEFAULT 3,
         artifacts_dir       TEXT,
+        required_artifacts  TEXT NOT NULL DEFAULT '[]',
+        previous_findings   TEXT,
         result_summary_path TEXT,
         FOREIGN KEY(event_id) REFERENCES events(event_id)
     );
@@ -172,6 +187,8 @@ def init_db():
         executor                   TEXT NOT NULL,      -- jules_cli | jules_api | droid | etc.
         session_id                 TEXT NOT NULL,      -- executor-specific ID
         state                      TEXT DEFAULT 'dispatched', -- dispatched | running | needs_operator | completed | failed | collected | evaluated
+        execution_attempt_id       TEXT NOT NULL,
+        attempt_index              INTEGER NOT NULL,
         expected_base_commit_sha   TEXT,               -- commit visible at dispatch time
         result_commit_sha          TEXT,               -- commit after patch application (set by runtime)
         patch_path                 TEXT,               -- path to retrieved patch file
@@ -182,19 +199,54 @@ def init_db():
     );
     """)
 
-    # One-time migration: add claimed_at to pre-existing events tables.
-    # CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so
-    # databases created before the claimed_at column was in the canonical schema
-    # need an explicit ALTER TABLE. try/except handles both "already exists" and
-    # "table missing" so init_db is safe to run from any state.
-    try:
-        con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        con.execute("ALTER TABLE events ADD COLUMN repo TEXT")
-    except sqlite3.OperationalError:
-        pass
+    # CREATE TABLE IF NOT EXISTS does not add columns to existing databases.
+    # These migrations are idempotent and preserve every historical row.
+    _ensure_column(con, "events", "claimed_at", "TEXT")
+    _ensure_column(con, "events", "repo", "TEXT")
+    _ensure_column(
+        con,
+        "jobs",
+        "required_artifacts",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )
+    _ensure_column(con, "jobs", "previous_findings", "TEXT")
+    _ensure_column(con, "executor_sessions", "execution_attempt_id", "TEXT")
+    _ensure_column(con, "executor_sessions", "attempt_index", "INTEGER")
+
+    # Old session rows predate first-class attempt identity. Their durable
+    # creation order is the only available attempt ordering, so backfill it
+    # deterministically without changing executor session IDs or state.
+    con.execute(
+        """
+        UPDATE executor_sessions AS current
+           SET attempt_index = (
+               SELECT COUNT(*) - 1
+                 FROM executor_sessions AS prior
+                WHERE prior.job_id = current.job_id
+                  AND (
+                      prior.created_at < current.created_at
+                      OR (
+                          prior.created_at = current.created_at
+                          AND prior.session_db_id <= current.session_db_id
+                      )
+                  )
+           )
+         WHERE attempt_index IS NULL
+        """
+    )
+    con.execute(
+        """
+        UPDATE executor_sessions
+           SET execution_attempt_id =
+               job_id || ':attempt:' || CAST(attempt_index AS TEXT)
+         WHERE execution_attempt_id IS NULL
+        """
+    )
+    con.execute(
+        """CREATE INDEX IF NOT EXISTS
+           idx_executor_sessions_execution_attempt_id
+           ON executor_sessions(execution_attempt_id)"""
+    )
 
     con.commit()
     con.close()

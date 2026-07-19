@@ -231,6 +231,11 @@ class TestReturnRouterRetry(unittest.TestCase):
             "max_attempts": 3,
             "constraints": "[]",
             "acceptance_criteria": "[]",
+            "title": "Auth node",
+            "goal": "Fix authentication",
+            "why": "Protect users",
+            "required_artifacts": json.dumps(["decision.md", "patch.diff"]),
+            "previous_findings": None,
         }
 
     def _base_event(self) -> dict:
@@ -267,7 +272,7 @@ class TestReturnRouterRetry(unittest.TestCase):
             content = "execution_policy:\n  retry_budget: 3\n"
         (graphs_dir / "project.yaml").write_text(content)
 
-    def test_redispatch_on_non_pass_verdict_with_evidence(self):
+    def test_redispatch_allocates_attempt_and_persists_packet_before_dispatch(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._make_project_yaml(tmpdir)
             with (
@@ -276,29 +281,59 @@ class TestReturnRouterRetry(unittest.TestCase):
                 patch("scripts.runtime.return_router._mark_job_awaiting_review") as mock_mark,
                 patch("scripts.runtime.return_router.verify_job_return", return_value=self._fail_verdict_with_evidence()),
                 patch("scripts.runtime.return_router._config_root", return_value=Path(tmpdir)),
-                patch("scripts.runtime.heartbeat.dispatcher.dispatch", return_value=DispatchResult(
-                    success=True, issue_url="https://github.com/skchaudr/vault-doctor/issues/99"
-                )),
+                patch("scripts.runtime.heartbeat.dispatcher.dispatch") as mock_dispatch,
                 patch("scripts.runtime.return_router._connect") as mock_connect,
+                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
+                patch("scripts.runtime.return_router.finalize_executor_session_dispatch") as mock_finalize,
+                patch("scripts.runtime.return_router.mark_job_running") as mock_running,
             ):
                 mock_con = MagicMock()
                 mock_connect.return_value = mock_con
+
+                def allocate(con, job, **kwargs):
+                    updated = dict(job)
+                    updated["attempt"] = 1
+                    updated["previous_findings"] = json.dumps(
+                        kwargs["previous_findings"]
+                    )
+                    return updated, "ses_retry"
+
+                mock_allocate.side_effect = allocate
+                mock_dispatch.return_value = DispatchResult(
+                    success=True,
+                    issue_url="https://github.com/skchaudr/vault-doctor/issues/99",
+                )
 
                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
                     res = handle_merged_pr(self._base_event())
 
                 self.assertEqual(res["status"], "redispatched")
                 self.assertTrue(res["dispatch_success"])
-                # Attempt was incremented after dispatch success
-                mock_con.execute.assert_called_once_with(
-                    "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?",
-                    ("job_123",),
+                allocated_findings = mock_allocate.call_args.kwargs[
+                    "previous_findings"
+                ]
+                self.assertEqual(allocated_findings["verdict"], "fail")
+                dispatched_job = mock_dispatch.call_args.args[0]
+                self.assertEqual(dispatched_job["attempt"], 1)
+                from scripts.runtime.heartbeat.dispatcher import _build_node_packet
+
+                packet = _build_node_packet(dispatched_job)
+                self.assertEqual(packet.execution_attempt_id, "job_123:attempt:1")
+                self.assertEqual(
+                    packet.required_artifacts,
+                    ("decision.md", "patch.diff"),
                 )
-                mock_con.commit.assert_called_once()
-                # Did NOT route to awaiting_review
+                self.assertEqual(packet.previous_findings["verdict"], "fail")
+                mock_finalize.assert_called_once_with(
+                    mock_con,
+                    "ses_retry",
+                    state="mediated",
+                    session_id="https://github.com/skchaudr/vault-doctor/issues/99",
+                )
+                mock_running.assert_called_once_with(mock_con, "job_123")
                 mock_mark.assert_not_called()
 
-    def test_dispatch_failure_does_not_increment_attempt(self):
+    def test_retry_dispatch_failure_keeps_allocated_attempt_visible(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._make_project_yaml(tmpdir)
             with (
@@ -311,16 +346,28 @@ class TestReturnRouterRetry(unittest.TestCase):
                     success=False, error="simulated dispatch failure"
                 )),
                 patch("scripts.runtime.return_router._connect") as mock_connect,
+                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
+                patch("scripts.runtime.return_router.finalize_executor_session_dispatch") as mock_finalize,
+                patch("scripts.runtime.return_router.mark_job_running"),
             ):
+                mock_con = MagicMock()
+                mock_connect.return_value = mock_con
+                updated = self._base_job()
+                updated["attempt"] = 1
+                mock_allocate.return_value = (updated, "ses_retry_failed")
+
                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
                     res = handle_merged_pr(self._base_event())
 
                 self.assertEqual(res["status"], "needs_review")
                 self.assertTrue(res["dispatch_attempted"])
                 self.assertFalse(res["dispatch_success"])
-                # Attempt was NOT incremented (no DB write for attempt)
-                mock_connect.assert_not_called()
-                # Fell back to awaiting_review
+                mock_finalize.assert_called_once_with(
+                    mock_con,
+                    "ses_retry_failed",
+                    state="dispatch_failed",
+                    error="simulated dispatch failure",
+                )
                 mock_mark.assert_called_once_with("job_123")
 
     def test_attempt_at_cap_routes_to_awaiting_review(self):
@@ -373,9 +420,15 @@ class TestReturnRouterRetry(unittest.TestCase):
                     success=True, issue_url="https://github.com/skchaudr/vault-doctor/issues/100"
                 )),
                 patch("scripts.runtime.return_router._connect") as mock_connect,
+                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
+                patch("scripts.runtime.return_router.finalize_executor_session_dispatch"),
+                patch("scripts.runtime.return_router.mark_job_running"),
             ):
                 mock_con = MagicMock()
                 mock_connect.return_value = mock_con
+                updated = self._base_job()
+                updated["attempt"] = 1
+                mock_allocate.return_value = (updated, "ses_criteria_retry")
 
                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
                     res = handle_merged_pr(self._base_event())
