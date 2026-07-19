@@ -28,13 +28,14 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from adapters.executor_protocol import (
     DispatchResult,
+    NodePacket,
     PatchResult,
     SessionRef,
     SessionStatus,
@@ -58,11 +59,11 @@ _STATUS_MAP = (
 
 
 def _flatten(item) -> str:
-    """Convert any YAML value (str, dict, list) to a readable string."""
-    if isinstance(item, dict):
-        return " — ".join(f"{k}: {v}" for k, v in item.items())
-    if isinstance(item, list):
-        return ", ".join(str(i) for i in item)
+    """Convert an immutable packet value to readable text."""
+    if isinstance(item, Mapping):
+        return " — ".join(f"{key}: {value}" for key, value in item.items())
+    if isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
+        return ", ".join(str(value) for value in item)
     return str(item)
 
 
@@ -82,58 +83,74 @@ class JulesCliAdapter:
     # Instruction body construction
     # ------------------------------------------------------------------ #
 
-    def _build_session_instructions(self, job: dict) -> str:
-        """Build the --session instruction string sent to Jules.
-
-        Composed from the job packet fields. Mirrors the issue-body shape used
-        by JulesActionAdapter so both paths present the same task to Jules.
-        """
-        raw_constraints = job.get("constraints")
-        constraints = (
-            json.loads(raw_constraints)
-            if isinstance(raw_constraints, str)
-            else (raw_constraints or [])
+    def _build_session_instructions(self, packet: NodePacket) -> str:
+        """Build the --session instruction string sent to Jules."""
+        constraints_text = "\n".join(
+            f"- {_flatten(constraint)}" for constraint in packet.constraints
         )
-        raw_criteria = job.get("acceptance_criteria")
-        criteria = (
-            json.loads(raw_criteria)
-            if isinstance(raw_criteria, str)
-            else (raw_criteria or [])
+        criteria_text = "\n".join(
+            f"- [ ] {_flatten(criterion)}"
+            for criterion in packet.acceptance_criteria
         )
 
-        constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
-        criteria_text = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
+        artifacts_section = ""
+        if packet.required_artifacts:
+            artifacts_text = "\n".join(
+                f"- `{artifact}`" for artifact in packet.required_artifacts
+            )
+            artifacts_section = (
+                "\n## Required Artifacts\n"
+                "The result must include:\n"
+                f"{artifacts_text}\n"
+            )
 
-        title = job.get("title", "")
-        goal = job.get("goal", "")
-        why = job.get("why", "")
-        node_id = job.get("node_id", "")
-        job_id = job.get("job_id", "")
+        findings_section = ""
+        findings = packet.previous_findings
+        if findings:
+            raw_findings = findings.get("findings", ())
+            findings_list = "\n".join(
+                (
+                    f"- [{finding.get('severity', '?')}] "
+                    f"{finding.get('summary', '')}"
+                )
+                for finding in raw_findings
+                if isinstance(finding, Mapping)
+            )
+            findings_section = (
+                f"\n## Previous Attempt Findings (attempt {packet.attempt_index})\n"
+                f"**Verdict:** {findings.get('verdict', 'unknown')}\n"
+                f"**Integrity verdict:** "
+                f"{findings.get('integrity_verdict', 'unknown')}\n"
+                f"**Reasoning:** {findings.get('reasoning', '')}\n\n"
+                f"### Findings\n{findings_list}\n"
+            )
 
-        header = f"[GDDP] {title}" if title else "GDDP task"
-
+        header = f"[GDDP] {packet.title}" if packet.title else "GDDP task"
         return (
             f"{header}\n\n"
-            f"## Goal\n{goal}\n\n"
-            f"## Why\n{why}\n\n"
+            f"## Goal\n{packet.goal}\n\n"
+            f"## Why\n{packet.why}\n\n"
             f"## Constraints\n{constraints_text}\n\n"
-            f"## Acceptance Criteria\n{criteria_text}\n\n"
+            f"## Acceptance Criteria\n{criteria_text}\n"
+            f"{artifacts_section}"
+            f"{findings_section}\n"
             f"---\n"
-            f"node: {node_id}\n"
-            f"job: {job_id}\n"
+            f"node: {packet.node_id}\n"
+            f"job: {packet.job_id}\n"
+            f"attempt: {packet.attempt_index}\n"
         )
 
     # ------------------------------------------------------------------ #
     # ExecutorAdapter: dispatch
     # ------------------------------------------------------------------ #
 
-    def dispatch(self, job: dict) -> DispatchResult:
+    def dispatch(self, packet: NodePacket) -> DispatchResult:
         """Dispatch a job to Jules via `jules remote new`.
 
         Returns a DispatchResult whose session_ref holds the parsed Jules
         session ID. Failures return success=False with an explanatory error.
         """
-        instructions = self._build_session_instructions(job)
+        instructions = self._build_session_instructions(packet)
         cmd = [
             self.jules_bin, "remote", "new",
             "--repo", self.repo,

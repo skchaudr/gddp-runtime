@@ -30,7 +30,6 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
-from adapters.jules_action_adapter import DispatchResult as ActionDispatchResult
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from scripts.runtime.heartbeat import reconciler, runner
@@ -576,11 +575,9 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
     job = _sample_job(executor="jules")
 
     action_dispatch = MagicMock(
-        return_value=ActionDispatchResult(
+        return_value=ProtocolDispatchResult(
             success=True,
             issue_url="https://github.com/owner/repo/issues/1",
-            issue_number=1,
-            error=None,
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
@@ -687,11 +684,9 @@ def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
     monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
 
     action_dispatch = MagicMock(
-        return_value=ActionDispatchResult(
+        return_value=ProtocolDispatchResult(
             success=True,
             issue_url="https://github.com/owner/repo/issues/2",
-            issue_number=2,
-            error=None,
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
