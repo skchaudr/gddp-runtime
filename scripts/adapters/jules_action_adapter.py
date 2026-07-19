@@ -83,6 +83,17 @@ class JulesActionAdapter:
                 for finding in raw_findings
                 if isinstance(finding, Mapping)
             )
+            raw_criteria_findings = findings.get("criteria_findings", ())
+            criteria_findings_list = "\n".join(
+                (
+                    f"- [{finding.get('judgment', '?')}] "
+                    f"{finding.get('criterion_id', '')}\n"
+                    f"  Reasoning: {finding.get('reasoning', '')}\n"
+                    f"  Evidence: {_flatten(finding.get('evidence', ()))}"
+                )
+                for finding in raw_criteria_findings
+                if isinstance(finding, Mapping)
+            )
             findings_section = f"""
 ## Previous Attempt Findings (attempt {packet.attempt_index})
 
@@ -94,6 +105,9 @@ The previous implementation was reviewed and the following issues were found:
 
 ### Findings
 {findings_list}
+
+### Criteria Findings
+{criteria_findings_list}
 
 Please address these findings in your implementation.
 """
@@ -117,7 +131,8 @@ These files are checked by the deterministic verification gate. Missing artifact
             f"\n"
             f"---\n"
             f"*Dispatched by GDDP control plane — job_id: {packet.job_id} — "
-            f"node: {packet.node_id} — attempt: {packet.attempt_index}*\n"
+            f"node: {packet.node_id} — attempt: {packet.attempt_index} — "
+            f"execution_attempt_id: {packet.execution_attempt_id}*\n"
             f"\n"
             f"**CRITICAL — PR Metadata Block Required:**\n"
             f"Your PR description MUST end with this exact block:\n"
@@ -125,6 +140,7 @@ These files are checked by the deterministic verification gate. Missing artifact
             f"node: {packet.node_id}\n"
             f"job: {packet.job_id}\n"
             f"attempt: {packet.attempt_index}\n"
+            f"execution_attempt_id: {packet.execution_attempt_id}\n"
             f"```\n"
             f"Without this block, the GDDP return router cannot link your PR back to this job. "
             f"The PR will be rejected and the work will not be reviewed. This is not optional.\n"
@@ -154,6 +170,7 @@ These files are checked by the deterministic verification gate. Missing artifact
 node: {packet.node_id}
 job: {packet.job_id}
 attempt: {packet.attempt_index}
+execution_attempt_id: {packet.execution_attempt_id}
 ```
 
 This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.

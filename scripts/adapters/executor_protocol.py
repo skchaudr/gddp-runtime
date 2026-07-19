@@ -53,6 +53,7 @@ class NodePacket:
     """Executor-neutral, immutable description of one node execution attempt."""
 
     job_id: str
+    execution_attempt_id: str
     node_id: str
     title: str
     goal: str
@@ -85,6 +86,7 @@ class NodePacket:
         """Return the exact transport shape for this packet."""
         return {
             "job_id": self.job_id,
+            "execution_attempt_id": self.execution_attempt_id,
             "node_id": self.node_id,
             "title": self.title,
             "goal": self.goal,

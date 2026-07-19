@@ -19,6 +19,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.adapter = JulesActionAdapter(self.repo)
         self.sample_packet = NodePacket(
             job_id="job_123",
+            execution_attempt_id="job_123:attempt:0",
             node_id="node_456",
             title="Fix bug",
             goal="Repair the leaking pipe",

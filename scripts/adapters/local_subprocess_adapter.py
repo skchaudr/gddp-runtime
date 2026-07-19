@@ -40,7 +40,7 @@ class LocalSubprocessAdapter:
         self.argv = _configured_argv(argv)
         self.spool_root = _configured_spool_root(spool_root)
         configured_cwd = cwd if cwd is not None else os.environ.get(_CWD_ENV)
-        self.cwd = Path(configured_cwd).resolve() if configured_cwd else Path.cwd()
+        self.cwd = Path(configured_cwd).resolve() if configured_cwd else None
 
     def dispatch(self, packet: NodePacket) -> DispatchResult:
         session_id = (
@@ -49,16 +49,24 @@ class LocalSubprocessAdapter:
             f"{uuid.uuid4().hex}"
         )
         attempt_dir = self.spool_root / session_id
+        supervisor: subprocess.Popen[bytes] | None = None
+        start_read: int | None = None
+        start_write: int | None = None
         try:
             attempt_dir.mkdir(parents=True, exist_ok=False)
+            execution_cwd = self.cwd
+            if execution_cwd is None:
+                execution_cwd = attempt_dir / "workspace"
+                execution_cwd.mkdir()
             (attempt_dir / "packet.json").write_text(packet.to_json())
             (attempt_dir / "command.json").write_text(
                 json.dumps(
-                    {"argv": list(self.argv), "cwd": str(self.cwd)},
+                    {"argv": list(self.argv), "cwd": str(execution_cwd)},
                     sort_keys=True,
                     separators=(",", ":"),
                 )
             )
+            start_read, start_write = os.pipe()
             supervisor = subprocess.Popen(
                 [
                     sys.executable,
@@ -66,19 +74,35 @@ class LocalSubprocessAdapter:
                     "adapters.local_subprocess_adapter",
                     "--run-attempt",
                     str(attempt_dir),
+                    "--start-fd",
+                    str(start_read),
                 ],
                 cwd=str(Path(__file__).resolve().parents[1]),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                pass_fds=(start_read,),
             )
+            os.close(start_read)
+            start_read = None
             _atomic_write(attempt_dir / "supervisor.pid", str(supervisor.pid))
+            os.write(start_write, b"1")
         except Exception as exc:
+            if supervisor is not None:
+                try:
+                    os.killpg(supervisor.pid, signal.SIGTERM)
+                except OSError:
+                    pass
             return DispatchResult(
                 success=False,
                 error=f"local subprocess dispatch failed: {exc}",
             )
+        finally:
+            if start_read is not None:
+                os.close(start_read)
+            if start_write is not None:
+                os.close(start_write)
 
         return DispatchResult(
             success=True,
@@ -157,13 +181,18 @@ class LocalSubprocessAdapter:
             return False
         try:
             _atomic_write(attempt_dir / "cancel.requested", "")
-            pid = _read_pid(attempt_dir / "pid")
-            if pid is None:
-                return False
-            os.killpg(pid, signal.SIGTERM)
-            return True
-        except (OSError, ProcessLookupError):
+        except OSError:
             return False
+
+        pid = _read_pid(attempt_dir / "pid")
+        if pid is None:
+            return True
+        try:
+            os.killpg(pid, signal.SIGTERM)
+            _atomic_write(attempt_dir / "cancel.signalled", "")
+        except OSError:
+            pass
+        return True
 
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
         if session_ref.executor != _EXECUTOR:
@@ -238,29 +267,51 @@ def _atomic_write(path: Path, content: str) -> None:
     temporary.replace(path)
 
 
-def _run_attempt(attempt_dir: Path) -> int:
+def _run_attempt(attempt_dir: Path, start_fd: int | None = None) -> int:
+    cancelled = False
     try:
+        if start_fd is not None and os.read(start_fd, 1) != b"1":
+            raise RuntimeError("dispatch startup handshake was not published")
         command = json.loads((attempt_dir / "command.json").read_text())
         argv = command["argv"]
         cwd = command["cwd"]
         if not isinstance(argv, list) or not argv:
             raise ValueError("configured argv is invalid")
-        with (
-            (attempt_dir / "packet.json").open("rb") as packet_input,
-            (attempt_dir / "stdout").open("wb") as stdout,
-            (attempt_dir / "stderr").open("wb") as stderr,
-        ):
-            process = subprocess.Popen(
-                argv,
-                cwd=cwd,
-                stdin=packet_input,
-                stdout=stdout,
-                stderr=stderr,
-                shell=False,
-                start_new_session=True,
-            )
-            _atomic_write(attempt_dir / "pid", str(process.pid))
-            returncode = process.wait()
+        if (attempt_dir / "cancel.requested").exists():
+            cancelled = True
+            returncode = 143
+        else:
+            with (
+                (attempt_dir / "packet.json").open("rb") as packet_input,
+                (attempt_dir / "stdout").open("wb") as stdout,
+                (attempt_dir / "stderr").open("wb") as stderr,
+            ):
+                process = subprocess.Popen(
+                    argv,
+                    cwd=cwd,
+                    stdin=packet_input,
+                    stdout=stdout,
+                    stderr=stderr,
+                    shell=False,
+                    start_new_session=True,
+                )
+                try:
+                    _atomic_write(attempt_dir / "pid", str(process.pid))
+                except Exception:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    process.wait()
+                    raise
+                if (attempt_dir / "cancel.requested").exists():
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                        _atomic_write(attempt_dir / "cancel.signalled", "")
+                    except OSError:
+                        pass
+                returncode = process.wait()
+                cancelled = (
+                    returncode != 0
+                    and (attempt_dir / "cancel.signalled").exists()
+                )
     except Exception as exc:
         with (attempt_dir / "stderr").open("ab") as stderr:
             stderr.write(f"local subprocess supervisor failed: {exc}\n".encode())
@@ -271,7 +322,7 @@ def _run_attempt(attempt_dir: Path) -> int:
         json.dumps(
             {
                 "returncode": returncode,
-                "cancelled": (attempt_dir / "cancel.requested").exists(),
+                "cancelled": cancelled,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -281,8 +332,12 @@ def _run_attempt(attempt_dir: Path) -> int:
 
 
 def _main(argv: Sequence[str]) -> int:
-    if len(argv) == 2 and argv[0] == "--run-attempt":
-        return _run_attempt(Path(argv[1]))
+    if (
+        len(argv) == 4
+        and argv[0] == "--run-attempt"
+        and argv[2] == "--start-fd"
+    ):
+        return _run_attempt(Path(argv[1]), int(argv[3]))
     return 2
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import sqlite3
 import sys
 import time
@@ -24,6 +26,7 @@ from adapters.executor_protocol import (
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from adapters.local_subprocess_adapter import LocalSubprocessAdapter
+from adapters import local_subprocess_adapter
 from runtime.heartbeat import dispatcher
 
 
@@ -50,6 +53,14 @@ def _persisted_job(*, executor: str = "jules_cli", attempt: int = 2) -> dict:
             "reasoning": "One semantic field was dropped",
             "findings": [
                 {"severity": "high", "summary": "Preserve attempt identity"},
+            ],
+            "criteria_findings": [
+                {
+                    "criterion_id": "docs-usage-file",
+                    "judgment": "judged_fail",
+                    "evidence": ["docs/usage.md is absent"],
+                    "reasoning": "The required usage guide was not created",
+                },
             ],
         }),
         "executor": executor,
@@ -80,6 +91,7 @@ def test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job():
     assert packet.job_id == "job-123"
     assert packet.node_id == "node-456"
     assert packet.attempt_index == 2
+    assert packet.execution_attempt_id == "job-123:attempt:2"
     assert packet.constraints[1]["platform"] == ("darwin", "linux")
     assert packet.acceptance_criteria[1]["tests"] == ("success", "failure")
     assert packet.required_artifacts == ("decision.md", "patch.diff")
@@ -111,10 +123,15 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
         assert "decision.md" in rendered
         assert "patch.diff" in rendered
         assert "attempt: 2" in rendered
+        assert "execution_attempt_id: job-123:attempt:2" in rendered
         assert "One semantic field was dropped" in rendered
         assert "[high] Preserve attempt identity" in rendered
         assert "node: node-456" in rendered
         assert "job: job-123" in rendered
+        assert "docs-usage-file" in rendered
+        assert "judged_fail" in rendered
+        assert "docs/usage.md is absent" in rendered
+        assert "The required usage guide was not created" in rendered
 
 
 def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
@@ -279,6 +296,9 @@ def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiati
     assert collected.patch_text == packet.to_json()
     assert destination.read_text() == packet.to_json()
     assert json.loads(collected.patch_text) == packet.to_json_value()
+    assert json.loads(collected.patch_text)["execution_attempt_id"] == (
+        "job-123:attempt:2"
+    )
 
 
 def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
@@ -288,6 +308,8 @@ def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
         "import sys; sys.stdin.buffer.read(); sys.stderr.write('broken\\n'); raise SystemExit(7)",
     )
     adapter = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
+
+
     result = adapter.dispatch(_packet())
 
     status = _wait_for_terminal(adapter, result)
@@ -304,6 +326,75 @@ def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
     )
     assert collected.success is False
     assert "code 7" in (collected.error or "")
+
+
+def test_local_subprocess_default_cwd_is_attempt_isolated(tmp_path):
+    adapter = LocalSubprocessAdapter(
+        repo="owner/repo",
+        argv=(sys.executable, "-c", "from pathlib import Path; print(Path.cwd())"),
+        spool_root=tmp_path,
+    )
+
+    result = adapter.dispatch(_packet())
+
+    assert result.session_ref is not None
+    attempt_dir = tmp_path / result.session_ref.session_id
+    command = json.loads((attempt_dir / "command.json").read_text())
+    assert Path(command["cwd"]) == attempt_dir / "workspace"
+    assert Path(command["cwd"]).is_dir()
+    assert _wait_for_terminal(adapter, result).state == "completed"
+    assert (attempt_dir / "stdout").read_text().strip() == command["cwd"]
+
+
+def test_local_subprocess_supervisor_metadata_failure_stops_unpublished_session(
+    tmp_path, monkeypatch
+):
+    adapter = LocalSubprocessAdapter(
+        repo="", argv=(sys.executable, "-c", "pass"), spool_root=tmp_path
+    )
+    supervisor = MagicMock(pid=43212)
+    monkeypatch.setattr(
+        local_subprocess_adapter.subprocess, "Popen", lambda *a, **k: supervisor
+    )
+    real_atomic_write = local_subprocess_adapter._atomic_write
+
+    def fail_supervisor_pid(path, content):
+        if path.name == "supervisor.pid":
+            raise OSError("spool unavailable")
+        real_atomic_write(path, content)
+
+    killpg = MagicMock()
+    monkeypatch.setattr(local_subprocess_adapter, "_atomic_write", fail_supervisor_pid)
+    monkeypatch.setattr(local_subprocess_adapter.os, "killpg", killpg)
+
+    result = adapter.dispatch(_packet())
+
+    assert result.success is False
+    assert result.session_ref is None
+    killpg.assert_called_once_with(supervisor.pid, signal.SIGTERM)
+
+
+def test_local_subprocess_closed_startup_handshake_never_launches_child(
+    tmp_path, monkeypatch
+):
+    attempt_dir = tmp_path / "unpublished"
+    attempt_dir.mkdir()
+    (attempt_dir / "packet.json").write_text(_packet().to_json())
+    (attempt_dir / "command.json").write_text(
+        json.dumps({"argv": [sys.executable, "-c", "pass"], "cwd": str(tmp_path)})
+    )
+    start_read, start_write = os.pipe()
+    os.close(start_write)
+    popen = MagicMock()
+    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", popen)
+
+    try:
+        assert local_subprocess_adapter._run_attempt(attempt_dir, start_read) == 0
+    finally:
+        os.close(start_read)
+
+    popen.assert_not_called()
+    assert json.loads((attempt_dir / "exit.json").read_text())["returncode"] == 127
 
 
 def test_local_subprocess_cancel_best_effort_survives_reinstantiation(tmp_path):
@@ -332,3 +423,91 @@ def test_local_subprocess_cancel_best_effort_survives_reinstantiation(tmp_path):
     assert terminal.state == "failed"
     assert terminal.error is not None
     assert "cancel" in terminal.error.lower()
+
+
+def test_local_subprocess_cancel_before_launch_persists_terminal_cancellation(
+    tmp_path, monkeypatch
+):
+    adapter = LocalSubprocessAdapter(
+        repo="", argv=(sys.executable, "-c", "raise SystemExit(99)"), spool_root=tmp_path
+    )
+    session_ref = SessionRef(executor="local_subprocess", session_id="pending")
+    attempt_dir = tmp_path / session_ref.session_id
+    attempt_dir.mkdir()
+    (attempt_dir / "packet.json").write_text(_packet().to_json())
+    (attempt_dir / "command.json").write_text(
+        json.dumps({"argv": list(adapter.argv), "cwd": str(tmp_path)})
+    )
+    popen = MagicMock()
+    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", popen)
+
+    assert adapter.cancel(session_ref) is True
+    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
+
+    popen.assert_not_called()
+    assert json.loads((attempt_dir / "exit.json").read_text()) == {
+        "cancelled": True,
+        "returncode": 143,
+    }
+    terminal = adapter.status(session_ref)
+    assert terminal.state == "failed"
+    assert "cancel" in (terminal.error or "").lower()
+    assert adapter.collect(session_ref, tmp_path / "must-not-exist.patch").success is False
+
+
+def test_local_subprocess_cancel_during_launch_terminates_after_pid_publication(
+    tmp_path, monkeypatch
+):
+    adapter = LocalSubprocessAdapter(
+        repo="", argv=(sys.executable, "-c", "pass"), spool_root=tmp_path
+    )
+    session_ref = SessionRef(executor="local_subprocess", session_id="racing")
+    attempt_dir = tmp_path / session_ref.session_id
+    attempt_dir.mkdir()
+    (attempt_dir / "packet.json").write_text(_packet().to_json())
+    (attempt_dir / "command.json").write_text(
+        json.dumps({"argv": list(adapter.argv), "cwd": str(tmp_path)})
+    )
+    process = MagicMock(pid=43210)
+    process.wait.return_value = -signal.SIGTERM
+
+    def publish_cancel_before_pid(*args, **kwargs):
+        assert not (attempt_dir / "pid").exists()
+        assert adapter.cancel(session_ref) is True
+        return process
+
+    killpg = MagicMock()
+    monkeypatch.setattr(
+        local_subprocess_adapter.subprocess, "Popen", publish_cancel_before_pid
+    )
+    monkeypatch.setattr(local_subprocess_adapter.os, "killpg", killpg)
+
+    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
+
+    killpg.assert_called_once_with(process.pid, signal.SIGTERM)
+    assert json.loads((attempt_dir / "exit.json").read_text())["cancelled"] is True
+    assert adapter.collect(session_ref, tmp_path / "must-not-exist.patch").success is False
+
+
+def test_local_subprocess_normal_exit_ignores_stale_cancel_marker(
+    tmp_path, monkeypatch
+):
+    attempt_dir = tmp_path / "normal"
+    attempt_dir.mkdir()
+    (attempt_dir / "packet.json").write_text(_packet().to_json())
+    (attempt_dir / "command.json").write_text(
+        json.dumps({"argv": [sys.executable, "-c", "pass"], "cwd": str(tmp_path)})
+    )
+    process = MagicMock(pid=43211)
+    process.wait.side_effect = lambda: (
+        (attempt_dir / "cancel.requested").write_text(""),
+        0,
+    )[1]
+    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", lambda *a, **k: process)
+
+    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
+
+    assert json.loads((attempt_dir / "exit.json").read_text()) == {
+        "cancelled": False,
+        "returncode": 0,
+    }

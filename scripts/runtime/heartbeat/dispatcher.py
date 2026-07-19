@@ -81,6 +81,7 @@ def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
     return NodePacket(
         job_id=str(job["job_id"]),
         node_id=str(job["node_id"]),
+        execution_attempt_id=f"{job['job_id']}:attempt:{attempt_index}",
         title=str(job["title"]),
         goal=str(job["goal"]),
         why=str(job.get("why") or ""),

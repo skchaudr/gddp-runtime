@@ -116,6 +116,17 @@ class JulesCliAdapter:
                 for finding in raw_findings
                 if isinstance(finding, Mapping)
             )
+            raw_criteria_findings = findings.get("criteria_findings", ())
+            criteria_findings_list = "\n".join(
+                (
+                    f"- [{finding.get('judgment', '?')}] "
+                    f"{finding.get('criterion_id', '')}\n"
+                    f"  Reasoning: {finding.get('reasoning', '')}\n"
+                    f"  Evidence: {_flatten(finding.get('evidence', ()))}"
+                )
+                for finding in raw_criteria_findings
+                if isinstance(finding, Mapping)
+            )
             findings_section = (
                 f"\n## Previous Attempt Findings (attempt {packet.attempt_index})\n"
                 f"**Verdict:** {findings.get('verdict', 'unknown')}\n"
@@ -123,6 +134,7 @@ class JulesCliAdapter:
                 f"{findings.get('integrity_verdict', 'unknown')}\n"
                 f"**Reasoning:** {findings.get('reasoning', '')}\n\n"
                 f"### Findings\n{findings_list}\n"
+                f"\n### Criteria Findings\n{criteria_findings_list}\n"
             )
 
         header = f"[GDDP] {packet.title}" if packet.title else "GDDP task"
@@ -138,6 +150,7 @@ class JulesCliAdapter:
             f"node: {packet.node_id}\n"
             f"job: {packet.job_id}\n"
             f"attempt: {packet.attempt_index}\n"
+            f"execution_attempt_id: {packet.execution_attempt_id}\n"
         )
 
     # ------------------------------------------------------------------ #
