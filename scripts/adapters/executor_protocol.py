@@ -123,7 +123,14 @@ class SessionRef:
 @dataclass
 class SessionStatus:
     """Result of polling a session."""
-    state: Literal["dispatched", "running", "needs_operator", "completed", "failed"]
+    state: Literal[
+        "dispatched",
+        "running",
+        "needs_operator",
+        "completed",
+        "failed",
+        "poll_error",
+    ]
     error: str | None = None
 
 

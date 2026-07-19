@@ -370,6 +370,53 @@ class TestReturnRouterRetry(unittest.TestCase):
                 )
                 mock_mark.assert_called_once_with("job_123")
 
+    def test_redispatch_cas_loss_cancels_late_remote_and_preserves_job_state(self):
+        from scripts.runtime import return_router
+        from adapters.executor_protocol import SessionRef
+
+        mock_con = MagicMock()
+        job = self._base_job()
+        retried_job = dict(job, attempt=1)
+        verification = self._fail_verdict_with_evidence()
+        session_ref = SessionRef("jules_cli", "late-return-session")
+        with (
+            patch.object(return_router, "_connect", return_value=mock_con),
+            patch.object(
+                return_router,
+                "allocate_retry_attempt",
+                return_value=(retried_job, "ses_cancelled_retry"),
+            ),
+            patch(
+                "scripts.runtime.heartbeat.dispatcher.dispatch",
+                return_value=DispatchResult(success=True, session_ref=session_ref),
+            ),
+            patch.object(
+                return_router,
+                "finalize_executor_session_dispatch",
+                return_value=False,
+            ),
+            patch(
+                "scripts.runtime.heartbeat.dispatcher.cancel_remote_session",
+                return_value=(
+                    False,
+                    "Jules CLI cancellation is unsupported; remote may continue",
+                ),
+            ) as mock_cancel,
+            patch.object(return_router, "mark_job_running") as mock_running,
+        ):
+            result = return_router._redispatch_with_findings(
+                "job_123",
+                job,
+                "auth-node",
+                verification,
+                "res_123456",
+            )
+
+        self.assertEqual(result["status"], "dispatch_superseded")
+        self.assertFalse(result["reservation_finalized"])
+        mock_running.assert_not_called()
+        mock_cancel.assert_called_once_with(session_ref, job["repo"])
+
     def test_attempt_at_cap_routes_to_awaiting_review(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._make_project_yaml(tmpdir)

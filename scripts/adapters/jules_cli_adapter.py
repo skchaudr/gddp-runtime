@@ -219,8 +219,8 @@ class JulesCliAdapter:
     def status(self, session_ref: SessionRef) -> SessionStatus:
         """Poll session status via `jules remote list --session`.
 
-        Fails closed: any unfamiliar output, missing session, or CLI failure
-        is reported as ``failed`` with a descriptive error.
+        Only a parsed terminal state from the matching remote row is
+        authoritative. CLI and lookup failures are transient polling errors.
         """
         session_id = session_ref.session_id
         cmd = [self.jules_bin, "remote", "list", "--session"]
@@ -233,15 +233,21 @@ class JulesCliAdapter:
                 timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
-            return SessionStatus(state="failed", error=f"jules list timed out after {self.timeout}s")
+            return SessionStatus(
+                state="poll_error",
+                error=f"jules list timed out after {self.timeout}s",
+            )
         except FileNotFoundError:
-            return SessionStatus(state="failed", error=f"jules binary not found: {self.jules_bin}")
+            return SessionStatus(
+                state="poll_error",
+                error=f"jules binary not found: {self.jules_bin}",
+            )
         except Exception as e:
-            return SessionStatus(state="failed", error=f"jules list failed: {e}")
+            return SessionStatus(state="poll_error", error=f"jules list failed: {e}")
 
         if result.returncode != 0:
             return SessionStatus(
-                state="failed",
+                state="poll_error",
                 error=(result.stderr or result.stdout or "jules remote list failed").strip(),
             )
 
@@ -253,7 +259,7 @@ class JulesCliAdapter:
         ]
         if not session_lines:
             return SessionStatus(
-                state="failed",
+                state="poll_error",
                 error="session not found in jules list",
             )
 

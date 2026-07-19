@@ -236,7 +236,7 @@ def _config_root():
 
 def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     """Persist a correction attempt before dispatch and retain its evidence."""
-    from .heartbeat.dispatcher import dispatch
+    from .heartbeat.dispatcher import cancel_remote_session, dispatch
 
     integrity = (
         verification.get("integrity", {})
@@ -286,7 +286,7 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
         dispatch_error = dispatch_result.error or "retry dispatch failed"
 
     if dispatch_result is None or not dispatch_result.success:
-        finalize_executor_session_dispatch(
+        finalized = finalize_executor_session_dispatch(
             con,
             session_db_id,
             state="dispatch_failed",
@@ -294,6 +294,18 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
         )
         con.commit()
         con.close()
+        if not finalized:
+            return {
+                "status": "dispatch_superseded",
+                "result_id": result_id,
+                "job_id": job_id,
+                "node_id": node_id,
+                "verification": verification,
+                "dispatch_attempted": True,
+                "dispatch_success": False,
+                "dispatch_error": dispatch_error,
+                "reservation_finalized": False,
+            }
         _mark_job_awaiting_review(job_id)
         return {
             "status": "needs_review",
@@ -307,7 +319,7 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
         }
 
     if dispatch_result.session_ref is not None:
-        finalize_executor_session_dispatch(
+        finalized = finalize_executor_session_dispatch(
             con,
             session_db_id,
             state="dispatched",
@@ -315,12 +327,30 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
             session_id=dispatch_result.session_ref.session_id,
         )
     else:
-        finalize_executor_session_dispatch(
+        finalized = finalize_executor_session_dispatch(
             con,
             session_db_id,
             state="mediated",
             session_id=dispatch_result.issue_url,
         )
+    if not finalized:
+        cancellation = "reservation is no longer dispatching"
+        if dispatch_result.session_ref is not None:
+            _, cancellation = cancel_remote_session(
+                dispatch_result.session_ref, job["repo"]
+            )
+        con.commit()
+        con.close()
+        return {
+            "status": "dispatch_superseded",
+            "result_id": result_id,
+            "job_id": job_id,
+            "node_id": node_id,
+            "verification": verification,
+            "dispatch_success": True,
+            "reservation_finalized": False,
+            "cancellation": cancellation,
+        }
     mark_job_running(con, job_id)
     con.commit()
     con.close()

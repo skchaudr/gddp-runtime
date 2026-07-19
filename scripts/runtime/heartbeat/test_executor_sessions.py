@@ -16,6 +16,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -38,6 +39,7 @@ from scripts.runtime.heartbeat import reconciler, runner
 from scripts.runtime.heartbeat.dispatcher import dispatch
 from scripts.runtime.heartbeat.state_recorder import (
     allocate_retry_attempt,
+    finalize_executor_session_dispatch,
     get_active_executor_sessions,
     get_executor_session_by_id,
     insert_job,
@@ -196,6 +198,7 @@ def _make_fake_adapter(
         status_calls = 0
         collect_calls = 0
         cancel_calls = 0
+        cancelled_session_ids = []
 
         def __init__(self, repo=""):
             self.repo = repo
@@ -220,6 +223,7 @@ def _make_fake_adapter(
             )
 
         def cancel(self, session_ref):
+            FakeAdapter.cancelled_session_ids.append(session_ref.session_id)
             FakeAdapter.cancel_calls += 1
             return cancel_result
 
@@ -691,6 +695,38 @@ def test_reconcile_poll_exception_does_not_allocate_replacement(
     retry_dispatch.assert_not_called()
 
 
+def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_poll_timeout", status="running")
+    session_id = insert_executor_session(
+        con, "job_poll_timeout", "jules_cli", "sess-poll-timeout"
+    )
+
+    import adapters.jules_cli_adapter as jca
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], 30)
+
+    monkeypatch.setattr(jca.subprocess, "run", timeout)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": JulesCliAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_poll_timeout",),
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll_timeout",)
+    ).fetchone()[0] == 0
+    retry_dispatch.assert_not_called()
+
+
 def test_reconcile_running_session_stays_active(con, tmp_path, monkeypatch):
     repo, _ = _make_git_repo(tmp_path)
     _insert_job(con, job_id="job_run", executor="jules_cli", status="running")
@@ -745,6 +781,81 @@ def test_reconcile_needs_operator_persists_state(con, tmp_path, monkeypatch):
     assert con.execute(
         "SELECT attempt FROM jobs WHERE job_id = ?", ("job_op",)
     ).fetchone()[0] == 0
+
+def test_restart_recovery_terminalizes_stale_dispatch_without_redispatch(
+    con, tmp_path, monkeypatch
+):
+    repo_path, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_stale_dispatch", status="ready")
+    session_id = insert_executor_session(
+        con,
+        "job_stale_dispatch",
+        "jules_cli",
+        "job_stale_dispatch:attempt:0",
+        state="dispatching",
+    )
+    con.execute(
+        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
+        ("2026-07-18T10:00:00+00:00", session_id),
+    )
+    con.commit()
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo_path,
+        repo="owner/repo",
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        dispatching_stale_after=timedelta(minutes=30),
+    )
+
+    session = get_executor_session_by_id(con, session_id)
+    assert session["state"] == "dispatch_failed"
+    assert "outcome unknown" in session["error"]
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_stale_dispatch",),
+    ).fetchone()
+    assert tuple(job) == ("failed", "failed")
+    assert con.execute(
+        "SELECT queue FROM queue_records WHERE job_id = ?",
+        ("job_stale_dispatch",),
+    ).fetchone()[0] == "failed"
+    retry_dispatch.assert_not_called()
+
+
+def test_restart_recovery_leaves_fresh_dispatch_untouched(con, tmp_path):
+    repo_path, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_fresh_dispatch", status="ready")
+    session_id = insert_executor_session(
+        con,
+        "job_fresh_dispatch",
+        "jules_cli",
+        "job_fresh_dispatch:attempt:0",
+        state="dispatching",
+    )
+    con.execute(
+        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
+        ("2026-07-18T11:45:00+00:00", session_id),
+    )
+    con.commit()
+
+    reconciler.reconcile_sessions(
+        con,
+        repo_path,
+        repo="owner/repo",
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        dispatching_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatching"
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_fresh_dispatch",),
+    ).fetchone()
+    assert tuple(job) == ("ready", "ready")
+
 
 
 def test_persisted_local_cancellation_is_terminal_across_reconciler_restart(
@@ -808,6 +919,109 @@ def test_jules_cancellation_persists_unsupported_without_claiming_remote_success
     assert con.execute(
         "SELECT status FROM jobs WHERE job_id = ?", ("job_cancel_jules",)
     ).fetchone()[0] == "cancelled"
+
+
+def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
+    con, monkeypatch, capsys
+):
+    _insert_job(con, job_id="job_cancel_race", status="ready")
+    session_db_id = insert_executor_session(
+        con,
+        "job_cancel_race",
+        "jules_cli",
+        "job_cancel_race:attempt:0",
+        state="dispatching",
+    )
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state="cancel_unsupported",
+        error="Jules CLI cancellation is unsupported",
+    )
+    con.execute(
+        "UPDATE jobs SET status = 'cancelled', queue_state = 'cancelled' "
+        "WHERE job_id = ?",
+        ("job_cancel_race",),
+    )
+    con.execute(
+        "UPDATE queue_records SET queue = 'cancelled' WHERE job_id = ?",
+        ("job_cancel_race",),
+    )
+    con.commit()
+
+    from scripts.runtime.heartbeat import dispatcher as heartbeat_dispatcher
+
+    FakeJules = _make_fake_adapter(cancel_result=False)
+    monkeypatch.setattr(
+        heartbeat_dispatcher, "ADAPTERS", {"jules_cli": FakeJules}
+    )
+    planned = runner.PlannedDispatch(
+        event_id="evt_cancel_race",
+        classification={"executor_recommendation": "jules_cli"},
+        job={
+            "job_id": "job_cancel_race",
+            "node_id": "node-1",
+            "repo": "owner/repo",
+        },
+        session_db_id=session_db_id,
+    )
+    outcome = runner.DispatchOutcome(
+        planned=planned,
+        success=True,
+        session_ref=SessionRef("jules_cli", "late-remote-session"),
+    )
+
+    runner._record_outcomes(
+        con,
+        [planned],
+        {"job_cancel_race": outcome},
+    )
+
+    session = get_executor_session_by_id(con, session_db_id)
+    assert session["state"] == "cancel_unsupported"
+    assert session["session_id"] == "job_cancel_race:attempt:0"
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_cancel_race",),
+    ).fetchone()
+    assert tuple(job) == ("cancelled", "cancelled")
+    assert con.execute(
+        "SELECT queue FROM queue_records WHERE job_id = ?",
+        ("job_cancel_race",),
+    ).fetchone()[0] == "cancelled"
+    assert FakeJules.cancelled_session_ids == ["late-remote-session"]
+    output = capsys.readouterr().out.lower()
+    assert "unsupported" in output
+    assert "cancellation accepted" not in output
+
+
+def test_finalize_executor_session_dispatch_is_compare_and_swap(con):
+    _insert_job(con, job_id="job_finalize_cas", status="cancelled")
+    session_db_id = insert_executor_session(
+        con,
+        "job_finalize_cas",
+        "jules_cli",
+        "job_finalize_cas:attempt:0",
+        state="dispatching",
+    )
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state="cancel_unsupported",
+        error="cancelled while dispatch was in flight",
+    )
+
+    finalized = finalize_executor_session_dispatch(
+        con,
+        session_db_id,
+        state="dispatched",
+        session_id="late-remote-session",
+    )
+
+    assert finalized is False
+    session = get_executor_session_by_id(con, session_db_id)
+    assert session["state"] == "cancel_unsupported"
+    assert session["session_id"] == "job_finalize_cas:attempt:0"
 
 
 # =========================================================================== #
@@ -1061,6 +1275,37 @@ def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
         SessionRef(executor="jules_cli", session_id=session_id)
     )
     assert status.state == "running"
+
+
+@pytest.mark.parametrize(
+    "poll_result",
+    [
+        subprocess.TimeoutExpired(["jules", "remote", "list"], 30),
+        FileNotFoundError("jules"),
+        OSError("subprocess unavailable"),
+        SimpleNamespace(returncode=2, stdout="", stderr="service unavailable"),
+        SimpleNamespace(returncode=0, stdout="other session only", stderr=""),
+    ],
+    ids=["timeout", "missing-binary", "subprocess-error", "nonzero", "missing-session"],
+)
+def test_jules_cli_status_infrastructure_failure_is_transient(
+    monkeypatch, poll_result
+):
+    import adapters.jules_cli_adapter as jca
+
+    def fake_run(*args, **kwargs):
+        if isinstance(poll_result, BaseException):
+            raise poll_result
+        return poll_result
+
+    monkeypatch.setattr(jca.subprocess, "run", fake_run)
+
+    status = JulesCliAdapter(repo="owner/repo").status(
+        SessionRef(executor="jules_cli", session_id="target-session")
+    )
+
+    assert status.state == "poll_error"
+    assert status.error
 
 
 # =========================================================================== #

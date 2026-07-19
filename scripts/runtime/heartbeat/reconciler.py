@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Ensure adapters directory is importable (same pattern as dispatcher.py).
@@ -25,7 +26,7 @@ from adapters.executor_protocol import SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
-from .dispatcher import ADAPTERS, dispatch
+from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .state_recorder import (
     allocate_retry_attempt,
     finalize_executor_session_dispatch,
@@ -33,12 +34,18 @@ from .state_recorder import (
     mark_job_cancelled,
     mark_job_failed,
     mark_job_running,
+    recover_stale_dispatching_sessions,
     update_executor_session_state,
 )
 
 
 def reconcile_sessions(
-    con, repo_path: Path | None, repo: str | None = None
+    con,
+    repo_path: Path | None,
+    repo: str | None = None,
+    *,
+    current_time: datetime | None = None,
+    dispatching_stale_after: timedelta = timedelta(minutes=30),
 ) -> None:
     """Main entry point for the reconcile phase.
 
@@ -52,6 +59,19 @@ def reconcile_sessions(
 
     A failure reconciling one session does not stop others.
     """
+    recovered = recover_stale_dispatching_sessions(
+        con,
+        current_time=current_time,
+        stale_after=dispatching_stale_after,
+        repo=repo,
+    )
+    if recovered:
+        con.commit()
+        print(
+            f"[reconcile] recovered {len(recovered)} stale dispatch "
+            "reservation(s) as dispatch_failed; operator recovery required"
+        )
+
     if repo_path is None:
         print("[reconcile] no repo_path available; skipping reconcile phase")
         return
@@ -209,6 +229,11 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
         _handle_completed(con, adapter, session_ref, session, repo_path, job_row)
     elif status.state == "failed":
         _handle_failed(con, session, job_row, status.error, repo_path)
+    elif status.state == "poll_error":
+        print(
+            f"[reconcile] {session_db_id}: poll error (transient, will retry "
+            f"next tick): {status.error or 'executor unavailable'}"
+        )
     elif status.state == "needs_operator":
         _handle_needs_operator(con, session_db_id, job_id, status.error)
     elif status.state == "running":
@@ -359,7 +384,7 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
     if dispatch_result is not None and dispatch_result.success:
         session_ref = dispatch_result.session_ref
         if session_ref is not None:
-            finalize_executor_session_dispatch(
+            finalized = finalize_executor_session_dispatch(
                 con,
                 replacement_id,
                 state="dispatched",
@@ -368,13 +393,25 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
                 expected_base_commit_sha=expected_base,
             )
         else:
-            finalize_executor_session_dispatch(
+            finalized = finalize_executor_session_dispatch(
                 con,
                 replacement_id,
                 state="mediated",
                 session_id=dispatch_result.issue_url,
                 expected_base_commit_sha=expected_base,
             )
+        if not finalized:
+            cancellation = "reservation is no longer dispatching"
+            if session_ref is not None:
+                _, cancellation = cancel_remote_session(
+                    session_ref, retry_job["repo"]
+                )
+            con.commit()
+            print(
+                f"[reconcile] {replacement_id}: late retry dispatch result "
+                f"ignored; {cancellation}"
+            )
+            return
         mark_job_running(con, job_id)
         con.commit()
         print(
@@ -383,19 +420,26 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
         )
         return
 
-    finalize_executor_session_dispatch(
+    finalized = finalize_executor_session_dispatch(
         con,
         replacement_id,
         state="dispatch_failed",
         error=dispatch_error,
         expected_base_commit_sha=expected_base,
     )
-    mark_job_failed(con, job_id)
+    if finalized:
+        mark_job_failed(con, job_id)
     con.commit()
-    print(
-        f"[reconcile] {session_db_id}: executor failed; retry dispatch "
-        f"for job {job_id} failed: {dispatch_error}"
-    )
+    if finalized:
+        print(
+            f"[reconcile] {session_db_id}: executor failed; retry dispatch "
+            f"for job {job_id} failed: {dispatch_error}"
+        )
+    else:
+        print(
+            f"[reconcile] {replacement_id}: late retry dispatch failure ignored; "
+            "reservation is no longer dispatching"
+        )
 
 
 def _handle_needs_operator(

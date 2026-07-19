@@ -6,7 +6,7 @@ Single responsibility: write to the DB. No business logic here.
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .job_factory import ts_id
 
@@ -234,9 +234,9 @@ def finalize_executor_session_dispatch(
     session_id: str | None = None,
     expected_base_commit_sha: str | None = None,
     error: str | None = None,
-) -> None:
-    """Finalize a pre-dispatch attempt row without replacing its identity."""
-    con.execute(
+) -> bool:
+    """Finalize a reserved attempt only while it is still dispatching."""
+    updated = con.execute(
         """UPDATE executor_sessions
               SET state = ?,
                   executor = COALESCE(?, executor),
@@ -245,7 +245,8 @@ def finalize_executor_session_dispatch(
                       COALESCE(?, expected_base_commit_sha),
                   error = COALESCE(?, error),
                   updated_at = ?
-            WHERE session_db_id = ?""",
+            WHERE session_db_id = ?
+              AND state = 'dispatching'""",
         (
             state,
             executor,
@@ -256,6 +257,56 @@ def finalize_executor_session_dispatch(
             session_db_id,
         ),
     )
+    return updated.rowcount == 1
+
+
+def recover_stale_dispatching_sessions(
+    con: sqlite3.Connection,
+    *,
+    current_time: datetime | None = None,
+    stale_after: timedelta = timedelta(minutes=30),
+    repo: str | None = None,
+) -> list[str]:
+    """Terminalize expired dispatch reservations whose remote outcome is unknown."""
+    current_time = current_time or datetime.now(timezone.utc)
+    cutoff = (current_time - stale_after).isoformat()
+    params: tuple = (cutoff,)
+    repo_clause = ""
+    if repo is not None:
+        repo_clause = " AND j.repo = ?"
+        params = (cutoff, repo)
+    rows = con.execute(
+        f"""SELECT es.session_db_id, es.job_id
+              FROM executor_sessions es
+              JOIN jobs j ON j.job_id = es.job_id
+             WHERE es.state = 'dispatching'
+               AND es.updated_at <= ?
+               AND es.attempt_index = j.attempt
+               AND j.status <> 'cancelled'
+               {repo_clause}
+             ORDER BY es.updated_at""",
+        params,
+    ).fetchall()
+    reason = (
+        "dispatch outcome unknown after heartbeat restart; reservation lease "
+        "expired; not retried automatically; operator recovery required"
+    )
+    recovered: list[str] = []
+    for row in rows:
+        session_db_id = row["session_db_id"]
+        updated = con.execute(
+            """UPDATE executor_sessions
+                  SET state = 'dispatch_failed', error = ?, updated_at = ?
+                WHERE session_db_id = ?
+                  AND state = 'dispatching'
+                  AND updated_at <= ?""",
+            (reason, current_time.isoformat(), session_db_id, cutoff),
+        )
+        if updated.rowcount != 1:
+            continue
+        mark_job_failed(con, row["job_id"])
+        recovered.append(session_db_id)
+    return recovered
 
 
 def update_executor_session_state(

@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Ensure adapters directory is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from adapters.executor_protocol import DispatchResult, NodePacket
+from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from adapters.local_subprocess_adapter import LocalSubprocessAdapter
@@ -54,6 +54,22 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
     return adapter.dispatch(packet)
+
+
+def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str]:
+    """Best-effort cancel a known remote session with truthful outcome text."""
+    adapter_cls = ADAPTERS.get(session_ref.executor)
+    if adapter_cls is None:
+        return False, f"unknown executor {session_ref.executor!r}; remote may continue"
+    try:
+        accepted = adapter_cls(repo=repo).cancel(session_ref)
+    except Exception as exc:
+        return False, f"late session cancellation failed: {exc}; remote may continue"
+    if accepted:
+        return True, "late session cancellation accepted"
+    if session_ref.executor == "jules_cli":
+        return False, "Jules CLI cancellation is unsupported; remote may continue"
+    return False, "late session cancellation was not accepted; remote may continue"
 
 
 def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
