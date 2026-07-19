@@ -48,9 +48,11 @@ def test_main_replaces_only_stale_dry_run_state(monkeypatch, tmp_path):
         con.execute(
             """
             INSERT INTO executor_sessions (
-                session_db_id, job_id, executor, session_id, created_at, updated_at
+                session_db_id, job_id, executor, session_id,
+                execution_attempt_id, attempt_index, created_at, updated_at
             ) VALUES (
                 'session_stale', 'job_dry_001', 'jules_cli', 'stale-session',
+                'job_dry_001:attempt:0', 0,
                 '2026-07-18T00:00:00+00:00', '2026-07-18T00:00:00+00:00'
             )
             """
