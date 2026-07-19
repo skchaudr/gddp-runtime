@@ -42,7 +42,7 @@ None. Production `db/queue.db`, launchd services, and `gddp-config` graph truth 
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Feature branch is pushed through the evidence commits; final handoff/receipt commit is the session close. Milestone 2 is intentionally not started before human acceptance of `neutral-executor-contract`.
+Feature branch is clean and pushed at `8e7907f`; it began at `027c086`. Main is independently clean/synced at `d1967f0` (`docs: add graph amendment checkpoint`), so review/merge must account for that later documentation commit; Milestone 2 is not started before human acceptance.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
