@@ -37,6 +37,15 @@ node approval or authorization to implement, commit, or publish them.
 
 - Treat a node as the unit of project intent. Jobs, sessions, commits, tests,
   artifacts, and verdicts are evidence from attempts to satisfy it.
+- Treat every node as a human-owned proposal, not a commitment. Acceptance is
+  not assumed. Human review may accept, revise, split, supersede, rewire, defer,
+  or abandon a node; only the human changes graph truth.
+- When implementation evidence shows that revising, splitting, superseding, or
+  rewiring a node would preserve intent materially faster, safer, or more
+  cleanly, stop before further implementation and submit a graph-amendment
+  proposal. State why the current shape is costly, the alternative, the
+  time/risk and dependency/frontier effects, and what existing work remains
+  usable. Do not silently change the node or assume its current shape must land.
 - Never mark a node complete from executor success, passing tests, or an
   evaluator verdict. Only the human accepts a node.
 - Use one executor-neutral node packet and returned-result contract across
