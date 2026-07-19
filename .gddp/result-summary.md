@@ -16,6 +16,7 @@ Milestone 1 of the approved 5-node executor-neutral plan is implemented and read
 - Neutrality proof: three targeted adapter-contract tests — **5 passed in 0.10s** (including all parametrized transports and local adapter re-instantiation/collection).
 - Retry/cancellation focused gate — **81 passed in 1.94s** before the fixture-only follow-up.
 - Task reviews rejected concrete state-machine races, fixes were applied, and final re-reviews approved with no Critical/Important findings.
+- Two live Pi evaluator attempts produced fail-closed `needs-human-review` receipts. Both criteria and integrity lanes crashed before judgment because the configured provider received an OpenRouter-formatted key at the OpenAI endpoint; the rerun with explicit GLM selection behaved identically. No semantic or integrity verdict is claimed.
 
 ## Commits
 
@@ -32,3 +33,4 @@ Milestone 1 of the approved 5-node executor-neutral plan is implemented and read
 - Jules remote compute may continue after local cancellation because the installed CLI exposes no cancel command; GDDP records this as unsupported and refuses further polling/integration.
 - A controller crash after remote acceptance but before finalization leaves a visible reserved attempt for stale recovery rather than automatically risking duplicate execution.
 - Legacy executor-session rows receive reconstructed attempt ordering during migration because historical rows did not record an exact ordinal.
+- The evaluator CLI/provider configuration must be corrected in its own bounded graph work before a live semantic receipt can replace the preserved crash receipts. Milestone 2 remains blocked on Sab's review of this evidence.
