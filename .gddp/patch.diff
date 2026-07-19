@@ -1,21 +1,4318 @@
-# Patch Evidence: runtime-receipt-proves-node
-
-Runtime-side evidence attached in this completion round:
-
-```text
-.gddp/decision.md
-.gddp/result-summary.md
-.gddp/patch.diff
-.handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json
-.handoffs/018-runtime-receipt-proves-node.md
-```
-
-Constrained areas intentionally not changed:
-
-```text
-scripts/runtime/verification/decision_engine.py
-/home/sab/gddp-config/graphs/gddp-runtime/nodes/verification-receipt-contract.yaml
-```
-
-Behavioral patch surface: none. This evidence bundle attaches the decision,
-result, patch note, and live receipt artifact required by the node contract.
+diff --git a/.gitignore b/.gitignore
+index be6f621..5b48a54 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -62,3 +62,4 @@ node_modules/
+ .pi_subagents/
+ .pi-subagents/
+ .worktrees/
++.superpowers/
+diff --git a/scripts/adapters/executor_protocol.py b/scripts/adapters/executor_protocol.py
+index 0a7d141..3e232ab 100644
+--- a/scripts/adapters/executor_protocol.py
++++ b/scripts/adapters/executor_protocol.py
+@@ -7,9 +7,110 @@ which executor is behind it.
+ 
+ from __future__ import annotations
+ 
++import json
++from collections.abc import Mapping, Sequence
+ from dataclasses import dataclass
+ from pathlib import Path
+-from typing import Literal, Protocol
++from types import MappingProxyType
++from typing import Literal, Protocol, TypeAlias, runtime_checkable
++
++
++FrozenJSON: TypeAlias = (
++    str
++    | int
++    | float
++    | bool
++    | None
++    | tuple["FrozenJSON", ...]
++    | Mapping[str, "FrozenJSON"]
++)
++
++
++def _freeze_json(value: object) -> FrozenJSON:
++    """Deep-freeze a decoded JSON value."""
++    if value is None or isinstance(value, str | int | float | bool):
++        return value
++    if isinstance(value, Mapping):
++        return MappingProxyType(
++            {str(key): _freeze_json(item) for key, item in value.items()}
++        )
++    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
++        return tuple(_freeze_json(item) for item in value)
++    raise TypeError(f"unsupported packet value: {type(value).__name__}")
++
++
++def _thaw_json(value: FrozenJSON) -> object:
++    """Convert immutable packet values into JSON-serializable values."""
++    if isinstance(value, Mapping):
++        return {key: _thaw_json(item) for key, item in value.items()}
++    if isinstance(value, tuple):
++        return [_thaw_json(item) for item in value]
++    return value
++
++
++@dataclass(frozen=True)
++class NodePacket:
++    """Executor-neutral, immutable description of one node execution attempt."""
++
++    job_id: str
++    execution_attempt_id: str
++    node_id: str
++    title: str
++    goal: str
++    why: str
++    constraints: tuple[FrozenJSON, ...]
++    acceptance_criteria: tuple[FrozenJSON, ...]
++    required_artifacts: tuple[str, ...]
++    attempt_index: int
++    previous_findings: Mapping[str, FrozenJSON] | None = None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(
++            self, "constraints", tuple(_freeze_json(item) for item in self.constraints)
++        )
++        object.__setattr__(
++            self,
++            "acceptance_criteria",
++            tuple(_freeze_json(item) for item in self.acceptance_criteria),
++        )
++        object.__setattr__(
++            self, "required_artifacts", tuple(str(item) for item in self.required_artifacts)
++        )
++        if self.previous_findings is not None:
++            frozen = _freeze_json(self.previous_findings)
++            if not isinstance(frozen, Mapping):
++                raise TypeError("previous_findings must be a mapping")
++            object.__setattr__(self, "previous_findings", frozen)
++
++    def to_json_value(self) -> dict[str, object]:
++        """Return the exact transport shape for this packet."""
++        return {
++            "job_id": self.job_id,
++            "execution_attempt_id": self.execution_attempt_id,
++            "node_id": self.node_id,
++            "title": self.title,
++            "goal": self.goal,
++            "why": self.why,
++            "constraints": [_thaw_json(item) for item in self.constraints],
++            "acceptance_criteria": [
++                _thaw_json(item) for item in self.acceptance_criteria
++            ],
++            "required_artifacts": list(self.required_artifacts),
++            "attempt_index": self.attempt_index,
++            "previous_findings": (
++                _thaw_json(self.previous_findings)
++                if self.previous_findings is not None
++                else None
++            ),
++        }
++
++    def to_json(self) -> str:
++        """Serialize the transport shape deterministically."""
++        return json.dumps(
++            self.to_json_value(),
++            sort_keys=True,
++            separators=(",", ":"),
++        )
+ 
+ 
+ @dataclass(frozen=True)
+@@ -22,7 +123,15 @@ class SessionRef:
+ @dataclass
+ class SessionStatus:
+     """Result of polling a session."""
+-    state: Literal["dispatched", "running", "needs_operator", "completed", "failed"]
++    state: Literal[
++        "dispatched",
++        "running",
++        "needs_operator",
++        "completed",
++        "failed",
++        "missing",
++        "poll_error",
++    ]
+     error: str | None = None
+ 
+ 
+@@ -35,19 +144,21 @@ class PatchResult:
+     error: str | None = None
+ 
+ 
+-@dataclass
++@dataclass(frozen=True)
+ class DispatchResult:
+-    """Result of dispatching a job to an executor."""
++    """Common receipt for direct and mediated dispatch."""
++
+     success: bool
+     session_ref: SessionRef | None = None
++    issue_url: str | None = None
+     error: str | None = None
+ 
+-
++@runtime_checkable
+ class ExecutorAdapter(Protocol):
+-    """Protocol every executor adapter implements."""
++    """Direct executor lifecycle protocol."""
+ 
+-    def dispatch(self, job: dict) -> DispatchResult:
+-        """Send job to executor. Returns durable session reference."""
++    def dispatch(self, packet: NodePacket) -> DispatchResult:
++        """Send one node attempt to an executor."""
+         ...
+ 
+     def status(self, session_ref: SessionRef) -> SessionStatus:
+diff --git a/scripts/adapters/jules_action_adapter.py b/scripts/adapters/jules_action_adapter.py
+index 9ad4e1f..0370327 100644
+--- a/scripts/adapters/jules_action_adapter.py
++++ b/scripts/adapters/jules_action_adapter.py
+@@ -14,28 +14,22 @@ Usage:
+     result = adapter.dispatch(job)
+ """
+ 
+-import json
+ import os
+ import subprocess
+-from dataclasses import dataclass
++from collections.abc import Mapping, Sequence
++
++from adapters.executor_protocol import DispatchResult, NodePacket
+ 
+ 
+ def _flatten(item) -> str:
+-    """Convert any YAML value (str, dict, list) to a readable string."""
+-    if isinstance(item, dict):
+-        # e.g. {'method returns a dict with': 'key1, key2'} → 'method returns a dict with: key1, key2'
+-        return " — ".join(f"{k}: {v}" for k, v in item.items())
+-    if isinstance(item, list):
+-        return ", ".join(str(i) for i in item)
++    """Convert an immutable packet value to readable text."""
++    if isinstance(item, Mapping):
++        return " — ".join(f"{key}: {value}" for key, value in item.items())
++    if isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
++        return ", ".join(str(value) for value in item)
+     return str(item)
+ 
+ 
+-@dataclass
+-class DispatchResult:
+-    success: bool
+-    issue_url: str | None
+-    issue_number: int | None
+-    error: str | None
+ 
+ 
+ class JulesActionAdapter:
+@@ -67,28 +61,41 @@ class JulesActionAdapter:
+             return None
+         return result.stdout.strip() or None
+ 
+-    def build_issue_body(self, job: dict) -> str:
+-        """
+-        Format the job packet as a structured issue body.
+-        Jules reads this as its task instructions.
+-        """
+-        raw_constraints = job.get("constraints")
+-        constraints = json.loads(raw_constraints) if isinstance(raw_constraints, str) else (raw_constraints or [])
+-        raw_criteria = job.get("acceptance_criteria")
+-        criteria = json.loads(raw_criteria) if isinstance(raw_criteria, str) else (raw_criteria or [])
++    def build_issue_body(self, packet: NodePacket) -> str:
++        """Format one immutable node attempt as structured issue instructions."""
++        constraints_text = "\n".join(
++            f"- {_flatten(constraint)}" for constraint in packet.constraints
++        )
++        criteria_text = "\n".join(
++            f"- [ ] {_flatten(criterion)}"
++            for criterion in packet.acceptance_criteria
++        )
+ 
+-        constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
+-        criteria_text    = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
+-
+-        findings = job.get("_previous_findings")
++        findings = packet.previous_findings
+         findings_section = ""
+         if findings:
++            raw_findings = findings.get("findings", ())
+             findings_list = "\n".join(
+-                f"- [{f.get('severity', '?')}] {f.get('summary', '')}"
+-                for f in findings.get("findings", [])
++                (
++                    f"- [{finding.get('severity', '?')}] "
++                    f"{finding.get('summary', '')}"
++                )
++                for finding in raw_findings
++                if isinstance(finding, Mapping)
++            )
++            raw_criteria_findings = findings.get("criteria_findings", ())
++            criteria_findings_list = "\n".join(
++                (
++                    f"- [{finding.get('judgment', '?')}] "
++                    f"{finding.get('criterion_id', '')}\n"
++                    f"  Reasoning: {finding.get('reasoning', '')}\n"
++                    f"  Evidence: {_flatten(finding.get('evidence', ()))}"
++                )
++                for finding in raw_criteria_findings
++                if isinstance(finding, Mapping)
+             )
+             findings_section = f"""
+-## Previous Attempt Findings (attempt {job.get('attempt', 0)})
++## Previous Attempt Findings (attempt {packet.attempt_index})
+ 
+ The previous implementation was reviewed and the following issues were found:
+ 
+@@ -99,13 +106,17 @@ The previous implementation was reviewed and the following issues were found:
+ ### Findings
+ {findings_list}
+ 
++### Criteria Findings
++{criteria_findings_list}
++
+ Please address these findings in your implementation.
+ """
+ 
+-        required_artifacts = job.get("required_artifacts", [])
+         artifacts_section = ""
+-        if required_artifacts:
+-            artifacts_text = "\n".join(f"- `{a}`" for a in required_artifacts)
++        if packet.required_artifacts:
++            artifacts_text = "\n".join(
++                f"- `{artifact}`" for artifact in packet.required_artifacts
++            )
+             artifacts_section = f"""
+ ## Required Artifacts
+ Your PR must include the following files in the repo root:
+@@ -119,23 +130,27 @@ These files are checked by the deterministic verification gate. Missing artifact
+         metadata_reminder = (
+             f"\n"
+             f"---\n"
+-            f"*Dispatched by GDDP control plane — job_id: {job['job_id']} — node: {job['node_id']}*\n"
++            f"*Dispatched by GDDP control plane — job_id: {packet.job_id} — "
++            f"node: {packet.node_id} — attempt: {packet.attempt_index} — "
++            f"execution_attempt_id: {packet.execution_attempt_id}*\n"
+             f"\n"
+             f"**CRITICAL — PR Metadata Block Required:**\n"
+             f"Your PR description MUST end with this exact block:\n"
+             f"```\n"
+-            f"node: {job['node_id']}\n"
+-            f"job: {job['job_id']}\n"
++            f"node: {packet.node_id}\n"
++            f"job: {packet.job_id}\n"
++            f"attempt: {packet.attempt_index}\n"
++            f"execution_attempt_id: {packet.execution_attempt_id}\n"
+             f"```\n"
+             f"Without this block, the GDDP return router cannot link your PR back to this job. "
+             f"The PR will be rejected and the work will not be reviewed. This is not optional.\n"
+         )
+ 
+         return f"""## Goal
+-{job['goal']}
++{packet.goal}
+ 
+ ## Why
+-{job['why']}
++{packet.why}
+ 
+ ## Constraints
+ {constraints_text}
+@@ -152,25 +167,25 @@ These files are checked by the deterministic verification gate. Missing artifact
+ - **Required: include the following metadata block verbatim at the end of the PR description:**
+ 
+ ```
+-node: {job['node_id']}
+-job: {job['job_id']}
++node: {packet.node_id}
++job: {packet.job_id}
++attempt: {packet.attempt_index}
++execution_attempt_id: {packet.execution_attempt_id}
+ ```
+ 
+ This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
+ {metadata_reminder}"""
+ 
+-    def dispatch(self, job: dict) -> DispatchResult:
++    def dispatch(self, packet: NodePacket) -> DispatchResult:
+         token = self._github_token()
+         if not token:
+             return DispatchResult(
+                 success=False,
+-                issue_url=None,
+-                issue_number=None,
+                 error="Missing GitHub token: set GITHUB_TOKEN/GH_TOKEN or authenticate gh",
+             )
+ 
+-        title = f"[GDDP] {job['title']}"
+-        body  = self.build_issue_body(job)
++        title = f"[GDDP] {packet.title}"
++        body = self.build_issue_body(packet)
+ 
+         cmd = [
+             "gh", "issue", "create",
+@@ -194,26 +209,12 @@ This block is parsed by the GDDP return router to create a structured review rec
+             if result.returncode != 0:
+                 return DispatchResult(
+                     success=False,
+-                    issue_url=None,
+-                    issue_number=None,
+                     error=result.stderr.strip(),
+                 )
+-            # gh issue create prints the issue URL on success
+-            issue_url    = result.stdout.strip()
+-            issue_number = int(issue_url.rstrip("/").split("/")[-1])
+-            return DispatchResult(
+-                success=True,
+-                issue_url=issue_url,
+-                issue_number=issue_number,
+-                error=None,
+-            )
++            # gh issue create prints the issue URL on success.
++            issue_url = result.stdout.strip()
++            return DispatchResult(success=True, issue_url=issue_url)
+         except subprocess.TimeoutExpired:
+-            return DispatchResult(
+-                success=False, issue_url=None, issue_number=None,
+-                error="gh CLI timed out"
+-            )
++            return DispatchResult(success=False, error="gh CLI timed out")
+         except Exception as e:
+-            return DispatchResult(
+-                success=False, issue_url=None, issue_number=None,
+-                error=str(e)
+-            )
++            return DispatchResult(success=False, error=str(e))
+diff --git a/scripts/adapters/jules_cli_adapter.py b/scripts/adapters/jules_cli_adapter.py
+index 95ee6bd..8297b8b 100644
+--- a/scripts/adapters/jules_cli_adapter.py
++++ b/scripts/adapters/jules_cli_adapter.py
+@@ -28,13 +28,14 @@ Usage:
+ 
+ from __future__ import annotations
+ 
+-import json
+ import re
+ import subprocess
++from collections.abc import Mapping, Sequence
+ from pathlib import Path
+ 
+ from adapters.executor_protocol import (
+     DispatchResult,
++    NodePacket,
+     PatchResult,
+     SessionRef,
+     SessionStatus,
+@@ -58,11 +59,11 @@ _STATUS_MAP = (
+ 
+ 
+ def _flatten(item) -> str:
+-    """Convert any YAML value (str, dict, list) to a readable string."""
+-    if isinstance(item, dict):
+-        return " — ".join(f"{k}: {v}" for k, v in item.items())
+-    if isinstance(item, list):
+-        return ", ".join(str(i) for i in item)
++    """Convert an immutable packet value to readable text."""
++    if isinstance(item, Mapping):
++        return " — ".join(f"{key}: {value}" for key, value in item.items())
++    if isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
++        return ", ".join(str(value) for value in item)
+     return str(item)
+ 
+ 
+@@ -82,58 +83,87 @@ class JulesCliAdapter:
+     # Instruction body construction
+     # ------------------------------------------------------------------ #
+ 
+-    def _build_session_instructions(self, job: dict) -> str:
+-        """Build the --session instruction string sent to Jules.
+-
+-        Composed from the job packet fields. Mirrors the issue-body shape used
+-        by JulesActionAdapter so both paths present the same task to Jules.
+-        """
+-        raw_constraints = job.get("constraints")
+-        constraints = (
+-            json.loads(raw_constraints)
+-            if isinstance(raw_constraints, str)
+-            else (raw_constraints or [])
++    def _build_session_instructions(self, packet: NodePacket) -> str:
++        """Build the --session instruction string sent to Jules."""
++        constraints_text = "\n".join(
++            f"- {_flatten(constraint)}" for constraint in packet.constraints
+         )
+-        raw_criteria = job.get("acceptance_criteria")
+-        criteria = (
+-            json.loads(raw_criteria)
+-            if isinstance(raw_criteria, str)
+-            else (raw_criteria or [])
++        criteria_text = "\n".join(
++            f"- [ ] {_flatten(criterion)}"
++            for criterion in packet.acceptance_criteria
+         )
+ 
+-        constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
+-        criteria_text = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
++        artifacts_section = ""
++        if packet.required_artifacts:
++            artifacts_text = "\n".join(
++                f"- `{artifact}`" for artifact in packet.required_artifacts
++            )
++            artifacts_section = (
++                "\n## Required Artifacts\n"
++                "The result must include:\n"
++                f"{artifacts_text}\n"
++            )
+ 
+-        title = job.get("title", "")
+-        goal = job.get("goal", "")
+-        why = job.get("why", "")
+-        node_id = job.get("node_id", "")
+-        job_id = job.get("job_id", "")
+-
+-        header = f"[GDDP] {title}" if title else "GDDP task"
++        findings_section = ""
++        findings = packet.previous_findings
++        if findings:
++            raw_findings = findings.get("findings", ())
++            findings_list = "\n".join(
++                (
++                    f"- [{finding.get('severity', '?')}] "
++                    f"{finding.get('summary', '')}"
++                )
++                for finding in raw_findings
++                if isinstance(finding, Mapping)
++            )
++            raw_criteria_findings = findings.get("criteria_findings", ())
++            criteria_findings_list = "\n".join(
++                (
++                    f"- [{finding.get('judgment', '?')}] "
++                    f"{finding.get('criterion_id', '')}\n"
++                    f"  Reasoning: {finding.get('reasoning', '')}\n"
++                    f"  Evidence: {_flatten(finding.get('evidence', ()))}"
++                )
++                for finding in raw_criteria_findings
++                if isinstance(finding, Mapping)
++            )
++            findings_section = (
++                f"\n## Previous Attempt Findings (attempt {packet.attempt_index})\n"
++                f"**Verdict:** {findings.get('verdict', 'unknown')}\n"
++                f"**Integrity verdict:** "
++                f"{findings.get('integrity_verdict', 'unknown')}\n"
++                f"**Reasoning:** {findings.get('reasoning', '')}\n\n"
++                f"### Findings\n{findings_list}\n"
++                f"\n### Criteria Findings\n{criteria_findings_list}\n"
++            )
+ 
++        header = f"[GDDP] {packet.title}" if packet.title else "GDDP task"
+         return (
+             f"{header}\n\n"
+-            f"## Goal\n{goal}\n\n"
+-            f"## Why\n{why}\n\n"
++            f"## Goal\n{packet.goal}\n\n"
++            f"## Why\n{packet.why}\n\n"
+             f"## Constraints\n{constraints_text}\n\n"
+-            f"## Acceptance Criteria\n{criteria_text}\n\n"
++            f"## Acceptance Criteria\n{criteria_text}\n"
++            f"{artifacts_section}"
++            f"{findings_section}\n"
+             f"---\n"
+-            f"node: {node_id}\n"
+-            f"job: {job_id}\n"
++            f"node: {packet.node_id}\n"
++            f"job: {packet.job_id}\n"
++            f"attempt: {packet.attempt_index}\n"
++            f"execution_attempt_id: {packet.execution_attempt_id}\n"
+         )
+ 
+     # ------------------------------------------------------------------ #
+     # ExecutorAdapter: dispatch
+     # ------------------------------------------------------------------ #
+ 
+-    def dispatch(self, job: dict) -> DispatchResult:
++    def dispatch(self, packet: NodePacket) -> DispatchResult:
+         """Dispatch a job to Jules via `jules remote new`.
+ 
+         Returns a DispatchResult whose session_ref holds the parsed Jules
+         session ID. Failures return success=False with an explanatory error.
+         """
+-        instructions = self._build_session_instructions(job)
++        instructions = self._build_session_instructions(packet)
+         cmd = [
+             self.jules_bin, "remote", "new",
+             "--repo", self.repo,
+@@ -189,8 +219,8 @@ class JulesCliAdapter:
+     def status(self, session_ref: SessionRef) -> SessionStatus:
+         """Poll session status via `jules remote list --session`.
+ 
+-        Fails closed: any unfamiliar output, missing session, or CLI failure
+-        is reported as ``failed`` with a descriptive error.
++        A successful list with no matching session is reported separately from
++        transient CLI and infrastructure polling errors.
+         """
+         session_id = session_ref.session_id
+         cmd = [self.jules_bin, "remote", "list", "--session"]
+@@ -203,15 +233,21 @@ class JulesCliAdapter:
+                 timeout=self.timeout,
+             )
+         except subprocess.TimeoutExpired:
+-            return SessionStatus(state="failed", error=f"jules list timed out after {self.timeout}s")
++            return SessionStatus(
++                state="poll_error",
++                error=f"jules list timed out after {self.timeout}s",
++            )
+         except FileNotFoundError:
+-            return SessionStatus(state="failed", error=f"jules binary not found: {self.jules_bin}")
++            return SessionStatus(
++                state="poll_error",
++                error=f"jules binary not found: {self.jules_bin}",
++            )
+         except Exception as e:
+-            return SessionStatus(state="failed", error=f"jules list failed: {e}")
++            return SessionStatus(state="poll_error", error=f"jules list failed: {e}")
+ 
+         if result.returncode != 0:
+             return SessionStatus(
+-                state="failed",
++                state="poll_error",
+                 error=(result.stderr or result.stdout or "jules remote list failed").strip(),
+             )
+ 
+@@ -223,8 +259,8 @@ class JulesCliAdapter:
+         ]
+         if not session_lines:
+             return SessionStatus(
+-                state="failed",
+-                error="session not found in jules list",
++                state="missing",
++                error="session not found in successful jules list",
+             )
+ 
+         # Inspect the matching line(s) for known status keywords.
+diff --git a/scripts/adapters/local_subprocess_adapter.py b/scripts/adapters/local_subprocess_adapter.py
+new file mode 100644
+index 0000000..6d26559
+--- /dev/null
++++ b/scripts/adapters/local_subprocess_adapter.py
+@@ -0,0 +1,345 @@
++"""Durable direct adapter for a configured local subprocess."""
++
++from __future__ import annotations
++
++import json
++import os
++import signal
++import subprocess
++import sys
++import uuid
++from collections.abc import Sequence
++from pathlib import Path
++
++from adapters.executor_protocol import (
++    DispatchResult,
++    NodePacket,
++    PatchResult,
++    SessionRef,
++    SessionStatus,
++)
++
++_ARGV_ENV = "GDDP_LOCAL_SUBPROCESS_ARGV"
++_SPOOL_ENV = "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"
++_CWD_ENV = "GDDP_LOCAL_SUBPROCESS_CWD"
++_EXECUTOR = "local_subprocess"
++
++
++class LocalSubprocessAdapter:
++    """Run one packet per process and retain lifecycle state in a spool."""
++
++    def __init__(
++        self,
++        repo: str,
++        *,
++        argv: Sequence[str] | None = None,
++        spool_root: str | Path | None = None,
++        cwd: str | Path | None = None,
++    ) -> None:
++        self.repo = repo
++        self.argv = _configured_argv(argv)
++        self.spool_root = _configured_spool_root(spool_root)
++        configured_cwd = cwd if cwd is not None else os.environ.get(_CWD_ENV)
++        self.cwd = Path(configured_cwd).resolve() if configured_cwd else None
++
++    def dispatch(self, packet: NodePacket) -> DispatchResult:
++        session_id = (
++            f"{_safe_component(packet.job_id)}-"
++            f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
++            f"{uuid.uuid4().hex}"
++        )
++        attempt_dir = self.spool_root / session_id
++        supervisor: subprocess.Popen[bytes] | None = None
++        start_read: int | None = None
++        start_write: int | None = None
++        try:
++            attempt_dir.mkdir(parents=True, exist_ok=False)
++            execution_cwd = self.cwd
++            if execution_cwd is None:
++                execution_cwd = attempt_dir / "workspace"
++                execution_cwd.mkdir()
++            (attempt_dir / "packet.json").write_text(packet.to_json())
++            (attempt_dir / "command.json").write_text(
++                json.dumps(
++                    {"argv": list(self.argv), "cwd": str(execution_cwd)},
++                    sort_keys=True,
++                    separators=(",", ":"),
++                )
++            )
++            start_read, start_write = os.pipe()
++            supervisor = subprocess.Popen(
++                [
++                    sys.executable,
++                    "-m",
++                    "adapters.local_subprocess_adapter",
++                    "--run-attempt",
++                    str(attempt_dir),
++                    "--start-fd",
++                    str(start_read),
++                ],
++                cwd=str(Path(__file__).resolve().parents[1]),
++                stdin=subprocess.DEVNULL,
++                stdout=subprocess.DEVNULL,
++                stderr=subprocess.DEVNULL,
++                start_new_session=True,
++                pass_fds=(start_read,),
++            )
++            os.close(start_read)
++            start_read = None
++            _atomic_write(attempt_dir / "supervisor.pid", str(supervisor.pid))
++            os.write(start_write, b"1")
++        except Exception as exc:
++            if supervisor is not None:
++                try:
++                    os.killpg(supervisor.pid, signal.SIGTERM)
++                except OSError:
++                    pass
++            return DispatchResult(
++                success=False,
++                error=f"local subprocess dispatch failed: {exc}",
++            )
++        finally:
++            if start_read is not None:
++                os.close(start_read)
++            if start_write is not None:
++                os.close(start_write)
++
++        return DispatchResult(
++            success=True,
++            session_ref=SessionRef(executor=_EXECUTOR, session_id=session_id),
++        )
++
++    def status(self, session_ref: SessionRef) -> SessionStatus:
++        attempt_dir = self._attempt_dir(session_ref)
++        if attempt_dir is None or not attempt_dir.is_dir():
++            return SessionStatus(state="failed", error="local subprocess spool not found")
++
++        exit_path = attempt_dir / "exit.json"
++        if exit_path.exists():
++            try:
++                exit_state = json.loads(exit_path.read_text())
++                returncode = int(exit_state["returncode"])
++            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
++                return SessionStatus(
++                    state="failed", error=f"invalid local subprocess exit state: {exc}"
++                )
++            if returncode == 0:
++                return SessionStatus(state="completed")
++            stderr = _read_text(attempt_dir / "stderr").strip()
++            if exit_state.get("cancelled"):
++                detail = f"local subprocess cancelled (code {returncode})"
++            else:
++                detail = f"local subprocess exited with code {returncode}"
++            if stderr:
++                detail = f"{detail}: {stderr}"
++            return SessionStatus(state="failed", error=detail)
++
++        pid = _read_pid(attempt_dir / "pid")
++        if pid is not None and _pid_is_running(pid):
++            return SessionStatus(state="running")
++        supervisor_pid = _read_pid(attempt_dir / "supervisor.pid")
++        if supervisor_pid is not None and _pid_is_running(supervisor_pid):
++            return SessionStatus(state="dispatched")
++        return SessionStatus(
++            state="failed",
++            error="local subprocess exited without durable exit state",
++        )
++
++    def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
++        status = self.status(session_ref)
++        if status.state != "completed":
++            return PatchResult(
++                success=False,
++                error=status.error or f"local subprocess is {status.state}",
++            )
++
++        attempt_dir = self._attempt_dir(session_ref)
++        if attempt_dir is None:
++            return PatchResult(success=False, error="invalid local subprocess session")
++        patch_text = _read_text(attempt_dir / "stdout")
++        try:
++            destination = Path(dest_path)
++            destination.parent.mkdir(parents=True, exist_ok=True)
++            destination.write_text(patch_text)
++        except OSError as exc:
++            return PatchResult(
++                success=False,
++                patch_text=patch_text,
++                error=f"failed to write patch to {dest_path}: {exc}",
++            )
++        return PatchResult(
++            success=True,
++            patch_text=patch_text,
++            patch_path=str(destination),
++        )
++
++    def cancel(self, session_ref: SessionRef) -> bool:
++        attempt_dir = self._attempt_dir(session_ref)
++        if attempt_dir is None or not attempt_dir.is_dir():
++            return False
++        if (attempt_dir / "exit.json").exists():
++            return False
++        try:
++            _atomic_write(attempt_dir / "cancel.requested", "")
++        except OSError:
++            return False
++
++        pid = _read_pid(attempt_dir / "pid")
++        if pid is None:
++            return True
++        try:
++            os.killpg(pid, signal.SIGTERM)
++            _atomic_write(attempt_dir / "cancel.signalled", "")
++        except OSError:
++            pass
++        return True
++
++    def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
++        if session_ref.executor != _EXECUTOR:
++            return None
++        session_id = session_ref.session_id
++        if (
++            not session_id
++            or session_id in {".", ".."}
++            or Path(session_id).name != session_id
++        ):
++            return None
++        return self.spool_root / session_id
++
++
++def _configured_argv(argv: Sequence[str] | None) -> tuple[str, ...]:
++    if argv is None:
++        raw = os.environ.get(_ARGV_ENV)
++        if not raw:
++            raise ValueError(f"local subprocess argv is required ({_ARGV_ENV})")
++        try:
++            decoded = json.loads(raw)
++        except json.JSONDecodeError as exc:
++            raise ValueError(f"{_ARGV_ENV} must be a JSON argv array") from exc
++        if not isinstance(decoded, list):
++            raise ValueError(f"{_ARGV_ENV} must be a JSON argv array")
++        argv = decoded
++    configured = tuple(str(item) for item in argv)
++    if not configured:
++        raise ValueError("local subprocess argv cannot be empty")
++    return configured
++
++
++def _configured_spool_root(spool_root: str | Path | None) -> Path:
++    configured = spool_root if spool_root is not None else os.environ.get(_SPOOL_ENV)
++    if configured is None:
++        raise ValueError(f"local subprocess spool root is required ({_SPOOL_ENV})")
++    return Path(configured).expanduser().resolve()
++
++
++def _safe_component(value: str) -> str:
++    safe = "".join(character if character.isalnum() or character in "-_" else "-" for character in value)
++    return safe.strip("-") or "unknown"
++
++
++def _read_text(path: Path) -> str:
++    try:
++        return path.read_text(errors="replace")
++    except OSError:
++        return ""
++
++
++def _read_pid(path: Path) -> int | None:
++    try:
++        return int(path.read_text())
++    except (OSError, ValueError):
++        return None
++
++
++def _pid_is_running(pid: int) -> bool:
++    try:
++        os.kill(pid, 0)
++        return True
++    except ProcessLookupError:
++        return False
++    except PermissionError:
++        return True
++
++
++def _atomic_write(path: Path, content: str) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(content)
++    temporary.replace(path)
++
++
++def _run_attempt(attempt_dir: Path, start_fd: int | None = None) -> int:
++    cancelled = False
++    try:
++        if start_fd is not None and os.read(start_fd, 1) != b"1":
++            raise RuntimeError("dispatch startup handshake was not published")
++        command = json.loads((attempt_dir / "command.json").read_text())
++        argv = command["argv"]
++        cwd = command["cwd"]
++        if not isinstance(argv, list) or not argv:
++            raise ValueError("configured argv is invalid")
++        if (attempt_dir / "cancel.requested").exists():
++            cancelled = True
++            returncode = 143
++        else:
++            with (
++                (attempt_dir / "packet.json").open("rb") as packet_input,
++                (attempt_dir / "stdout").open("wb") as stdout,
++                (attempt_dir / "stderr").open("wb") as stderr,
++            ):
++                process = subprocess.Popen(
++                    argv,
++                    cwd=cwd,
++                    stdin=packet_input,
++                    stdout=stdout,
++                    stderr=stderr,
++                    shell=False,
++                    start_new_session=True,
++                )
++                try:
++                    _atomic_write(attempt_dir / "pid", str(process.pid))
++                except Exception:
++                    os.killpg(process.pid, signal.SIGTERM)
++                    process.wait()
++                    raise
++                if (attempt_dir / "cancel.requested").exists():
++                    try:
++                        os.killpg(process.pid, signal.SIGTERM)
++                        _atomic_write(attempt_dir / "cancel.signalled", "")
++                    except OSError:
++                        pass
++                returncode = process.wait()
++                cancelled = (
++                    returncode != 0
++                    and (attempt_dir / "cancel.signalled").exists()
++                )
++    except Exception as exc:
++        with (attempt_dir / "stderr").open("ab") as stderr:
++            stderr.write(f"local subprocess supervisor failed: {exc}\n".encode())
++        returncode = 127
++
++    _atomic_write(
++        attempt_dir / "exit.json",
++        json.dumps(
++            {
++                "returncode": returncode,
++                "cancelled": cancelled,
++            },
++            sort_keys=True,
++            separators=(",", ":"),
++        ),
++    )
++    return 0
++
++
++def _main(argv: Sequence[str]) -> int:
++    if (
++        len(argv) == 4
++        and argv[0] == "--run-attempt"
++        and argv[2] == "--start-fd"
++    ):
++        return _run_attempt(Path(argv[1]), int(argv[3]))
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_main(sys.argv[1:]))
+diff --git a/scripts/adapters/test_executor_contract.py b/scripts/adapters/test_executor_contract.py
+new file mode 100644
+index 0000000..2eb1084
+--- /dev/null
++++ b/scripts/adapters/test_executor_contract.py
+@@ -0,0 +1,513 @@
++from __future__ import annotations
++
++import json
++import os
++import signal
++import sqlite3
++import sys
++import time
++from dataclasses import FrozenInstanceError
++from pathlib import Path
++from unittest.mock import MagicMock
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[2]
++sys.path.insert(0, str(ROOT / "scripts"))
++sys.path.insert(0, str(ROOT))
++
++import heartbeat as legacy_heartbeat
++from adapters.executor_protocol import (
++    DispatchResult,
++    ExecutorAdapter,
++    NodePacket,
++    SessionRef,
++)
++from adapters.jules_action_adapter import JulesActionAdapter
++from adapters.jules_cli_adapter import JulesCliAdapter
++from adapters.local_subprocess_adapter import LocalSubprocessAdapter
++from adapters import local_subprocess_adapter
++from runtime.heartbeat import dispatcher
++
++
++def _persisted_job(*, executor: str = "jules_cli", attempt: int = 2) -> dict:
++    return {
++        "job_id": "job-123",
++        "node_id": "node-456",
++        "title": "Repair transport",
++        "goal": "Preserve semantic intent",
++        "why": "Executors must receive equivalent work",
++        "constraints": json.dumps([
++            "No shell",
++            {"platform": ["darwin", "linux"]},
++        ]),
++        "acceptance_criteria": json.dumps([
++            "Packet is immutable",
++            {"tests": ["success", "failure"]},
++        ]),
++        "_required_artifacts": json.dumps(["decision.md", "patch.diff"]),
++        "attempt": attempt,
++        "_previous_findings": json.dumps({
++            "verdict": "changes_requested",
++            "integrity_verdict": "pass",
++            "reasoning": "One semantic field was dropped",
++            "findings": [
++                {"severity": "high", "summary": "Preserve attempt identity"},
++            ],
++            "criteria_findings": [
++                {
++                    "criterion_id": "docs-usage-file",
++                    "judgment": "judged_fail",
++                    "evidence": ["docs/usage.md is absent"],
++                    "reasoning": "The required usage guide was not created",
++                },
++            ],
++        }),
++        "executor": executor,
++    }
++
++
++def _packet(attempt: int = 2) -> NodePacket:
++    return dispatcher._build_node_packet(_persisted_job(attempt=attempt))
++
++
++def _wait_for_terminal(adapter: LocalSubprocessAdapter, result: DispatchResult):
++    assert result.session_ref is not None
++    deadline = time.monotonic() + 5
++    while time.monotonic() < deadline:
++        status = adapter.status(result.session_ref)
++        if status.state in {"completed", "failed"}:
++            return status
++        time.sleep(0.02)
++    pytest.fail("local subprocess did not reach a terminal state")
++
++
++def test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job():
++    job = _persisted_job()
++    original = dict(job)
++
++    packet = dispatcher._build_node_packet(job)
++
++    assert packet.job_id == "job-123"
++    assert packet.node_id == "node-456"
++    assert packet.attempt_index == 2
++    assert packet.execution_attempt_id == "job-123:attempt:2"
++    assert packet.constraints[1]["platform"] == ("darwin", "linux")
++    assert packet.acceptance_criteria[1]["tests"] == ("success", "failure")
++    assert packet.required_artifacts == ("decision.md", "patch.diff")
++    assert packet.previous_findings is not None
++    assert packet.previous_findings["findings"][0]["severity"] == "high"
++    assert job == original
++
++    with pytest.raises(FrozenInstanceError):
++        packet.goal = "changed"  # type: ignore[misc]
++    with pytest.raises(TypeError):
++        packet.constraints[1]["platform"] = ()  # type: ignore[index]
++    with pytest.raises(TypeError):
++        packet.previous_findings["verdict"] = "pass"  # type: ignore[index]
++
++
++def test_jules_renderers_preserve_the_same_packet_semantics():
++    packet = _packet()
++
++    action_body = JulesActionAdapter("owner/repo").build_issue_body(packet)
++    cli_body = JulesCliAdapter("owner/repo")._build_session_instructions(packet)
++
++    for rendered in (action_body, cli_body):
++        assert "Preserve semantic intent" in rendered
++        assert "Executors must receive equivalent work" in rendered
++        assert "No shell" in rendered
++        assert "platform: ('darwin', 'linux')" in rendered
++        assert "Packet is immutable" in rendered
++        assert "tests: ('success', 'failure')" in rendered
++        assert "decision.md" in rendered
++        assert "patch.diff" in rendered
++        assert "attempt: 2" in rendered
++        assert "execution_attempt_id: job-123:attempt:2" in rendered
++        assert "One semantic field was dropped" in rendered
++        assert "[high] Preserve attempt identity" in rendered
++        assert "node: node-456" in rendered
++        assert "job: job-123" in rendered
++        assert "docs-usage-file" in rendered
++        assert "judged_fail" in rendered
++        assert "docs/usage.md is absent" in rendered
++        assert "The required usage guide was not created" in rendered
++
++
++def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
++    cli = JulesCliAdapter("owner/repo")
++    local = LocalSubprocessAdapter(
++        repo="owner/repo",
++        argv=(sys.executable, "-c", "pass"),
++        spool_root=tmp_path,
++    )
++    action = JulesActionAdapter("owner/repo")
++
++    assert isinstance(cli, ExecutorAdapter)
++    assert isinstance(local, ExecutorAdapter)
++    assert not isinstance(action, ExecutorAdapter)
++    assert dispatcher.ADAPTERS == {
++        "jules_cli": JulesCliAdapter,
++        "local_subprocess": LocalSubprocessAdapter,
++    }
++    assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
++
++def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
++    spool_root = tmp_path / "spool"
++    spool_root.mkdir()
++    adapter = LocalSubprocessAdapter(
++        repo="owner/repo",
++        argv=(sys.executable, "-c", "pass"),
++        spool_root=spool_root,
++    )
++    parent_ref = SessionRef(executor="local_subprocess", session_id="..")
++
++    assert adapter.status(parent_ref).state == "failed"
++    assert adapter.cancel(parent_ref) is False
++    assert not (tmp_path / "cancel.requested").exists()
++
++
++@pytest.mark.parametrize(
++    ("executor", "adapter_cls", "issue_url"),
++    (
++        ("jules", JulesActionAdapter, "https://github.com/owner/repo/issues/42"),
++        ("jules_cli", JulesCliAdapter, None),
++        ("local_subprocess", LocalSubprocessAdapter, None),
++    ),
++)
++def test_dispatch_returns_common_receipt_and_passes_same_node_packet(
++    monkeypatch, tmp_path, executor, adapter_cls, issue_url
++):
++    job = _persisted_job(executor=executor)
++    receipt = DispatchResult(success=True, issue_url=issue_url)
++    adapter_dispatch = MagicMock(return_value=receipt)
++    monkeypatch.setattr(adapter_cls, "dispatch", adapter_dispatch)
++    monkeypatch.setenv(
++        "GDDP_LOCAL_SUBPROCESS_ARGV",
++        json.dumps([sys.executable, "-c", "pass"]),
++    )
++    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path))
++
++    result = dispatcher.dispatch(job, "owner/repo")
++
++    assert result is receipt
++    dispatched_packet = adapter_dispatch.call_args.args[0]
++    assert isinstance(dispatched_packet, NodePacket)
++    assert dispatched_packet.to_json_value() == _packet().to_json_value()
++
++
++def test_legacy_heartbeat_dispatches_the_central_node_packet(monkeypatch, tmp_path):
++    connection = sqlite3.connect(":memory:")
++    connection.row_factory = sqlite3.Row
++    connection.executescript(
++        """
++        CREATE TABLE events (
++            event_id TEXT PRIMARY KEY,
++            event_type TEXT NOT NULL,
++            status TEXT NOT NULL,
++            classification TEXT,
++            scope_status TEXT
++        );
++        CREATE TABLE jobs (
++            job_id TEXT PRIMARY KEY,
++            created_at TEXT NOT NULL,
++            event_id TEXT,
++            project_id TEXT,
++            repo TEXT,
++            node_id TEXT NOT NULL,
++            job_type TEXT NOT NULL,
++            executor TEXT NOT NULL,
++            queue_state TEXT,
++            title TEXT NOT NULL,
++            goal TEXT NOT NULL,
++            why TEXT,
++            constraints TEXT,
++            acceptance_criteria TEXT,
++            priority TEXT,
++            status TEXT,
++            attempt INTEGER,
++            max_attempts INTEGER,
++            artifacts_dir TEXT
++        );
++        CREATE TABLE queue_records (
++            queue_item_id TEXT PRIMARY KEY,
++            job_id TEXT NOT NULL,
++            queue TEXT NOT NULL,
++            available_at TEXT NOT NULL
++        );
++        INSERT INTO events (event_id, event_type, status)
++        VALUES ('event-1', 'issue.opened', 'received');
++        """
++    )
++    dispatched = MagicMock(
++        return_value=DispatchResult(
++            success=True,
++            issue_url="https://github.com/owner/repo/issues/42",
++        )
++    )
++    identifiers = iter(("job-id", "queue-id"))
++    monkeypatch.setattr(legacy_heartbeat, "connect", lambda: connection)
++    monkeypatch.setattr(legacy_heartbeat, "job_dir", lambda job_id: tmp_path / job_id)
++    monkeypatch.setattr(legacy_heartbeat, "ts_id", lambda: next(identifiers))
++    monkeypatch.setattr(JulesActionAdapter, "dispatch", dispatched)
++    monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
++
++    legacy_heartbeat.run_heartbeat("owner/repo")
++
++    packet = dispatched.call_args.args[0]
++    assert isinstance(packet, NodePacket)
++    assert packet.job_id == "job_job-id"
++    assert packet.node_id == legacy_heartbeat.PHASE3_NODE["node_id"]
++    assert packet.attempt_index == 0
++    assert packet.required_artifacts == tuple(
++        legacy_heartbeat.PHASE3_NODE["required_artifacts"]
++    )
++
++def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation(tmp_path):
++    argv = (
++        sys.executable,
++        "-c",
++        "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)",
++    )
++    adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
++    packet = _packet()
++
++    first = adapter.dispatch(packet)
++    second = adapter.dispatch(packet)
++
++    assert first.success is True
++    assert second.success is True
++    assert first.session_ref is not None
++    assert second.session_ref is not None
++    assert first.session_ref.session_id != second.session_ref.session_id
++    assert "attempt-2" in first.session_ref.session_id
++    assert _wait_for_terminal(adapter, first).state == "completed"
++    assert _wait_for_terminal(adapter, second).state == "completed"
++
++    reinstantiated = LocalSubprocessAdapter(
++        repo="owner/repo", argv=argv, spool_root=tmp_path
++    )
++    assert reinstantiated.status(first.session_ref).state == "completed"
++    destination = tmp_path / "collected" / "result.patch"
++    collected = reinstantiated.collect(first.session_ref, destination)
++
++    assert collected.success is True
++    assert collected.patch_path == str(destination)
++    assert collected.patch_text == packet.to_json()
++    assert destination.read_text() == packet.to_json()
++    assert json.loads(collected.patch_text) == packet.to_json_value()
++    assert json.loads(collected.patch_text)["execution_attempt_id"] == (
++        "job-123:attempt:2"
++    )
++
++
++def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
++    argv = (
++        sys.executable,
++        "-c",
++        "import sys; sys.stdin.buffer.read(); sys.stderr.write('broken\\n'); raise SystemExit(7)",
++    )
++    adapter = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
++
++
++    result = adapter.dispatch(_packet())
++
++    status = _wait_for_terminal(adapter, result)
++    assert status.state == "failed"
++    assert status.error is not None
++    assert "code 7" in status.error
++    assert "broken" in status.error
++
++    reinstantiated = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
++    assert result.session_ref is not None
++    assert reinstantiated.status(result.session_ref).state == "failed"
++    collected = reinstantiated.collect(
++        result.session_ref, tmp_path / "must-not-exist.patch"
++    )
++    assert collected.success is False
++    assert "code 7" in (collected.error or "")
++
++
++def test_local_subprocess_default_cwd_is_attempt_isolated(tmp_path):
++    adapter = LocalSubprocessAdapter(
++        repo="owner/repo",
++        argv=(sys.executable, "-c", "from pathlib import Path; print(Path.cwd())"),
++        spool_root=tmp_path,
++    )
++
++    result = adapter.dispatch(_packet())
++
++    assert result.session_ref is not None
++    attempt_dir = tmp_path / result.session_ref.session_id
++    command = json.loads((attempt_dir / "command.json").read_text())
++    assert Path(command["cwd"]) == attempt_dir / "workspace"
++    assert Path(command["cwd"]).is_dir()
++    assert _wait_for_terminal(adapter, result).state == "completed"
++    assert (attempt_dir / "stdout").read_text().strip() == command["cwd"]
++
++
++def test_local_subprocess_supervisor_metadata_failure_stops_unpublished_session(
++    tmp_path, monkeypatch
++):
++    adapter = LocalSubprocessAdapter(
++        repo="", argv=(sys.executable, "-c", "pass"), spool_root=tmp_path
++    )
++    supervisor = MagicMock(pid=43212)
++    monkeypatch.setattr(
++        local_subprocess_adapter.subprocess, "Popen", lambda *a, **k: supervisor
++    )
++    real_atomic_write = local_subprocess_adapter._atomic_write
++
++    def fail_supervisor_pid(path, content):
++        if path.name == "supervisor.pid":
++            raise OSError("spool unavailable")
++        real_atomic_write(path, content)
++
++    killpg = MagicMock()
++    monkeypatch.setattr(local_subprocess_adapter, "_atomic_write", fail_supervisor_pid)
++    monkeypatch.setattr(local_subprocess_adapter.os, "killpg", killpg)
++
++    result = adapter.dispatch(_packet())
++
++    assert result.success is False
++    assert result.session_ref is None
++    killpg.assert_called_once_with(supervisor.pid, signal.SIGTERM)
++
++
++def test_local_subprocess_closed_startup_handshake_never_launches_child(
++    tmp_path, monkeypatch
++):
++    attempt_dir = tmp_path / "unpublished"
++    attempt_dir.mkdir()
++    (attempt_dir / "packet.json").write_text(_packet().to_json())
++    (attempt_dir / "command.json").write_text(
++        json.dumps({"argv": [sys.executable, "-c", "pass"], "cwd": str(tmp_path)})
++    )
++    start_read, start_write = os.pipe()
++    os.close(start_write)
++    popen = MagicMock()
++    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", popen)
++
++    try:
++        assert local_subprocess_adapter._run_attempt(attempt_dir, start_read) == 0
++    finally:
++        os.close(start_read)
++
++    popen.assert_not_called()
++    assert json.loads((attempt_dir / "exit.json").read_text())["returncode"] == 127
++
++
++def test_local_subprocess_cancel_best_effort_survives_reinstantiation(tmp_path):
++    argv = (
++        sys.executable,
++        "-c",
++        "import sys,time; sys.stdin.buffer.read(); time.sleep(30)",
++    )
++    adapter = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
++    result = adapter.dispatch(_packet())
++    assert result.session_ref is not None
++
++    deadline = time.monotonic() + 5
++    while time.monotonic() < deadline:
++        if adapter.status(result.session_ref).state == "running":
++            break
++        time.sleep(0.02)
++    else:
++        pytest.fail("local subprocess never started")
++
++    assert adapter.cancel(result.session_ref) is True
++    assert _wait_for_terminal(adapter, result).state == "failed"
++
++    reinstantiated = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
++    terminal = reinstantiated.status(result.session_ref)
++    assert terminal.state == "failed"
++    assert terminal.error is not None
++    assert "cancel" in terminal.error.lower()
++
++
++def test_local_subprocess_cancel_before_launch_persists_terminal_cancellation(
++    tmp_path, monkeypatch
++):
++    adapter = LocalSubprocessAdapter(
++        repo="", argv=(sys.executable, "-c", "raise SystemExit(99)"), spool_root=tmp_path
++    )
++    session_ref = SessionRef(executor="local_subprocess", session_id="pending")
++    attempt_dir = tmp_path / session_ref.session_id
++    attempt_dir.mkdir()
++    (attempt_dir / "packet.json").write_text(_packet().to_json())
++    (attempt_dir / "command.json").write_text(
++        json.dumps({"argv": list(adapter.argv), "cwd": str(tmp_path)})
++    )
++    popen = MagicMock()
++    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", popen)
++
++    assert adapter.cancel(session_ref) is True
++    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
++
++    popen.assert_not_called()
++    assert json.loads((attempt_dir / "exit.json").read_text()) == {
++        "cancelled": True,
++        "returncode": 143,
++    }
++    terminal = adapter.status(session_ref)
++    assert terminal.state == "failed"
++    assert "cancel" in (terminal.error or "").lower()
++    assert adapter.collect(session_ref, tmp_path / "must-not-exist.patch").success is False
++
++
++def test_local_subprocess_cancel_during_launch_terminates_after_pid_publication(
++    tmp_path, monkeypatch
++):
++    adapter = LocalSubprocessAdapter(
++        repo="", argv=(sys.executable, "-c", "pass"), spool_root=tmp_path
++    )
++    session_ref = SessionRef(executor="local_subprocess", session_id="racing")
++    attempt_dir = tmp_path / session_ref.session_id
++    attempt_dir.mkdir()
++    (attempt_dir / "packet.json").write_text(_packet().to_json())
++    (attempt_dir / "command.json").write_text(
++        json.dumps({"argv": list(adapter.argv), "cwd": str(tmp_path)})
++    )
++    process = MagicMock(pid=43210)
++    process.wait.return_value = -signal.SIGTERM
++
++    def publish_cancel_before_pid(*args, **kwargs):
++        assert not (attempt_dir / "pid").exists()
++        assert adapter.cancel(session_ref) is True
++        return process
++
++    killpg = MagicMock()
++    monkeypatch.setattr(
++        local_subprocess_adapter.subprocess, "Popen", publish_cancel_before_pid
++    )
++    monkeypatch.setattr(local_subprocess_adapter.os, "killpg", killpg)
++
++    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
++
++    killpg.assert_called_once_with(process.pid, signal.SIGTERM)
++    assert json.loads((attempt_dir / "exit.json").read_text())["cancelled"] is True
++    assert adapter.collect(session_ref, tmp_path / "must-not-exist.patch").success is False
++
++
++def test_local_subprocess_normal_exit_ignores_stale_cancel_marker(
++    tmp_path, monkeypatch
++):
++    attempt_dir = tmp_path / "normal"
++    attempt_dir.mkdir()
++    (attempt_dir / "packet.json").write_text(_packet().to_json())
++    (attempt_dir / "command.json").write_text(
++        json.dumps({"argv": [sys.executable, "-c", "pass"], "cwd": str(tmp_path)})
++    )
++    process = MagicMock(pid=43211)
++    process.wait.side_effect = lambda: (
++        (attempt_dir / "cancel.requested").write_text(""),
++        0,
++    )[1]
++    monkeypatch.setattr(local_subprocess_adapter.subprocess, "Popen", lambda *a, **k: process)
++
++    assert local_subprocess_adapter._run_attempt(attempt_dir) == 0
++
++    assert json.loads((attempt_dir / "exit.json").read_text()) == {
++        "cancelled": False,
++        "returncode": 0,
++    }
+diff --git a/scripts/adapters/test_jules_action_adapter.py b/scripts/adapters/test_jules_action_adapter.py
+index 9214c3c..c55f2fc 100644
+--- a/scripts/adapters/test_jules_action_adapter.py
++++ b/scripts/adapters/test_jules_action_adapter.py
+@@ -1,29 +1,34 @@
+-import unittest
+-from unittest.mock import patch, MagicMock
+ import subprocess
+-import json
+ import sys
++import unittest
++from dataclasses import replace
+ from pathlib import Path
++from unittest.mock import MagicMock, patch
+ 
+-# Add the root directory to sys.path to allow importing from scripts.adapters
+ ROOT = Path(__file__).resolve().parents[2]
++sys.path.insert(0, str(ROOT / "scripts"))
+ sys.path.insert(0, str(ROOT))
+ 
+-from scripts.adapters.jules_action_adapter import JulesActionAdapter, _flatten, DispatchResult
++from adapters.executor_protocol import DispatchResult, NodePacket
++from adapters.jules_action_adapter import JulesActionAdapter, _flatten
++
+ 
+ class TestJulesActionAdapter(unittest.TestCase):
+     def setUp(self):
+         self.repo = "owner/repo"
+         self.adapter = JulesActionAdapter(self.repo)
+-        self.sample_job = {
+-            "job_id": "job_123",
+-            "node_id": "node_456",
+-            "title": "Fix bug",
+-            "goal": "Repair the leaking pipe",
+-            "why": "Water is everywhere",
+-            "constraints": json.dumps(["Don't use duct tape", {"material": "copper"}]),
+-            "acceptance_criteria": json.dumps(["No leaks", ["test 1", "test 2"]])
+-        }
++        self.sample_packet = NodePacket(
++            job_id="job_123",
++            execution_attempt_id="job_123:attempt:0",
++            node_id="node_456",
++            title="Fix bug",
++            goal="Repair the leaking pipe",
++            why="Water is everywhere",
++            constraints=("Don't use duct tape", {"material": "copper"}),
++            acceptance_criteria=("No leaks", ("test 1", "test 2")),
++            required_artifacts=(),
++            attempt_index=0,
++        )
+ 
+     def test_flatten_string(self):
+         self.assertEqual(_flatten("simple string"), "simple string")
+@@ -35,7 +40,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+         self.assertEqual(_flatten(["item1", "item2", 3]), "item1, item2, 3")
+ 
+     def test_build_issue_body(self):
+-        body = self.adapter.build_issue_body(self.sample_job)
++        body = self.adapter.build_issue_body(self.sample_packet)
+         self.assertIn("## Goal\nRepair the leaking pipe", body)
+         self.assertIn("## Why\nWater is everywhere", body)
+         self.assertIn("- Don't use duct tape", body)
+@@ -47,9 +52,11 @@ class TestJulesActionAdapter(unittest.TestCase):
+         self.assertIn("does not advance graph truth automatically", body)
+ 
+     def test_build_issue_body_with_required_artifacts(self):
+-        job = dict(self.sample_job)
+-        job["required_artifacts"] = ["decision.md", "result-summary.md", "patch.diff"]
+-        body = self.adapter.build_issue_body(job)
++        packet = replace(
++            self.sample_packet,
++            required_artifacts=("decision.md", "result-summary.md", "patch.diff"),
++        )
++        body = self.adapter.build_issue_body(packet)
+         self.assertIn("## Required Artifacts", body)
+         self.assertIn("decision.md", body)
+         self.assertIn("result-summary.md", body)
+@@ -57,7 +64,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+         self.assertIn("executor-receipt.md", body)
+ 
+     def test_build_issue_body_includes_strengthened_metadata_reminder(self):
+-        body = self.adapter.build_issue_body(self.sample_job)
++        body = self.adapter.build_issue_body(self.sample_packet)
+         self.assertIn("CRITICAL", body)
+         self.assertIn("PR Metadata Block Required", body)
+         self.assertIn("node: node_456", body)
+@@ -65,9 +72,8 @@ class TestJulesActionAdapter(unittest.TestCase):
+         self.assertIn("This is not optional", body)
+ 
+     def test_build_issue_body_without_required_artifacts(self):
+-        job = dict(self.sample_job)
+-        job.pop("required_artifacts", None)
+-        body = self.adapter.build_issue_body(job)
++        packet = replace(self.sample_packet, required_artifacts=())
++        body = self.adapter.build_issue_body(packet)
+         self.assertNotIn("## Required Artifacts", body)
+         # Rest of the body is still correct
+         self.assertIn("## Goal\nRepair the leaking pipe", body)
+@@ -79,7 +85,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+     def test_dispatch_reports_missing_token_when_gh_auth_fails(self, mock_run):
+         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not logged in")
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertFalse(result.success)
+         self.assertIsNone(result.issue_url)
+@@ -106,10 +112,9 @@ class TestJulesActionAdapter(unittest.TestCase):
+             ),
+         ]
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertTrue(result.success)
+-        self.assertEqual(result.issue_number, 42)
+         self.assertEqual(mock_run.call_count, 2)
+         issue_call = mock_run.call_args_list[1]
+         self.assertEqual(issue_call.args[0][:3], ["gh", "issue", "create"])
+@@ -120,7 +125,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+     def test_dispatch_reports_missing_token_when_gh_auth_times_out(self, mock_run):
+         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh", "auth", "token"], timeout=10)
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertFalse(result.success)
+         self.assertEqual(
+@@ -137,11 +142,10 @@ class TestJulesActionAdapter(unittest.TestCase):
+             stderr=""
+         )
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertTrue(result.success)
+         self.assertEqual(result.issue_url, "https://github.com/owner/repo/issues/42")
+-        self.assertEqual(result.issue_number, 42)
+         self.assertIsNone(result.error)
+ 
+         mock_run.assert_called_once()
+@@ -163,7 +167,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+             stderr="Error: repository not found"
+         )
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertFalse(result.success)
+         self.assertIsNone(result.issue_url)
+@@ -174,7 +178,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+     def test_dispatch_timeout(self, mock_run):
+         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertFalse(result.success)
+         self.assertEqual(result.error, "gh CLI timed out")
+@@ -184,7 +188,7 @@ class TestJulesActionAdapter(unittest.TestCase):
+     def test_dispatch_exception(self, mock_run):
+         mock_run.side_effect = Exception("Unexpected error")
+ 
+-        result = self.adapter.dispatch(self.sample_job)
++        result = self.adapter.dispatch(self.sample_packet)
+ 
+         self.assertFalse(result.success)
+         self.assertEqual(result.error, "Unexpected error")
+diff --git a/scripts/dry_run.py b/scripts/dry_run.py
+index 5228c57..3ab3d7e 100644
+--- a/scripts/dry_run.py
++++ b/scripts/dry_run.py
+@@ -416,6 +416,17 @@ def main():
+ 
+     con = connect()
+     cur = con.cursor()
++    dry_job_ids = "SELECT job_id FROM jobs WHERE event_id LIKE 'evt_dry_%'"
++    for table in (
++        "queue_records",
++        "results",
++        "artifact_verifications",
++        "executor_sessions",
++    ):
++        cur.execute(f"DELETE FROM {table} WHERE job_id IN ({dry_job_ids})")
++    cur.execute("DELETE FROM jobs WHERE event_id LIKE 'evt_dry_%'")
++    cur.execute("DELETE FROM events WHERE event_id LIKE 'evt_dry_%'")
++
+ 
+     event_id = inject_event(cur)
+     classify_and_scope(cur, event_id)
+diff --git a/scripts/heartbeat.py b/scripts/heartbeat.py
+index 3f2931a..190cf58 100644
+--- a/scripts/heartbeat.py
++++ b/scripts/heartbeat.py
+@@ -11,7 +11,7 @@ What it does:
+     2. Classifies each event (hardcoded rules for Phase 3)
+     3. Checks that the target node is 'ready' (hardcoded for Phase 3)
+     4. Creates a job and queue record
+-    5. Dispatches to Jules via JulesActionAdapter
++    5. Dispatches to Jules through the runtime dispatcher
+     6. Updates event status to 'mapped' and job status to 'running'
+ """
+ 
+@@ -24,7 +24,7 @@ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+ sys.path.insert(0, str(Path(__file__).parent))
+-from adapters.jules_action_adapter import JulesActionAdapter
++from runtime.heartbeat.dispatcher import dispatch
+ from runtime.heartbeat.job_factory import ts_id
+ 
+ _default_root = Path(__file__).parent.parent
+@@ -159,14 +159,13 @@ def run_heartbeat(repo: str):
+ 
+         print(f"  → job created: {job_id}")
+ 
+-        # 3. Dispatch to Jules via GitHub Action adapter
++        # 3. Dispatch the persisted attempt through the neutral contract.
+         node = dict(PHASE3_NODE)
+-        node["job_id"]   = job_id
+-        node["constraints"]          = json.dumps(node["constraints"])
+-        node["acceptance_criteria"]  = json.dumps(node["acceptance_criteria"])
++        node["job_id"] = job_id
++        node["executor"] = "jules"
++        node["attempt"] = 0
+ 
+-        adapter = JulesActionAdapter(repo=repo)
+-        result  = adapter.dispatch(node)
++        result = dispatch(node, repo)
+ 
+         if result.success:
+             cur.execute(
+diff --git a/scripts/init_db.py b/scripts/init_db.py
+index bb1f043..1412b0c 100644
+--- a/scripts/init_db.py
++++ b/scripts/init_db.py
+@@ -15,6 +15,19 @@ from pathlib import Path
+ DB_PATH = Path(__file__).parent.parent / "db" / "queue.db"
+ 
+ 
++def _ensure_column(
++    con: sqlite3.Connection,
++    table: str,
++    column: str,
++    declaration: str,
++) -> None:
++    existing = {
++        row[1] for row in con.execute(f"PRAGMA table_info({table})").fetchall()
++    }
++    if column not in existing:
++        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
++
++
+ def init_db():
+     con = sqlite3.connect(DB_PATH)
+     cur = con.cursor()
+@@ -83,6 +96,8 @@ def init_db():
+         attempt             INTEGER DEFAULT 0,
+         max_attempts        INTEGER DEFAULT 3,
+         artifacts_dir       TEXT,
++        required_artifacts  TEXT NOT NULL DEFAULT '[]',
++        previous_findings   TEXT,
+         result_summary_path TEXT,
+         FOREIGN KEY(event_id) REFERENCES events(event_id)
+     );
+@@ -172,6 +187,8 @@ def init_db():
+         executor                   TEXT NOT NULL,      -- jules_cli | jules_api | droid | etc.
+         session_id                 TEXT NOT NULL,      -- executor-specific ID
+         state                      TEXT DEFAULT 'dispatched', -- dispatched | running | needs_operator | completed | failed | collected | evaluated
++        execution_attempt_id       TEXT NOT NULL,
++        attempt_index              INTEGER NOT NULL,
+         expected_base_commit_sha   TEXT,               -- commit visible at dispatch time
+         result_commit_sha          TEXT,               -- commit after patch application (set by runtime)
+         patch_path                 TEXT,               -- path to retrieved patch file
+@@ -182,19 +199,54 @@ def init_db():
+     );
+     """)
+ 
+-    # One-time migration: add claimed_at to pre-existing events tables.
+-    # CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so
+-    # databases created before the claimed_at column was in the canonical schema
+-    # need an explicit ALTER TABLE. try/except handles both "already exists" and
+-    # "table missing" so init_db is safe to run from any state.
+-    try:
+-        con.execute("ALTER TABLE events ADD COLUMN claimed_at TEXT")
+-    except sqlite3.OperationalError:
+-        pass
+-    try:
+-        con.execute("ALTER TABLE events ADD COLUMN repo TEXT")
+-    except sqlite3.OperationalError:
+-        pass
++    # CREATE TABLE IF NOT EXISTS does not add columns to existing databases.
++    # These migrations are idempotent and preserve every historical row.
++    _ensure_column(con, "events", "claimed_at", "TEXT")
++    _ensure_column(con, "events", "repo", "TEXT")
++    _ensure_column(
++        con,
++        "jobs",
++        "required_artifacts",
++        "TEXT NOT NULL DEFAULT '[]'",
++    )
++    _ensure_column(con, "jobs", "previous_findings", "TEXT")
++    _ensure_column(con, "executor_sessions", "execution_attempt_id", "TEXT")
++    _ensure_column(con, "executor_sessions", "attempt_index", "INTEGER")
++
++    # Old session rows predate first-class attempt identity. Their durable
++    # creation order is the only available attempt ordering, so backfill it
++    # deterministically without changing executor session IDs or state.
++    con.execute(
++        """
++        UPDATE executor_sessions AS current
++           SET attempt_index = (
++               SELECT COUNT(*) - 1
++                 FROM executor_sessions AS prior
++                WHERE prior.job_id = current.job_id
++                  AND (
++                      prior.created_at < current.created_at
++                      OR (
++                          prior.created_at = current.created_at
++                          AND prior.session_db_id <= current.session_db_id
++                      )
++                  )
++           )
++         WHERE attempt_index IS NULL
++        """
++    )
++    con.execute(
++        """
++        UPDATE executor_sessions
++           SET execution_attempt_id =
++               job_id || ':attempt:' || CAST(attempt_index AS TEXT)
++         WHERE execution_attempt_id IS NULL
++        """
++    )
++    con.execute(
++        """CREATE INDEX IF NOT EXISTS
++           idx_executor_sessions_execution_attempt_id
++           ON executor_sessions(execution_attempt_id)"""
++    )
+ 
+     con.commit()
+     con.close()
+diff --git a/scripts/runtime/heartbeat/dispatcher.py b/scripts/runtime/heartbeat/dispatcher.py
+index d623f25..3d9f4aa 100644
+--- a/scripts/runtime/heartbeat/dispatcher.py
++++ b/scripts/runtime/heartbeat/dispatcher.py
+@@ -5,34 +5,29 @@ Dispatch stays executor-driven. Runtime routes packets; it does not infer graph
+ truth from executor choice.
+ """
+ 
++import json
+ import os
+ import sys
++from collections.abc import Mapping, Sequence
+ from pathlib import Path
+ 
+ # Ensure adapters directory is importable
+ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
++from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
+ from adapters.jules_action_adapter import JulesActionAdapter
+ from adapters.jules_cli_adapter import JulesCliAdapter
+-from adapters.executor_protocol import SessionRef
++from adapters.local_subprocess_adapter import LocalSubprocessAdapter
+ 
+ 
+-class DispatchResult:
+-    def __init__(
+-        self,
+-        success: bool,
+-        issue_url: str = "",
+-        error: str = "",
+-        session_ref: SessionRef | None = None,
+-    ):
+-        self.success = success
+-        self.issue_url = issue_url
+-        self.error = error
+-        self.session_ref = session_ref
+ 
+ 
+ ADAPTERS = {
+-    "jules": JulesActionAdapter,
+     "jules_cli": JulesCliAdapter,
++    "local_subprocess": LocalSubprocessAdapter,
++}
++
++MEDIATED_ADAPTERS = {
++    "jules": JulesActionAdapter,
+ }
+ 
+ 
+@@ -49,42 +44,88 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
+     if override:
+         executor = override
+ 
+-    adapter_cls = ADAPTERS.get(executor)
++    adapter_cls = ADAPTERS.get(executor) or MEDIATED_ADAPTERS.get(executor)
+     if adapter_cls is None:
+         return DispatchResult(success=False, error=f"Unknown executor: {executor}")
+ 
+-    adapter = adapter_cls(repo=repo)
+-    result = adapter.dispatch(_build_adapter_payload(job))
+-    # Adapters return their own result types:
+-    #   - JulesActionAdapter returns its own DispatchResult (issue_url-based)
+-    #   - JulesCliAdapter returns executor_protocol.DispatchResult (session_ref-based)
+-    # Normalize into this module's DispatchResult, passing session_ref through
+-    # when the adapter produced one.
+-    session_ref = getattr(result, "session_ref", None)
+-    return DispatchResult(
+-        success=result.success,
+-        issue_url=getattr(result, "issue_url", "") or "",
+-        error=getattr(result, "error", "") or "",
+-        session_ref=session_ref,
++    try:
++        packet = _build_node_packet(job)
++        adapter = adapter_cls(repo=repo)
++    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
++        return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
++    return adapter.dispatch(packet)
++
++
++def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str]:
++    """Best-effort cancel a known remote session with truthful outcome text."""
++    adapter_cls = ADAPTERS.get(session_ref.executor)
++    if adapter_cls is None:
++        return False, f"unknown executor {session_ref.executor!r}; remote may continue"
++    try:
++        accepted = adapter_cls(repo=repo).cancel(session_ref)
++    except Exception as exc:
++        return False, f"late session cancellation failed: {exc}; remote may continue"
++    if accepted:
++        return True, "late session cancellation accepted"
++    if session_ref.executor == "jules_cli":
++        return False, "Jules CLI cancellation is unsupported; remote may continue"
++    return False, "late session cancellation was not accepted; remote may continue"
++
++
++def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
++    """Decode persisted fields once into an immutable executor packet."""
++    constraints = _decode_sequence(job.get("constraints"), "constraints")
++    acceptance_criteria = _decode_sequence(
++        job.get("acceptance_criteria"), "acceptance_criteria"
++    )
++    artifacts_value = job.get(
++        "_required_artifacts", job.get("required_artifacts", ())
++    )
++    required_artifacts = _decode_sequence(
++        artifacts_value, "required_artifacts"
++    )
++    previous_value = job.get(
++        "_previous_findings", job.get("previous_findings")
++    )
++    previous_findings = _decode_optional_mapping(
++        previous_value, "previous_findings"
++    )
++    attempt_index = int(job.get("attempt", 0))
++    if attempt_index < 0:
++        raise ValueError("attempt must be zero or greater")
++
++    return NodePacket(
++        job_id=str(job["job_id"]),
++        node_id=str(job["node_id"]),
++        execution_attempt_id=f"{job['job_id']}:attempt:{attempt_index}",
++        title=str(job["title"]),
++        goal=str(job["goal"]),
++        why=str(job.get("why") or ""),
++        constraints=tuple(constraints),
++        acceptance_criteria=tuple(acceptance_criteria),
++        required_artifacts=tuple(str(item) for item in required_artifacts),
++        attempt_index=attempt_index,
++        previous_findings=previous_findings,
+     )
+ 
+ 
+-def _build_adapter_payload(job: dict) -> dict:
+-    """Build the executor packet from the persisted job payload."""
+-    payload = {
+-        "node_id":             job["node_id"],
+-        "title":               job["title"],
+-        "goal":                job["goal"],
+-        "why":                 job["why"],
+-        "job_id":              job["job_id"],
+-        "constraints":         job["constraints"],          # already JSON string
+-        "acceptance_criteria": job["acceptance_criteria"],  # already JSON string
+-        "required_artifacts":  job.get("_required_artifacts", []),
+-    }
+-    # Pass through retry-loop fields so the adapter can inject findings into
+-    # the issue body on re-dispatch. Absent on first dispatch.
+-    if "_previous_findings" in job:
+-        payload["_previous_findings"] = job["_previous_findings"]
+-    if "attempt" in job:
+-        payload["attempt"] = job["attempt"]
+-    return payload
++def _decode_sequence(value: object, field_name: str) -> Sequence[object]:
++    decoded = json.loads(value) if isinstance(value, str) else value
++    if decoded is None:
++        return ()
++    if not isinstance(decoded, Sequence) or isinstance(
++        decoded, str | bytes | bytearray
++    ):
++        raise TypeError(f"{field_name} must be a JSON array")
++    return decoded
++
++
++def _decode_optional_mapping(
++    value: object, field_name: str
++) -> Mapping[str, object] | None:
++    decoded = json.loads(value) if isinstance(value, str) else value
++    if decoded is None:
++        return None
++    if not isinstance(decoded, Mapping):
++        raise TypeError(f"{field_name} must be a JSON object")
++    return decoded
+diff --git a/scripts/runtime/heartbeat/job_factory.py b/scripts/runtime/heartbeat/job_factory.py
+index 224158c..fe234c5 100644
+--- a/scripts/runtime/heartbeat/job_factory.py
++++ b/scripts/runtime/heartbeat/job_factory.py
+@@ -57,6 +57,6 @@ def build_job(
+         "attempt":             0,
+         "max_attempts":        3,
+         "artifacts_dir":       str(artifacts_dir) + "/",
+-        # These are passed to the adapter — not stored in the DB directly
+-        "_required_artifacts": node.required_artifacts,
++        "required_artifacts":  json.dumps(node.required_artifacts),
++        "previous_findings":   None,
+     }
+diff --git a/scripts/runtime/heartbeat/reconciler.py b/scripts/runtime/heartbeat/reconciler.py
+index 68b1221..2b75e53 100644
+--- a/scripts/runtime/heartbeat/reconciler.py
++++ b/scripts/runtime/heartbeat/reconciler.py
+@@ -16,6 +16,7 @@ import shutil
+ import subprocess
+ import sys
+ import tempfile
++from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+ 
+ # Ensure adapters directory is importable (same pattern as dispatcher.py).
+@@ -25,16 +26,27 @@ from adapters.executor_protocol import SessionRef
+ 
+ from ..results_store import write_result
+ from ..verification.bridge import verify_job_return
+-from .dispatcher import ADAPTERS
++from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
+ from .state_recorder import (
++    allocate_retry_attempt,
++    finalize_executor_session_dispatch,
+     get_active_executor_sessions,
++    mark_job_cancelled,
+     mark_job_failed,
++    mark_job_running,
++    recover_stale_dispatching_sessions,
+     update_executor_session_state,
+ )
+ 
+ 
+ def reconcile_sessions(
+-    con, repo_path: Path | None, repo: str | None = None
++    con,
++    repo_path: Path | None,
++    repo: str | None = None,
++    *,
++    current_time: datetime | None = None,
++    dispatching_stale_after: timedelta = timedelta(minutes=30),
++    missing_stale_after: timedelta = timedelta(minutes=30),
+ ) -> None:
+     """Main entry point for the reconcile phase.
+ 
+@@ -48,6 +60,20 @@ def reconcile_sessions(
+ 
+     A failure reconciling one session does not stop others.
+     """
++    current_time = current_time or datetime.now(timezone.utc)
++    recovered = recover_stale_dispatching_sessions(
++        con,
++        current_time=current_time,
++        stale_after=dispatching_stale_after,
++        repo=repo,
++    )
++    if recovered:
++        con.commit()
++        print(
++            f"[reconcile] recovered {len(recovered)} stale dispatch "
++            "reservation(s) as dispatch_failed; operator recovery required"
++        )
++
+     if repo_path is None:
+         print("[reconcile] no repo_path available; skipping reconcile phase")
+         return
+@@ -63,7 +89,13 @@ def reconcile_sessions(
+ 
+     for session in sessions:
+         try:
+-            _reconcile_one(con, session, repo_path)
++            _reconcile_one(
++                con,
++                session,
++                repo_path,
++                current_time=current_time,
++                missing_stale_after=missing_stale_after,
++            )
+         except Exception as exc:
+             # A failed reconcile for one session must not stop others.
+             print(
+@@ -74,7 +106,98 @@ def reconcile_sessions(
+     con.commit()
+ 
+ 
+-def _reconcile_one(con, session, repo_path: Path) -> None:
++def cancel_executor_session(con, session_db_id: str) -> str:
++    """Persist a logical cancellation and stop local lifecycle processing."""
++    session = con.execute(
++        "SELECT * FROM executor_sessions WHERE session_db_id = ?",
++        (session_db_id,),
++    ).fetchone()
++    if session is None:
++        raise ValueError(f"executor session not found: {session_db_id}")
++    if session["state"] not in {
++        "dispatching",
++        "dispatched",
++        "running",
++        "needs_operator",
++    }:
++        return session["state"]
++
++    job = con.execute(
++        "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
++    ).fetchone()
++    if job is None:
++        raise ValueError(f"job not found: {session['job_id']}")
++
++    executor = session["executor"]
++    adapter_cls = ADAPTERS.get(executor)
++    result_state = "cancel_failed"
++    error = f"cancellation failed: unknown executor {executor!r}"
++    if adapter_cls is not None:
++        error = "local executor cancellation was not accepted"
++        adapter = adapter_cls(repo=job["repo"] or "")
++        session_ref = SessionRef(
++            executor=executor,
++            session_id=session["session_id"],
++        )
++        try:
++            accepted = adapter.cancel(session_ref)
++        except Exception as exc:
++            accepted = False
++            error = f"cancellation failed: {exc}"
++
++        if accepted:
++            result_state = "cancelled"
++            error = "local executor cancellation accepted"
++        elif executor == "jules_cli":
++            result_state = "cancel_unsupported"
++            error = (
++                "Jules CLI cancellation is unsupported; remote execution "
++                "may continue and its result will not be collected"
++            )
++        elif not error.startswith("cancellation failed: "):
++            error = "local executor cancellation was not accepted"
++
++        if not accepted and executor != "jules_cli":
++            try:
++                durable_status = adapter.status(session_ref)
++            except Exception:
++                durable_status = None
++            if durable_status is not None and durable_status.state in {
++                "completed",
++                "failed",
++            }:
++                update_executor_session_state(
++                    con,
++                    session_db_id,
++                    state=durable_status.state,
++                    error=(
++                        "cancellation requested after executor was already "
++                        f"{durable_status.state}; result will not be collected"
++                    ),
++                )
++                mark_job_cancelled(con, session["job_id"])
++                con.commit()
++                return "already_terminal"
++
++    update_executor_session_state(
++        con,
++        session_db_id,
++        state=result_state,
++        error=error,
++    )
++    mark_job_cancelled(con, session["job_id"])
++    con.commit()
++    return result_state
++
++
++def _reconcile_one(
++    con,
++    session,
++    repo_path: Path,
++    *,
++    current_time: datetime,
++    missing_stale_after: timedelta,
++) -> None:
+     """Reconcile a single executor session."""
+     session_db_id = session["session_db_id"]
+     job_id = session["job_id"]
+@@ -82,9 +205,8 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
+     session_id = session["session_id"]
+     current_state = session["state"]
+ 
+-    # Look up the job row for repo and evaluation metadata.
+     job_row = con.execute(
+-        "SELECT job_id, repo, node_id, project_id, attempt FROM jobs WHERE job_id = ?",
++        "SELECT * FROM jobs WHERE job_id = ?",
+         (job_id,),
+     ).fetchone()
+     if job_row is None:
+@@ -121,7 +243,25 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
+     if status.state == "completed":
+         _handle_completed(con, adapter, session_ref, session, repo_path, job_row)
+     elif status.state == "failed":
+-        _handle_failed(con, session_db_id, job_id, status.error)
++        _handle_failed(con, session, job_row, status.error, repo_path)
++    elif status.state == "missing":
++        created_at = datetime.fromisoformat(
++            str(session["created_at"]).replace("Z", "+00:00")
++        )
++        if created_at.tzinfo is None:
++            created_at = created_at.replace(tzinfo=timezone.utc)
++        if current_time - created_at < missing_stale_after:
++            print(
++                f"[reconcile] {session_db_id}: missing from successful executor "
++                f"list within {missing_stale_after} grace; will retry next tick"
++            )
++            return
++        _handle_failed(con, session, job_row, status.error, repo_path)
++    elif status.state == "poll_error":
++        print(
++            f"[reconcile] {session_db_id}: poll error (transient, will retry "
++            f"next tick): {status.error or 'executor unavailable'}"
++        )
+     elif status.state == "needs_operator":
+         _handle_needs_operator(con, session_db_id, job_id, status.error)
+     elif status.state == "running":
+@@ -223,16 +363,111 @@ def _handle_completed(
+         con.commit()
+ 
+ 
+-def _handle_failed(
+-    con, session_db_id: str, job_id: str, error: str | None
+-) -> None:
+-    """Handle a session that the executor reports as failed."""
+-    mark_job_failed(con, job_id)
++def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> None:
++    """Persist one authoritative failure, then allocate at most one retry."""
++    session_db_id = session["session_db_id"]
++    job_id = session["job_id"]
+     update_executor_session_state(
+         con, session_db_id, state="failed", error=error
+     )
++
++    session_attempt = int(session["attempt_index"])
++    current_attempt = int(job["attempt"] or 0)
++    if session_attempt != current_attempt:
++        con.commit()
++        print(
++            f"[reconcile] {session_db_id}: executor failed on superseded "
++            f"attempt {session_attempt}; current attempt is {current_attempt}"
++        )
++        return
++
++    mark_job_failed(con, job_id)
++    expected_base = _get_head_sha(repo_path) or session["expected_base_commit_sha"]
++    allocated = allocate_retry_attempt(
++        con,
++        job,
++        executor=session["executor"],
++        expected_base_commit_sha=expected_base,
++    )
++    if allocated is None:
++        con.commit()
++        print(
++            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
++            f"exhausted at attempt {current_attempt}"
++        )
++        return
++
++    retry_job, replacement_id = allocated
++    retry_job["executor"] = session["executor"]
+     con.commit()
+-    print(f"[reconcile] {session_db_id}: executor failed; job {job_id} → failed")
++
++    try:
++        dispatch_result = dispatch(retry_job, retry_job["repo"])
++    except Exception as exc:
++        dispatch_result = None
++        dispatch_error = f"retry dispatch raised exception: {exc}"
++    else:
++        dispatch_error = dispatch_result.error or "retry dispatch failed"
++
++    if dispatch_result is not None and dispatch_result.success:
++        session_ref = dispatch_result.session_ref
++        if session_ref is not None:
++            finalized = finalize_executor_session_dispatch(
++                con,
++                replacement_id,
++                state="dispatched",
++                executor=session_ref.executor,
++                session_id=session_ref.session_id,
++                expected_base_commit_sha=expected_base,
++            )
++        else:
++            finalized = finalize_executor_session_dispatch(
++                con,
++                replacement_id,
++                state="mediated",
++                session_id=dispatch_result.issue_url,
++                expected_base_commit_sha=expected_base,
++            )
++        if not finalized:
++            cancellation = "reservation is no longer dispatching"
++            if session_ref is not None:
++                _, cancellation = cancel_remote_session(
++                    session_ref, retry_job["repo"]
++                )
++            con.commit()
++            print(
++                f"[reconcile] {replacement_id}: late retry dispatch result "
++                f"ignored; {cancellation}"
++            )
++            return
++        mark_job_running(con, job_id)
++        con.commit()
++        print(
++            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
++            f"redispatched as attempt {retry_job['attempt']}"
++        )
++        return
++
++    finalized = finalize_executor_session_dispatch(
++        con,
++        replacement_id,
++        state="dispatch_failed",
++        error=dispatch_error,
++        expected_base_commit_sha=expected_base,
++    )
++    if finalized:
++        mark_job_failed(con, job_id)
++    con.commit()
++    if finalized:
++        print(
++            f"[reconcile] {session_db_id}: executor failed; retry dispatch "
++            f"for job {job_id} failed: {dispatch_error}"
++        )
++    else:
++        print(
++            f"[reconcile] {replacement_id}: late retry dispatch failure ignored; "
++            "reservation is no longer dispatching"
++        )
+ 
+ 
+ def _handle_needs_operator(
+@@ -324,6 +559,21 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
+     con.commit()
+ 
+ 
++def _get_head_sha(repo_path: Path) -> str | None:
++    try:
++        proc = subprocess.run(
++            ["git", "rev-parse", "HEAD"],
++            cwd=str(repo_path),
++            capture_output=True,
++            text=True,
++            timeout=10,
++            check=False,
++        )
++    except (OSError, subprocess.TimeoutExpired):
++        return None
++    return proc.stdout.strip() if proc.returncode == 0 else None
++
++
+ # ------------------------------------------------------------------ #
+ # Worktree helpers — mirror verification/bridge.py pattern.
+ # Used for applying executor patches (not evaluation).
+diff --git a/scripts/runtime/heartbeat/runner.py b/scripts/runtime/heartbeat/runner.py
+index bc1b4fe..bcb8170 100644
+--- a/scripts/runtime/heartbeat/runner.py
++++ b/scripts/runtime/heartbeat/runner.py
+@@ -29,12 +29,13 @@ from dataclasses import dataclass
+ from pathlib import Path
+ 
+ from .classifier import classify
+-from .dispatcher import dispatch
++from .dispatcher import cancel_remote_session, dispatch
+ from .graph_reader import GraphReader
+ from .job_factory import build_job
+ from .reconciler import reconcile_sessions
+ from .scope_checker import check_scope
+ from .state_recorder import (
++    finalize_executor_session_dispatch,
+     insert_executor_session,
+     insert_job,
+     insert_queue_record,
+@@ -60,6 +61,7 @@ class PlannedDispatch:
+     classification: dict
+     job: dict
+ 
++    session_db_id: str
+ 
+ @dataclass(frozen=True)
+ class DispatchOutcome:
+@@ -259,11 +261,22 @@ def _plan_dispatches(
+ 
+         insert_job(con, job)
+         insert_queue_record(con, job_id)
++        attempt_index = int(job.get("attempt", 0))
++        attempt_id = f"{job_id}:attempt:{attempt_index}"
++        session_db_id = insert_executor_session(
++            con,
++            job_id,
++            job["executor"],
++            attempt_id,
++            attempt_index=attempt_index,
++            state="dispatching",
++        )
+         planned_dispatches.append(
+             PlannedDispatch(
+                 event_id=event_id,
+                 classification=classification,
+                 job=job,
++                session_db_id=session_db_id,
+             )
+         )
+         print(f"  → job created: {job_id}")
+@@ -330,26 +343,66 @@ def _record_outcomes(
+ 
+         print(f"Recording: {event_id} ({planned.job['node_id']})")
+         if outcome.success:
+-            mark_event_mapped(con, event_id)
+-            mark_job_running(con, job_id)
+-            print(f"  → dispatched to {planned.classification['executor_recommendation']}")
+-            if outcome.issue_url:
+-                print(f"  → issue: {outcome.issue_url}")
+-            # CLI-based executors return a session_ref; record it so the
+-            # reconcile phase can poll for completion on subsequent ticks.
++            # Finalize the reservation before advancing job/queue state.
+             if outcome.session_ref is not None:
+-                session_db_id = insert_executor_session(
++                finalized = finalize_executor_session_dispatch(
+                     con,
+-                    job_id,
+-                    outcome.session_ref.executor,
+-                    outcome.session_ref.session_id,
++                    planned.session_db_id,
++                    state="dispatched",
++                    executor=outcome.session_ref.executor,
++                    session_id=outcome.session_ref.session_id,
+                     expected_base_commit_sha=head_sha,
+                 )
++            else:
++                finalized = finalize_executor_session_dispatch(
++                    con,
++                    planned.session_db_id,
++                    state="mediated",
++                    session_id=outcome.issue_url or None,
++                    expected_base_commit_sha=head_sha,
++                )
++            if not finalized:
++                cancellation = "reservation is no longer dispatching"
++                if outcome.session_ref is not None:
++                    _, cancellation = cancel_remote_session(
++                        outcome.session_ref,
++                        str(planned.job.get("repo") or ""),
++                    )
++                mark_event_mapped(con, event_id)
++                print(f"  → late dispatch result ignored: {cancellation}")
++                print()
++                continue
++
++            mark_event_mapped(con, event_id)
++            mark_job_running(con, job_id)
++            print(
++                f"  → dispatched to "
++                f"{planned.classification['executor_recommendation']}"
++            )
++            if outcome.issue_url:
++                print(f"  → issue: {outcome.issue_url}")
++            if outcome.session_ref is not None:
+                 print(
+                     f"  → executor session: "
+-                    f"{outcome.session_ref.executor}/{outcome.session_ref.session_id}"
++                    f"{outcome.session_ref.executor}/"
++                    f"{outcome.session_ref.session_id}"
+                 )
+         else:
++            finalized = finalize_executor_session_dispatch(
++                con,
++                planned.session_db_id,
++                state="dispatch_failed",
++                error=outcome.error or "dispatch failed",
++                expected_base_commit_sha=head_sha,
++            )
++            if not finalized:
++                mark_event_mapped(con, event_id)
++                print(
++                    "  → late dispatch failure ignored: reservation is no "
++                    "longer dispatching"
++                )
++                print()
++                continue
+             mark_job_failed(con, job_id)
+             print(f"  → DISPATCH FAILED: {outcome.error}")
+         print()
+diff --git a/scripts/runtime/heartbeat/state_recorder.py b/scripts/runtime/heartbeat/state_recorder.py
+index 56c7df9..4c6035f 100644
+--- a/scripts/runtime/heartbeat/state_recorder.py
++++ b/scripts/runtime/heartbeat/state_recorder.py
+@@ -6,7 +6,7 @@ Single responsibility: write to the DB. No business logic here.
+ 
+ import json
+ import sqlite3
+-from datetime import datetime, timezone
++from datetime import datetime, timedelta, timezone
+ 
+ from .job_factory import ts_id
+ 
+@@ -58,12 +58,14 @@ def insert_job(con: sqlite3.Connection, job: dict) -> None:
+                job_id, created_at, event_id, project_id, repo, node_id,
+                job_type, executor, queue_state, title, goal, why,
+                constraints, acceptance_criteria,
+-               priority, status, attempt, max_attempts, artifacts_dir
++               priority, status, attempt, max_attempts, artifacts_dir,
++               required_artifacts, previous_findings
+            ) VALUES (
+                :job_id, :created_at, :event_id, :project_id, :repo, :node_id,
+                :job_type, :executor, :queue_state, :title, :goal, :why,
+                :constraints, :acceptance_criteria,
+-               :priority, :status, :attempt, :max_attempts, :artifacts_dir
++               :priority, :status, :attempt, :max_attempts, :artifacts_dir,
++               :required_artifacts, :previous_findings
+            )""",
+         job,
+     )
+@@ -110,27 +112,203 @@ def mark_job_failed(con: sqlite3.Connection, job_id: str) -> None:
+     )
+ 
+ 
++def mark_job_cancelled(con: sqlite3.Connection, job_id: str) -> None:
++    """Persist a terminal local cancellation without mutating graph truth."""
++    con.execute(
++        """UPDATE jobs
++           SET status = 'cancelled', queue_state = 'cancelled'
++           WHERE job_id = ?""",
++        (job_id,),
++    )
++    con.execute(
++        "UPDATE queue_records SET queue = 'cancelled' WHERE job_id = ?",
++        (job_id,),
++    )
++
++
++def execution_attempt_id(job_id: str, attempt_index: int) -> str:
++    return f"{job_id}:attempt:{attempt_index}"
++
++
+ def insert_executor_session(
+     con: sqlite3.Connection,
+     job_id: str,
+     executor: str,
+     session_id: str,
+     expected_base_commit_sha: str | None = None,
++    *,
++    attempt_index: int | None = None,
++    state: str = "dispatched",
+ ) -> str:
+-    """Insert a new executor session record. Returns the session_db_id."""
++    """Insert one immutable attempt record and return its database id."""
++    if attempt_index is None:
++        row = con.execute(
++            "SELECT attempt FROM jobs WHERE job_id = ?", (job_id,)
++        ).fetchone()
++        if row is None:
++            raise ValueError(f"job not found: {job_id}")
++        attempt_index = int(row["attempt"] if hasattr(row, "keys") else row[0])
++    attempt_id = execution_attempt_id(job_id, attempt_index)
+     session_db_id = f"ses_{ts_id()}"
+     ts = now()
+     con.execute(
+         """INSERT INTO executor_sessions
+-           (session_db_id, job_id, executor, session_id, state,
++           (session_db_id, job_id, executor, session_id,
++            execution_attempt_id, attempt_index, state,
+             expected_base_commit_sha, created_at, updated_at)
+-           VALUES (?, ?, ?, ?, 'dispatched', ?, ?, ?)""",
+-        (session_db_id, job_id, executor, session_id,
+-         expected_base_commit_sha, ts, ts),
++           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
++        (
++            session_db_id,
++            job_id,
++            executor,
++            session_id,
++            attempt_id,
++            attempt_index,
++            state,
++            expected_base_commit_sha,
++            ts,
++            ts,
++        ),
+     )
+     return session_db_id
+ 
+ 
++def allocate_retry_attempt(
++    con: sqlite3.Connection,
++    job,
++    *,
++    executor: str,
++    expected_base_commit_sha: str | None = None,
++    previous_findings: dict | str | None = None,
++) -> tuple[dict, str] | None:
++    """Atomically increment a known job attempt and insert its dispatch record."""
++    persisted_job = dict(job)
++    current_attempt = int(persisted_job.get("attempt") or 0)
++    max_attempts = int(persisted_job.get("max_attempts") or 0)
++    if current_attempt >= max_attempts:
++        return None
++
++    next_attempt = current_attempt + 1
++    encoded_findings = previous_findings
++    if isinstance(encoded_findings, dict):
++        encoded_findings = json.dumps(
++            encoded_findings, sort_keys=True, separators=(",", ":")
++        )
++    updated = con.execute(
++        """UPDATE jobs
++              SET attempt = ?,
++                  previous_findings = COALESCE(?, previous_findings)
++            WHERE job_id = ? AND attempt = ?""",
++        (
++            next_attempt,
++            encoded_findings,
++            persisted_job["job_id"],
++            current_attempt,
++        ),
++    )
++    if updated.rowcount != 1:
++        return None
++
++    persisted_job["attempt"] = next_attempt
++    if encoded_findings is not None:
++        persisted_job["previous_findings"] = encoded_findings
++    attempt_id = execution_attempt_id(persisted_job["job_id"], next_attempt)
++    session_db_id = insert_executor_session(
++        con,
++        persisted_job["job_id"],
++        executor,
++        attempt_id,
++        expected_base_commit_sha,
++        attempt_index=next_attempt,
++        state="dispatching",
++    )
++    return persisted_job, session_db_id
++
++
++def finalize_executor_session_dispatch(
++    con: sqlite3.Connection,
++    session_db_id: str,
++    *,
++    state: str,
++    executor: str | None = None,
++    session_id: str | None = None,
++    expected_base_commit_sha: str | None = None,
++    error: str | None = None,
++) -> bool:
++    """Finalize a reserved attempt only while it is still dispatching."""
++    updated = con.execute(
++        """UPDATE executor_sessions
++              SET state = ?,
++                  executor = COALESCE(?, executor),
++                  session_id = COALESCE(?, session_id),
++                  expected_base_commit_sha =
++                      COALESCE(?, expected_base_commit_sha),
++                  error = COALESCE(?, error),
++                  updated_at = ?
++            WHERE session_db_id = ?
++              AND state = 'dispatching'""",
++        (
++            state,
++            executor,
++            session_id,
++            expected_base_commit_sha,
++            error,
++            now(),
++            session_db_id,
++        ),
++    )
++    return updated.rowcount == 1
++
++
++def recover_stale_dispatching_sessions(
++    con: sqlite3.Connection,
++    *,
++    current_time: datetime | None = None,
++    stale_after: timedelta = timedelta(minutes=30),
++    repo: str | None = None,
++) -> list[str]:
++    """Terminalize expired dispatch reservations whose remote outcome is unknown."""
++    current_time = current_time or datetime.now(timezone.utc)
++    cutoff = (current_time - stale_after).isoformat()
++    params: tuple = (cutoff,)
++    repo_clause = ""
++    if repo is not None:
++        repo_clause = " AND j.repo = ?"
++        params = (cutoff, repo)
++    rows = con.execute(
++        f"""SELECT es.session_db_id, es.job_id
++              FROM executor_sessions es
++              JOIN jobs j ON j.job_id = es.job_id
++             WHERE es.state = 'dispatching'
++               AND es.updated_at <= ?
++               AND es.attempt_index = j.attempt
++               AND j.status <> 'cancelled'
++               {repo_clause}
++             ORDER BY es.updated_at""",
++        params,
++    ).fetchall()
++    reason = (
++        "dispatch outcome unknown after heartbeat restart; reservation lease "
++        "expired; not retried automatically; operator recovery required"
++    )
++    recovered: list[str] = []
++    for row in rows:
++        session_db_id = row["session_db_id"]
++        updated = con.execute(
++            """UPDATE executor_sessions
++                  SET state = 'dispatch_failed', error = ?, updated_at = ?
++                WHERE session_db_id = ?
++                  AND state = 'dispatching'
++                  AND updated_at <= ?""",
++            (reason, current_time.isoformat(), session_db_id, cutoff),
++        )
++        if updated.rowcount != 1:
++            continue
++        mark_job_failed(con, row["job_id"])
++        recovered.append(session_db_id)
++    return recovered
++
++
+ def update_executor_session_state(
+     con: sqlite3.Connection,
+     session_db_id: str,
+diff --git a/scripts/runtime/heartbeat/test_executor_sessions.py b/scripts/runtime/heartbeat/test_executor_sessions.py
+index 53f8815..bf95d0e 100644
+--- a/scripts/runtime/heartbeat/test_executor_sessions.py
++++ b/scripts/runtime/heartbeat/test_executor_sessions.py
+@@ -12,10 +12,13 @@ in a temp dir for worktree/patch-application tests, and mocked subprocess-free
+ adapters (the Jules CLI is never actually invoked).
+ """
+ 
++import json
+ import sqlite3
+ import subprocess
+ import sys
++from datetime import datetime, timedelta, timezone
+ from pathlib import Path
++from types import SimpleNamespace
+ from unittest.mock import MagicMock
+ 
+ import pytest
+@@ -30,14 +33,16 @@ from adapters.executor_protocol import (
+     SessionRef,
+     SessionStatus,
+ )
+-from adapters.jules_action_adapter import DispatchResult as ActionDispatchResult
+ from adapters.jules_action_adapter import JulesActionAdapter
+ from adapters.jules_cli_adapter import JulesCliAdapter
+ from scripts.runtime.heartbeat import reconciler, runner
+ from scripts.runtime.heartbeat.dispatcher import dispatch
+ from scripts.runtime.heartbeat.state_recorder import (
++    allocate_retry_attempt,
++    finalize_executor_session_dispatch,
+     get_active_executor_sessions,
+     get_executor_session_by_id,
++    insert_job,
+     insert_executor_session,
+     update_executor_session_state,
+ )
+@@ -61,6 +66,7 @@ CREATE TABLE events (
+ 
+ CREATE TABLE jobs (
+     job_id              TEXT PRIMARY KEY,
++    event_id            TEXT,
+     created_at          TEXT NOT NULL,
+     project_id          TEXT,
+     repo                TEXT,
+@@ -77,7 +83,9 @@ CREATE TABLE jobs (
+     status              TEXT DEFAULT 'ready',
+     attempt             INTEGER DEFAULT 0,
+     max_attempts        INTEGER DEFAULT 3,
+-    artifacts_dir       TEXT
++    artifacts_dir       TEXT,
++    required_artifacts  TEXT NOT NULL DEFAULT '[]',
++    previous_findings   TEXT
+ );
+ 
+ CREATE TABLE queue_records (
+@@ -92,6 +100,8 @@ CREATE TABLE executor_sessions (
+     job_id                   TEXT NOT NULL,
+     executor                 TEXT NOT NULL,
+     session_id               TEXT NOT NULL,
++    execution_attempt_id     TEXT NOT NULL,
++    attempt_index            INTEGER NOT NULL,
+     state                    TEXT DEFAULT 'dispatched',
+     expected_base_commit_sha TEXT,
+     result_commit_sha        TEXT,
+@@ -126,15 +136,23 @@ def _insert_job(
+     status="running",
+     project_id="proj-1",
+     node_id="node-1",
++    attempt=0,
++    max_attempts=3,
++    required_artifacts=None,
++    previous_findings=None,
+ ):
+     """Insert a minimal job + queue record (no event needed; FKs off in tests)."""
+     con.execute(
+         "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
+-        "job_type, executor, queue_state, title, goal, status) "
+-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++        "job_type, executor, queue_state, title, goal, status, attempt, "
++        "max_attempts, required_artifacts, previous_findings) "
++        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (
+             job_id, "2026-07-17T00:00:00+00:00", project_id, repo, node_id,
+             "implementation", executor, status, "Test", "Test goal", status,
++            attempt, max_attempts,
++            json.dumps(required_artifacts or []),
++            json.dumps(previous_findings) if previous_findings is not None else None,
+         ),
+     )
+     con.execute(
+@@ -165,24 +183,30 @@ def _make_fake_adapter(
+     *,
+     status_state="completed",
+     status_error=None,
++    status_exception=None,
+     patch_text=_PATCH_ADD_RESULT,
+     collect_success=True,
++    cancel_result=False,
+ ):
+     """Build a configurable fake adapter class.
+ 
+-    The reconciler instantiates ``adapter_cls(repo=...)`` and calls
+-    ``.status()`` / ``.collect()``, so we track call counts at the class level.
++    The reconciler instantiates ``adapter_cls(repo=...)`` and calls lifecycle
++    methods, so call counts live at the class level.
+     """
+ 
+     class FakeAdapter:
+         status_calls = 0
+         collect_calls = 0
++        cancel_calls = 0
++        cancelled_session_ids = []
+ 
+         def __init__(self, repo=""):
+             self.repo = repo
+ 
+         def status(self, session_ref):
+             FakeAdapter.status_calls += 1
++            if status_exception is not None:
++                raise status_exception
+             return SessionStatus(state=status_state, error=status_error)
+ 
+         def collect(self, session_ref, dest_path):
+@@ -199,7 +223,9 @@ def _make_fake_adapter(
+             )
+ 
+         def cancel(self, session_ref):
+-            return False
++            FakeAdapter.cancelled_session_ids.append(session_ref.session_id)
++            FakeAdapter.cancel_calls += 1
++            return cancel_result
+ 
+     return FakeAdapter
+ 
+@@ -248,6 +274,8 @@ def test_insert_executor_session_creates_row(con):
+     assert row["expected_base_commit_sha"] == "abc123"
+     assert row["result_commit_sha"] is None
+     assert row["error"] is None
++    assert row["attempt_index"] == 0
++    assert row["execution_attempt_id"] == "job_a:attempt:0"
+ 
+ 
+ def test_update_executor_session_state(con):
+@@ -328,6 +356,100 @@ def test_get_executor_session_by_id(con):
+     assert row["state"] == "dispatched"
+ 
+ 
++def test_retry_allocation_persists_findings_for_db_replay(con):
++    findings = {
++        "verdict": "changes_requested",
++        "findings": [{"severity": "medium", "summary": "src/a.py:8"}],
++    }
++    _insert_job(
++        con,
++        job_id="job_replay",
++        required_artifacts=["decision.md", "result-summary.md"],
++    )
++    job = con.execute(
++        "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
++    ).fetchone()
++
++    allocated = allocate_retry_attempt(
++        con,
++        job,
++        executor="jules_cli",
++        previous_findings=findings,
++    )
++    con.commit()
++
++    assert allocated is not None
++    replayed_job = dict(
++        con.execute(
++            "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
++        ).fetchone()
++    )
++    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
++
++    packet = _build_node_packet(replayed_job)
++    assert packet.attempt_index == 1
++    assert packet.execution_attempt_id == "job_replay:attempt:1"
++    assert packet.required_artifacts == ("decision.md", "result-summary.md")
++    assert packet.previous_findings["findings"][0]["severity"] == "medium"
++
++
++def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
++    from scripts import init_db as init_db_module
++
++    db_path = tmp_path / "legacy.db"
++    legacy = sqlite3.connect(db_path)
++    legacy.executescript(
++        """
++        CREATE TABLE jobs (
++            job_id TEXT PRIMARY KEY,
++            attempt INTEGER DEFAULT 0
++        );
++        CREATE TABLE executor_sessions (
++            session_db_id TEXT PRIMARY KEY,
++            job_id TEXT NOT NULL,
++            executor TEXT NOT NULL,
++            session_id TEXT NOT NULL,
++            state TEXT,
++            created_at TEXT NOT NULL,
++            updated_at TEXT NOT NULL
++        );
++        INSERT INTO jobs (job_id, attempt) VALUES ('job_old', 1);
++        INSERT INTO executor_sessions VALUES
++            ('ses_old_0', 'job_old', 'jules_cli', 'remote-0', 'failed',
++             '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
++            ('ses_old_1', 'job_old', 'jules_cli', 'remote-1', 'running',
++             '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z');
++        """
++    )
++    legacy.commit()
++    legacy.close()
++    monkeypatch.setattr(init_db_module, "DB_PATH", db_path)
++
++    init_db_module.init_db()
++    init_db_module.init_db()
++
++    migrated = sqlite3.connect(db_path)
++    migrated.row_factory = sqlite3.Row
++    job_columns = {
++        row["name"] for row in migrated.execute("PRAGMA table_info(jobs)")
++    }
++    session_columns = {
++        row["name"]
++        for row in migrated.execute("PRAGMA table_info(executor_sessions)")
++    }
++    assert {"required_artifacts", "previous_findings"} <= job_columns
++    assert {"execution_attempt_id", "attempt_index"} <= session_columns
++    rows = migrated.execute(
++        "SELECT attempt_index, execution_attempt_id "
++        "FROM executor_sessions ORDER BY created_at"
++    ).fetchall()
++    assert [tuple(row) for row in rows] == [
++        (0, "job_old:attempt:0"),
++        (1, "job_old:attempt:1"),
++    ]
++    migrated.close()
++
++
+ # =========================================================================== #
+ # 2. Reconciler tests
+ # =========================================================================== #
+@@ -390,26 +512,397 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
+     assert qr["queue"] == "awaiting_review"
+ 
+ 
+-def test_reconcile_failed_session_marks_job_failed(con, tmp_path, monkeypatch):
+-    repo, _ = _make_git_repo(tmp_path)
+-    _insert_job(con, job_id="job_fail", executor="jules_cli", status="running")
+-    ses_id = insert_executor_session(con, "job_fail", "jules_cli", "sess-fail")
++def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
++    con, tmp_path, monkeypatch
++):
++    repo, base_sha = _make_git_repo(tmp_path)
++    findings = {
++        "verdict": "changes_requested",
++        "findings": [{"severity": "high", "summary": "src/a.py:4 is wrong"}],
++    }
++    _insert_job(
++        con,
++        job_id="job_fail",
++        executor="jules_cli",
++        status="running",
++        required_artifacts=["decision.md", "patch.diff"],
++        previous_findings=findings,
++    )
++    original_id = insert_executor_session(
++        con,
++        "job_fail",
++        "jules_cli",
++        "sess-fail",
++        expected_base_commit_sha=base_sha,
++    )
+     FakeAdapter = _make_fake_adapter(status_state="failed", status_error="boom")
+     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    dispatched_jobs = []
++
++    def retry_dispatch(job, repo_name):
++        dispatched_jobs.append(dict(job))
++        return ProtocolDispatchResult(
++            success=True,
++            session_ref=SessionRef("jules_cli", "sess-retry"),
++        )
++
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+ 
+     reconciler.reconcile_sessions(con, repo)
+ 
+-    row = get_executor_session_by_id(con, ses_id)
+-    assert row["state"] == "failed"
+-    assert "boom" in (row["error"] or "")
+-    assert FakeAdapter.collect_calls == 0
++    original = get_executor_session_by_id(con, original_id)
++    assert original["state"] == "failed"
++    assert original["session_id"] == "sess-fail"
++    assert original["attempt_index"] == 0
++    assert original["execution_attempt_id"] == "job_fail:attempt:0"
++    assert original["error"] == "boom"
++
++    rows = con.execute(
++        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
++        ("job_fail",),
++    ).fetchall()
++    assert len(rows) == 2
++    replacement = rows[1]
++    assert replacement["state"] == "dispatched"
++    assert replacement["session_id"] == "sess-retry"
++    assert replacement["attempt_index"] == 1
++    assert replacement["execution_attempt_id"] == "job_fail:attempt:1"
+ 
+     job = con.execute(
+-        "SELECT status, queue_state FROM jobs WHERE job_id = ?", ("job_fail",)
++        "SELECT * FROM jobs WHERE job_id = ?", ("job_fail",)
+     ).fetchone()
+-    assert job["status"] == "failed"
+-    assert job["queue_state"] == "failed"
++    assert job["attempt"] == 1
++    assert job["status"] == "running"
++    assert job["queue_state"] == "running"
++    assert len(dispatched_jobs) == 1
+ 
++    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
++
++    packet = _build_node_packet(dispatched_jobs[0])
++    assert packet.execution_attempt_id == "job_fail:attempt:1"
++    assert packet.required_artifacts == ("decision.md", "patch.diff")
++    assert packet.previous_findings["findings"][0]["severity"] == "high"
++
++
++def test_retry_dispatch_failure_is_visible_and_idempotent(
++    con, tmp_path, monkeypatch
++):
++    repo, base_sha = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_dispatch_fail", status="running")
++    original_id = insert_executor_session(
++        con,
++        "job_dispatch_fail",
++        "jules_cli",
++        "sess-original",
++        expected_base_commit_sha=base_sha,
++    )
++    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="remote failed")
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    dispatch_calls = []
++
++    def failed_dispatch(job, repo_name):
++        dispatch_calls.append(job["attempt"])
++        return ProtocolDispatchResult(success=False, error="retry transport failed")
++
++    monkeypatch.setattr(reconciler, "dispatch", failed_dispatch)
++
++    reconciler.reconcile_sessions(con, repo)
++    reconciler.reconcile_sessions(con, repo)
++
++    rows = con.execute(
++        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
++        ("job_dispatch_fail",),
++    ).fetchall()
++    assert len(rows) == 2
++    assert rows[0]["session_db_id"] == original_id
++    assert rows[0]["state"] == "failed"
++    assert rows[1]["state"] == "dispatch_failed"
++    assert rows[1]["error"] == "retry transport failed"
++    assert rows[1]["execution_attempt_id"] == "job_dispatch_fail:attempt:1"
++    assert dispatch_calls == [1]
++
++    job = con.execute(
++        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_dispatch_fail",),
++    ).fetchone()
++    assert tuple(job) == (1, "failed", "failed")
++
++
++def test_reconcile_failed_session_at_attempt_cap_does_not_dispatch(
++    con, tmp_path, monkeypatch
++):
++    repo, base_sha = _make_git_repo(tmp_path)
++    _insert_job(
++        con,
++        job_id="job_exhausted",
++        status="running",
++        attempt=3,
++        max_attempts=3,
++    )
++    session_id = insert_executor_session(
++        con,
++        "job_exhausted",
++        "jules_cli",
++        "sess-last",
++        expected_base_commit_sha=base_sha,
++    )
++    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="last failure")
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(con, repo)
++
++    row = get_executor_session_by_id(con, session_id)
++    assert row["state"] == "failed"
++    assert row["attempt_index"] == 3
++    retry_dispatch.assert_not_called()
++    assert con.execute(
++        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
++        ("job_exhausted",),
++    ).fetchone()[0] == 1
++    job = con.execute(
++        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_exhausted",),
++    ).fetchone()
++    assert tuple(job) == (3, "failed", "failed")
++
++
++def test_reconcile_poll_exception_does_not_allocate_replacement(
++    con, tmp_path, monkeypatch
++):
++    repo, _ = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_poll", status="running")
++    session_id = insert_executor_session(
++        con, "job_poll", "jules_cli", "sess-poll"
++    )
++    FakeAdapter = _make_fake_adapter(
++        status_exception=RuntimeError("temporary network failure")
++    )
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(con, repo)
++
++    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
++    assert con.execute(
++        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_poll",)
++    ).fetchone()[0] == 1
++    assert con.execute(
++        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll",)
++    ).fetchone()[0] == 0
++    retry_dispatch.assert_not_called()
++
++
++def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
++    con, tmp_path, monkeypatch
++):
++    repo, _ = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_poll_timeout", status="running")
++    session_id = insert_executor_session(
++        con, "job_poll_timeout", "jules_cli", "sess-poll-timeout"
++    )
++
++    import adapters.jules_cli_adapter as jca
++
++    def timeout(*args, **kwargs):
++        raise subprocess.TimeoutExpired(args[0], 30)
++
++    monkeypatch.setattr(jca.subprocess, "run", timeout)
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": JulesCliAdapter})
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(con, repo)
++
++    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
++    assert con.execute(
++        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
++        ("job_poll_timeout",),
++    ).fetchone()[0] == 1
++    assert con.execute(
++        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll_timeout",)
++    ).fetchone()[0] == 0
++    retry_dispatch.assert_not_called()
++
++
++
++def test_jules_successful_list_without_session_is_missing(monkeypatch):
++    import adapters.jules_cli_adapter as jca
++
++    monkeypatch.setattr(
++        jca.subprocess,
++        "run",
++        lambda *args, **kwargs: SimpleNamespace(
++            returncode=0,
++            stdout="ID  STATUS\nother-session  Running\n",
++            stderr="",
++        ),
++    )
++
++    status = JulesCliAdapter(repo="owner/repo").status(
++        SessionRef("jules_cli", "expected-session")
++    )
++
++    assert status.state == "missing"
++    assert "not found" in (status.error or "")
++
++
++def test_reconcile_fresh_missing_session_stays_active(
++    con, tmp_path, monkeypatch
++):
++    repo, _ = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_missing_fresh", status="running")
++    session_id = insert_executor_session(
++        con, "job_missing_fresh", "jules_cli", "missing-fresh"
++    )
++    con.execute(
++        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
++        "WHERE session_db_id = ?",
++        (
++            "2026-07-18T11:50:00+00:00",
++            "2026-07-18T11:50:00+00:00",
++            session_id,
++        ),
++    )
++    con.commit()
++    FakeAdapter = _make_fake_adapter(
++        status_state="missing",
++        status_error="session not found in successful jules list",
++    )
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(
++        con,
++        repo,
++        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
++        missing_stale_after=timedelta(minutes=30),
++    )
++
++    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
++    job = con.execute(
++        "SELECT attempt, status FROM jobs WHERE job_id = ?",
++        ("job_missing_fresh",),
++    ).fetchone()
++    assert tuple(job) == (0, "running")
++    retry_dispatch.assert_not_called()
++
++
++def test_reconcile_aged_missing_session_retries_below_cap(
++    con, tmp_path, monkeypatch
++):
++    repo, base_sha = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_missing_retry", status="running")
++    session_id = insert_executor_session(
++        con,
++        "job_missing_retry",
++        "jules_cli",
++        "missing-stale",
++        expected_base_commit_sha=base_sha,
++    )
++    con.execute(
++        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
++        "WHERE session_db_id = ?",
++        (
++            "2026-07-18T11:29:00+00:00",
++            "2026-07-18T11:29:00+00:00",
++            session_id,
++        ),
++    )
++    con.commit()
++    FakeAdapter = _make_fake_adapter(
++        status_state="missing",
++        status_error="session not found in successful jules list",
++    )
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    retry_dispatch = MagicMock(
++        return_value=ProtocolDispatchResult(
++            success=True,
++            session_ref=SessionRef("jules_cli", "replacement-session"),
++        )
++    )
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(
++        con,
++        repo,
++        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
++        missing_stale_after=timedelta(minutes=30),
++    )
++
++    stale = get_executor_session_by_id(con, session_id)
++    assert stale["state"] == "failed"
++    assert "not found" in stale["error"]
++    replacement = con.execute(
++        "SELECT state, session_id, attempt_index FROM executor_sessions "
++        "WHERE job_id = ? AND attempt_index = 1",
++        ("job_missing_retry",),
++    ).fetchone()
++    assert tuple(replacement) == ("dispatched", "replacement-session", 1)
++    job = con.execute(
++        "SELECT attempt, status FROM jobs WHERE job_id = ?",
++        ("job_missing_retry",),
++    ).fetchone()
++    assert tuple(job) == (1, "running")
++
++
++def test_reconcile_aged_missing_session_stops_at_attempt_cap(
++    con, tmp_path, monkeypatch
++):
++    repo, _ = _make_git_repo(tmp_path)
++    _insert_job(
++        con,
++        job_id="job_missing_exhausted",
++        status="running",
++        attempt=3,
++        max_attempts=3,
++    )
++    session_id = insert_executor_session(
++        con,
++        "job_missing_exhausted",
++        "jules_cli",
++        "missing-exhausted",
++        attempt_index=3,
++    )
++    con.execute(
++        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
++        "WHERE session_db_id = ?",
++        (
++            "2026-07-18T11:29:00+00:00",
++            "2026-07-18T11:29:00+00:00",
++            session_id,
++        ),
++    )
++    con.commit()
++    FakeAdapter = _make_fake_adapter(
++        status_state="missing",
++        status_error="session not found in successful jules list",
++    )
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(
++        con,
++        repo,
++        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
++        missing_stale_after=timedelta(minutes=30),
++    )
++
++    assert get_executor_session_by_id(con, session_id)["state"] == "failed"
++    job = con.execute(
++        "SELECT attempt, status FROM jobs WHERE job_id = ?",
++        ("job_missing_exhausted",),
++    ).fetchone()
++    assert tuple(job) == (3, "failed")
++    assert con.execute(
++        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
++        ("job_missing_exhausted",),
++    ).fetchone()[0] == 1
++    retry_dispatch.assert_not_called()
+ 
+ def test_reconcile_running_session_stays_active(con, tmp_path, monkeypatch):
+     repo, _ = _make_git_repo(tmp_path)
+@@ -459,6 +952,278 @@ def test_reconcile_needs_operator_persists_state(con, tmp_path, monkeypatch):
+     assert job["status"] == "running"
+     active = get_active_executor_sessions(con)
+     assert any(r["session_db_id"] == ses_id for r in active)
++    assert con.execute(
++        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_op",)
++    ).fetchone()[0] == 1
++    assert con.execute(
++        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_op",)
++    ).fetchone()[0] == 0
++
++def test_restart_recovery_terminalizes_stale_dispatch_without_redispatch(
++    con, tmp_path, monkeypatch
++):
++    repo_path, _ = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_stale_dispatch", status="ready")
++    session_id = insert_executor_session(
++        con,
++        "job_stale_dispatch",
++        "jules_cli",
++        "job_stale_dispatch:attempt:0",
++        state="dispatching",
++    )
++    con.execute(
++        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
++        ("2026-07-18T10:00:00+00:00", session_id),
++    )
++    con.commit()
++    retry_dispatch = MagicMock()
++    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
++
++    reconciler.reconcile_sessions(
++        con,
++        repo_path,
++        repo="owner/repo",
++        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
++        dispatching_stale_after=timedelta(minutes=30),
++    )
++
++    session = get_executor_session_by_id(con, session_id)
++    assert session["state"] == "dispatch_failed"
++    assert "outcome unknown" in session["error"]
++    job = con.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_stale_dispatch",),
++    ).fetchone()
++    assert tuple(job) == ("failed", "failed")
++    assert con.execute(
++        "SELECT queue FROM queue_records WHERE job_id = ?",
++        ("job_stale_dispatch",),
++    ).fetchone()[0] == "failed"
++    retry_dispatch.assert_not_called()
++
++
++def test_restart_recovery_leaves_fresh_dispatch_untouched(con, tmp_path):
++    repo_path, _ = _make_git_repo(tmp_path)
++    _insert_job(con, job_id="job_fresh_dispatch", status="ready")
++    session_id = insert_executor_session(
++        con,
++        "job_fresh_dispatch",
++        "jules_cli",
++        "job_fresh_dispatch:attempt:0",
++        state="dispatching",
++    )
++    con.execute(
++        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
++        ("2026-07-18T11:45:00+00:00", session_id),
++    )
++    con.commit()
++
++    reconciler.reconcile_sessions(
++        con,
++        repo_path,
++        repo="owner/repo",
++        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
++        dispatching_stale_after=timedelta(minutes=30),
++    )
++
++    assert get_executor_session_by_id(con, session_id)["state"] == "dispatching"
++    job = con.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_fresh_dispatch",),
++    ).fetchone()
++    assert tuple(job) == ("ready", "ready")
++
++
++
++def test_persisted_local_cancellation_is_terminal_across_reconciler_restart(
++    con, tmp_path, monkeypatch
++):
++    repo, _ = _make_git_repo(tmp_path)
++    _insert_job(
++        con,
++        job_id="job_cancel_local",
++        executor="local_subprocess",
++        status="running",
++    )
++    session_id = insert_executor_session(
++        con,
++        "job_cancel_local",
++        "local_subprocess",
++        "local-session",
++    )
++    FakeLocal = _make_fake_adapter(status_state="running", cancel_result=True)
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"local_subprocess": FakeLocal})
++
++    result = reconciler.cancel_executor_session(con, session_id)
++
++    assert result == "cancelled"
++    row = get_executor_session_by_id(con, session_id)
++    assert row["state"] == "cancelled"
++    assert FakeLocal.cancel_calls == 1
++    assert get_active_executor_sessions(con) == []
++    job = con.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_cancel_local",),
++    ).fetchone()
++    assert tuple(job) == ("cancelled", "cancelled")
++
++    reconciler.reconcile_sessions(con, repo)
++    assert FakeLocal.status_calls == 0
++    assert FakeLocal.collect_calls == 0
++
++
++def test_jules_cancellation_persists_unsupported_without_claiming_remote_success(
++    con, monkeypatch
++):
++    _insert_job(con, job_id="job_cancel_jules", status="running")
++    session_id = insert_executor_session(
++        con,
++        "job_cancel_jules",
++        "jules_cli",
++        "jules-session",
++    )
++    FakeJules = _make_fake_adapter(status_state="running", cancel_result=False)
++    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeJules})
++
++    result = reconciler.cancel_executor_session(con, session_id)
++
++    assert result == "cancel_unsupported"
++    row = get_executor_session_by_id(con, session_id)
++    assert row["state"] == "cancel_unsupported"
++    assert "unsupported" in row["error"].lower()
++    assert "cancelled" not in row["error"].lower()
++    assert get_active_executor_sessions(con) == []
++    assert con.execute(
++        "SELECT status FROM jobs WHERE job_id = ?", ("job_cancel_jules",)
++    ).fetchone()[0] == "cancelled"
++
++
++def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
++    con, monkeypatch, capsys
++):
++    con.execute(
++        "INSERT INTO events "
++        "(event_id, received_at, source, event_type, repo, project_id, status) "
++        "VALUES (?, ?, ?, ?, ?, ?, ?)",
++        (
++            "evt_cancel_race",
++            "2026-07-18T12:00:00+00:00",
++            "github",
++            "issues",
++            "owner/repo",
++            "proj-1",
++            "classified",
++        ),
++    )
++    _insert_job(con, job_id="job_cancel_race", status="ready")
++    session_db_id = insert_executor_session(
++        con,
++        "job_cancel_race",
++        "jules_cli",
++        "job_cancel_race:attempt:0",
++        state="dispatching",
++    )
++    update_executor_session_state(
++        con,
++        session_db_id,
++        state="cancel_unsupported",
++        error="Jules CLI cancellation is unsupported",
++    )
++    con.execute(
++        "UPDATE jobs SET status = 'cancelled', queue_state = 'cancelled' "
++        "WHERE job_id = ?",
++        ("job_cancel_race",),
++    )
++    con.execute(
++        "UPDATE queue_records SET queue = 'cancelled' WHERE job_id = ?",
++        ("job_cancel_race",),
++    )
++    con.commit()
++
++    from scripts.runtime.heartbeat import dispatcher as heartbeat_dispatcher
++
++    FakeJules = _make_fake_adapter(cancel_result=False)
++    monkeypatch.setattr(
++        heartbeat_dispatcher, "ADAPTERS", {"jules_cli": FakeJules}
++    )
++    planned = runner.PlannedDispatch(
++        event_id="evt_cancel_race",
++        classification={"executor_recommendation": "jules_cli"},
++        job={
++            "job_id": "job_cancel_race",
++            "node_id": "node-1",
++            "repo": "owner/repo",
++        },
++        session_db_id=session_db_id,
++    )
++    outcome = runner.DispatchOutcome(
++        planned=planned,
++        success=True,
++        session_ref=SessionRef("jules_cli", "late-remote-session"),
++    )
++
++    runner._record_outcomes(
++        con,
++        [planned],
++        {"job_cancel_race": outcome},
++    )
++
++    session = get_executor_session_by_id(con, session_db_id)
++    assert session["state"] == "cancel_unsupported"
++    assert session["session_id"] == "job_cancel_race:attempt:0"
++    job = con.execute(
++        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
++        ("job_cancel_race",),
++    ).fetchone()
++    assert tuple(job) == ("cancelled", "cancelled")
++    assert con.execute(
++        "SELECT queue FROM queue_records WHERE job_id = ?",
++        ("job_cancel_race",),
++    ).fetchone()[0] == "cancelled"
++    assert FakeJules.cancelled_session_ids == ["late-remote-session"]
++    assert con.execute(
++        "SELECT status FROM events WHERE event_id = ?",
++        ("evt_cancel_race",),
++    ).fetchone()[0] == "mapped"
++    assert runner._plan_dispatches(
++        con,
++        "proj-1",
++        "owner/repo",
++        [],
++        MagicMock(),
++    ) == []
++    output = capsys.readouterr().out.lower()
++    assert "unsupported" in output
++    assert "cancellation accepted" not in output
++
++
++def test_finalize_executor_session_dispatch_is_compare_and_swap(con):
++    _insert_job(con, job_id="job_finalize_cas", status="cancelled")
++    session_db_id = insert_executor_session(
++        con,
++        "job_finalize_cas",
++        "jules_cli",
++        "job_finalize_cas:attempt:0",
++        state="dispatching",
++    )
++    update_executor_session_state(
++        con,
++        session_db_id,
++        state="cancel_unsupported",
++        error="cancelled while dispatch was in flight",
++    )
++
++    finalized = finalize_executor_session_dispatch(
++        con,
++        session_db_id,
++        state="dispatched",
++        session_id="late-remote-session",
++    )
++
++    assert finalized is False
++    session = get_executor_session_by_id(con, session_db_id)
++    assert session["state"] == "cancel_unsupported"
++    assert session["session_id"] == "job_finalize_cas:attempt:0"
+ 
+ 
+ # =========================================================================== #
+@@ -528,6 +1293,75 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
+     assert called["reconcile"] is True
+ 
+ 
++def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
++    con.execute(
++        """INSERT INTO events
++           (event_id, received_at, source, event_type, repo, project_id, status)
++           VALUES ('evt_initial', '2026-01-01T00:00:00Z', 'manual',
++                   'issue.opened', 'owner/repo', 'proj-1', 'received')"""
++    )
++    con.commit()
++    node = SimpleNamespace(node_id="node-1")
++    monkeypatch.setattr(
++        runner,
++        "classify",
++        lambda event, nodes: {
++            "matched_node_id": "node-1",
++            "executor_recommendation": "jules_cli",
++        },
++    )
++    monkeypatch.setattr(runner, "mark_event_classified", lambda *args: None)
++    monkeypatch.setattr(runner, "check_scope", lambda *args: True)
++    monkeypatch.setattr(
++        runner,
++        "build_job",
++        lambda *args: {
++            "job_id": "job_initial",
++            "created_at": "2026-01-01T00:00:00Z",
++            "event_id": "evt_initial",
++            "project_id": "proj-1",
++            "repo": "owner/repo",
++            "node_id": "node-1",
++            "job_type": "implementation",
++            "executor": "jules_cli",
++            "queue_state": "ready",
++            "title": "Initial",
++            "goal": "Dispatch once",
++            "why": "",
++            "constraints": "[]",
++            "acceptance_criteria": "[]",
++            "priority": "medium",
++            "status": "ready",
++            "attempt": 0,
++            "max_attempts": 3,
++            "artifacts_dir": "/tmp/job_initial/",
++            "required_artifacts": '["decision.md"]',
++            "previous_findings": None,
++        },
++    )
++
++    planned = runner._plan_dispatches(
++        con,
++        "proj-1",
++        "owner/repo",
++        [node],
++        SimpleNamespace(),
++    )
++
++    assert len(planned) == 1
++    assert planned[0].session_db_id
++    row = con.execute(
++        "SELECT * FROM executor_sessions WHERE job_id = 'job_initial'"
++    ).fetchone()
++    assert row["state"] == "dispatching"
++    assert row["attempt_index"] == 0
++    assert row["execution_attempt_id"] == "job_initial:attempt:0"
++    persisted_job = con.execute(
++        "SELECT required_artifacts FROM jobs WHERE job_id = 'job_initial'"
++    ).fetchone()
++    assert json.loads(persisted_job["required_artifacts"]) == ["decision.md"]
++
++
+ # =========================================================================== #
+ # 5. Adapter selection — executor field routes to the correct adapter
+ # =========================================================================== #
+@@ -576,11 +1410,9 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
+     job = _sample_job(executor="jules")
+ 
+     action_dispatch = MagicMock(
+-        return_value=ActionDispatchResult(
++        return_value=ProtocolDispatchResult(
+             success=True,
+             issue_url="https://github.com/owner/repo/issues/1",
+-            issue_number=1,
+-            error=None,
+         )
+     )
+     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
+@@ -647,6 +1479,36 @@ def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
+     assert status.state == "running"
+ 
+ 
++@pytest.mark.parametrize(
++    "poll_result",
++    [
++        subprocess.TimeoutExpired(["jules", "remote", "list"], 30),
++        FileNotFoundError("jules"),
++        OSError("subprocess unavailable"),
++        SimpleNamespace(returncode=2, stdout="", stderr="service unavailable"),
++    ],
++    ids=["timeout", "missing-binary", "subprocess-error", "nonzero"],
++)
++def test_jules_cli_status_infrastructure_failure_is_transient(
++    monkeypatch, poll_result
++):
++    import adapters.jules_cli_adapter as jca
++
++    def fake_run(*args, **kwargs):
++        if isinstance(poll_result, BaseException):
++            raise poll_result
++        return poll_result
++
++    monkeypatch.setattr(jca.subprocess, "run", fake_run)
++
++    status = JulesCliAdapter(repo="owner/repo").status(
++        SessionRef(executor="jules_cli", session_id="target-session")
++    )
++
++    assert status.state == "poll_error"
++    assert status.error
++
++
+ # =========================================================================== #
+ # 7. Issue #6 — GDDP_EXECUTOR_OVERRIDE reroutes dispatch without graph changes
+ # =========================================================================== #
+@@ -687,11 +1549,9 @@ def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
+     monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
+ 
+     action_dispatch = MagicMock(
+-        return_value=ActionDispatchResult(
++        return_value=ProtocolDispatchResult(
+             success=True,
+             issue_url="https://github.com/owner/repo/issues/2",
+-            issue_number=2,
+-            error=None,
+         )
+     )
+     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
+diff --git a/scripts/runtime/heartbeat/test_parallel_dispatch.py b/scripts/runtime/heartbeat/test_parallel_dispatch.py
+index 87ea0a6..f1bfa4a 100644
+--- a/scripts/runtime/heartbeat/test_parallel_dispatch.py
++++ b/scripts/runtime/heartbeat/test_parallel_dispatch.py
+@@ -77,6 +77,8 @@ def _init_db(db_path: Path) -> None:
+             attempt             INTEGER DEFAULT 0,
+             max_attempts        INTEGER DEFAULT 3,
+             artifacts_dir       TEXT,
++            required_artifacts  TEXT NOT NULL DEFAULT '[]',
++            previous_findings   TEXT,
+             result_summary_path TEXT,
+             FOREIGN KEY(event_id) REFERENCES events(event_id)
+         );
+@@ -93,6 +95,23 @@ def _init_db(db_path: Path) -> None:
+             last_error       TEXT,
+             FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+         );
++
++        CREATE TABLE executor_sessions (
++            session_db_id            TEXT PRIMARY KEY,
++            job_id                   TEXT NOT NULL,
++            executor                 TEXT NOT NULL,
++            session_id               TEXT NOT NULL,
++            execution_attempt_id     TEXT NOT NULL,
++            attempt_index            INTEGER NOT NULL,
++            state                    TEXT DEFAULT 'dispatched',
++            expected_base_commit_sha TEXT,
++            result_commit_sha        TEXT,
++            patch_path               TEXT,
++            error                    TEXT,
++            created_at               TEXT NOT NULL,
++            updated_at               TEXT NOT NULL,
++            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
++        );
+         """
+     )
+     con.commit()
+diff --git a/scripts/runtime/return_router.py b/scripts/runtime/return_router.py
+index 2b440e7..ba96d7c 100644
+--- a/scripts/runtime/return_router.py
++++ b/scripts/runtime/return_router.py
+@@ -13,6 +13,11 @@ from typing import Optional
+ 
+ from .results_store import DB_PATH, write_result
+ from .verification.bridge import verify_job_return
++from .heartbeat.state_recorder import (
++    allocate_retry_attempt,
++    finalize_executor_session_dispatch,
++    mark_job_running,
++)
+ 
+ _FALLBACK_ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project", "skchaudr/gddp-runtime"]
+ 
+@@ -230,37 +235,77 @@ def _config_root():
+ 
+ 
+ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
+-    """Re-dispatch the same node to the executor with findings in the issue body.
++    """Persist a correction attempt before dispatch and retain its evidence."""
++    from .heartbeat.dispatcher import cancel_remote_session, dispatch
+ 
+-    On dispatch failure, falls back to awaiting_review so the human can inspect
+-    the findings and decide — the job never sits in limbo.
+-    """
+-    import json
+-    from .heartbeat.dispatcher import dispatch
+-
+-    # Build the job dict with findings injected
+-    job_with_findings = dict(job)
+-    # NOTE: Do NOT convert constraints/acceptance_criteria from JSON strings to
+-    # lists here — the adapter's build_issue_body calls json.loads() on them and
+-    # expects JSON strings. Converting them to lists causes a TypeError.
+-
+-    # Add findings to the job for the adapter to include in the issue body
+-    integrity = verification.get("integrity", {}) if verification.get("verification_status") == "ok" else {}
+-    job_with_findings["_previous_findings"] = {
++    integrity = (
++        verification.get("integrity", {})
++        if verification.get("verification_status") == "ok"
++        else {}
++    )
++    previous_findings = {
+         "verdict": verification.get("verdict", ""),
+         "integrity_verdict": integrity.get("verdict", ""),
+         "findings": integrity.get("findings", []),
+         "reasoning": integrity.get("reasoning", ""),
+-        "criteria_findings": verification.get("criteria_findings", []) if verification.get("verification_status") == "ok" else [],
++        "criteria_findings": (
++            verification.get("criteria_findings", [])
++            if verification.get("verification_status") == "ok"
++            else []
++        ),
+     }
+ 
+-    # Dispatch
+-    dispatch_result = dispatch(job_with_findings, job["repo"])
++    con = _connect()
++    allocated = allocate_retry_attempt(
++        con,
++        job,
++        executor=job["executor"],
++        previous_findings=previous_findings,
++    )
++    if allocated is None:
++        con.close()
++        _mark_job_awaiting_review(job_id)
++        return {
++            "status": "needs_review",
++            "result_id": result_id,
++            "job_id": job_id,
++            "node_id": node_id,
++            "verification": verification,
++            "dispatch_attempted": False,
++            "dispatch_success": False,
++        }
+ 
+-    if not dispatch_result.success:
+-        # Dispatch failed — fall back to awaiting_review so the human sees the
+-        # findings and can re-dispatch manually. The job must not sit unattended.
+-        # Attempt is NOT incremented on failure so the retry budget stays intact.
++    job_with_findings, session_db_id = allocated
++    con.commit()
++    try:
++        dispatch_result = dispatch(job_with_findings, job["repo"])
++    except Exception as exc:
++        dispatch_result = None
++        dispatch_error = f"retry dispatch raised exception: {exc}"
++    else:
++        dispatch_error = dispatch_result.error or "retry dispatch failed"
++
++    if dispatch_result is None or not dispatch_result.success:
++        finalized = finalize_executor_session_dispatch(
++            con,
++            session_db_id,
++            state="dispatch_failed",
++            error=dispatch_error,
++        )
++        con.commit()
++        con.close()
++        if not finalized:
++            return {
++                "status": "dispatch_superseded",
++                "result_id": result_id,
++                "job_id": job_id,
++                "node_id": node_id,
++                "verification": verification,
++                "dispatch_attempted": True,
++                "dispatch_success": False,
++                "dispatch_error": dispatch_error,
++                "reservation_finalized": False,
++            }
+         _mark_job_awaiting_review(job_id)
+         return {
+             "status": "needs_review",
+@@ -270,18 +315,45 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
+             "verification": verification,
+             "dispatch_attempted": True,
+             "dispatch_success": False,
+-            "dispatch_error": dispatch_result.error,
++            "dispatch_error": dispatch_error,
+         }
+ 
+-    # Dispatch succeeded — increment attempt now that the retry is confirmed.
+-    con = _connect()
+-    try:
+-        con.execute(
+-            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
++    if dispatch_result.session_ref is not None:
++        finalized = finalize_executor_session_dispatch(
++            con,
++            session_db_id,
++            state="dispatched",
++            executor=dispatch_result.session_ref.executor,
++            session_id=dispatch_result.session_ref.session_id,
+         )
++    else:
++        finalized = finalize_executor_session_dispatch(
++            con,
++            session_db_id,
++            state="mediated",
++            session_id=dispatch_result.issue_url,
++        )
++    if not finalized:
++        cancellation = "reservation is no longer dispatching"
++        if dispatch_result.session_ref is not None:
++            _, cancellation = cancel_remote_session(
++                dispatch_result.session_ref, job["repo"]
++            )
+         con.commit()
+-    finally:
+         con.close()
++        return {
++            "status": "dispatch_superseded",
++            "result_id": result_id,
++            "job_id": job_id,
++            "node_id": node_id,
++            "verification": verification,
++            "dispatch_success": True,
++            "reservation_finalized": False,
++            "cancellation": cancellation,
++        }
++    mark_job_running(con, job_id)
++    con.commit()
++    con.close()
+ 
+     return {
+         "status": "redispatched",
+diff --git a/scripts/runtime/test_full_cycle_e2e.py b/scripts/runtime/test_full_cycle_e2e.py
+index 4221c61..5be31e6 100644
+--- a/scripts/runtime/test_full_cycle_e2e.py
++++ b/scripts/runtime/test_full_cycle_e2e.py
+@@ -84,6 +84,8 @@ def _init_db(db_path: Path) -> None:
+             attempt             INTEGER DEFAULT 0,
+             max_attempts        INTEGER DEFAULT 3,
+             artifacts_dir       TEXT,
++            required_artifacts  TEXT NOT NULL DEFAULT '[]',
++            previous_findings   TEXT,
+             result_summary_path TEXT,
+             FOREIGN KEY(event_id) REFERENCES events(event_id)
+         );
+@@ -101,6 +103,23 @@ def _init_db(db_path: Path) -> None:
+             FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+         );
+ 
++        CREATE TABLE executor_sessions (
++            session_db_id              TEXT PRIMARY KEY,
++            job_id                     TEXT NOT NULL,
++            executor                   TEXT NOT NULL,
++            session_id                 TEXT NOT NULL,
++            state                      TEXT DEFAULT 'dispatched',
++            execution_attempt_id       TEXT NOT NULL,
++            attempt_index              INTEGER NOT NULL,
++            expected_base_commit_sha   TEXT,
++            result_commit_sha          TEXT,
++            patch_path                 TEXT,
++            error                      TEXT,
++            created_at                 TEXT NOT NULL,
++            updated_at                 TEXT NOT NULL,
++            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
++        );
++
+         CREATE TABLE results (
+             result_id                   TEXT PRIMARY KEY,
+             schema_version              TEXT NOT NULL DEFAULT '1.0',
+diff --git a/scripts/runtime/test_return_router.py b/scripts/runtime/test_return_router.py
+index c856653..c2f481d 100644
+--- a/scripts/runtime/test_return_router.py
++++ b/scripts/runtime/test_return_router.py
+@@ -231,6 +231,11 @@ class TestReturnRouterRetry(unittest.TestCase):
+             "max_attempts": 3,
+             "constraints": "[]",
+             "acceptance_criteria": "[]",
++            "title": "Auth node",
++            "goal": "Fix authentication",
++            "why": "Protect users",
++            "required_artifacts": json.dumps(["decision.md", "patch.diff"]),
++            "previous_findings": None,
+         }
+ 
+     def _base_event(self) -> dict:
+@@ -267,7 +272,7 @@ class TestReturnRouterRetry(unittest.TestCase):
+             content = "execution_policy:\n  retry_budget: 3\n"
+         (graphs_dir / "project.yaml").write_text(content)
+ 
+-    def test_redispatch_on_non_pass_verdict_with_evidence(self):
++    def test_redispatch_allocates_attempt_and_persists_packet_before_dispatch(self):
+         with tempfile.TemporaryDirectory() as tmpdir:
+             self._make_project_yaml(tmpdir)
+             with (
+@@ -276,29 +281,59 @@ class TestReturnRouterRetry(unittest.TestCase):
+                 patch("scripts.runtime.return_router._mark_job_awaiting_review") as mock_mark,
+                 patch("scripts.runtime.return_router.verify_job_return", return_value=self._fail_verdict_with_evidence()),
+                 patch("scripts.runtime.return_router._config_root", return_value=Path(tmpdir)),
+-                patch("scripts.runtime.heartbeat.dispatcher.dispatch", return_value=DispatchResult(
+-                    success=True, issue_url="https://github.com/skchaudr/vault-doctor/issues/99"
+-                )),
++                patch("scripts.runtime.heartbeat.dispatcher.dispatch") as mock_dispatch,
+                 patch("scripts.runtime.return_router._connect") as mock_connect,
++                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
++                patch("scripts.runtime.return_router.finalize_executor_session_dispatch") as mock_finalize,
++                patch("scripts.runtime.return_router.mark_job_running") as mock_running,
+             ):
+                 mock_con = MagicMock()
+                 mock_connect.return_value = mock_con
+ 
++                def allocate(con, job, **kwargs):
++                    updated = dict(job)
++                    updated["attempt"] = 1
++                    updated["previous_findings"] = json.dumps(
++                        kwargs["previous_findings"]
++                    )
++                    return updated, "ses_retry"
++
++                mock_allocate.side_effect = allocate
++                mock_dispatch.return_value = DispatchResult(
++                    success=True,
++                    issue_url="https://github.com/skchaudr/vault-doctor/issues/99",
++                )
++
+                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
+                     res = handle_merged_pr(self._base_event())
+ 
+                 self.assertEqual(res["status"], "redispatched")
+                 self.assertTrue(res["dispatch_success"])
+-                # Attempt was incremented after dispatch success
+-                mock_con.execute.assert_called_once_with(
+-                    "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?",
+-                    ("job_123",),
++                allocated_findings = mock_allocate.call_args.kwargs[
++                    "previous_findings"
++                ]
++                self.assertEqual(allocated_findings["verdict"], "fail")
++                dispatched_job = mock_dispatch.call_args.args[0]
++                self.assertEqual(dispatched_job["attempt"], 1)
++                from scripts.runtime.heartbeat.dispatcher import _build_node_packet
++
++                packet = _build_node_packet(dispatched_job)
++                self.assertEqual(packet.execution_attempt_id, "job_123:attempt:1")
++                self.assertEqual(
++                    packet.required_artifacts,
++                    ("decision.md", "patch.diff"),
+                 )
+-                mock_con.commit.assert_called_once()
+-                # Did NOT route to awaiting_review
++                self.assertEqual(packet.previous_findings["verdict"], "fail")
++                mock_finalize.assert_called_once_with(
++                    mock_con,
++                    "ses_retry",
++                    state="mediated",
++                    session_id="https://github.com/skchaudr/vault-doctor/issues/99",
++                )
++                mock_running.assert_called_once_with(mock_con, "job_123")
+                 mock_mark.assert_not_called()
+ 
+-    def test_dispatch_failure_does_not_increment_attempt(self):
++    def test_retry_dispatch_failure_keeps_allocated_attempt_visible(self):
+         with tempfile.TemporaryDirectory() as tmpdir:
+             self._make_project_yaml(tmpdir)
+             with (
+@@ -311,18 +346,77 @@ class TestReturnRouterRetry(unittest.TestCase):
+                     success=False, error="simulated dispatch failure"
+                 )),
+                 patch("scripts.runtime.return_router._connect") as mock_connect,
++                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
++                patch("scripts.runtime.return_router.finalize_executor_session_dispatch") as mock_finalize,
++                patch("scripts.runtime.return_router.mark_job_running"),
+             ):
++                mock_con = MagicMock()
++                mock_connect.return_value = mock_con
++                updated = self._base_job()
++                updated["attempt"] = 1
++                mock_allocate.return_value = (updated, "ses_retry_failed")
++
+                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
+                     res = handle_merged_pr(self._base_event())
+ 
+                 self.assertEqual(res["status"], "needs_review")
+                 self.assertTrue(res["dispatch_attempted"])
+                 self.assertFalse(res["dispatch_success"])
+-                # Attempt was NOT incremented (no DB write for attempt)
+-                mock_connect.assert_not_called()
+-                # Fell back to awaiting_review
++                mock_finalize.assert_called_once_with(
++                    mock_con,
++                    "ses_retry_failed",
++                    state="dispatch_failed",
++                    error="simulated dispatch failure",
++                )
+                 mock_mark.assert_called_once_with("job_123")
+ 
++    def test_redispatch_cas_loss_cancels_late_remote_and_preserves_job_state(self):
++        from scripts.runtime import return_router
++        from adapters.executor_protocol import SessionRef
++
++        mock_con = MagicMock()
++        job = self._base_job()
++        retried_job = dict(job, attempt=1)
++        verification = self._fail_verdict_with_evidence()
++        session_ref = SessionRef("jules_cli", "late-return-session")
++        with (
++            patch.object(return_router, "_connect", return_value=mock_con),
++            patch.object(
++                return_router,
++                "allocate_retry_attempt",
++                return_value=(retried_job, "ses_cancelled_retry"),
++            ),
++            patch(
++                "scripts.runtime.heartbeat.dispatcher.dispatch",
++                return_value=DispatchResult(success=True, session_ref=session_ref),
++            ),
++            patch.object(
++                return_router,
++                "finalize_executor_session_dispatch",
++                return_value=False,
++            ),
++            patch(
++                "scripts.runtime.heartbeat.dispatcher.cancel_remote_session",
++                return_value=(
++                    False,
++                    "Jules CLI cancellation is unsupported; remote may continue",
++                ),
++            ) as mock_cancel,
++            patch.object(return_router, "mark_job_running") as mock_running,
++        ):
++            result = return_router._redispatch_with_findings(
++                "job_123",
++                job,
++                "auth-node",
++                verification,
++                "res_123456",
++            )
++
++        self.assertEqual(result["status"], "dispatch_superseded")
++        self.assertFalse(result["reservation_finalized"])
++        mock_running.assert_not_called()
++        mock_cancel.assert_called_once_with(session_ref, job["repo"])
++
+     def test_attempt_at_cap_routes_to_awaiting_review(self):
+         with tempfile.TemporaryDirectory() as tmpdir:
+             self._make_project_yaml(tmpdir)
+@@ -373,9 +467,15 @@ class TestReturnRouterRetry(unittest.TestCase):
+                     success=True, issue_url="https://github.com/skchaudr/vault-doctor/issues/100"
+                 )),
+                 patch("scripts.runtime.return_router._connect") as mock_connect,
++                patch("scripts.runtime.return_router.allocate_retry_attempt") as mock_allocate,
++                patch("scripts.runtime.return_router.finalize_executor_session_dispatch"),
++                patch("scripts.runtime.return_router.mark_job_running"),
+             ):
+                 mock_con = MagicMock()
+                 mock_connect.return_value = mock_con
++                updated = self._base_job()
++                updated["attempt"] = 1
++                mock_allocate.return_value = (updated, "ses_criteria_retry")
+ 
+                 with patch("builtins.open", mock_open(read_data=json.dumps(self._base_payload()))):
+                     res = handle_merged_pr(self._base_event())
+diff --git a/scripts/test_dry_run.py b/scripts/test_dry_run.py
+new file mode 100644
+index 0000000..dfcbfa7
+--- /dev/null
++++ b/scripts/test_dry_run.py
+@@ -0,0 +1,93 @@
++import sqlite3
++
++from scripts import dry_run, init_db
++from scripts.runtime import results_store, return_router
++
++
++def test_main_replaces_only_stale_dry_run_state(monkeypatch, tmp_path):
++    runtime_root = tmp_path / "runtime"
++    db_path = runtime_root / "db" / "queue.db"
++    db_path.parent.mkdir(parents=True)
++
++    monkeypatch.setattr(init_db, "DB_PATH", db_path)
++    monkeypatch.setattr(dry_run, "RUNTIME_ROOT", runtime_root)
++    monkeypatch.setattr(dry_run, "DB_PATH", db_path)
++    monkeypatch.setattr(return_router, "DB_PATH", db_path)
++    monkeypatch.setattr(results_store, "RUNTIME_ROOT", runtime_root)
++    monkeypatch.setattr(results_store, "DB_PATH", db_path)
++    monkeypatch.setattr(return_router, "_refresh_evaluations_export", lambda: None)
++
++    init_db.init_db()
++    with sqlite3.connect(db_path) as con:
++        con.execute(
++            "INSERT INTO events (event_id, received_at, source, event_type) "
++            "VALUES ('evt_sentinel', '2026-07-18T00:00:00+00:00', 'manual', 'sentinel')"
++        )
++        con.execute(
++            """
++            INSERT INTO jobs (
++                job_id, created_at, event_id, node_id, job_type, executor, title, goal
++            ) VALUES (
++                'job_sentinel', '2026-07-18T00:00:00+00:00', 'evt_sentinel',
++                'sentinel-node', 'reasoning', 'human', 'Sentinel', 'Survive dry-run cleanup'
++            )
++            """
++        )
++
++    dry_run.main()
++
++    with sqlite3.connect(db_path) as con:
++        con.execute("PRAGMA foreign_keys=ON")
++        con.execute(
++            """
++            INSERT INTO artifact_verifications (
++                verification_id, job_id, node_id, artifact_type, validation_method
++            ) VALUES ('verification_stale', 'job_dry_001', 'auth-boundary', 'patch.diff', 'file_exists')
++            """
++        )
++        con.execute(
++            """
++            INSERT INTO executor_sessions (
++                session_db_id, job_id, executor, session_id,
++                execution_attempt_id, attempt_index, created_at, updated_at
++            ) VALUES (
++                'session_stale', 'job_dry_001', 'jules_cli', 'stale-session',
++                'job_dry_001:attempt:0', 0,
++                '2026-07-18T00:00:00+00:00', '2026-07-18T00:00:00+00:00'
++            )
++            """
++        )
++
++    dry_run.main()
++
++    with sqlite3.connect(db_path) as con:
++        assert con.execute(
++            "SELECT count(*) FROM events WHERE event_id LIKE 'evt_dry_%'"
++        ).fetchone()[0] == 2
++        assert con.execute(
++            "SELECT count(*) FROM jobs WHERE event_id LIKE 'evt_dry_%'"
++        ).fetchone()[0] == 1
++        assert con.execute(
++            """
++            SELECT count(*) FROM queue_records
++            WHERE job_id IN (SELECT job_id FROM jobs WHERE event_id LIKE 'evt_dry_%')
++            """
++        ).fetchone()[0] == 1
++        assert con.execute(
++            """
++            SELECT count(*) FROM results
++            WHERE job_id IN (SELECT job_id FROM jobs WHERE event_id LIKE 'evt_dry_%')
++            """
++        ).fetchone()[0] == 2
++        assert con.execute(
++            "SELECT count(*) FROM artifact_verifications WHERE verification_id = 'verification_stale'"
++        ).fetchone()[0] == 0
++        assert con.execute(
++            "SELECT count(*) FROM executor_sessions WHERE session_db_id = 'session_stale'"
++        ).fetchone()[0] == 0
++        assert con.execute(
++            "SELECT count(*) FROM events WHERE event_id = 'evt_sentinel'"
++        ).fetchone()[0] == 1
++        assert con.execute(
++            "SELECT count(*) FROM jobs WHERE job_id = 'job_sentinel' AND event_id = 'evt_sentinel'"
++        ).fetchone()[0] == 1
