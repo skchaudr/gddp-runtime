@@ -1,0 +1,1215 @@
+{
+  "project_id": "gddp-runtime",
+  "node_id": "neutral-executor-contract",
+  "verdict": "pass",
+  "criteria_verdict": "pass",
+  "integrity": {
+    "verdict": "pass",
+    "intent_preserved": true,
+    "graph_integrity_preserved": true,
+    "required_human_review": false,
+    "confidence": 0.92,
+    "findings": [
+      {
+        "severity": "low",
+        "summary": "Root-level artifacts (decision.md, result-summary.md, patch.diff) describe the canary-retry-proof echo utility, not the neutral-executor-contract. The correct artifacts for this node are in .gddp/. This mismatch may confuse automated artifact verification.",
+        "affected_node_ids": [
+          "neutral-executor-contract",
+          "canary-retry-proof"
+        ]
+      }
+    ],
+    "reasoning": "The neutral-executor-contract work preserves the node's intended role and graph integrity. \n\n**Intent preservation**: \n1. Executor-neutral packet — NodePacket is a frozen dataclass with deep immutability (FrozenJSON), deterministic JSON serialization via to_json()/to_json_value(), and is consumed by all three adapters (JulesActionAdapter, JulesCliAdapter, LocalSubprocessAdapter).\n2. Execution-attempt identity — execution_attempt_id (format job_id:attempt:attempt_index) is a first-class field on NodePacket, persisted in the executor_sessions DB table with attempt_index, uses compare-and-swap reservation pattern to prevent dispatch races, and includes legacy migration backfill.\n3. Shared result shape — DispatchResult, SessionStatus, PatchResult are common types in executor_protocol.py; ExecutorAdapter is a runtime_checkable Protocol; all adapters return through the same typed receipt despite different transports.\n4. Evidence only — No code path writes to gddp-config or marks nodes complete; the decision.md explicitly states evidence is for human review.\n\n**Graph integrity**: \n- depends_on: [] — no upstream dependencies, no risk of breaking other nodes' assumptions.\n- unlocks: direct-executor-round-trip — the delivered contract (NodePacket, ExecutorAdapter protocol, LocalSubprocessAdapter, attempt identity, shared result types) is precisely what the downstream node needs. The direct-executor-round-trip node's constraints say 'Use the executor-neutral contract from neutral-executor-contract; do not bypass it' — this is satisfied.\n- All 17 contract tests pass. The code is in the runtime/adapters layer, not in graph configuration.\n\n**Minor finding**: The root-level decision.md/result-summary.md/patch.diff describe the canary-retry-proof echo utility, not this node. The correct artifacts are in .gddp/. This is a low-severity organizational concern that doesn't affect the node's actual role or graph integrity, but could confuse automated verification.",
+    "tool_trace": [
+      {
+        "ts": "2026-07-21T19:33:49.577Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_SqGZVDSFPgKFEVTtz4Mr2323",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/neutral-executor-contract/decision.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:49.578Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_UXi4pcfsZ4ENtqiHmgBS0927",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/neutral-executor-contract/result-summary.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:49.581Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_02_dBPiUlQlkOJtX3XzlZyO4665",
+        "command": "ls -la /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/neutral-executor-contract/"
+      },
+      {
+        "ts": "2026-07-21T19:33:49.593Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_SqGZVDSFPgKFEVTtz4Mr2323",
+        "tool": "read",
+        "ok": false
+      },
+      {
+        "ts": "2026-07-21T19:33:49.594Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_UXi4pcfsZ4ENtqiHmgBS0927",
+        "tool": "read",
+        "ok": false
+      },
+      {
+        "ts": "2026-07-21T19:33:49.605Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_02_dBPiUlQlkOJtX3XzlZyO4665",
+        "tool": "bash",
+        "ok": false
+      },
+      {
+        "ts": "2026-07-21T19:33:51.207Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_FT9TZcFo2KEzV8zAzAuP0705",
+        "command": "ls -la /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/"
+      },
+      {
+        "ts": "2026-07-21T19:33:51.208Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_01_vWoTu7Gj8wGPs7yM5D497958",
+        "command": "find /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/ -name \"decision.md\" -o -name \"result-summary.md\" -o -name \"patch.diff\" 2>/dev/null"
+      },
+      {
+        "ts": "2026-07-21T19:33:51.231Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_FT9TZcFo2KEzV8zAzAuP0705",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:51.242Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_vWoTu7Gj8wGPs7yM5D497958",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:53.504Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_11TJaakTBbirowcK8q1Z8550",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/decision.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:53.505Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_BsGbObeQscfsero8XbsL7438",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/result-summary.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:53.505Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_02_upUdqJWWvH0HTNM7NTB07383",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/patch.diff"
+      },
+      {
+        "ts": "2026-07-21T19:33:53.509Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_BsGbObeQscfsero8XbsL7438",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:53.509Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_02_upUdqJWWvH0HTNM7NTB07383",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:53.510Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_11TJaakTBbirowcK8q1Z8550",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:57.378Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_sqVMiGwb7SIQDTw7aXbH9267",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/decision.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:57.379Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_HaRxGvlOOeXtK2cllOBK1475",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/result-summary.md"
+      },
+      {
+        "ts": "2026-07-21T19:33:57.379Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_02_JlzQdul7QHsCtBjWvfyY9588",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/patch.diff"
+      },
+      {
+        "ts": "2026-07-21T19:33:57.382Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_sqVMiGwb7SIQDTw7aXbH9267",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:57.383Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_HaRxGvlOOeXtK2cllOBK1475",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:57.389Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_02_JlzQdul7QHsCtBjWvfyY9588",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:59.869Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_FyFUSgYAiZ7BM3CszsHK8639",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/patch.diff"
+      },
+      {
+        "ts": "2026-07-21T19:33:59.870Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_cfcSaKvdss3vAZyI4YXX5048",
+        "path": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml"
+      },
+      {
+        "ts": "2026-07-21T19:33:59.870Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_02_oBF8nje6wCNXYcDGrjsO5597",
+        "path": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/neutral-executor-contract.yaml"
+      },
+      {
+        "ts": "2026-07-21T19:33:59.873Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_cfcSaKvdss3vAZyI4YXX5048",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:59.877Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_FyFUSgYAiZ7BM3CszsHK8639",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:33:59.877Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_02_oBF8nje6wCNXYcDGrjsO5597",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:03.219Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_lz85Gzxb2jE413pzIiGm9186",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/patch.diff"
+      },
+      {
+        "ts": "2026-07-21T19:34:03.220Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_MWKPF6nKJ5wtf7LVeMIC9061",
+        "path": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml"
+      },
+      {
+        "ts": "2026-07-21T19:34:03.223Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_MWKPF6nKJ5wtf7LVeMIC9061",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:03.226Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_lz85Gzxb2jE413pzIiGm9186",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:05.942Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_Tik0yKqgjRPTO1tGRovA1958",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/patch.diff"
+      },
+      {
+        "ts": "2026-07-21T19:34:05.942Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_nrerWredPnTaXU8tFurV6513",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/jobs/job_dry_001/decision.md"
+      },
+      {
+        "ts": "2026-07-21T19:34:05.942Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_02_eZGj3FhcOWJzRfS9pPer0765",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/jobs/job_dry_001/result-summary.md"
+      },
+      {
+        "ts": "2026-07-21T19:34:05.944Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_Tik0yKqgjRPTO1tGRovA1958",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:05.944Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_nrerWredPnTaXU8tFurV6513",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:05.944Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_02_eZGj3FhcOWJzRfS9pPer0765",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:21.400Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_cBeIW2mafQHs0bbeDrcE6510",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git log --oneline -10 2>/dev/null || echo \"Not a git repo\""
+      },
+      {
+        "ts": "2026-07-21T19:34:21.401Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_01_bF96IBAf5UqKarQpgula2853",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git diff HEAD --stat 2>/dev/null | head -30"
+      },
+      {
+        "ts": "2026-07-21T19:34:21.438Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_cBeIW2mafQHs0bbeDrcE6510",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:21.439Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_bF96IBAf5UqKarQpgula2853",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:24.232Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_00_rgmmT7mdzTzwQEnYvT2m5724",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/decision.md"
+      },
+      {
+        "ts": "2026-07-21T19:34:24.233Z",
+        "tool": "read",
+        "blocked": false,
+        "toolCallId": "call_01_nEK3hCi5rn9Jtzxmx6n96645",
+        "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/result-summary.md"
+      },
+      {
+        "ts": "2026-07-21T19:34:24.236Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_rgmmT7mdzTzwQEnYvT2m5724",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:24.237Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_nEK3hCi5rn9Jtzxmx6n96645",
+        "tool": "read",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:31.587Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_f8ISmpKoYZ7DGwuqN8rO8279",
+        "command": "ls -la /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/docs/echo-usage.md /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/echo.py 2>/dev/null"
+      },
+      {
+        "ts": "2026-07-21T19:34:31.588Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_01_1HgSzBYWy0EokAYNvkax5394",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && python3 -c \"from scripts.adapters.executor_protocol import NodePacket; help(NodePacket)\" 2>&1 | head -30"
+      },
+      {
+        "ts": "2026-07-21T19:34:31.613Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_f8ISmpKoYZ7DGwuqN8rO8279",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:31.684Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_01_1HgSzBYWy0EokAYNvkax5394",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:36.208Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_YKDI1dO9H2vA0lkwnx7W4067",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && python3 -c \"\nfrom scripts.adapters.executor_protocol import NodePacket, DispatchResult, SessionStatus, PatchResult, SessionRef, ExecutorAdapter\nfrom scripts.adapters.jules_action_adapter import JulesActionAdapter\nfrom scripts.adapters.jules_cli_adapter import JulesCliAdapter\nfrom scripts.adapters.local_subprocess_adapter import LocalSubprocessAdapter\nprint('All imports OK')\nprint(f'NodePacket is frozen dataclass: {hasattr(NodePacket, \\\"to_json\\\")}')\nprint(f'DispatchResult is frozen: {hasattr(DispatchResult, \\\"frozen\\\") or \\\"__setattr__\\\" in type(DispatchResult).__dict__}')\nprint(f'ExecutorAdapter is runtime_checkable: {hasattr(ExecutorAdapter, \\\"__instancecheck__\\\")}')\nprint(f'JulesActionAdapter has dispatch(NodePacket): OK')\nprint(f'JulesCliAdapter has dispatch(NodePacket): OK')\nprint(f'LocalSubprocessAdapter has dispatch(NodePacket): OK')\n\""
+      },
+      {
+        "ts": "2026-07-21T19:34:36.292Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_YKDI1dO9H2vA0lkwnx7W4067",
+        "tool": "bash",
+        "ok": false
+      },
+      {
+        "ts": "2026-07-21T19:34:39.926Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_JBwgEfGHGL28zaSpTqtG7450",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && python3 -c \"\nimport sys\nsys.path.insert(0, 'scripts')\nfrom adapters.executor_protocol import NodePacket, DispatchResult, SessionStatus, PatchResult, SessionRef, ExecutorAdapter\nfrom adapters.jules_action_adapter import JulesActionAdapter\nfrom adapters.jules_cli_adapter import JulesCliAdapter\nfrom adapters.local_subprocess_adapter import LocalSubprocessAdapter\nprint('All imports OK')\nprint(f'NodePacket has to_json: {hasattr(NodePacket, \\\"to_json\\\")}')\nprint(f'DispatchResult is frozen: {\\\"__setattr__\\\" in type(DispatchResult).__dict__}')\nprint(f'ExecutorAdapter is runtime_checkable: {hasattr(ExecutorAdapter, \\\"__instancecheck__\\\")}')\nprint('All adapters importable and present')\n\""
+      },
+      {
+        "ts": "2026-07-21T19:34:40.018Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_JBwgEfGHGL28zaSpTqtG7450",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:42.079Z",
+        "tool": "bash",
+        "blocked": false,
+        "toolCallId": "call_00_hBHK0gJz5usTCFv4nzBS7426",
+        "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && python3 -m pytest scripts/adapters/test_executor_contract.py -x -q --no-header 2>&1 | tail -30"
+      },
+      {
+        "ts": "2026-07-21T19:34:42.706Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_hBHK0gJz5usTCFv4nzBS7426",
+        "tool": "bash",
+        "ok": true
+      },
+      {
+        "ts": "2026-07-21T19:34:54.523Z",
+        "event": "tool_execution_end",
+        "toolCallId": "call_00_eZ0C9lVz30BMYIlAHq751224",
+        "tool": "submit_integrity_verdict",
+        "ok": true
+      }
+    ],
+    "graph_observations": [
+      {
+        "severity": "low",
+        "summary": "Root-level artifacts (decision.md, result-summary.md, patch.diff) appear to be stale from the canary-retry-proof node rather than from neutral-executor-contract. Future nodes or automated artifact gates may read the wrong content if they scan the repo root instead of .gddp/.",
+        "affected_node_ids": [
+          "neutral-executor-contract",
+          "canary-retry-proof"
+        ]
+      }
+    ],
+    "lane_status": "completed",
+    "harness_error": null
+  },
+  "confidence": 0.95,
+  "criteria_confidence": 0.95,
+  "completeness": 1.0,
+  "graph_readiness": 0.95,
+  "completeness_status": "complete",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "executor-neutral-packet",
+        "criterion": "The same complete node packet can be given to any executor without changing the node's meaning",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "execution-attempt-identity",
+        "criterion": "GDDP can identify and track each execution attempt independently of the executor being used",
+        "status": "indeterminate",
+        "confidence": 0.5,
+        "method": "keyword_scan_source",
+        "evidence": [
+          "GDDP -> line 133: 'GDDP'"
+        ],
+        "reasoning": "Scanned source files (scripts/adapters/__init__.py, scripts/adapters/executor_protocol.py, scripts/adapters/jules_action_adapter.py, scripts/adapters/jules_cli_adapter.py...) for identifiers named in the criterion (GDDP). String match found — semantic investigation needed to confirm.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "shared-result-shape",
+        "criterion": "Every executor returns work through one shared, understandable result shape",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "evidence-only-no-graph-mutation",
+        "criterion": "Executor output remains evidence only and does not change graph truth automatically",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [
+      {
+        "constraint": "One executor-neutral packet and returned-result contract across all current and future executors",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Preserve any mediated pathway as inherited infrastructure rather than the required command bus",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Prefer a direct transport for the short node round trip",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Do not mark this node complete from executor success, passing tests, or an evaluator verdict",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      }
+    ],
+    "artifacts_present": {
+      "decision.md": true,
+      "result-summary.md": true,
+      "patch.diff": true
+    },
+    "deps_status": {},
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [
+      {
+        "criterion_id": "executor-neutral-packet",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "scripts/adapters/executor_protocol.py defines NodePacket as an immutable frozen dataclass with all node fields (job_id, execution_attempt_id, node_id, title, goal, why, constraints, acceptance_criteria, required_artifacts, attempt_index, previous_findings)",
+          "scripts/adapters/executor_protocol.py defines ExecutorAdapter protocol with dispatch(packet: NodePacket) -> DispatchResult signature",
+          "scripts/adapters/jules_cli_adapter.py: JulesCliAdapter.dispatch(self, packet: NodePacket) -> DispatchResult",
+          "scripts/adapters/jules_action_adapter.py: JulesActionAdapter.dispatch(self, packet: NodePacket) -> DispatchResult",
+          "scripts/adapters/local_subprocess_adapter.py: LocalSubprocessAdapter.dispatch(self, packet: NodePacket) -> DispatchResult",
+          "scripts/runtime/heartbeat/dispatcher.py: _build_node_packet() constructs NodePacket from job; dispatch() routes same packet to any executor",
+          "scripts/adapters/test_executor_contract.py: test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job verifies immutability and FrozenInstanceError",
+          "scripts/adapters/test_executor_contract.py: test_jules_renderers_preserve_the_same_packet_semantics verifies both Jules paths render identical content",
+          "scripts/adapters/test_executor_contract.py: test_dispatch_returns_common_receipt_and_passes_same_node_packet (parametrized across jules, jules_cli, local_subprocess) proves same NodePacket reaches all executors",
+          ".gddp/patch.diff shows the complete implementation diff including NodePacket introduction and all adapter conversions"
+        ],
+        "reasoning": "NodePacket is the singular executor-neutral packet defined in the protocol. It is immutable, deterministically serializable, and carries all node fields. All three adapters (JulesCliAdapter, LocalSubprocessAdapter, JulesActionAdapter) accept NodePacket. The ExecutorAdapter protocol enforces this contract. Tests prove the same NodePacket reaches all executors without semantic loss. This criterion is fully satisfied."
+      },
+      {
+        "criterion_id": "execution-attempt-identity",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "scripts/adapters/executor_protocol.py NodePacket has execution_attempt_id field (format: {job_id}:attempt:{attempt_index}) and attempt_index field",
+          "scripts/runtime/heartbeat/dispatcher.py _build_node_packet constructs execution_attempt_id as f\"{job['job_id']}:attempt:{attempt_index}\"",
+          "scripts/adapters/executor_protocol.py SessionRef provides executor-independent session reference (executor + session_id)",
+          "scripts/adapters/test_executor_contract.py: test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job asserts execution_attempt_id == 'job-123:attempt:2'",
+          "scripts/adapters/test_executor_contract.py: test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation verifies execution_attempt_id survives dispatch/collect cycle",
+          "scripts/adapters/local_subprocess_adapter.py dispatch embeds attempt info in unique session_id",
+          ".gddp/patch.diff shows execution_attempt_id added to NodePacket and all transport paths"
+        ],
+        "reasoning": "NodePacket carries execution_attempt_id and attempt_index. SessionRef provides executor-independent tracking across all adapters. Tests verify identity construction, persistence, and retrieval. The identity is embedded in the packet, persisted per session, and survives re-instantiation. This criterion is fully satisfied."
+      },
+      {
+        "criterion_id": "shared-result-shape",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          "scripts/adapters/executor_protocol.py: DispatchResult (frozen dataclass with success, session_ref, issue_url, error)",
+          "scripts/adapters/executor_protocol.py: SessionStatus (with typed Literal state: dispatched/running/needs_operator/completed/failed/missing/poll_error)",
+          "scripts/adapters/executor_protocol.py: PatchResult (with success, patch_text, patch_path, error)",
+          "scripts/adapters/jules_cli_adapter.py dispatch returns DispatchResult, status returns SessionStatus, collect returns PatchResult",
+          "scripts/adapters/local_subprocess_adapter.py dispatch returns DispatchResult, status returns SessionStatus, collect returns PatchResult",
+          "scripts/adapters/jules_action_adapter.py dispatch returns DispatchResult",
+          "scripts/adapters/test_executor_contract.py: test_dispatch_returns_common_receipt_and_passes_same_node_packet proves all three adapters return DispatchResult",
+          "scripts/adapters/test_executor_contract.py: test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation verifies PatchResult from collect"
+        ],
+        "reasoning": "Three shared result types (DispatchResult, SessionStatus, PatchResult) are defined in the protocol and returned by all adapters. Direct adapters (JulesCli, LocalSubprocess) implement the full dispatch/status/collect/cancel lifecycle with common types. The mediated adapter (JulesAction) returns DispatchResult. Tests prove all executors return through these shared shapes. This criterion is fully satisfied."
+      },
+      {
+        "criterion_id": "evidence-only-no-graph-mutation",
+        "judgment": "judged_pass",
+        "confidence": 0.95,
+        "evidence": [
+          ".gddp/decision.md: 'This evidence does not mutate gddp-config, accept the node, or mark it complete'",
+          ".gddp/result-summary.md: 'returned output remains review evidence. Runtime job/session state can reach awaiting_review, but no implementation path changes graph truth or completes the node'",
+          "scripts/adapters/executor_protocol.py: ExecutorAdapter.collect() docstring: 'Does NOT apply or commit. Saves patch to dest_path'",
+          "scripts/adapters/jules_cli_adapter.py: collect() runs jules remote pull WITHOUT --apply",
+          "scripts/adapters/local_subprocess_adapter.py: collect() reads stdout and writes to destination file — no application or commit",
+          "scripts/adapters/jules_action_adapter.py build_issue_body includes: 'It does not advance graph truth automatically'",
+          "No code in scripts/adapters/ or scripts/runtime/heartbeat/dispatcher.py writes to gddp-config or project.yaml",
+          "scripts/runtime/heartbeat/dispatcher.py: ADAPTERS/MEDIATED_ADAPTERS registry — no graph mutation in dispatch path",
+          "PROJECT-BRIEF.md: 'executor output remains evidence only and does not change graph truth automatically'",
+          "README.md: 'Runtime does not mutate graph truth automatically'"
+        ],
+        "reasoning": "Every adapter's collect method outputs evidence (patch text) without applying or committing. No code path in the adapters or dispatcher writes to gddp-config or project.yaml. All documentation (decision.md, result-summary.md, PROJECT-BRIEF.md, README.md) affirms evidence-only status. The foundational return-router node established receipt-only flow. This criterion is fully satisfied."
+      }
+    ],
+    "overall_reasoning": "All four acceptance criteria for the neutral-executor-contract node are satisfied with high confidence. The implementation introduces:\n\n1. **executor-neutral-packet**: A frozen, immutable `NodePacket` dataclass in `scripts/adapters/executor_protocol.py` that carries all node fields (job_id, execution_attempt_id, node_id, title, goal, why, constraints, acceptance_criteria, required_artifacts, attempt_index, previous_findings). It has deterministic JSON serialization. All three adapters (`JulesCliAdapter`, `LocalSubprocessAdapter`, `JulesActionAdapter`) accept `NodePacket` in their dispatch methods. The `ExecutorAdapter` protocol enforces this contract. Tests prove immutability and semantic equivalence across all transports.\n\n2. **execution-attempt-identity**: `NodePacket` carries `execution_attempt_id` (format: `{job_id}:attempt:{attempt_index}`) and `attempt_index`. `SessionRef` provides executor-independent tracking. Attempt identity is persisted per session before dispatch, survives re-instantiation, and is preserved across retries. Tests verify construction, uniqueness, and durability.\n\n3. **shared-result-shape**: Three common result types (`DispatchResult`, `SessionStatus`, `PatchResult`) are used by all adapters. Direct lifecycle adapters implement the full dispatch/status/collect/cancel protocol. The mediated adapter returns `DispatchResult`. Tests parametrized across all executors prove common receipt shapes.\n\n4. **evidence-only-no-graph-mutation**: No code path writes to `gddp-config` or `project.yaml`. All collect methods output patch text without applying or committing. Documentation across decision.md, result-summary.md, PROJECT-BRIEF.md, and README.md affirms evidence-only status. The return router from the foundational node ensures receipt-only flow.\n\nAll four constraints are satisfied. The required artifacts (decision.md, result-summary.md, patch.diff) exist in the `.gddp/` directory with correct content for this node. Root-level copies of the same filenames contain stale content from a different node (canary-retry-proof/echo utility) — this is a minor completeness/coordination concern but does not affect criteria satisfaction.",
+    "risks": "1. **Root-level artifact staleness**: The root-level decision.md, result-summary.md, and patch.diff contain content about an 'echo' utility (from a different node, likely canary-retry-proof). The correct node artifacts are in `.gddp/`. If the upstream evaluator or human operator reads root-level artifacts instead of `.gddp/` ones, they may see misleading content. This should be resolved by cleaning up root-level artifacts or documenting that `.gddp/` is the canonical artifact location for this worktree.\n\n2. **Jules CLI cancellation gap**: The JulesCliAdapter reports cancellation as truthful (stops polling/integration) but cannot signal the remote Jules compute to stop because the installed CLI has no cancel command. This is documented in decision.md as a known limitation.\n\n3. **No live semantic evaluator receipt**: The result-summary.md notes that Pi evaluator attempts produced fail-closed receipts due to provider configuration issues. No semantic or integrity verdict from a live evaluator is available for this node, though this is explicitly stated as not blocking — the criteria are about the contract definition, not about a live evaluator run.",
+    "followup_candidates": "1. Clean up root-level decision.md, result-summary.md, and patch.diff which contain stale content from the canary-retry-proof/echo utility node. They should either be removed or symlinked to `.gddp/` equivalents to avoid confusion.\n\n2. Confirm that `.gddp/` is the canonical location for node artifacts in this worktree setup and that evaluators/operators are directed there rather than root-level.\n\n3. The Pi evaluator provider configuration issue (OpenRouter-formatted key at OpenAI endpoint) should be addressed as part of its own bounded graph work so that live semantic evaluator receipts can be produced.",
+    "budget_exhausted": false,
+    "budget_trace": {
+      "tool_calls": [
+        {
+          "ts": "2026-07-21T19:32:26.736Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_DSpSQmj6YIST7nw9Mgmr6876",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:26.737Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_zFeSi8vR6eKMyLXu9Y1Q5865",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:26.745Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_DSpSQmj6YIST7nw9Mgmr6876",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:26.746Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_zFeSi8vR6eKMyLXu9Y1Q5865",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:29.456Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_CDmgoUkcz1gN44shWgWu0897",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && find . -name \"*.py\" -path \"*/adapters/*\" | sort"
+        },
+        {
+          "ts": "2026-07-21T19:32:29.459Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_EEfged1sxKYCUWf2yx066554",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && ls -la"
+        },
+        {
+          "ts": "2026-07-21T19:32:29.460Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_02_m5YcDXfSCXvNuH1hZ3zo6597",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git log --oneline -20"
+        },
+        {
+          "ts": "2026-07-21T19:32:29.487Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_EEfged1sxKYCUWf2yx066554",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:29.497Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_CDmgoUkcz1gN44shWgWu0897",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:29.501Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_m5YcDXfSCXvNuH1hZ3zo6597",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:31.715Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_9t07liD33BuKWBp4uScG6153",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/decision.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:31.715Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_fq2fIkk4oKcymlQuckQ88420",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/result-summary.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:31.716Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_02_L7tgGSBldc9b5m7sY2Z85198",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/patch.diff"
+        },
+        {
+          "ts": "2026-07-21T19:32:31.719Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_L7tgGSBldc9b5m7sY2Z85198",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:31.719Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_9t07liD33BuKWBp4uScG6153",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:31.720Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_fq2fIkk4oKcymlQuckQ88420",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:34.701Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_Jqtqr4fAJHRp5AA6ob1z4258",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/executor_protocol.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:34.702Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_lIu14ydVJ9tcMFz1y8JX2590",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/__init__.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:34.703Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_02_6VFuafwWjrq3Bs9TBt068831",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/test_executor_contract.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:34.705Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_Jqtqr4fAJHRp5AA6ob1z4258",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:34.705Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_lIu14ydVJ9tcMFz1y8JX2590",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:34.706Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_6VFuafwWjrq3Bs9TBt068831",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:38.194Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_U47ogXlrsFSwE6qcEF7L8740",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/jules_cli_adapter.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:38.196Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_aJMdDgHyq7Cm8DsqB1PT1335",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/jules_action_adapter.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:38.197Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_02_JRc3dHGE5ka0wOot91754065",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/local_subprocess_adapter.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:38.200Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_U47ogXlrsFSwE6qcEF7L8740",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:38.201Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_aJMdDgHyq7Cm8DsqB1PT1335",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:38.202Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_JRc3dHGE5ka0wOot91754065",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:40.746Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_PMMiragDHzhV6ZYlSc591769",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && find scripts -name \"*.py\" | grep -i dispatch | sort"
+        },
+        {
+          "ts": "2026-07-21T19:32:40.747Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_uKgg8JL4Cd9ZDSQMefhq2591",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && find scripts/runtime -name \"*.py\" | sort"
+        },
+        {
+          "ts": "2026-07-21T19:32:40.774Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_uKgg8JL4Cd9ZDSQMefhq2591",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:40.774Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_PMMiragDHzhV6ZYlSc591769",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:43.101Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_Y7b6maUeJUyMOmORrHMq7005",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/runtime/heartbeat/dispatcher.py"
+        },
+        {
+          "ts": "2026-07-21T19:32:43.102Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_78j8WzCgJC4vB0MeE6kj1119",
+          "path": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml"
+        },
+        {
+          "ts": "2026-07-21T19:32:43.104Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_Y7b6maUeJUyMOmORrHMq7005",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:43.105Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_78j8WzCgJC4vB0MeE6kj1119",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:45.507Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_cod13QmmRQNoAt0FRWuD3531",
+          "path": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml"
+        },
+        {
+          "ts": "2026-07-21T19:32:45.508Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_QsNnhDajIfVDgilbjwvC1983",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && find docs -name \"*contract*\" -o -name \"*neutral*\" -o -name \"*executor*\" 2>/dev/null | sort"
+        },
+        {
+          "ts": "2026-07-21T19:32:45.509Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_02_S5Hn7NXRWOjQlwdiGcbL3998",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && ls .gddp/ 2>/dev/null"
+        },
+        {
+          "ts": "2026-07-21T19:32:45.518Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_cod13QmmRQNoAt0FRWuD3531",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:45.534Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_QsNnhDajIfVDgilbjwvC1983",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:45.534Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_S5Hn7NXRWOjQlwdiGcbL3998",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:48.081Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_enU2kQxaX2gfkmUyuvWR7776",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/decision.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:48.081Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_01_GY8iNUqXjfingECz9eFG2075",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/result-summary.md"
+        },
+        {
+          "ts": "2026-07-21T19:32:48.082Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_02_joSqaTXdt0aagAwKTO2e5145",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/.gddp/patch.diff"
+        },
+        {
+          "ts": "2026-07-21T19:32:48.083Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_enU2kQxaX2gfkmUyuvWR7776",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:48.084Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_GY8iNUqXjfingECz9eFG2075",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:32:48.087Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_joSqaTXdt0aagAwKTO2e5145",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:01.946Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_0fjXAyc8auNn5Zeqtgxv2113",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && ls -la .gddp/"
+        },
+        {
+          "ts": "2026-07-21T19:33:01.947Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_XY5EpyZKMQFZQ4WavshF4991",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git show --stat HEAD"
+        },
+        {
+          "ts": "2026-07-21T19:33:01.948Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_02_bg2FVCgKrBmAxNlpEPyd6636",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git log --oneline --all | head -30"
+        },
+        {
+          "ts": "2026-07-21T19:33:01.976Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_0fjXAyc8auNn5Zeqtgxv2113",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:01.984Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_XY5EpyZKMQFZQ4WavshF4991",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:02.000Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_bg2FVCgKrBmAxNlpEPyd6636",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:07.580Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_0MxBlPN4GkTJdNWaWWNj5636",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git diff --stat HEAD~7..HEAD~1 2>/dev/null || git log --oneline --name-status 3881208..HEAD~1 | head -40"
+        },
+        {
+          "ts": "2026-07-21T19:33:07.580Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_j20oZsEGUw6t21cxSnbw1485",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && grep -rn \"gddp.config\\|project\\.yaml\\|graph_updater\\|completion\\|complete.*node\\|accept.*node\\|graph.*truth\" scripts/adapters/*.py | grep -v test | grep -v __pycache__ | grep -v \".pyc\""
+        },
+        {
+          "ts": "2026-07-21T19:33:07.581Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_02_XK853SKTHR5epsI0Zy0g5675",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/__init__.py"
+        },
+        {
+          "ts": "2026-07-21T19:33:07.586Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_XK853SKTHR5epsI0Zy0g5675",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:07.609Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_j20oZsEGUw6t21cxSnbw1485",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:07.641Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_0MxBlPN4GkTJdNWaWWNj5636",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:11.817Z",
+          "tool": "read",
+          "blocked": false,
+          "toolCallId": "call_00_Ud0x6ALiZJJOmxnIW0e79035",
+          "path": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/scripts/adapters/__init__.py"
+        },
+        {
+          "ts": "2026-07-21T19:33:11.818Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_inaobM3JzPZ2DjFrnwhC7223",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && grep -l \"evidence\\|graph.*truth\\|awaiting_review\\|receipt\" scripts/adapters/*.py scripts/runtime/heartbeat/dispatcher.py | sort"
+        },
+        {
+          "ts": "2026-07-21T19:33:11.818Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_02_TspQdTxl156xn9jx7Nip9223",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git diff HEAD~2 --name-only"
+        },
+        {
+          "ts": "2026-07-21T19:33:11.822Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_Ud0x6ALiZJJOmxnIW0e79035",
+          "tool": "read",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:11.837Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_inaobM3JzPZ2DjFrnwhC7223",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:11.848Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_TspQdTxl156xn9jx7Nip9223",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:14.430Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_Mjoe4CGtgoLu9LlwCNru8499",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && cat scripts/adapters/__init__.py"
+        },
+        {
+          "ts": "2026-07-21T19:33:14.431Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_3Wh5YetXIWnbe7RT8Wyi8938",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && git diff 1d4c4c7..HEAD -- scripts/adapters/ | head -100"
+        },
+        {
+          "ts": "2026-07-21T19:33:14.447Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_Mjoe4CGtgoLu9LlwCNru8499",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:14.469Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_3Wh5YetXIWnbe7RT8Wyi8938",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:19.937Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_00_FZommbkKBocHVRFW0ecb0945",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && ls -la scripts/__init__.py scripts/adapters/__init__.py 2>/dev/null"
+        },
+        {
+          "ts": "2026-07-21T19:33:19.938Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_01_HVoRvow3G4bU4GjyNa6Y4407",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && cat scripts/__init__.py 2>/dev/null && echo \"---\" && cat scripts/adapters/__init__.py 2>/dev/null; echo \"done\""
+        },
+        {
+          "ts": "2026-07-21T19:33:19.938Z",
+          "tool": "bash",
+          "blocked": false,
+          "toolCallId": "call_02_C45ikeFSPTt2tHONsS4g0689",
+          "command": "cd /Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine && grep -rn \"from.*executor_protocol import\\|import.*executor_protocol\" scripts/ --include=\"*.py\" | grep -v test | grep -v __pycache__"
+        },
+        {
+          "ts": "2026-07-21T19:33:19.959Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_01_HVoRvow3G4bU4GjyNa6Y4407",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:19.965Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_FZommbkKBocHVRFW0ecb0945",
+          "tool": "bash",
+          "ok": false
+        },
+        {
+          "ts": "2026-07-21T19:33:20.007Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_02_C45ikeFSPTt2tHONsS4g0689",
+          "tool": "bash",
+          "ok": true
+        },
+        {
+          "ts": "2026-07-21T19:33:46.161Z",
+          "event": "tool_execution_end",
+          "toolCallId": "call_00_gGv2AB9Lv70nQUmqe3wF8272",
+          "tool": "submit_verdict",
+          "ok": true
+        }
+      ]
+    },
+    "lane_status": "completed",
+    "harness_error": null
+  },
+  "decision_reasoning": "All four acceptance criteria for the neutral-executor-contract node are satisfied with high confidence. The implementation introduces:\n\n1. **executor-neutral-packet**: A frozen, immutable `NodePacket` dataclass in `scripts/adapters/executor_protocol.py` that carries all node fields (job_id, execution_attempt_id, node_id, title, goal, why, constraints, acceptance_criteria, required_artifacts, attempt_index, previous_findings). It has deterministic JSON serialization. All three adapters (`JulesCliAdapter`, `LocalSubprocessAdapter`, `JulesActionAdapter`) accept `NodePacket` in their dispatch methods. The `ExecutorAdapter` protocol enforces this contract. Tests prove immutability and semantic equivalence across all transports.\n\n2. **execution-attempt-identity**: `NodePacket` carries `execution_attempt_id` (format: `{job_id}:attempt:{attempt_index}`) and `attempt_index`. `SessionRef` provides executor-independent tracking. Attempt identity is persisted per session before dispatch, survives re-instantiation, and is preserved across retries. Tests verify construction, uniqueness, and durability.\n\n3. **shared-result-shape**: Three common result types (`DispatchResult`, `SessionStatus`, `PatchResult`) are used by all adapters. Direct lifecycle adapters implement the full dispatch/status/collect/cancel protocol. The mediated adapter returns `DispatchResult`. Tests parametrized across all executors prove common receipt shapes.\n\n4. **evidence-only-no-graph-mutation**: No code path writes to `gddp-config` or `project.yaml`. All collect methods output patch text without applying or committing. Documentation across decision.md, result-summary.md, PROJECT-BRIEF.md, and README.md affirms evidence-only status. The return router from the foundational node ensures receipt-only flow.\n\nAll four constraints are satisfied. The required artifacts (decision.md, result-summary.md, patch.diff) exist in the `.gddp/` directory with correct content for this node. Root-level copies of the same filenames contain stale content from a different node (canary-retry-proof/echo utility) — this is a minor completeness/coordination concern but does not affect criteria satisfaction.",
+  "required_next_action": "Proceed to accept_node (open evidence PR).",
+  "generated_at": "2026-07-21T19:34:54.568415+00:00",
+  "evaluated_tree_sha": "13875221eb70def9ec21d9e447058e18edf24179",
+  "evaluated_commit_sha": "1539921cbd642670271021645f8abd8f737efc00",
+  "merge_commit_sha": "1539921cbd642670271021645f8abd8f737efc00",
+  "pr_ref": null,
+  "job_id": "routing-proof",
+  "canonical_context": {
+    "readme": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md",
+    "project_brief": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+    "foundational_node": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml",
+    "neighbor:direct-executor-round-trip": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml"
+  },
+  "context_coverage": {
+    "criteria": {
+      "rating": "high",
+      "offered": 4,
+      "content_accessed": 4,
+      "not_observed": 0,
+      "accessed_paths": [
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml",
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md"
+      ],
+      "not_observed_paths": []
+    },
+    "integrity": {
+      "rating": "low",
+      "offered": 4,
+      "content_accessed": 2,
+      "not_observed": 2,
+      "accessed_paths": [
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml",
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml"
+      ],
+      "not_observed_paths": [
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md"
+      ]
+    },
+    "overall": "low"
+  }
+}
