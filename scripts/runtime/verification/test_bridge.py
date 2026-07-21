@@ -160,6 +160,7 @@ class TestCredentialFetch(unittest.TestCase):
         if self._saved_key is not None:
             os.environ["DEEPSEEK_API_KEY"] = self._saved_key
         os.environ.pop("GDDP_DEEPSEEK_KEY_CMD", None)
+        os.environ.pop("GDDP_VERIFY_SEMANTIC_ARGS", None)
 
     def test_custom_key_command_is_used(self):
         os.environ["GDDP_DEEPSEEK_KEY_CMD"] = "echo test-key-123"
@@ -198,6 +199,23 @@ class TestCredentialFetch(unittest.TestCase):
         self.assertEqual(res["verification_status"], "ok")
         # The credential fetch must not have invoked subprocess.run; only the
         # verifier CLI call should have occurred.
+        self.assertEqual(mock_run.call_count, 1)
+
+    def test_chatgpt_route_does_not_fetch_deepseek_key(self):
+        os.environ["GDDP_VERIFY_SEMANTIC_ARGS"] = (
+            "--semantic-mode live --semantic-harness pi "
+            "--semantic-provider chatgpt --semantic-pi-model gpt-5.4"
+        )
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _pinned_subject(), patch(
+            "scripts.runtime.verification.bridge.subprocess.run", return_value=cli
+        ) as mock_run:
+            res = _verify_return()
+
+        self.assertEqual(res["verification_status"], "ok")
         self.assertEqual(mock_run.call_count, 1)
 
 

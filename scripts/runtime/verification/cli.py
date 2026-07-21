@@ -12,6 +12,7 @@ from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.semantic.agent import LLMResponse, OpenAICompatibleRunner, ToolCall
 from scripts.runtime.verification.semantic.integrity_runner import IntegrityHarnessRunner
+from scripts.runtime.verification.semantic.pi_environment import has_chatgpt_oauth
 from scripts.runtime.verification.semantic.pi_runner import PiHarnessRunner
 from scripts.runtime.verification.semantic.tools import SemanticToolbox
 
@@ -106,9 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--semantic-provider",
-        choices=["auto", "deepseek", "glm"],
+        choices=["auto", "deepseek", "chatgpt", "glm"],
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
-        help="Live semantic provider. auto prefers DeepSeek when configured, then GLM.",
+        help=(
+            "Evaluator provider. Pi allows DeepSeek or ChatGPT OAuth; "
+            "the legacy runner also accepts GLM."
+        ),
     )
     parser.add_argument(
         "--semantic-max-turns",
@@ -250,15 +254,19 @@ def _pi_provider(args) -> str:
     requested = args.semantic_provider
     if requested == "deepseek":
         return "deepseek"
+    if requested == "chatgpt":
+        return "openai-codex"
     if requested == "glm":
-        return "zai"
-    # auto: prefer deepseek if a key is present, else zai (GLM).
+        raise RuntimeError(
+            "evaluator Pi does not allow GLM; use deepseek or chatgpt (openai-codex OAuth)"
+        )
+    # auto: prefer the explicit DeepSeek key, then ChatGPT OAuth.
     if os.environ.get("DEEPSEEK_API_KEY"):
         return "deepseek"
-    if os.environ.get("GLM_API_KEY"):
-        return "zai"
+    if has_chatgpt_oauth():
+        return "openai-codex"
     raise RuntimeError(
-        "--semantic-harness pi needs DEEPSEEK_API_KEY or GLM_API_KEY for provider auto-selection"
+        "--semantic-harness pi needs DEEPSEEK_API_KEY or configured openai-codex OAuth"
     )
 
 
@@ -269,12 +277,14 @@ def main(argv: list[str] | None = None) -> int:
     shape_profile = _load_yaml(args.shape_profile) if args.shape_profile else None
     repo = args.repo.resolve()
 
-    runner = _build_runner(args)
+    harness_choice = _resolve_harness(args)
+    # The Pi harness owns its model loop. ``runner`` remains in the verifier
+    # signature for legacy callers but is not used when Pi is selected.
+    runner = OfflineFinalizingRunner() if harness_choice == "pi" else _build_runner(args)
     semantic_max_tokens = args.semantic_max_tokens
     if semantic_max_tokens is None:
         semantic_max_tokens = 96_000 if args.semantic_mode == "live" else 24_000
 
-    harness_choice = _resolve_harness(args)
     semantic_harness = None
     if harness_choice == "pi":
         pi_runner = PiHarnessRunner(

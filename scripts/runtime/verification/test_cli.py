@@ -221,3 +221,59 @@ def test_live_runner_requires_selected_provider_key(monkeypatch) -> None:
         assert "DEEPSEEK_API_KEY" in str(exc)
     else:
         raise AssertionError("expected missing provider key to fail")
+
+
+def test_pi_provider_supports_chatgpt_oauth(monkeypatch, tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        json.dumps({"openai-codex": {"type": "oauth", "access": "test"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GDDP_PI_AUTH_FILE", str(auth_file))
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml", "node.yaml",
+            "--project-yaml", "project.yaml",
+            "--repo", ".",
+            "--semantic-mode", "live",
+            "--semantic-harness", "pi",
+            "--semantic-provider", "chatgpt",
+        ]
+    )
+
+    assert cli._pi_provider(args) == "openai-codex"
+
+
+def test_pi_provider_auto_falls_back_to_chatgpt_oauth(monkeypatch, tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        json.dumps({"openai-codex": {"type": "oauth", "access": "test"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GDDP_PI_AUTH_FILE", str(auth_file))
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    args = cli.build_parser().parse_args(
+        ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
+    )
+
+    assert cli._pi_provider(args) == "openai-codex"
+
+
+def test_pi_provider_rejects_glm() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml", "node.yaml",
+            "--project-yaml", "project.yaml",
+            "--repo", ".",
+            "--semantic-provider", "glm",
+        ]
+    )
+
+    try:
+        cli._pi_provider(args)
+    except RuntimeError as exc:
+        assert "does not allow GLM" in str(exc)
+    else:
+        raise AssertionError("expected evaluator Pi to reject GLM")

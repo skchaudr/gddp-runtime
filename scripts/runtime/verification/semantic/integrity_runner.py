@@ -22,6 +22,7 @@ from typing import Any
 
 from scripts.runtime.verification.schemas import IntegrityOutput, LaneExecutionStatus
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
+from scripts.runtime.verification.semantic.pi_environment import build_pi_environment
 from scripts.runtime.verification.semantic.subprocess_utils import (
     read_tail as _read_tail,
     read_trace as _read_trace,
@@ -150,30 +151,29 @@ class IntegrityHarnessRunner:
             trace_path = tf.name
         os.unlink(trace_path)
 
-        env = dict(os.environ)
-        env["GDDP_INTEGRITY_OUT"] = verdict_path
-        env["GDDP_TOOL_TRACE"] = trace_path
         sandbox_home = tempfile.mkdtemp(prefix="gddp-pi-integrity-home-")
-        env["HOME"] = sandbox_home
-
-        cmd = self._build_command(sys_prompt, user_prompt, repo)
-        # Phase 4: tee stdout/stderr to terminal + durable log. Do NOT raise
-        # on non-zero exit — return a typed fallback instead so the other
-        # lane's evidence is preserved in the receipt.
-        stdout_path = tempfile.mktemp(prefix="gddp-integrity-stdout-")
-        stderr_path = tempfile.mktemp(prefix="gddp-integrity-stderr-")
         try:
-            proc = _tee_subprocess(cmd, env, str(repo), stdout_path, stderr_path, PI_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            trace = _read_trace(trace_path)
-            return _empty_integrity(
-                f"pi timed out after {PI_TIMEOUT_SECONDS}s",
-                tool_trace=trace,
-                lane_status=LaneExecutionStatus.TIMED_OUT,
-                harness_error=_harness_error_with_logs(
-                    f"pi timed out after {PI_TIMEOUT_SECONDS}s", stdout_path, stderr_path,
-                ),
-            )
+            env = build_pi_environment(self.provider, Path(sandbox_home))
+            env["GDDP_INTEGRITY_OUT"] = verdict_path
+            env["GDDP_TOOL_TRACE"] = trace_path
+            cmd = self._build_command(sys_prompt, user_prompt, repo)
+            # Tee the investigator stream while preserving failure evidence.
+            stdout_path = tempfile.mktemp(prefix="gddp-integrity-stdout-")
+            stderr_path = tempfile.mktemp(prefix="gddp-integrity-stderr-")
+            try:
+                proc = _tee_subprocess(
+                    cmd, env, str(repo), stdout_path, stderr_path, PI_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                trace = _read_trace(trace_path)
+                return _empty_integrity(
+                    f"pi timed out after {PI_TIMEOUT_SECONDS}s",
+                    tool_trace=trace,
+                    lane_status=LaneExecutionStatus.TIMED_OUT,
+                    harness_error=_harness_error_with_logs(
+                        f"pi timed out after {PI_TIMEOUT_SECONDS}s", stdout_path, stderr_path,
+                    ),
+                )
         finally:
             shutil.rmtree(sandbox_home, ignore_errors=True)
 

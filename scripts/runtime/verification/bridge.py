@@ -195,6 +195,7 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
     )
+    semantic_provider = _semantic_provider(semantic_args)
     cmd = [
         sys.executable,
         str(_RUNTIME_ROOT / "scripts" / "runtime" / "verification" / "cli.py"),
@@ -225,7 +226,7 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
     # configurable via GDDP_DEEPSEEK_KEY_CMD (default: the `pass` password
     # manager, which is Big Pi-specific). Best-effort: if the fetch fails, the
     # verifier's own error surfaces in the error record.
-    if not env.get("DEEPSEEK_API_KEY"):
+    if semantic_provider == "deepseek" and not env.get("DEEPSEEK_API_KEY"):
         key_cmd = os.environ.get("GDDP_DEEPSEEK_KEY_CMD", "pass show api/deepseek")
         parts = shlex.split(key_cmd)
         binary = parts[0] if parts else ""
@@ -291,6 +292,15 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
             "error": "verifier produced no parseable receipt summary",
         }
     return {"verification_status": "ok", **summary}
+
+
+def _semantic_provider(args: list[str]) -> str:
+    """Return the explicitly selected evaluator provider without guessing."""
+    try:
+        index = args.index("--semantic-provider")
+        return args[index + 1]
+    except (ValueError, IndexError):
+        return "auto"
 
 
 def _parse_cli_summary(stdout: str) -> dict | None:
