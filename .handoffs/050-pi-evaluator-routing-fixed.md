@@ -28,7 +28,7 @@ Evaluator Pi now receives exactly one approved auth route: DeepSeek API key or C
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Main was fast-forwarded through code commit `5b59119` and live-proof commit `a2c9182`. The full suite passes (`333 passed`); push main after this handoff checkpoint, then verify local main equals `origin/main` and the worktree is clean.
+Main was fast-forwarded through code commit `5b59119` and live-proof commit `a2c9182`; the full suite passes (`333 passed`). Pre-existing `stash@{0}` (`agent-stash-graphify`, 2026-07-12) contains only now-untracked `graphify-out/` generated artifacts and remains untouched pending Sab's cleanup decision.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
