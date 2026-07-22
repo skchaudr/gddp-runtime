@@ -34,6 +34,7 @@ from pathlib import Path
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -526,8 +527,8 @@ def _glance() -> Text | None:
     return line
 
 
-def cmd_overview(_args):
-    """Landing screen for a bare `gddp` — commands + a status glance, not an error."""
+def _static_overview():
+    """Non-interactive landing — commands + a status glance, safe to pipe."""
     console.print(Text("gddp", style="bold").append("  ·  operator CLI", style=_DIM))
     glance = _glance()
     if glance is not None:
@@ -542,7 +543,119 @@ def cmd_overview(_args):
     table.add_row("results", "[--all]", "evaluator output per project")
     table.add_row("set", "<job|node> <state> --reason", "change queue state (asks first)")
     console.print(Panel(table, title="commands", title_align="left", box=_CARD_BOX, padding=(1, 1)))
-    console.print(Text("  gddp <command> -h  for details", style=_DIM))
+    console.print(Text("  gddp <command> -h  ·  run `gddp` in a terminal for the menu", style=_DIM))
+
+
+def cmd_overview(_args):
+    """Bare `gddp`: an interactive menu on a terminal, static help when piped."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        interactive_menu()
+    else:
+        _static_overview()
+
+
+# --- interactive menu ------------------------------------------------------
+
+def _pick_job(con, prompt: str = "job number (Enter to cancel)"):
+    """Show a numbered job list and return the chosen job Row, or None."""
+    rows = con.execute(
+        "SELECT job_id, node_id, queue_state, attempt, max_attempts "
+        "FROM jobs ORDER BY created_at DESC"
+    ).fetchall()
+    if not rows:
+        console.print(Text("No jobs.", style=_DIM))
+        return None
+    table = Table(box=_TABLE_BOX, padding=(0, 2, 0, 0), pad_edge=False)
+    table.add_column("#", justify="right", style="bold", no_wrap=True)
+    table.add_column("", width=1, no_wrap=True)
+    table.add_column("state", no_wrap=True)
+    table.add_column("node", no_wrap=True)
+    table.add_column("job_id", style=_DIM, no_wrap=True)
+    for i, r in enumerate(rows, 1):
+        style = _state_style(r["queue_state"])
+        table.add_row(
+            str(i), Text(_glyph(r["queue_state"]), style=style),
+            Text(r["queue_state"], style=style), r["node_id"] or "-", r["job_id"],
+        )
+    console.print(table)
+    raw = Prompt.ask(Text(prompt, style=_CYAN), default="", show_default=False).strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or not (1 <= int(raw) <= len(rows)):
+        console.print(Text(f"'{raw}' is not a listed number.", style=_YELLOW))
+        return None
+    return rows[int(raw) - 1]
+
+
+def _menu_set(con, job):
+    """Guided state change from inside the menu (own confirm, no double prompt)."""
+    console.print(Text(f"current: ", style=_DIM).append(
+        f"{_glyph(job['queue_state'])} {job['queue_state']}", style=_state_style(job["queue_state"])))
+    state = Prompt.ask(Text("new state", style=_CYAN), choices=QUEUE_STATES, show_choices=False)
+    if state == job["queue_state"]:
+        console.print(Text(f"already '{state}' — nothing to do.", style=_DIM))
+        return
+    reason = Prompt.ask(Text("reason", style=_CYAN), default="").strip()
+    if not reason:
+        console.print(Text("reason required — aborted.", style=_YELLOW))
+        return
+    cmd_set(argparse.Namespace(ref=job["job_id"], state=state, reason=reason, yes=False))
+
+
+def interactive_menu():
+    """A stay-a-while loop: browse jobs, open one, change state — no re-running."""
+    console.print(Text("gddp", style="bold").append("  ·  operator CLI", style=_DIM))
+    actions = {
+        "l": ("list", "jobs and their queue states"),
+        "o": ("open", "pick a job → fields, results, decisions"),
+        "r": ("results", "evaluator output per project"),
+        "s": ("set", "pick a job → change its queue state"),
+        "q": ("quit", ""),
+    }
+    while True:
+        glance = _glance()
+        if glance is not None:
+            console.print()
+            console.print(glance)
+        menu = Table(box=None, padding=(0, 2, 0, 1), pad_edge=False, show_header=False)
+        menu.add_column(style="bold cyan", no_wrap=True)
+        menu.add_column(style="bold", no_wrap=True)
+        menu.add_column(style=_DIM)
+        for key, (name, desc) in actions.items():
+            menu.add_row(key, name, desc)
+        console.print(menu)
+        try:
+            choice = Prompt.ask(Text("select", style=_CYAN), choices=list(actions), default="l")
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+        console.rule(style=_DIM)
+        try:
+            if choice == "q":
+                break
+            con = connect()
+            if choice == "l":
+                cmd_list(argparse.Namespace(state=None))
+            elif choice == "r":
+                cmd_results(argparse.Namespace(all=False))
+            elif choice == "o":
+                job = _pick_job(con)
+                if job:
+                    console.rule(style=_DIM)
+                    cmd_show(argparse.Namespace(ref=job["job_id"], full=False))
+            elif choice == "s":
+                job = _pick_job(con)
+                if job:
+                    console.rule(style=_DIM)
+                    _menu_set(con, job)
+        except (EOFError, KeyboardInterrupt):
+            console.print(Text("\n(cancelled)", style=_DIM))
+        except SystemExit:
+            # cmd_set/resolve_job abort via SystemExit; in the menu that's just
+            # a cancelled action, not a reason to quit the whole session.
+            pass
+        console.rule(style=_DIM)
+    console.print(Text("bye.", style=_DIM))
 
 
 def main():
