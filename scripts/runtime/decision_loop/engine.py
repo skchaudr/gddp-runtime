@@ -54,9 +54,9 @@ def _clean_stale_state(con: sqlite3.Connection) -> int:
     cur = con.cursor()
     cleaned = 0
 
-    # Expire stale jobs
+    # Expire stale jobs to canonical terminal failed state.
     cur.execute("""
-        UPDATE jobs SET status = 'expired'
+        UPDATE jobs SET status = 'failed', queue_state = 'failed'
         WHERE status IN ('dispatched', 'running')
         AND created_at < datetime('now', '-6 hours')
     """)

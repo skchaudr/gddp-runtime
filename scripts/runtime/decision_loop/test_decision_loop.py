@@ -74,6 +74,7 @@ def in_memory_db():
             project_id TEXT,
             node_id TEXT,
             status TEXT,
+            queue_state TEXT,
             created_at TEXT
         )
     """)
@@ -199,6 +200,7 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
             project_id TEXT,
             node_id TEXT,
             status TEXT,
+            queue_state TEXT,
             created_at TEXT
         )
     """)
@@ -219,6 +221,24 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
     _write_decision_result(result, "test-project")
 
     con.close()
+
+
+def test_clean_stale_state_uses_canonical_failed_job_state(in_memory_db):
+    from .engine import _clean_stale_state
+
+    in_memory_db.execute(
+        """INSERT INTO jobs
+           (job_id, project_id, node_id, status, queue_state, created_at)
+           VALUES ('job_stale', 'test-project', 'node-b', 'running', 'running',
+                   datetime('now', '-7 hours'))"""
+    )
+    in_memory_db.commit()
+
+    assert _clean_stale_state(in_memory_db) == 1
+    job = in_memory_db.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = 'job_stale'"
+    ).fetchone()
+    assert (job["status"], job["queue_state"]) == ("failed", "failed")
 
 
 # --- Test Pydantic schema enforcement ---
@@ -323,3 +343,31 @@ def test_accept_result_status_must_be_acceptance_proposed():
             status="acceptance_candidate",  # old status — now rejected
             ok=True,
         )
+
+
+def test_jobs_status_and_queue_state_consistency():
+    """A consistency check fails when any jobs row has mismatched status/queue_state."""
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    con.execute("""
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            status TEXT,
+            queue_state TEXT
+        )
+    """)
+
+    # 1. Clear state: both are matching
+    con.execute("INSERT INTO jobs (job_id, status, queue_state) VALUES ('job_good', 'running', 'running')")
+    con.commit()
+
+    # Check consistency
+    mismatched = con.execute("SELECT COUNT(*) FROM jobs WHERE status != queue_state").fetchone()[0]
+    assert mismatched == 0
+
+    # 2. Inconsistent state: mismatch
+    con.execute("INSERT INTO jobs (job_id, status, queue_state) VALUES ('job_bad', 'failed', 'running')")
+    con.commit()
+
+    mismatched = con.execute("SELECT COUNT(*) FROM jobs WHERE status != queue_state").fetchone()[0]
+    assert mismatched == 1

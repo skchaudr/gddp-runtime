@@ -239,11 +239,8 @@ def cmd_set(args):
         if input("Proceed? [y/N] ").strip().lower() != "y":
             sys.exit("Aborted.")
 
-    con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?",
-                (args.state, job["job_id"]))
-    if args.state in JOB_STATUSES:
-        con.execute("UPDATE jobs SET status = ? WHERE job_id = ?",
-                    (args.state, job["job_id"]))
+    con.execute("UPDATE jobs SET queue_state = ?, status = ? WHERE job_id = ?",
+                (args.state, args.state, job["job_id"]))
     con.execute("UPDATE queue_records SET queue = ? WHERE job_id = ?",
                 (args.state, job["job_id"]))
 

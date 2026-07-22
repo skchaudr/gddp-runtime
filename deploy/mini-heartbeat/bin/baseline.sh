@@ -118,6 +118,13 @@ if [[ -f "$DB" ]]; then
     crit "queue.db not writable (locked or readonly)"
   fi
   info "jobs by state: $(sqlite3 "$DB" "SELECT queue_state || '=' || COUNT(*) FROM jobs GROUP BY queue_state;" | tr '\n' ' ')"
+  # Check for jobs with mismatched status and queue_state
+  mismatched="$(sqlite3 "$DB" "SELECT COUNT(*) FROM jobs WHERE status != queue_state;" 2>/dev/null || echo 0)"
+  if [[ "$mismatched" -eq 0 ]]; then
+    ok "no mismatched job status/queue_state rows"
+  else
+    crit "$mismatched jobs have mismatched status/queue_state (dashboard logic will lie)"
+  fi
   info "last event received: $(sqlite3 "$DB" "SELECT COALESCE(MAX(received_at),'never') FROM events;")"
 else
   crit "queue.db missing: $DB"

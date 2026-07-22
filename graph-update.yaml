@@ -1,0 +1,4 @@
+# Graph Update Proposal
+# Graph truth stays human-owned; this node produces evidence only.
+# No automatic graph updates are requested for node job-state-consistency.
+updates: []
