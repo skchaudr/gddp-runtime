@@ -507,10 +507,49 @@ def cmd_set(args):
     console.print(done)
 
 
+def _glance() -> Text | None:
+    """A one-line status glance for the landing screen — safe if the DB is absent."""
+    try:
+        con = connect()
+        total = con.execute("SELECT count(*) FROM jobs").fetchone()[0]
+        review = con.execute(
+            "SELECT count(*) FROM jobs WHERE queue_state = 'awaiting_review'"
+        ).fetchone()[0]
+    except sqlite3.Error:
+        return None
+    line = Text("  ", style=_DIM)
+    line.append(f"{total}", style="bold")
+    line.append(" job(s)", style=_DIM)
+    if review:
+        line.append("   ")
+        line.append(f"{_glyph('awaiting_review')} {review} awaiting review", style=_YELLOW)
+    return line
+
+
+def cmd_overview(_args):
+    """Landing screen for a bare `gddp` — commands + a status glance, not an error."""
+    console.print(Text("gddp", style="bold").append("  ·  operator CLI", style=_DIM))
+    glance = _glance()
+    if glance is not None:
+        console.print(glance)
+
+    table = Table(box=None, padding=(0, 3, 0, 2), pad_edge=False, show_header=False)
+    table.add_column(style="bold", no_wrap=True)
+    table.add_column(no_wrap=True)
+    table.add_column(style=_DIM)
+    table.add_row("list", "[--state S]", "jobs and their queue states")
+    table.add_row("show", "<job|node> [--full]", "one job: fields, results, decisions")
+    table.add_row("results", "[--all]", "evaluator output per project")
+    table.add_row("set", "<job|node> <state> --reason", "change queue state (asks first)")
+    console.print(Panel(table, title="commands", title_align="left", box=_CARD_BOX, padding=(1, 1)))
+    console.print(Text("  gddp <command> -h  for details", style=_DIM))
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p.set_defaults(fn=cmd_overview)  # bare `gddp` → landing screen, not an argparse error
+    sub = p.add_subparsers(dest="cmd")
 
     p_list = sub.add_parser("list", help="list jobs and states")
     p_list.add_argument("--state", help="filter by queue_state")
