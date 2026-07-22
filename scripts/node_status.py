@@ -2,10 +2,10 @@
 node_status.py — Inspect and set job/node queue state (human-operated).
 
 Usage:
-    python3 scripts/node_status.py list [--state awaiting_review]
-    python3 scripts/node_status.py show <job_id | node_id> [--full]
-    python3 scripts/node_status.py results [--all]
-    python3 scripts/node_status.py set <job_id | node_id> <state> --reason "..."
+    gddp jobs list [--state awaiting_review]
+    gddp jobs show <job_id | node_id> [--full]
+    gddp jobs results [--all]
+    gddp jobs set <job_id | node_id> <state> --reason "..."
 
 States (canon: gddp-config schemas/v1/queue_record.yaml):
     intake classified blocked ready running awaiting_result
@@ -529,7 +529,7 @@ def _glance() -> Text | None:
 
 def _static_overview():
     """Non-interactive landing — commands + a status glance, safe to pipe."""
-    console.print(Text("gddp", style="bold").append("  ·  operator CLI", style=_DIM))
+    console.print(Text("gddp jobs", style="bold").append("  ·  runtime operator CLI", style=_DIM))
     glance = _glance()
     if glance is not None:
         console.print(glance)
@@ -543,11 +543,11 @@ def _static_overview():
     table.add_row("results", "[--all]", "evaluator output per project")
     table.add_row("set", "<job|node> <state> --reason", "change queue state (asks first)")
     console.print(Panel(table, title="commands", title_align="left", box=_CARD_BOX, padding=(1, 1)))
-    console.print(Text("  gddp <command> -h  ·  run `gddp` in a terminal for the menu", style=_DIM))
+    console.print(Text("  gddp jobs <command> -h  ·  run `gddp jobs` in a terminal for the menu", style=_DIM))
 
 
 def cmd_overview(_args):
-    """Bare `gddp`: an interactive menu on a terminal, static help when piped."""
+    """Bare jobs entry: interactive menu on a terminal, static help when piped."""
     if sys.stdin.isatty() and sys.stdout.isatty():
         interactive_menu()
     else:
@@ -604,7 +604,7 @@ def _menu_set(con, job):
 
 def interactive_menu():
     """A stay-a-while loop: browse jobs, open one, change state — no re-running."""
-    console.print(Text("gddp", style="bold").append("  ·  operator CLI", style=_DIM))
+    console.print(Text("gddp jobs", style="bold").append("  ·  runtime operator CLI", style=_DIM))
     actions = {
         "l": ("list", "jobs and their queue states"),
         "o": ("open", "pick a job → fields, results, decisions"),
@@ -661,7 +661,7 @@ def interactive_menu():
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.set_defaults(fn=cmd_overview)  # bare `gddp` → landing screen, not an argparse error
+    p.set_defaults(fn=cmd_overview)  # bare jobs entry → landing screen, not an argparse error
     sub = p.add_subparsers(dest="cmd")
 
     p_list = sub.add_parser("list", help="list jobs and states")
