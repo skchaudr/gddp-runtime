@@ -31,11 +31,16 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rich.box import SIMPLE_HEAVY
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+# Design language: airy tables (heavy header rule, no vertical clutter) for
+# lists, rounded cards for single-record detail. Keeps a cohesive look.
+_TABLE_BOX = box.SIMPLE_HEAVY
+_CARD_BOX = box.ROUNDED
 
 _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
@@ -156,7 +161,7 @@ def resolve_job(con, ref: str):
         fail(f"No job found for '{ref}' (tried job_id, then node_id).")
     if len(rows) > 1:
         console.print(Text(f"'{ref}' matches {len(rows)} jobs — use a job_id:", style=_YELLOW))
-        table = Table(box=SIMPLE_HEAVY, show_edge=False, pad_edge=False)
+        table = Table(box=_TABLE_BOX, show_edge=False, pad_edge=False)
         table.add_column("job_id", style="bold")
         table.add_column("state")
         table.add_column("created")
@@ -184,8 +189,12 @@ def cmd_list(args):
         console.print(Text("No jobs." + (f" (state={args.state})" if args.state else ""), style=_DIM))
         return
 
-    title = "jobs" + (f" · state={args.state}" if args.state else "")
-    table = Table(title=title, box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+    title = "jobs" + (f"  ·  state={args.state}" if args.state else "")
+    table = Table(
+        title=title, box=_TABLE_BOX, title_justify="left", title_style="bold",
+        caption=f"{len(rows)} job(s)", caption_justify="left", caption_style=_DIM,
+        padding=(0, 2, 0, 0), pad_edge=False,
+    )
     table.add_column("", width=1, no_wrap=True)  # glyph
     table.add_column("state", no_wrap=True)
     table.add_column("job_id", style="bold", no_wrap=True)
@@ -203,7 +212,6 @@ def cmd_list(args):
             (r["created_at"] or "")[:10],
         )
     console.print(table)
-    console.print(Text(f"{len(rows)} job(s).", style=_DIM))
 
 
 def parse_check(row):
@@ -316,19 +324,20 @@ def cmd_show(args):
     con = connect()
     job = resolve_job(con, args.ref)
 
-    fields = Table.grid(padding=(0, 1))
+    fields = Table.grid(padding=(0, 2))
     fields.add_column(justify="right", style=_DIM, no_wrap=True)
     fields.add_column()
     for key in ("job_id", "node_id", "title", "queue_state", "status", "executor",
                 "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
         value = job[key]
         style = _state_style(value) if key in ("queue_state", "status") else "bold" if key == "job_id" else ""
-        fields.add_row(f"{key}:", Text(str(value), style=style))
+        fields.add_row(f"{key}", Text(str(value), style=style))
     console.print(Panel(
         fields,
         title=Text(f"{_glyph(job['queue_state'])} {job['node_id']}", style=_state_style(job["queue_state"])),
         title_align="left",
-        box=SIMPLE_HEAVY,
+        box=_CARD_BOX,
+        padding=(1, 2),
     ))
 
     results = con.execute(
@@ -336,6 +345,8 @@ def cmd_show(args):
         "FROM results WHERE job_id = ? ORDER BY received_at",
         (job["job_id"],),
     ).fetchall()
+    if results:
+        console.print(Text("\nresults", style="bold"))
     for r in results:
         line = Text("          result: ", style=_DIM)
         line.append(f"{r['received_at']}  ")
@@ -346,6 +357,8 @@ def cmd_show(args):
         "SELECT created_at, action, reason FROM decision_results WHERE node_id = ? ORDER BY created_at",
         (job["node_id"],),
     ).fetchall()
+    if decisions:
+        console.print(Text("\ndecisions", style="bold"))
     for d in decisions:
         line = Text("        decision: ", style=_DIM)
         line.append(f"{d['created_at']}  ")
@@ -370,7 +383,10 @@ def cmd_results(args):
 
     if args.all:
         nodes = set()
-        table = Table(title="evaluator results", box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+        table = Table(
+            title="evaluator results", box=_TABLE_BOX, title_justify="left", title_style="bold",
+            padding=(0, 2, 0, 0), pad_edge=False,
+        )
         table.add_column("", width=1, no_wrap=True)
         table.add_column("received", style=_DIM, no_wrap=True)
         table.add_column("verdict", no_wrap=True)
@@ -392,10 +408,12 @@ def cmd_results(args):
             )
             if check.get("receipt_path"):
                 receipts.append((r["job_id"], check["receipt_path"]))
+        table.caption = f"{len(rows)} result row(s) across {len(nodes)} node(s)"
+        table.caption_justify = "left"
+        table.caption_style = _DIM
         console.print(table)
         for job_id, path in receipts:
             console.print(_kv(f"  receipt {job_id}: ", str(path), _DIM))
-        console.print(Text(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).", style=_DIM))
         return
 
     # Default: per-project summary — counts plus where the files live, so the
@@ -408,7 +426,12 @@ def cmd_results(args):
         p["latest"] = r  # rows are ordered by received_at
 
     live_root = config_root() / "verification-runtime-live"
-    table = Table(title="results by project", box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+    total_nodes = {(pid, n) for pid, p in projects.items() for n in p["nodes"]}
+    table = Table(
+        title="results by project", box=_TABLE_BOX, title_justify="left", title_style="bold",
+        caption=f"{len(rows)} result row(s), {len(total_nodes)} node(s), {len(projects)} project(s)  ·  --all for every row",
+        caption_justify="left", caption_style=_DIM, padding=(0, 2, 0, 0), pad_edge=False,
+    )
     table.add_column("project", style="bold", no_wrap=True)
     table.add_column("nodes", justify="right", no_wrap=True)
     table.add_column("rows", justify="right", no_wrap=True)
@@ -439,13 +462,6 @@ def cmd_results(args):
     for line in artifact_lines:
         console.print(line)
 
-    total_nodes = {(pid, n) for pid, p in projects.items() for n in p["nodes"]}
-    console.print(Text(
-        f"{len(rows)} result row(s), {len(total_nodes)} node(s), "
-        f"{len(projects)} project(s).  (--all for every row)",
-        style=_DIM,
-    ))
-
 
 def cmd_set(args):
     if args.state not in QUEUE_STATES:
@@ -462,7 +478,7 @@ def cmd_set(args):
     transition.append(f"{_glyph(old)} {old}", style=_state_style(old))
     transition.append("  →  ", style=_DIM)
     transition.append(f"{_glyph(args.state)} {args.state}", style=_state_style(args.state))
-    console.print(Panel(transition, title="state change", title_align="left", box=SIMPLE_HEAVY))
+    console.print(Panel(transition, title="state change", title_align="left", box=_CARD_BOX, padding=(1, 2)))
 
     if not args.yes:
         if input("Proceed? [y/N] ").strip().lower() != "y":

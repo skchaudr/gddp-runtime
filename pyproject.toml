@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gddp-runtime"
+version = "0.1.0"
+description = "GDDP runtime — execution machinery and operator tooling."
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "anthropic>=0.40",
+    "rich>=13.0",
+]
+
+# `pip install -e .` puts a `gddp` command on PATH that fronts the operator CLI.
+[project.scripts]
+gddp = "scripts.node_status:main"
+
+# scripts/ is a PEP-420 namespace package (no __init__.py at the top level).
+[tool.setuptools.packages.find]
+include = ["scripts*"]
+namespaces = true
