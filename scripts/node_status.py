@@ -17,6 +17,9 @@ What `set` does:
        job status) and any queue_records rows for the job
     3. Writes a decision_results audit row — action 'accept_node' for
        awaiting_review → complete, 'manual_status_change' otherwise
+
+Output is TTY-aware: colour and glyphs on an interactive terminal, plain
+text when piped or when NO_COLOR is set — so grep/pipes and tests stay stable.
 """
 
 import argparse
@@ -27,6 +30,12 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from rich.box import SIMPLE_HEAVY
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
@@ -40,6 +49,89 @@ QUEUE_STATES = [
 ]
 # jobs.status is a narrower enum; only mirror queue_state into it when valid
 JOB_STATUSES = {"ready", "running", "awaiting_result", "awaiting_review", "complete", "failed"}
+
+# soft_wrap keeps detail lines intact (no reflow) so piped output and the
+# substring-asserting tests see exactly what a human sees, minus styling.
+# Console auto-disables colour when stdout is not a TTY and honours NO_COLOR.
+# When not a terminal (piped to a file / grep / tests), rich would otherwise
+# clamp to 80 cols and truncate job_ids and paths — so we hand it a wide width
+# and keep identifiers copy/grep-able. Interactive terminals keep their size.
+_PIPE_WIDTH = None if sys.stdout.isatty() else 200
+console = Console(soft_wrap=True, highlight=False, width=_PIPE_WIDTH)
+err_console = Console(stderr=True, soft_wrap=True, highlight=False)
+
+
+# --- presentation helpers --------------------------------------------------
+
+# Colour + glyph vocabulary shared by queue states and evaluator verdicts, so
+# "failed", "fail", and a red integrity finding all read the same at a glance.
+_GREEN  = "bold green"
+_RED    = "bold red"
+_YELLOW = "bold yellow"
+_CYAN   = "bold cyan"
+_DIM    = "dim"
+
+_STATE_STYLE = {
+    "complete": _GREEN,
+    "running": _CYAN,
+    "ready": _CYAN,
+    "awaiting_review": _YELLOW,
+    "awaiting_result": _YELLOW,
+    "blocked": _YELLOW,
+    "deferred": _DIM,
+    "cancelled": _DIM,
+    "failed": _RED,
+    "intake": _DIM,
+    "classified": _DIM,
+}
+
+_VERDICT_STYLE = {
+    "pass": _GREEN,
+    "judged_pass": _GREEN,
+    "complete": _GREEN,
+    "fail": _RED,
+    "failed": _RED,
+    "reject": _RED,
+    "needs-human-review": _YELLOW,
+    "needs_human_review": _YELLOW,
+    "review": _YELLOW,
+    "unknown": _DIM,
+    "indeterminate": _DIM,
+}
+
+_SEVERITY_STYLE = {
+    "critical": _RED, "high": _RED, "error": _RED,
+    "medium": _YELLOW, "warning": _YELLOW, "warn": _YELLOW,
+    "low": _CYAN, "info": _DIM,
+}
+
+
+def _state_style(state) -> str:
+    return _STATE_STYLE.get((state or "").lower(), "")
+
+
+def _verdict_style(verdict) -> str:
+    return _VERDICT_STYLE.get((verdict or "").lower().strip(), "")
+
+
+def _glyph(verdict) -> str:
+    """A leading status glyph for a verdict/state (blank if unknown)."""
+    style = _verdict_style(verdict) or _state_style(verdict)
+    if style == _GREEN:
+        return "✔"
+    if style == _RED:
+        return "✖"
+    if style == _YELLOW:
+        return "▲"
+    if style == _CYAN:
+        return "●"
+    return "·"
+
+
+def fail(msg: str, code: int = 1):
+    """Print an error to stderr with weight, then exit."""
+    err_console.print(Text(f"✖ {msg}", style=_RED))
+    raise SystemExit(code)
 
 
 def now():
@@ -61,12 +153,21 @@ def resolve_job(con, ref: str):
         "SELECT * FROM jobs WHERE node_id = ? ORDER BY created_at DESC", (ref,)
     ).fetchall()
     if not rows:
-        sys.exit(f"No job found for '{ref}' (tried job_id, then node_id).")
+        fail(f"No job found for '{ref}' (tried job_id, then node_id).")
     if len(rows) > 1:
-        print(f"'{ref}' matches {len(rows)} jobs — use a job_id:")
+        console.print(Text(f"'{ref}' matches {len(rows)} jobs — use a job_id:", style=_YELLOW))
+        table = Table(box=SIMPLE_HEAVY, show_edge=False, pad_edge=False)
+        table.add_column("job_id", style="bold")
+        table.add_column("state")
+        table.add_column("created")
         for r in rows:
-            print(f"  {r['job_id']}  {r['queue_state']}  created {r['created_at']}")
-        sys.exit(1)
+            table.add_row(
+                r["job_id"],
+                Text(r["queue_state"], style=_state_style(r["queue_state"])),
+                str(r["created_at"]),
+            )
+        console.print(table)
+        raise SystemExit(1)
     return rows[0]
 
 
@@ -80,11 +181,29 @@ def cmd_list(args):
     q += " ORDER BY created_at DESC"
     rows = con.execute(q, params).fetchall()
     if not rows:
-        print("No jobs." + (f" (state={args.state})" if args.state else ""))
+        console.print(Text("No jobs." + (f" (state={args.state})" if args.state else ""), style=_DIM))
         return
+
+    title = "jobs" + (f" · state={args.state}" if args.state else "")
+    table = Table(title=title, box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+    table.add_column("", width=1, no_wrap=True)  # glyph
+    table.add_column("state", no_wrap=True)
+    table.add_column("job_id", style="bold", no_wrap=True)
+    table.add_column("node", no_wrap=True)
+    table.add_column("attempt", justify="right", no_wrap=True)
+    table.add_column("created", style=_DIM, no_wrap=True)
     for r in rows:
-        print(f"{r['job_id']}  {r['queue_state']:<16} {r['node_id']:<26} "
-              f"attempt {r['attempt']}/{r['max_attempts']}  {r['created_at'][:10]}")
+        style = _state_style(r["queue_state"])
+        table.add_row(
+            Text(_glyph(r["queue_state"]), style=style),
+            Text(r["queue_state"], style=style),
+            r["job_id"],
+            r["node_id"] or "-",
+            f"{r['attempt']}/{r['max_attempts']}",
+            (r["created_at"] or "")[:10],
+        )
+    console.print(table)
+    console.print(Text(f"{len(rows)} job(s).", style=_DIM))
 
 
 def parse_check(row):
@@ -94,78 +213,145 @@ def parse_check(row):
         return {}
 
 
+def _kv(label: str, value, value_style: str = "") -> Text:
+    """A right-aligned 'label: value' detail line, label dimmed, value styled.
+
+    Substrings (e.g. 'coverage: criteria=medium ...') stay contiguous so
+    piped/captured output remains stable for greps and tests.
+    """
+    text = Text(label, style=_DIM)
+    text.append(value if isinstance(value, str) else str(value), style=value_style)
+    return text
+
+
 def print_evaluation(check, full=False):
     """Print the evaluator's output for one result row — the thing under review."""
     if not check:
-        print("          (no evaluator output on this result)")
+        console.print(Text("          (no evaluator output on this result)", style=_DIM))
         return
     integrity = check.get("integrity") or {}
-    print(f"         verdict: {check.get('verdict')}  "
-          f"(criteria: {check.get('criteria_verdict')} @ {check.get('criteria_confidence')}, "
-          f"integrity: {integrity.get('verdict')} @ {integrity.get('confidence')})")
+    verdict = check.get("verdict")
+    header = Text("         verdict: ", style=_DIM)
+    header.append(f"{_glyph(verdict)} {verdict}", style=_verdict_style(verdict))
+    header.append(
+        f"  (criteria: {check.get('criteria_verdict')} @ {check.get('criteria_confidence')}, "
+        f"integrity: {integrity.get('verdict')} @ {integrity.get('confidence')})",
+        style=_DIM,
+    )
+    console.print(header)
     for f in check.get("criteria_findings") or []:
-        print(f"       criterion: {f.get('criterion_id')}  ->  {f.get('judgment')}")
+        line = Text("       criterion: ", style=_DIM)
+        line.append(str(f.get("criterion_id")))
+        line.append("  ->  ", style=_DIM)
+        line.append(str(f.get("judgment")), style=_verdict_style(f.get("judgment")))
+        console.print(line)
         for ev in f.get("evidence") or []:
-            print(f"                  evidence: {ev}")
+            console.print(Text(f"                  evidence: {ev}", style=_DIM))
     for f in integrity.get("findings") or []:
-        print(f"       integrity: [{f.get('severity')}] {f.get('summary')}")
+        sev = f.get("severity")
+        line = Text("       integrity: ", style=_DIM)
+        line.append(f"[{sev}] ", style=_SEVERITY_STYLE.get((sev or "").lower(), ""))
+        line.append(str(f.get("summary")))
+        console.print(line)
     # Phase 3: graph observations (forward-looking, do not affect verdict)
     for o in integrity.get("graph_observations") or []:
-        print(f"       graph obs: [{o.get('severity')}] {o.get('summary')}")
+        sev = o.get("severity")
+        line = Text("       graph obs: ", style=_DIM)
+        line.append(f"[{sev}] ", style=_SEVERITY_STYLE.get((sev or "").lower(), ""))
+        line.append(str(o.get("summary")))
+        console.print(line)
     if check.get("required_next_action"):
-        print(f"     next action: {check['required_next_action']}  (evaluator template, not a decision)")
+        console.print(_kv(
+            "     next action: ",
+            f"{check['required_next_action']}  (evaluator template, not a decision)",
+        ))
     # Phase 1 provenance: show the exact tree the evaluator judged.
     tree_sha = check.get("evaluated_tree_sha")
     commit_sha = check.get("evaluated_commit_sha")
     merge_sha = check.get("merge_commit_sha")
     if commit_sha or tree_sha or merge_sha:
         if commit_sha:
-            match = "  (match)" if merge_sha and commit_sha == merge_sha else "  (mismatch)" if merge_sha else ""
-            print(f"      provenance: commit={commit_sha}  merge={merge_sha or 'n/a'}{match}")
+            matched = bool(merge_sha and commit_sha == merge_sha)
+            match = "  (match)" if matched else "  (mismatch)" if merge_sha else ""
+            line = Text("      provenance: ", style=_DIM)
+            line.append(f"commit={commit_sha}  merge={merge_sha or 'n/a'}")
+            line.append(match, style=_GREEN if matched else (_RED if merge_sha else ""))
+            console.print(line)
         else:
-            print(f"      provenance: tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}  (different SHA types; not compared)")
+            console.print(_kv(
+                "      provenance: ",
+                f"tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}  (different SHA types; not compared)",
+            ))
     if check.get("pr_ref"):
-        print(f"            PR: {check['pr_ref']}")
+        console.print(_kv("            PR: ", str(check["pr_ref"]), _CYAN))
     # Phase 2 coverage: quick signal for the operator
     cov = check.get("context_coverage")
     if cov:
         crit_raw = cov.get("criteria", "n/a")
         crit = crit_raw.get("rating", "n/a") if isinstance(crit_raw, dict) else crit_raw
         integ = cov.get("integrity", {}).get("rating", "n/a") if isinstance(cov.get("integrity"), dict) else "n/a"
-        print(f"       coverage: criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}")
+        console.print(_kv(
+            "       coverage: ",
+            f"criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}",
+        ))
     lane_status = check.get("lane_status") or {}
     harness_error = check.get("harness_error") or {}
     if lane_status:
-        print(f"    lane status: criteria={lane_status.get('criteria', 'n/a')}  integrity={lane_status.get('integrity', 'n/a')}")
+        console.print(_kv(
+            "    lane status: ",
+            f"criteria={lane_status.get('criteria', 'n/a')}  integrity={lane_status.get('integrity', 'n/a')}",
+        ))
     for lane in ("criteria", "integrity"):
         if harness_error.get(lane):
-            print(f"  harness error: {lane}={harness_error[lane]}")
+            line = Text("  harness error: ", style=_DIM)
+            line.append(f"{lane}={harness_error[lane]}", style=_RED)
+            console.print(line)
     if check.get("receipt_path"):
-        print(f"         receipt: {check['receipt_path']}")
+        console.print(_kv("         receipt: ", str(check["receipt_path"]), _DIM))
     if full and integrity.get("reasoning"):
-        print(f"       reasoning: {integrity['reasoning']}")
+        console.print(_kv("       reasoning: ", str(integrity["reasoning"])))
 
 
 def cmd_show(args):
     con = connect()
     job = resolve_job(con, args.ref)
+
+    fields = Table.grid(padding=(0, 1))
+    fields.add_column(justify="right", style=_DIM, no_wrap=True)
+    fields.add_column()
     for key in ("job_id", "node_id", "title", "queue_state", "status", "executor",
                 "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
-        print(f"{key:>16}: {job[key]}")
+        value = job[key]
+        style = _state_style(value) if key in ("queue_state", "status") else "bold" if key == "job_id" else ""
+        fields.add_row(f"{key}:", Text(str(value), style=style))
+    console.print(Panel(
+        fields,
+        title=Text(f"{_glyph(job['queue_state'])} {job['node_id']}", style=_state_style(job["queue_state"])),
+        title_align="left",
+        box=SIMPLE_HEAVY,
+    ))
+
     results = con.execute(
         "SELECT received_at, outcome, status, acceptance_check "
         "FROM results WHERE job_id = ? ORDER BY received_at",
         (job["job_id"],),
     ).fetchall()
     for r in results:
-        print(f"          result: {r['received_at']}  {r['outcome']}/{r['status']}")
+        line = Text("          result: ", style=_DIM)
+        line.append(f"{r['received_at']}  ")
+        line.append(f"{r['outcome']}/{r['status']}", style=_verdict_style(r["outcome"]))
+        console.print(line)
         print_evaluation(parse_check(r), full=args.full)
     decisions = con.execute(
         "SELECT created_at, action, reason FROM decision_results WHERE node_id = ? ORDER BY created_at",
         (job["node_id"],),
     ).fetchall()
     for d in decisions:
-        print(f"        decision: {d['created_at']}  {d['action']}  {d['reason'] or ''}")
+        line = Text("        decision: ", style=_DIM)
+        line.append(f"{d['created_at']}  ")
+        line.append(str(d["action"]), style=_CYAN)
+        line.append(f"  {d['reason'] or ''}", style=_DIM)
+        console.print(line)
 
 
 def config_root():
@@ -179,20 +365,37 @@ def cmd_results(args):
         "FROM results r JOIN jobs j ON j.job_id = r.job_id ORDER BY r.received_at",
     ).fetchall()
     if not rows:
-        print("No evaluator results.")
+        console.print(Text("No evaluator results.", style=_DIM))
         return
 
     if args.all:
         nodes = set()
+        table = Table(title="evaluator results", box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+        table.add_column("", width=1, no_wrap=True)
+        table.add_column("received", style=_DIM, no_wrap=True)
+        table.add_column("verdict", no_wrap=True)
+        table.add_column("project", no_wrap=True)
+        table.add_column("node", no_wrap=True)
+        table.add_column("job_id", style="bold", no_wrap=True)
+        receipts = []
         for r in rows:
             check = parse_check(r)
             verdict = check.get("verdict") or "-"
             nodes.add((r["project_id"], r["node_id"]))
-            print(f"{r['received_at'][:19]}  {verdict:<5} {r['project_id'] or '-':<14} "
-                  f"{r['node_id'] or '-':<26} {r['job_id']}")
+            table.add_row(
+                Text(_glyph(verdict), style=_verdict_style(verdict)),
+                (r["received_at"] or "")[:19],
+                Text(verdict, style=_verdict_style(verdict)),
+                r["project_id"] or "-",
+                r["node_id"] or "-",
+                r["job_id"],
+            )
             if check.get("receipt_path"):
-                print(f"{'':21}receipt: {check['receipt_path']}")
-        print(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).")
+                receipts.append((r["job_id"], check["receipt_path"]))
+        console.print(table)
+        for job_id, path in receipts:
+            console.print(_kv(f"  receipt {job_id}: ", str(path), _DIM))
+        console.print(Text(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).", style=_DIM))
         return
 
     # Default: per-project summary — counts plus where the files live, so the
@@ -205,39 +408,65 @@ def cmd_results(args):
         p["latest"] = r  # rows are ordered by received_at
 
     live_root = config_root() / "verification-runtime-live"
+    table = Table(title="results by project", box=SIMPLE_HEAVY, title_justify="left", title_style="bold")
+    table.add_column("project", style="bold", no_wrap=True)
+    table.add_column("nodes", justify="right", no_wrap=True)
+    table.add_column("rows", justify="right", no_wrap=True)
+    table.add_column("latest verdict", no_wrap=True)
+    table.add_column("latest node", no_wrap=True)
+    table.add_column("when", style=_DIM, no_wrap=True)
+    # Collect the "where the files live" lines to print under the table, so long
+    # receipt/export paths render in full instead of a truncated table column.
+    artifact_lines = []
     for project_id in sorted(projects):
         p = projects[project_id]
         latest_check = parse_check(p["latest"])
         latest_verdict = latest_check.get("verdict") or "-"
-        print(f"{project_id:<16} {len(p['nodes'])} node(s)  {p['rows']} result row(s)  "
-              f"latest: {latest_verdict} {p['latest']['node_id']} "
-              f"({p['latest']['received_at'][:10]})")
         proj_dir = live_root / project_id
         receipts = sorted(proj_dir.glob("*.json")) if proj_dir.exists() else []
-        print(f"{'':17}receipts: {len(receipts)} in {proj_dir}")
-        evals = proj_dir / "evaluations.yaml"
-        if evals.exists():
-            print(f"{'':17}export:   {evals}")
+        table.add_row(
+            project_id,
+            str(len(p["nodes"])),
+            str(p["rows"]),
+            Text(f"{_glyph(latest_verdict)} {latest_verdict}", style=_verdict_style(latest_verdict)),
+            p["latest"]["node_id"] or "-",
+            (p["latest"]["received_at"] or "")[:10],
+        )
+        artifact_lines.append(_kv(f"  {project_id}: ", f"{len(receipts)} receipt(s) in {proj_dir}", _DIM))
+        if (proj_dir / "evaluations.yaml").exists():
+            artifact_lines.append(_kv(f"  {'':{len(project_id)}}  export: ", str(proj_dir / "evaluations.yaml"), _DIM))
+    console.print(table)
+    for line in artifact_lines:
+        console.print(line)
 
     total_nodes = {(pid, n) for pid, p in projects.items() for n in p["nodes"]}
-    print(f"\n{len(rows)} result row(s), {len(total_nodes)} node(s), "
-          f"{len(projects)} project(s).  (--all for every row)")
+    console.print(Text(
+        f"{len(rows)} result row(s), {len(total_nodes)} node(s), "
+        f"{len(projects)} project(s).  (--all for every row)",
+        style=_DIM,
+    ))
 
 
 def cmd_set(args):
     if args.state not in QUEUE_STATES:
-        sys.exit(f"Invalid state '{args.state}'. Valid: {' '.join(QUEUE_STATES)}")
+        fail(f"Invalid state '{args.state}'. Valid: {' '.join(QUEUE_STATES)}")
     con = connect()
     job = resolve_job(con, args.ref)
     old = job["queue_state"]
     if old == args.state:
-        print(f"{job['job_id']} already '{old}' — nothing to do.")
+        console.print(Text(f"{job['job_id']} already '{old}' — nothing to do.", style=_DIM))
         return
-    print(f"{job['job_id']}  ({job['node_id']})")
-    print(f"  {old}  ->  {args.state}")
+
+    transition = Text(job["job_id"], style="bold")
+    transition.append(f"  ({job['node_id']})\n", style=_DIM)
+    transition.append(f"{_glyph(old)} {old}", style=_state_style(old))
+    transition.append("  →  ", style=_DIM)
+    transition.append(f"{_glyph(args.state)} {args.state}", style=_state_style(args.state))
+    console.print(Panel(transition, title="state change", title_align="left", box=SIMPLE_HEAVY))
+
     if not args.yes:
         if input("Proceed? [y/N] ").strip().lower() != "y":
-            sys.exit("Aborted.")
+            fail("Aborted.")
 
     con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?",
                 (args.state, job["job_id"]))
@@ -256,7 +485,10 @@ def cmd_set(args):
          args.reason, now()),
     )
     con.commit()
-    print(f"Done: {job['job_id']} -> {args.state}  (audit: {action})")
+    done = Text("✔ Done: ", style=_GREEN)
+    done.append(f"{job['job_id']} → {args.state}")
+    done.append(f"  (audit: {action})", style=_DIM)
+    console.print(done)
 
 
 def main():
