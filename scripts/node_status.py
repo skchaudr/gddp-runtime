@@ -27,6 +27,8 @@ import json
 import os
 import sqlite3
 import sys
+import termios
+import tty
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -556,6 +558,33 @@ def cmd_overview(_args):
 
 # --- interactive menu ------------------------------------------------------
 
+def _read_key() -> str:
+    """Read one terminal keypress without waiting for Enter."""
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        return sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSAFLUSH, old)
+
+
+def _menu_choice(actions, default: str) -> str:
+    """Read one valid menu action key, preserving Enter as the default."""
+    while True:
+        console.print(Text("select", style=_CYAN), end=" ")
+        choice = _read_key()
+        if choice == "\x03":
+            raise KeyboardInterrupt
+        if choice in {"\r", "\n"}:
+            choice = default
+        choice = choice.lower()
+        if choice in actions:
+            console.print(choice)
+            return choice
+        console.print(Text(f"{choice!r} is not an option", style=_YELLOW))
+
+
 def _pick_job(con, prompt: str = "job number (Enter to cancel)"):
     """Show a numbered job list and return the chosen job Row, or None."""
     rows = con.execute(
@@ -625,7 +654,7 @@ def interactive_menu():
             menu.add_row(key, name, desc)
         console.print(menu)
         try:
-            choice = Prompt.ask(Text("select", style=_CYAN), choices=list(actions), default="l")
+            choice = _menu_choice(actions, default="l")
         except (EOFError, KeyboardInterrupt):
             console.print()
             break
