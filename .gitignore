@@ -6,6 +6,11 @@ events/
 *.sqlite
 *.sqlite3
 
+# node_status_history entries (local); keep README + AGENTS tracked
+node_status_history/**
+!node_status_history/README.md
+!node_status_history/AGENTS.md
+
 # Python
 __pycache__/
 *.pyc

@@ -33,6 +33,11 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Same-dir imports (node_status_history) when run as scripts/node_status.py
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -503,10 +508,29 @@ def cmd_set(args):
         (f"dec_{uuid.uuid4().hex[:12]}", action, job["node_id"], job["project_id"],
          args.reason, now()),
     )
+    # Persist reason history before commit so a history failure rolls back queue state.
+    try:
+        from node_status_history import append_status_change
+
+        hist = append_status_change(
+            project_id=job["project_id"] or "unknown",
+            node_id=job["node_id"],
+            from_status=old,
+            to_status=args.state,
+            reason=args.reason,
+            kind="queue",
+            source="gddp jobs set",
+            runtime_root=RUNTIME_ROOT,
+            extra={"job_id": job["job_id"], "action": action},
+        )
+    except Exception as exc:  # noqa: BLE001
+        con.rollback()
+        fail(f"history write failed ({exc}); queue state not committed.")
     con.commit()
     done = Text("✔ Done: ", style=_GREEN)
     done.append(f"{job['job_id']} → {args.state}")
     done.append(f"  (audit: {action})", style=_DIM)
+    done.append(f"  (history: {hist})", style=_DIM)
     console.print(done)
 
 
