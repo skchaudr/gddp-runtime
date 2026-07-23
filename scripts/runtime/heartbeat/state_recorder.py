@@ -341,7 +341,13 @@ def get_active_executor_sessions(
     con: sqlite3.Connection,
     repo: str | None = None,
 ) -> list:
-    """Get sessions in dispatched/running/needs_operator state.
+    """Get sessions in dispatched/running/needs_operator/collected state.
+
+    'collected' is included so a session interrupted between the collect/
+    commit step and the evaluate step (e.g. the process was killed while
+    _trigger_evaluation was still running) is picked up again on the next
+    tick instead of being permanently stranded — the collect/commit work is
+    already durable (result_commit_sha + git ref), only evaluation is retried.
 
     If ``repo`` is provided (GitHub owner/name, e.g. "skchaudr/gddp-runtime"),
     only return sessions whose job matches that repo. This is the cross-repo
@@ -355,14 +361,14 @@ def get_active_executor_sessions(
         return con.execute(
             """SELECT es.* FROM executor_sessions es
                JOIN jobs j ON es.job_id = j.job_id
-               WHERE es.state IN ('dispatched', 'running', 'needs_operator')
+               WHERE es.state IN ('dispatched', 'running', 'needs_operator', 'collected')
                  AND j.repo = ?
                ORDER BY es.created_at""",
             (repo,),
         ).fetchall()
     return con.execute(
         """SELECT * FROM executor_sessions
-            WHERE state IN ('dispatched', 'running', 'needs_operator')
+            WHERE state IN ('dispatched', 'running', 'needs_operator', 'collected')
             ORDER BY created_at"""
     ).fetchall()
 

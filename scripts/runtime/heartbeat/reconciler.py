@@ -221,6 +221,29 @@ def _reconcile_one(
         )
         return
 
+    # Resume: this session's collect/apply/commit already succeeded and is
+    # durable (result_commit_sha + git ref), but a prior process was
+    # interrupted before evaluation completed. Re-polling the executor and
+    # re-collecting would be wasteful and would leave an orphaned duplicate
+    # commit; go straight to evaluation using the already-recorded SHA.
+    if current_state == "collected":
+        result_sha = session["result_commit_sha"]
+        if not result_sha:
+            print(
+                f"[reconcile] {session_db_id}: collected with no "
+                "result_commit_sha; marking failed"
+            )
+            update_executor_session_state(
+                con, session_db_id, state="failed",
+                error="collected session missing result_commit_sha",
+            )
+            mark_job_failed(con, job_id)
+            con.commit()
+            return
+        print(f"[reconcile] {session_db_id}: resuming evaluation (collected)")
+        _trigger_evaluation(con, session, job_row, result_sha)
+        return
+
     adapter = adapter_cls(repo=job_row["repo"] or "")
     session_ref = SessionRef(executor=executor, session_id=session_id)
 
