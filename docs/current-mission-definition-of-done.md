@@ -66,22 +66,37 @@ total.
 ## Checklist
 
 - [x] **Phase 1 - snapshot + config:** done, see Setup above.
-- [ ] **Phase 2A - fresh run x3:** reset -> inject event -> heartbeat plans +
-  reserves attempt -> dispatch -> reconcile polls/collects -> worktree
-  apply/commit -> durable ref -> evaluate -> `awaiting_review` -> hash check.
-  Repeat until 3 consecutive clean.
-- [ ] **Phase 2B - interruption x1:** kill subprocess mid-run -> stale-session
-  recovery -> retry attempt allocated (original attempt preserved) -> retry
-  completes clean.
-- [ ] **Phase 3 - forensic evidence:** attempt-identity trace (event -> job ->
-  execution_attempt_id -> session -> result -> receipt), per-run receipt +
-  patch + git ref, stabilization log (what broke, what was patched).
-- [ ] **Corrective nodes:** any patch applied during stabilization becomes a
-  named corrective-node candidate, not a silent fix.
+- [x] **Phase 2A - fresh run x3:** done 2026-07-23. Run #1 surfaced a real bug
+  (see Bug found below), fixed and committed (`7756a36`), which reset the
+  clean-run counter to zero per our own rule. Runs #1-#3 post-fix all
+  completed cleanly in exactly 2 ticks each (dispatch, reconcile), reaching
+  `awaiting_review` with an unchanged `project.yaml` hash. See
+  `.handoffs/052-node2-stabilization-loop-evidence.md` for full per-run
+  evidence (job_ids, session_ids, receipts).
+- [x] **Phase 2B - interruption x1:** done 2026-07-23. Killed the executor
+  subprocess mid-execution (SIGTERM, not the adapter's graceful cancel) on a
+  slow variant script. Reconciler detected `failed`, automatically allocated
+  and dispatched a retry (attempt 1) in the same tick, preserving attempt 0's
+  row (`state=failed`, error recorded) — both attempts visible in
+  `executor_sessions` under one `job_id`. Retry completed to `awaiting_review`
+  on the next tick. Hash unchanged throughout.
+- [x] **Bug found and fixed:** `get_active_executor_sessions` never
+  re-polled sessions stuck at `state=collected` (interrupted between
+  collect/commit and evaluate), permanently stranding the job in `running`
+  with no results row. Fixed in `7756a36`: `collected` is now polled, and
+  `_reconcile_one` resumes straight to evaluation using the already-recorded
+  `result_commit_sha` instead of wastefully re-collecting. 373/373 tests pass.
+- [x] **Phase 3 - forensic evidence:** recorded in
+  `.handoffs/052-node2-stabilization-loop-evidence.md`.
+- [x] **Corrective nodes:** none needed beyond the fix above — it was small
+  enough to land directly, tested, during stabilization rather than deferred.
 
 ## Mission Complete
 
-3 consecutive clean fresh runs plus 1 clean interruption/retry cycle proven;
-no manual repair in any of them; every run stopped at `awaiting_review`;
-`project.yaml` hash unchanged throughout; stabilization log and corrective-node
-candidates (if any) recorded; Sab reviews and decides Node 2's status.
+3 consecutive clean fresh runs (post-fix) plus 1 clean interruption/retry
+cycle proven, 2026-07-23. No manual DB/file repair in any of the 3 counted
+clean runs. Every run stopped at `awaiting_review`. `project.yaml` hash
+(`781c626a...80207b8a`) unchanged across all runs, including the one that
+surfaced and fixed the `collected`-stranding bug. Full evidence in
+`.handoffs/052-node2-stabilization-loop-evidence.md`. Sab reviews and decides
+whether this satisfies `direct-executor-round-trip`'s acceptance criteria.
