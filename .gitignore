@@ -5,6 +5,7 @@ events/
 *.db
 *.sqlite
 *.sqlite3
+.gddp-canary-spool/
 
 # Python
 __pycache__/
