@@ -59,6 +59,7 @@ graphify-out/
 .ua/.trash-*/
 .ua/diff-overlay.json
 node_modules/
+package-lock.json
 .pi_subagents/
 .pi-subagents/
 .worktrees/
