@@ -1,0 +1,186 @@
+{
+  "project_id": "gddp-runtime",
+  "node_id": "neutral-executor-contract",
+  "verdict": "needs-human-review",
+  "criteria_verdict": "needs-more-evidence",
+  "integrity": {
+    "verdict": "unknown",
+    "intent_preserved": false,
+    "graph_integrity_preserved": false,
+    "required_human_review": true,
+    "confidence": 0.0,
+    "findings": [],
+    "reasoning": "pi exited with code 1: OpenAI API error (401): {\"message\":\"Incorrect API key provided: sk-or-v1*************************************************************60ca. You can find your API key at https://platform.openai.com/account/api-keys.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"param\":null}\n",
+    "tool_trace": [],
+    "graph_observations": null,
+    "lane_status": "crashed",
+    "harness_error": "pi exited with code 1: OpenAI API error (401): {\"message\":\"Incorrect API key provided: sk-or-v1*************************************************************60ca. You can find your API key at https://platform.openai.com/account/api-keys.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"param\":null}\n (preserved logs: stdout=/var/folders/5p/ll5gds4n5k3_x7kbrfp25pkw0000gn/T/gddp-integrity-stdout-msxu04il stderr=/var/folders/5p/ll5gds4n5k3_x7kbrfp25pkw0000gn/T/gddp-integrity-stderr-9_icda3z)"
+  },
+  "confidence": 0.2,
+  "criteria_confidence": 0.2,
+  "completeness": 0.5,
+  "graph_readiness": 0.0,
+  "completeness_status": "partial",
+  "deterministic": {
+    "criteria": [
+      {
+        "id": "executor-neutral-packet",
+        "criterion": "The same complete node packet can be given to any executor without changing the node's meaning",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "execution-attempt-identity",
+        "criterion": "GDDP can identify and track each execution attempt independently of the executor being used",
+        "status": "indeterminate",
+        "confidence": 0.5,
+        "method": "keyword_scan_source",
+        "evidence": [
+          "GDDP -> line 133: 'GDDP'"
+        ],
+        "reasoning": "Scanned source files (scripts/adapters/__init__.py, scripts/adapters/executor_protocol.py, scripts/adapters/jules_action_adapter.py, scripts/adapters/jules_cli_adapter.py...) for identifiers named in the criterion (GDDP). String match found — semantic investigation needed to confirm.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "shared-result-shape",
+        "criterion": "Every executor returns work through one shared, understandable result shape",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      },
+      {
+        "id": "evidence-only-no-graph-mutation",
+        "criterion": "Executor output remains evidence only and does not change graph truth automatically",
+        "status": "indeterminate",
+        "confidence": 0.1,
+        "method": "no_probe",
+        "evidence": [],
+        "reasoning": "No deterministic probe is registered for this criterion and no usable identifiers were found in its text. Needs a human or an explicit probe.",
+        "mismatch_kind": "",
+        "mismatch_detail": "",
+        "needs_evidence": false,
+        "human_question": ""
+      }
+    ],
+    "constraints": [
+      {
+        "constraint": "One executor-neutral packet and returned-result contract across all current and future executors",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Preserve any mediated pathway as inherited infrastructure rather than the required command bus",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Prefer a direct transport for the short node round trip",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      },
+      {
+        "constraint": "Do not mark this node complete from executor success, passing tests, or an evaluator verdict",
+        "status": "clear",
+        "confidence": 0.85,
+        "method": "forbidden_pattern_scan",
+        "evidence": [
+          "no forbidden patterns matched"
+        ],
+        "reasoning": "Scanned referenced lib files for forbidden patterns (executor sourcing, runtime deps). No violations."
+      }
+    ],
+    "artifacts_present": {
+      "decision.md": true,
+      "result-summary.md": true,
+      "patch.diff": true
+    },
+    "deps_status": {},
+    "criteria_mismatches": [],
+    "missing_evidence": [],
+    "human_review_questions": []
+  },
+  "semantic": {
+    "judgments": [],
+    "overall_reasoning": "pi exited with code 1: OpenAI API error (401): {\"message\":\"Incorrect API key provided: sk-or-v1*************************************************************60ca. You can find your API key at https://platform.openai.com/account/api-keys.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"param\":null}\n",
+    "risks": null,
+    "followup_candidates": null,
+    "budget_exhausted": true,
+    "budget_trace": null,
+    "lane_status": "crashed",
+    "harness_error": "pi exited with code 1: OpenAI API error (401): {\"message\":\"Incorrect API key provided: sk-or-v1*************************************************************60ca. You can find your API key at https://platform.openai.com/account/api-keys.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"param\":null}\n (preserved logs: stdout=/var/folders/5p/ll5gds4n5k3_x7kbrfp25pkw0000gn/T/gddp-pi-stdout-sec45dh9 stderr=/var/folders/5p/ll5gds4n5k3_x7kbrfp25pkw0000gn/T/gddp-pi-stderr-jkx7pnw7)"
+  },
+  "decision_reasoning": "pi exited with code 1: OpenAI API error (401): {\"message\":\"Incorrect API key provided: sk-or-v1*************************************************************60ca. You can find your API key at https://platform.openai.com/account/api-keys.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"param\":null}\n",
+  "required_next_action": "Integrity verdict 'unknown' halts progression (criteria verdict was 'needs-more-evidence'). Human review required; no dependent node may dispatch on this node.",
+  "generated_at": "2026-07-19T01:39:38.528742+00:00",
+  "evaluated_tree_sha": "6385736cdafd0a023220ef64c825983be3e56937",
+  "evaluated_commit_sha": "f522e140befd62ec3ca66ea15bd3d5651396e9b6",
+  "merge_commit_sha": "f522e14",
+  "pr_ref": null,
+  "job_id": "mission-neutral-executor-contract",
+  "canonical_context": {
+    "readme": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md",
+    "project_brief": "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+    "foundational_node": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml",
+    "neighbor:direct-executor-round-trip": "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml"
+  },
+  "context_coverage": {
+    "criteria": {
+      "rating": "none",
+      "offered": 4,
+      "content_accessed": 0,
+      "not_observed": 4,
+      "accessed_paths": [],
+      "not_observed_paths": [
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml",
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md"
+      ]
+    },
+    "integrity": {
+      "rating": "none",
+      "offered": 4,
+      "content_accessed": 0,
+      "not_observed": 4,
+      "accessed_paths": [],
+      "not_observed_paths": [
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml",
+        "/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/return-router.yaml",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/PROJECT-BRIEF.md",
+        "/Users/sab-mini/repos/gddp-runtime/.worktrees/capability-spine/README.md"
+      ]
+    },
+    "overall": "none"
+  }
+}

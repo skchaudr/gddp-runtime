@@ -14,28 +14,22 @@ Usage:
     result = adapter.dispatch(job)
 """
 
-import json
 import os
 import subprocess
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+
+from adapters.executor_protocol import DispatchResult, NodePacket
 
 
 def _flatten(item) -> str:
-    """Convert any YAML value (str, dict, list) to a readable string."""
-    if isinstance(item, dict):
-        # e.g. {'method returns a dict with': 'key1, key2'} → 'method returns a dict with: key1, key2'
-        return " — ".join(f"{k}: {v}" for k, v in item.items())
-    if isinstance(item, list):
-        return ", ".join(str(i) for i in item)
+    """Convert an immutable packet value to readable text."""
+    if isinstance(item, Mapping):
+        return " — ".join(f"{key}: {value}" for key, value in item.items())
+    if isinstance(item, Sequence) and not isinstance(item, str | bytes | bytearray):
+        return ", ".join(str(value) for value in item)
     return str(item)
 
 
-@dataclass
-class DispatchResult:
-    success: bool
-    issue_url: str | None
-    issue_number: int | None
-    error: str | None
 
 
 class JulesActionAdapter:
@@ -67,28 +61,41 @@ class JulesActionAdapter:
             return None
         return result.stdout.strip() or None
 
-    def build_issue_body(self, job: dict) -> str:
-        """
-        Format the job packet as a structured issue body.
-        Jules reads this as its task instructions.
-        """
-        raw_constraints = job.get("constraints")
-        constraints = json.loads(raw_constraints) if isinstance(raw_constraints, str) else (raw_constraints or [])
-        raw_criteria = job.get("acceptance_criteria")
-        criteria = json.loads(raw_criteria) if isinstance(raw_criteria, str) else (raw_criteria or [])
+    def build_issue_body(self, packet: NodePacket) -> str:
+        """Format one immutable node attempt as structured issue instructions."""
+        constraints_text = "\n".join(
+            f"- {_flatten(constraint)}" for constraint in packet.constraints
+        )
+        criteria_text = "\n".join(
+            f"- [ ] {_flatten(criterion)}"
+            for criterion in packet.acceptance_criteria
+        )
 
-        constraints_text = "\n".join(f"- {_flatten(c)}" for c in constraints)
-        criteria_text    = "\n".join(f"- [ ] {_flatten(c)}" for c in criteria)
-
-        findings = job.get("_previous_findings")
+        findings = packet.previous_findings
         findings_section = ""
         if findings:
+            raw_findings = findings.get("findings", ())
             findings_list = "\n".join(
-                f"- [{f.get('severity', '?')}] {f.get('summary', '')}"
-                for f in findings.get("findings", [])
+                (
+                    f"- [{finding.get('severity', '?')}] "
+                    f"{finding.get('summary', '')}"
+                )
+                for finding in raw_findings
+                if isinstance(finding, Mapping)
+            )
+            raw_criteria_findings = findings.get("criteria_findings", ())
+            criteria_findings_list = "\n".join(
+                (
+                    f"- [{finding.get('judgment', '?')}] "
+                    f"{finding.get('criterion_id', '')}\n"
+                    f"  Reasoning: {finding.get('reasoning', '')}\n"
+                    f"  Evidence: {_flatten(finding.get('evidence', ()))}"
+                )
+                for finding in raw_criteria_findings
+                if isinstance(finding, Mapping)
             )
             findings_section = f"""
-## Previous Attempt Findings (attempt {job.get('attempt', 0)})
+## Previous Attempt Findings (attempt {packet.attempt_index})
 
 The previous implementation was reviewed and the following issues were found:
 
@@ -99,13 +106,17 @@ The previous implementation was reviewed and the following issues were found:
 ### Findings
 {findings_list}
 
+### Criteria Findings
+{criteria_findings_list}
+
 Please address these findings in your implementation.
 """
 
-        required_artifacts = job.get("required_artifacts", [])
         artifacts_section = ""
-        if required_artifacts:
-            artifacts_text = "\n".join(f"- `{a}`" for a in required_artifacts)
+        if packet.required_artifacts:
+            artifacts_text = "\n".join(
+                f"- `{artifact}`" for artifact in packet.required_artifacts
+            )
             artifacts_section = f"""
 ## Required Artifacts
 Your PR must include the following files in the repo root:
@@ -119,23 +130,27 @@ These files are checked by the deterministic verification gate. Missing artifact
         metadata_reminder = (
             f"\n"
             f"---\n"
-            f"*Dispatched by GDDP control plane — job_id: {job['job_id']} — node: {job['node_id']}*\n"
+            f"*Dispatched by GDDP control plane — job_id: {packet.job_id} — "
+            f"node: {packet.node_id} — attempt: {packet.attempt_index} — "
+            f"execution_attempt_id: {packet.execution_attempt_id}*\n"
             f"\n"
             f"**CRITICAL — PR Metadata Block Required:**\n"
             f"Your PR description MUST end with this exact block:\n"
             f"```\n"
-            f"node: {job['node_id']}\n"
-            f"job: {job['job_id']}\n"
+            f"node: {packet.node_id}\n"
+            f"job: {packet.job_id}\n"
+            f"attempt: {packet.attempt_index}\n"
+            f"execution_attempt_id: {packet.execution_attempt_id}\n"
             f"```\n"
             f"Without this block, the GDDP return router cannot link your PR back to this job. "
             f"The PR will be rejected and the work will not be reviewed. This is not optional.\n"
         )
 
         return f"""## Goal
-{job['goal']}
+{packet.goal}
 
 ## Why
-{job['why']}
+{packet.why}
 
 ## Constraints
 {constraints_text}
@@ -152,25 +167,25 @@ These files are checked by the deterministic verification gate. Missing artifact
 - **Required: include the following metadata block verbatim at the end of the PR description:**
 
 ```
-node: {job['node_id']}
-job: {job['job_id']}
+node: {packet.node_id}
+job: {packet.job_id}
+attempt: {packet.attempt_index}
+execution_attempt_id: {packet.execution_attempt_id}
 ```
 
 This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
 {metadata_reminder}"""
 
-    def dispatch(self, job: dict) -> DispatchResult:
+    def dispatch(self, packet: NodePacket) -> DispatchResult:
         token = self._github_token()
         if not token:
             return DispatchResult(
                 success=False,
-                issue_url=None,
-                issue_number=None,
                 error="Missing GitHub token: set GITHUB_TOKEN/GH_TOKEN or authenticate gh",
             )
 
-        title = f"[GDDP] {job['title']}"
-        body  = self.build_issue_body(job)
+        title = f"[GDDP] {packet.title}"
+        body = self.build_issue_body(packet)
 
         cmd = [
             "gh", "issue", "create",
@@ -194,26 +209,12 @@ This block is parsed by the GDDP return router to create a structured review rec
             if result.returncode != 0:
                 return DispatchResult(
                     success=False,
-                    issue_url=None,
-                    issue_number=None,
                     error=result.stderr.strip(),
                 )
-            # gh issue create prints the issue URL on success
-            issue_url    = result.stdout.strip()
-            issue_number = int(issue_url.rstrip("/").split("/")[-1])
-            return DispatchResult(
-                success=True,
-                issue_url=issue_url,
-                issue_number=issue_number,
-                error=None,
-            )
+            # gh issue create prints the issue URL on success.
+            issue_url = result.stdout.strip()
+            return DispatchResult(success=True, issue_url=issue_url)
         except subprocess.TimeoutExpired:
-            return DispatchResult(
-                success=False, issue_url=None, issue_number=None,
-                error="gh CLI timed out"
-            )
+            return DispatchResult(success=False, error="gh CLI timed out")
         except Exception as e:
-            return DispatchResult(
-                success=False, issue_url=None, issue_number=None,
-                error=str(e)
-            )
+            return DispatchResult(success=False, error=str(e))

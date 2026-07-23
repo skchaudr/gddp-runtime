@@ -11,7 +11,7 @@ What it does:
     2. Classifies each event (hardcoded rules for Phase 3)
     3. Checks that the target node is 'ready' (hardcoded for Phase 3)
     4. Creates a job and queue record
-    5. Dispatches to Jules via JulesActionAdapter
+    5. Dispatches to Jules through the runtime dispatcher
     6. Updates event status to 'mapped' and job status to 'running'
 """
 
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from adapters.jules_action_adapter import JulesActionAdapter
+from runtime.heartbeat.dispatcher import dispatch
 from runtime.heartbeat.job_factory import ts_id
 
 _default_root = Path(__file__).parent.parent
@@ -159,14 +159,13 @@ def run_heartbeat(repo: str):
 
         print(f"  → job created: {job_id}")
 
-        # 3. Dispatch to Jules via GitHub Action adapter
+        # 3. Dispatch the persisted attempt through the neutral contract.
         node = dict(PHASE3_NODE)
-        node["job_id"]   = job_id
-        node["constraints"]          = json.dumps(node["constraints"])
-        node["acceptance_criteria"]  = json.dumps(node["acceptance_criteria"])
+        node["job_id"] = job_id
+        node["executor"] = "jules"
+        node["attempt"] = 0
 
-        adapter = JulesActionAdapter(repo=repo)
-        result  = adapter.dispatch(node)
+        result = dispatch(node, repo)
 
         if result.success:
             cur.execute(

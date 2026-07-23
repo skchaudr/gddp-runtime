@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Ensure adapters directory is importable (same pattern as dispatcher.py).
@@ -25,16 +26,27 @@ from adapters.executor_protocol import SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
-from .dispatcher import ADAPTERS
+from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .state_recorder import (
+    allocate_retry_attempt,
+    finalize_executor_session_dispatch,
     get_active_executor_sessions,
+    mark_job_cancelled,
     mark_job_failed,
+    mark_job_running,
+    recover_stale_dispatching_sessions,
     update_executor_session_state,
 )
 
 
 def reconcile_sessions(
-    con, repo_path: Path | None, repo: str | None = None
+    con,
+    repo_path: Path | None,
+    repo: str | None = None,
+    *,
+    current_time: datetime | None = None,
+    dispatching_stale_after: timedelta = timedelta(minutes=30),
+    missing_stale_after: timedelta = timedelta(minutes=30),
 ) -> None:
     """Main entry point for the reconcile phase.
 
@@ -48,6 +60,20 @@ def reconcile_sessions(
 
     A failure reconciling one session does not stop others.
     """
+    current_time = current_time or datetime.now(timezone.utc)
+    recovered = recover_stale_dispatching_sessions(
+        con,
+        current_time=current_time,
+        stale_after=dispatching_stale_after,
+        repo=repo,
+    )
+    if recovered:
+        con.commit()
+        print(
+            f"[reconcile] recovered {len(recovered)} stale dispatch "
+            "reservation(s) as dispatch_failed; operator recovery required"
+        )
+
     if repo_path is None:
         print("[reconcile] no repo_path available; skipping reconcile phase")
         return
@@ -63,7 +89,13 @@ def reconcile_sessions(
 
     for session in sessions:
         try:
-            _reconcile_one(con, session, repo_path)
+            _reconcile_one(
+                con,
+                session,
+                repo_path,
+                current_time=current_time,
+                missing_stale_after=missing_stale_after,
+            )
         except Exception as exc:
             # A failed reconcile for one session must not stop others.
             print(
@@ -74,7 +106,98 @@ def reconcile_sessions(
     con.commit()
 
 
-def _reconcile_one(con, session, repo_path: Path) -> None:
+def cancel_executor_session(con, session_db_id: str) -> str:
+    """Persist a logical cancellation and stop local lifecycle processing."""
+    session = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = ?",
+        (session_db_id,),
+    ).fetchone()
+    if session is None:
+        raise ValueError(f"executor session not found: {session_db_id}")
+    if session["state"] not in {
+        "dispatching",
+        "dispatched",
+        "running",
+        "needs_operator",
+    }:
+        return session["state"]
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
+    ).fetchone()
+    if job is None:
+        raise ValueError(f"job not found: {session['job_id']}")
+
+    executor = session["executor"]
+    adapter_cls = ADAPTERS.get(executor)
+    result_state = "cancel_failed"
+    error = f"cancellation failed: unknown executor {executor!r}"
+    if adapter_cls is not None:
+        error = "local executor cancellation was not accepted"
+        adapter = adapter_cls(repo=job["repo"] or "")
+        session_ref = SessionRef(
+            executor=executor,
+            session_id=session["session_id"],
+        )
+        try:
+            accepted = adapter.cancel(session_ref)
+        except Exception as exc:
+            accepted = False
+            error = f"cancellation failed: {exc}"
+
+        if accepted:
+            result_state = "cancelled"
+            error = "local executor cancellation accepted"
+        elif executor == "jules_cli":
+            result_state = "cancel_unsupported"
+            error = (
+                "Jules CLI cancellation is unsupported; remote execution "
+                "may continue and its result will not be collected"
+            )
+        elif not error.startswith("cancellation failed: "):
+            error = "local executor cancellation was not accepted"
+
+        if not accepted and executor != "jules_cli":
+            try:
+                durable_status = adapter.status(session_ref)
+            except Exception:
+                durable_status = None
+            if durable_status is not None and durable_status.state in {
+                "completed",
+                "failed",
+            }:
+                update_executor_session_state(
+                    con,
+                    session_db_id,
+                    state=durable_status.state,
+                    error=(
+                        "cancellation requested after executor was already "
+                        f"{durable_status.state}; result will not be collected"
+                    ),
+                )
+                mark_job_cancelled(con, session["job_id"])
+                con.commit()
+                return "already_terminal"
+
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state=result_state,
+        error=error,
+    )
+    mark_job_cancelled(con, session["job_id"])
+    con.commit()
+    return result_state
+
+
+def _reconcile_one(
+    con,
+    session,
+    repo_path: Path,
+    *,
+    current_time: datetime,
+    missing_stale_after: timedelta,
+) -> None:
     """Reconcile a single executor session."""
     session_db_id = session["session_db_id"]
     job_id = session["job_id"]
@@ -82,9 +205,8 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
     session_id = session["session_id"]
     current_state = session["state"]
 
-    # Look up the job row for repo and evaluation metadata.
     job_row = con.execute(
-        "SELECT job_id, repo, node_id, project_id, attempt FROM jobs WHERE job_id = ?",
+        "SELECT * FROM jobs WHERE job_id = ?",
         (job_id,),
     ).fetchone()
     if job_row is None:
@@ -121,7 +243,25 @@ def _reconcile_one(con, session, repo_path: Path) -> None:
     if status.state == "completed":
         _handle_completed(con, adapter, session_ref, session, repo_path, job_row)
     elif status.state == "failed":
-        _handle_failed(con, session_db_id, job_id, status.error)
+        _handle_failed(con, session, job_row, status.error, repo_path)
+    elif status.state == "missing":
+        created_at = datetime.fromisoformat(
+            str(session["created_at"]).replace("Z", "+00:00")
+        )
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if current_time - created_at < missing_stale_after:
+            print(
+                f"[reconcile] {session_db_id}: missing from successful executor "
+                f"list within {missing_stale_after} grace; will retry next tick"
+            )
+            return
+        _handle_failed(con, session, job_row, status.error, repo_path)
+    elif status.state == "poll_error":
+        print(
+            f"[reconcile] {session_db_id}: poll error (transient, will retry "
+            f"next tick): {status.error or 'executor unavailable'}"
+        )
     elif status.state == "needs_operator":
         _handle_needs_operator(con, session_db_id, job_id, status.error)
     elif status.state == "running":
@@ -223,16 +363,111 @@ def _handle_completed(
         con.commit()
 
 
-def _handle_failed(
-    con, session_db_id: str, job_id: str, error: str | None
-) -> None:
-    """Handle a session that the executor reports as failed."""
-    mark_job_failed(con, job_id)
+def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> None:
+    """Persist one authoritative failure, then allocate at most one retry."""
+    session_db_id = session["session_db_id"]
+    job_id = session["job_id"]
     update_executor_session_state(
         con, session_db_id, state="failed", error=error
     )
+
+    session_attempt = int(session["attempt_index"])
+    current_attempt = int(job["attempt"] or 0)
+    if session_attempt != current_attempt:
+        con.commit()
+        print(
+            f"[reconcile] {session_db_id}: executor failed on superseded "
+            f"attempt {session_attempt}; current attempt is {current_attempt}"
+        )
+        return
+
+    mark_job_failed(con, job_id)
+    expected_base = _get_head_sha(repo_path) or session["expected_base_commit_sha"]
+    allocated = allocate_retry_attempt(
+        con,
+        job,
+        executor=session["executor"],
+        expected_base_commit_sha=expected_base,
+    )
+    if allocated is None:
+        con.commit()
+        print(
+            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
+            f"exhausted at attempt {current_attempt}"
+        )
+        return
+
+    retry_job, replacement_id = allocated
+    retry_job["executor"] = session["executor"]
     con.commit()
-    print(f"[reconcile] {session_db_id}: executor failed; job {job_id} → failed")
+
+    try:
+        dispatch_result = dispatch(retry_job, retry_job["repo"])
+    except Exception as exc:
+        dispatch_result = None
+        dispatch_error = f"retry dispatch raised exception: {exc}"
+    else:
+        dispatch_error = dispatch_result.error or "retry dispatch failed"
+
+    if dispatch_result is not None and dispatch_result.success:
+        session_ref = dispatch_result.session_ref
+        if session_ref is not None:
+            finalized = finalize_executor_session_dispatch(
+                con,
+                replacement_id,
+                state="dispatched",
+                executor=session_ref.executor,
+                session_id=session_ref.session_id,
+                expected_base_commit_sha=expected_base,
+            )
+        else:
+            finalized = finalize_executor_session_dispatch(
+                con,
+                replacement_id,
+                state="mediated",
+                session_id=dispatch_result.issue_url,
+                expected_base_commit_sha=expected_base,
+            )
+        if not finalized:
+            cancellation = "reservation is no longer dispatching"
+            if session_ref is not None:
+                _, cancellation = cancel_remote_session(
+                    session_ref, retry_job["repo"]
+                )
+            con.commit()
+            print(
+                f"[reconcile] {replacement_id}: late retry dispatch result "
+                f"ignored; {cancellation}"
+            )
+            return
+        mark_job_running(con, job_id)
+        con.commit()
+        print(
+            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
+            f"redispatched as attempt {retry_job['attempt']}"
+        )
+        return
+
+    finalized = finalize_executor_session_dispatch(
+        con,
+        replacement_id,
+        state="dispatch_failed",
+        error=dispatch_error,
+        expected_base_commit_sha=expected_base,
+    )
+    if finalized:
+        mark_job_failed(con, job_id)
+    con.commit()
+    if finalized:
+        print(
+            f"[reconcile] {session_db_id}: executor failed; retry dispatch "
+            f"for job {job_id} failed: {dispatch_error}"
+        )
+    else:
+        print(
+            f"[reconcile] {replacement_id}: late retry dispatch failure ignored; "
+            "reservation is no longer dispatching"
+        )
 
 
 def _handle_needs_operator(
@@ -322,6 +557,21 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
         (job_id,),
     )
     con.commit()
+
+
+def _get_head_sha(repo_path: Path) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
 
 
 # ------------------------------------------------------------------ #

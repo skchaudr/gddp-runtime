@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "d6b9ee9c86dcc75f01640bf58590d25938c452ff",
-  "generatedAt": "2026-07-14T13:58:58.216Z",
+  "gitCommitHash": "c1e119cec9563646e59065d717012581b02f51c7",
+  "generatedAt": "2026-07-19T07:39:08.567Z",
   "files": {
     ".agents/hooks.json": {
       "filePath": ".agents/hooks.json",
@@ -516,7 +516,7 @@
     },
     ".gddp/decision.md": {
       "filePath": ".gddp/decision.md",
-      "contentHash": "a1d7c1195f410a7c9c515f69994c121fdb86c9948b03bc9c5378b4c58eb48e6f",
+      "contentHash": "4086af29b5e292b2ee42b1288841b7bbcd4fd0622dd89cdacd0d3cd9e2cafda3",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -526,22 +526,22 @@
     },
     ".gddp/patch.diff": {
       "filePath": ".gddp/patch.diff",
-      "contentHash": "2939b70bc16beba135f9d0451558a10adb14b8cc4b47794172685a8b8485264d",
+      "contentHash": "bb0910bb47717ad42ddd76debe4aacdf2fea87c12dbd80a3c7db02ddcd419640",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 22,
+      "totalLines": 4319,
       "hasStructuralAnalysis": false
     },
     ".gddp/result-summary.md": {
       "filePath": ".gddp/result-summary.md",
-      "contentHash": "7bc9ae6ae5b5f16a2dbb4985c3f2978de53b2cb11dca8ce1adacd4a7d31160cb",
+      "contentHash": "cd79d651cfe0912b23a022449685f21920db41d973cbc159a0c5ce4679f48642",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 29,
+      "totalLines": 37,
       "hasStructuralAnalysis": true
     },
     ".github/workflows/jules.yml": {
@@ -884,6 +884,86 @@
       "totalLines": 51,
       "hasStructuralAnalysis": true
     },
+    ".handoffs/039-evaluator-hardening-v5.md": {
+      "filePath": ".handoffs/039-evaluator-hardening-v5.md",
+      "contentHash": "ff3f82e93697c9b4dd1a6d945b1cf6237d180f7e658fcc1b727f45d94c17550c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 64,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/040-jules-keychain-auth.md": {
+      "filePath": ".handoffs/040-jules-keychain-auth.md",
+      "contentHash": "068e0815f1b57ce5d9a740066096e2524f63ff18bea091022c4e39b1f2bc35c2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 47,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/041-tmux-watch-profile-aliases.md": {
+      "filePath": ".handoffs/041-tmux-watch-profile-aliases.md",
+      "contentHash": "c8da4dce2d7e9d9cb5781feb59b21e8a318187f6819a04db755b334c0bb7e6d5",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/042-evaluator-hardening-p1-fixes.md": {
+      "filePath": ".handoffs/042-evaluator-hardening-p1-fixes.md",
+      "contentHash": "6b45ec2772c606579ff892d883431b588400ef5144c069ccd5ebf4a9a1a46e03",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 52,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/044-jules-pr107-pr108-review.md": {
+      "filePath": ".handoffs/044-jules-pr107-pr108-review.md",
+      "contentHash": "3dd0c77a32274213bb4e9ff9b741fd115a1baeb151e1b8b83ac92683b791c1e0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/046-evaluator-hardening-merged-p2-cleanup.md": {
+      "filePath": ".handoffs/046-evaluator-hardening-merged-p2-cleanup.md",
+      "contentHash": "7ec09ed491eb0d5de54fa354422c392df80826eac30b0f078505aa4b10142fe1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 105,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/047-executor-neutral-session-lifecycle.md": {
+      "filePath": ".handoffs/047-executor-neutral-session-lifecycle.md",
+      "contentHash": "c079d78a3d9fe1421c0b76c288f843f22d3e81a0184d8529872eaa32b50ee209",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 102,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/048-neutral-executor-contract-ready-for-review.md": {
+      "filePath": ".handoffs/048-neutral-executor-contract-ready-for-review.md",
+      "contentHash": "5f7efb57f38476f0f6e6290a0f37aec48c1a40ca17aee481f6fb52d98b724c36",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 73,
+      "hasStructuralAnalysis": true
+    },
     ".handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json": {
       "filePath": ".handoffs/artifacts/018-runtime-receipt-proves-node/verification-receipt-contract.live.json",
       "contentHash": "84f760a2594ed0cf7060ec9d2dd1a3d45fa48e97e5550386633dfb37be9a106b",
@@ -932,6 +1012,76 @@
       "imports": [],
       "exports": [],
       "totalLines": 681,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/criteria-stderr.txt": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/criteria-stderr.txt",
+      "contentHash": "4f62a6666163c5300f58008b60113c038aed14f6d3906fde445034b2e53e2e4c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 2,
+      "hasStructuralAnalysis": false
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/criteria-stdout.txt": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/criteria-stdout.txt",
+      "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1,
+      "hasStructuralAnalysis": false
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/integrity-stderr.txt": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/integrity-stderr.txt",
+      "contentHash": "4f62a6666163c5300f58008b60113c038aed14f6d3906fde445034b2e53e2e4c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 2,
+      "hasStructuralAnalysis": false
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/integrity-stdout.txt": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/harness-logs/integrity-stdout.txt",
+      "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1,
+      "hasStructuralAnalysis": false
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/receipts/gddp-runtime/neutral-executor-contract/mission-neutral-executor-contract-attempt0-rerun1.json": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/receipts/gddp-runtime/neutral-executor-contract/mission-neutral-executor-contract-attempt0-rerun1.json",
+      "contentHash": "af212d10930311adbbcc15498e63b86ca3c82a291dfd7199f5174ff946313281",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 186,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/artifacts/048-neutral-executor-contract/receipts/gddp-runtime/neutral-executor-contract/mission-neutral-executor-contract-attempt0.json": {
+      "filePath": ".handoffs/artifacts/048-neutral-executor-contract/receipts/gddp-runtime/neutral-executor-contract/mission-neutral-executor-contract-attempt0.json",
+      "contentHash": "3bedec83328bfffc294542799384777896eae44c0d7bd3fba51c5219e269bab1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 186,
+      "hasStructuralAnalysis": true
+    },
+    ".handoffs/artifacts/cap-enforcement-node-proposal.md": {
+      "filePath": ".handoffs/artifacts/cap-enforcement-node-proposal.md",
+      "contentHash": "c2e138b4454835d925ba574cc849bab5ae6f36c04dab256215da0724aecf3ade",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 46,
       "hasStructuralAnalysis": true
     },
     ".handoffs/artifacts/e3-command-proof-spec.md": {
@@ -1006,12 +1156,12 @@
     },
     "AGENTS.md": {
       "filePath": "AGENTS.md",
-      "contentHash": "b3543b0ba813de31ff99c7f7c8998622ef99f964634b1f52bcc361ee2aa3642f",
+      "contentHash": "40741b35763bb1736e946e3d72d94435c9afe4b2e5d69d9e44220fcc6a6545cd",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 129,
+      "totalLines": 171,
       "hasStructuralAnalysis": true
     },
     "arxiv_search.py": {
@@ -1200,6 +1350,29 @@
       "totalLines": 50,
       "hasStructuralAnalysis": true
     },
+    "deploy/mini-heartbeat/bin/shell-aliases.sh": {
+      "filePath": "deploy/mini-heartbeat/bin/shell-aliases.sh",
+      "contentHash": "a34b4978f26bd5083ce698f6a10a25cf32dfc7f82a970bb7c10184c73aa45529",
+      "functions": [
+        {
+          "name": "_gddp_runtime_root",
+          "params": [],
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "_gddp_zellij_config_dir",
+          "params": [],
+          "exported": false,
+          "lineCount": 3
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 49,
+      "hasStructuralAnalysis": true
+    },
     "deploy/mini-heartbeat/bin/smoke.sh": {
       "filePath": "deploy/mini-heartbeat/bin/smoke.sh",
       "contentHash": "a2522834db7e1b156fe92cadd69fe37b6487c3edb3c301969d0779743e759e40",
@@ -1221,6 +1394,35 @@
       "imports": [],
       "exports": [],
       "totalLines": 134,
+      "hasStructuralAnalysis": true
+    },
+    "deploy/mini-heartbeat/bin/watch-dispatch.sh": {
+      "filePath": "deploy/mini-heartbeat/bin/watch-dispatch.sh",
+      "contentHash": "226012d347f93e3681d1ca6a3667b0d1e97459a0fa509e541625c9fd7e89b184",
+      "functions": [
+        {
+          "name": "_kdl_escape",
+          "params": [],
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "_session_exists",
+          "params": [],
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "_generate_layout",
+          "params": [],
+          "exported": false,
+          "lineCount": 45
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 116,
       "hasStructuralAnalysis": true
     },
     "deploy/mini-heartbeat/CUTOVER.md": {
@@ -1495,6 +1697,16 @@
       "totalLines": 93,
       "hasStructuralAnalysis": true
     },
+    "deploy/mini-heartbeat/zellij/config.kdl": {
+      "filePath": "deploy/mini-heartbeat/zellij/config.kdl",
+      "contentHash": "e645e919dcc2d32fff84901567cb6c3e601f3f6987e27910115139738e694f84",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 18,
+      "hasStructuralAnalysis": false
+    },
     "deploy/setup.sh": {
       "filePath": "deploy/setup.sh",
       "contentHash": "9630b5561230b41b4c7d490e58028b6d2f4c98f69bd4ef1bca9b1ba6f07ca459",
@@ -1577,12 +1789,12 @@
     },
     "docs/archive/README.md": {
       "filePath": "docs/archive/README.md",
-      "contentHash": "85b2e21d6d06e62252d1f423111ccd2734eb9a7290a9714657141ef1d2ac548d",
+      "contentHash": "215582a6bedefd88ff8eb0b6e41f963afa9cc79c14450be705b5b18955326643",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 76,
+      "totalLines": 55,
       "hasStructuralAnalysis": true
     },
     "docs/archive/verification-engine-spec.md": {
@@ -1618,6 +1830,16 @@
     "docs/CHANGELOG.md": {
       "filePath": "docs/CHANGELOG.md",
       "contentHash": "83c4021fa004eccaa29a5a1c91dc9c09a737043d82e94ef3019e63592be81a69",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 59,
+      "hasStructuralAnalysis": true
+    },
+    "docs/current-mission-definition-of-done.md": {
+      "filePath": "docs/current-mission-definition-of-done.md",
+      "contentHash": "956497d7bc31ca1e7c0133bea3eab737d8758e31a253b816dc76b4a3dcb7ca78",
       "functions": [],
       "classes": [],
       "imports": [],
@@ -1714,6 +1936,16 @@
       "exports": [],
       "totalLines": 109,
       "hasStructuralAnalysis": true
+    },
+    "docs/Neutral Executor Graph Plan": {
+      "filePath": "docs/Neutral Executor Graph Plan",
+      "contentHash": "fc2444faf1a30ea4ce58e0485503f101c34cc08827ad68e24e29a6f74cdc5e00",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 214,
+      "hasStructuralAnalysis": false
     },
     "docs/operator-practice/run-checklist.md": {
       "filePath": "docs/operator-practice/run-checklist.md",
@@ -2147,22 +2379,32 @@
     },
     "PROJECT-BRIEF.md": {
       "filePath": "PROJECT-BRIEF.md",
-      "contentHash": "278090c0133f53a7587dc895e5f058d6f273eb1b4edc1614a7d2dce5b7c9236f",
+      "contentHash": "f4fff09ad3b862da7471c830c72385147ab7a1c413bb50178764e5af74c5672a",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 95,
+      "totalLines": 233,
+      "hasStructuralAnalysis": true
+    },
+    "readiness-report-2026-07-18.md": {
+      "filePath": "readiness-report-2026-07-18.md",
+      "contentHash": "f52eae28283927dfef32ea1a2d9640e1f5388cf1314992e825cc339d3b0cf137",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 139,
       "hasStructuralAnalysis": true
     },
     "README.md": {
       "filePath": "README.md",
-      "contentHash": "8c010c47555f218767e265079c0935780937e430dd6670d534e778becf9762b0",
+      "contentHash": "24adc1a31f3b910d4ce63f8da585525fe8a30876304d614122ea90815fef883d",
       "functions": [],
       "classes": [],
       "imports": [],
       "exports": [],
-      "totalLines": 281,
+      "totalLines": 301,
       "hasStructuralAnalysis": true
     },
     "requirements.txt": {
@@ -2195,9 +2437,168 @@
       "totalLines": 1,
       "hasStructuralAnalysis": true
     },
+    "scripts/adapters/executor_protocol.py": {
+      "filePath": "scripts/adapters/executor_protocol.py",
+      "contentHash": "d410ac2eecd28b9aaad0ca06372c690e3df69b9f670e4082b80f0ae8cb584450",
+      "functions": [
+        {
+          "name": "_freeze_json",
+          "params": [
+            "value"
+          ],
+          "returnType": "FrozenJSON",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "_thaw_json",
+          "params": [
+            "value"
+          ],
+          "returnType": "object",
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [
+        {
+          "name": "NodePacket",
+          "methods": [
+            "__post_init__",
+            "to_json_value",
+            "to_json"
+          ],
+          "properties": [
+            "job_id",
+            "execution_attempt_id",
+            "node_id",
+            "title",
+            "goal",
+            "why",
+            "constraints",
+            "acceptance_criteria",
+            "required_artifacts",
+            "attempt_index",
+            "previous_findings"
+          ],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "SessionRef",
+          "methods": [],
+          "properties": [
+            "executor",
+            "session_id"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "SessionStatus",
+          "methods": [],
+          "properties": [
+            "state",
+            "error"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "PatchResult",
+          "methods": [],
+          "properties": [
+            "success",
+            "patch_text",
+            "patch_path",
+            "error"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "DispatchResult",
+          "methods": [],
+          "properties": [
+            "success",
+            "session_ref",
+            "issue_url",
+            "error"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "ExecutorAdapter",
+          "methods": [
+            "dispatch",
+            "status",
+            "collect",
+            "cancel"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 19
+        }
+      ],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "collections.abc",
+          "specifiers": [
+            "Mapping",
+            "Sequence"
+          ]
+        },
+        {
+          "source": "dataclasses",
+          "specifiers": [
+            "dataclass"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "types",
+          "specifiers": [
+            "MappingProxyType"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Literal",
+            "Protocol",
+            "TypeAlias",
+            "runtime_checkable"
+          ]
+        }
+      ],
+      "exports": [
+        "_freeze_json",
+        "_thaw_json",
+        "NodePacket",
+        "SessionRef",
+        "SessionStatus",
+        "PatchResult",
+        "DispatchResult",
+        "ExecutorAdapter"
+      ],
+      "totalLines": 176,
+      "hasStructuralAnalysis": true
+    },
     "scripts/adapters/jules_action_adapter.py": {
       "filePath": "scripts/adapters/jules_action_adapter.py",
-      "contentHash": "4e6904f4920e2bdf34b41059241f43d295e46e3c5968321ca6abcb7871ffeca3",
+      "contentHash": "67278a0902c5713d6b4b111197c8123faec5db6fd889552b3ecfb3baf01da172",
       "functions": [
         {
           "name": "_flatten",
@@ -2206,22 +2607,10 @@
           ],
           "returnType": "str",
           "exported": true,
-          "lineCount": 8
+          "lineCount": 7
         }
       ],
       "classes": [
-        {
-          "name": "DispatchResult",
-          "methods": [],
-          "properties": [
-            "success",
-            "issue_url",
-            "issue_number",
-            "error"
-          ],
-          "exported": true,
-          "lineCount": 5
-        },
         {
           "name": "JulesActionAdapter",
           "methods": [
@@ -2232,7 +2621,220 @@
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 163
+          "lineCount": 186
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "collections.abc",
+          "specifiers": [
+            "Mapping",
+            "Sequence"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "NodePacket"
+          ]
+        }
+      ],
+      "exports": [
+        "_flatten",
+        "JulesActionAdapter"
+      ],
+      "totalLines": 221,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/adapters/jules_cli_adapter.py": {
+      "filePath": "scripts/adapters/jules_cli_adapter.py",
+      "contentHash": "fe075282c8b859e7c2ceac66b1e0157b5a1c32cd06f589f7c98a59d46ff596a7",
+      "functions": [
+        {
+          "name": "_flatten",
+          "params": [
+            "item"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [
+        {
+          "name": "JulesCliAdapter",
+          "methods": [
+            "__init__",
+            "_build_session_instructions",
+            "dispatch",
+            "status",
+            "collect",
+            "cancel"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 274
+        }
+      ],
+      "imports": [
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "collections.abc",
+          "specifiers": [
+            "Mapping",
+            "Sequence"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "NodePacket",
+            "PatchResult",
+            "SessionRef",
+            "SessionStatus"
+          ]
+        }
+      ],
+      "exports": [
+        "_flatten",
+        "JulesCliAdapter"
+      ],
+      "totalLines": 344,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/adapters/local_subprocess_adapter.py": {
+      "filePath": "scripts/adapters/local_subprocess_adapter.py",
+      "contentHash": "357e306e3626fafbd5874f397f6f641da35a9053dbcb39bf486997866cb80cf1",
+      "functions": [
+        {
+          "name": "_configured_argv",
+          "params": [
+            "argv"
+          ],
+          "returnType": "tuple[str, ...]",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "_configured_spool_root",
+          "params": [
+            "spool_root"
+          ],
+          "returnType": "Path",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_safe_component",
+          "params": [
+            "value"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "_read_text",
+          "params": [
+            "path"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_read_pid",
+          "params": [
+            "path"
+          ],
+          "returnType": "int | None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_pid_is_running",
+          "params": [
+            "pid"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "_atomic_write",
+          "params": [
+            "path",
+            "content"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "_run_attempt",
+          "params": [
+            "attempt_dir",
+            "start_fd"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "_main",
+          "params": [
+            "argv"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 8
+        }
+      ],
+      "classes": [
+        {
+          "name": "LocalSubprocessAdapter",
+          "methods": [
+            "__init__",
+            "dispatch",
+            "status",
+            "collect",
+            "cancel",
+            "_attempt_dir"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 180
         }
       ],
       "imports": [
@@ -2249,73 +2851,360 @@
           ]
         },
         {
+          "source": "signal",
+          "specifiers": [
+            "signal"
+          ]
+        },
+        {
           "source": "subprocess",
           "specifiers": [
             "subprocess"
           ]
         },
         {
-          "source": "dataclasses",
+          "source": "sys",
           "specifiers": [
-            "dataclass"
+            "sys"
           ]
-        }
-      ],
-      "exports": [
-        "_flatten",
-        "DispatchResult",
-        "JulesActionAdapter"
-      ],
-      "totalLines": 204,
-      "hasStructuralAnalysis": true
-    },
-    "scripts/adapters/jules_cli_adapter.py": {
-      "filePath": "scripts/adapters/jules_cli_adapter.py",
-      "contentHash": "c20ed484e19c910f43930076317d4eb88445152c56863f1baf31de4887e346b5",
-      "functions": [],
-      "classes": [
-        {
-          "name": "DispatchResult",
-          "methods": [],
-          "properties": [
-            "success",
-            "session_id",
-            "error"
-          ],
-          "exported": true,
-          "lineCount": 4
         },
         {
-          "name": "JulesCliAdapter",
-          "methods": [
-            "__init__",
-            "dispatch",
-            "poll",
-            "collect_result"
-          ],
-          "properties": [],
-          "exported": true,
-          "lineCount": 23
-        }
-      ],
-      "imports": [
-        {
-          "source": "dataclasses",
+          "source": "uuid",
           "specifiers": [
-            "dataclass"
+            "uuid"
+          ]
+        },
+        {
+          "source": "collections.abc",
+          "specifiers": [
+            "Sequence"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "NodePacket",
+            "PatchResult",
+            "SessionRef",
+            "SessionStatus"
           ]
         }
       ],
       "exports": [
-        "DispatchResult",
-        "JulesCliAdapter"
+        "LocalSubprocessAdapter",
+        "_configured_argv",
+        "_configured_spool_root",
+        "_safe_component",
+        "_read_text",
+        "_read_pid",
+        "_pid_is_running",
+        "_atomic_write",
+        "_run_attempt",
+        "_main"
       ],
-      "totalLines": 46,
+      "totalLines": 346,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/adapters/test_executor_contract.py": {
+      "filePath": "scripts/adapters/test_executor_contract.py",
+      "contentHash": "884cf097441c26a4839e74f50a8882e3e4efd3c5a5bd691ae14d1158296c0435",
+      "functions": [
+        {
+          "name": "_persisted_job",
+          "params": [
+            "executor",
+            "attempt"
+          ],
+          "returnType": "dict",
+          "exported": true,
+          "lineCount": 35
+        },
+        {
+          "name": "_packet",
+          "params": [
+            "attempt"
+          ],
+          "returnType": "NodePacket",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "_wait_for_terminal",
+          "params": [
+            "adapter",
+            "result"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job",
+          "params": [],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "test_jules_renderers_preserve_the_same_packet_semantics",
+          "params": [],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "test_direct_registry_contains_only_runtime_lifecycle_conformers",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "test_local_subprocess_rejects_parent_directory_session_refs",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "test_dispatch_returns_common_receipt_and_passes_same_node_packet",
+          "params": [
+            "monkeypatch",
+            "tmp_path",
+            "executor",
+            "adapter_cls",
+            "issue_url"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_legacy_heartbeat_dispatches_the_central_node_packet",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 66
+        },
+        {
+          "name": "test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "test_local_subprocess_failure_is_durable_and_not_collectable",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "test_local_subprocess_default_cwd_is_attempt_isolated",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "test_local_subprocess_supervisor_metadata_failure_stops_unpublished_session",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "test_local_subprocess_closed_startup_handshake_never_launches_child",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_local_subprocess_cancel_best_effort_survives_reinstantiation",
+          "params": [
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "test_local_subprocess_cancel_before_launch_persists_terminal_cancellation",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "test_local_subprocess_cancel_during_launch_terminates_after_pid_publication",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "test_local_subprocess_normal_exit_ignores_stale_cancel_marker",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 22
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "signal",
+          "specifiers": [
+            "signal"
+          ]
+        },
+        {
+          "source": "sqlite3",
+          "specifiers": [
+            "sqlite3"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "dataclasses",
+          "specifiers": [
+            "FrozenInstanceError"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "unittest.mock",
+          "specifiers": [
+            "MagicMock"
+          ]
+        },
+        {
+          "source": "pytest",
+          "specifiers": [
+            "pytest"
+          ]
+        },
+        {
+          "source": "heartbeat",
+          "specifiers": [
+            "legacy_heartbeat"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "ExecutorAdapter",
+            "NodePacket",
+            "SessionRef"
+          ]
+        },
+        {
+          "source": "adapters.jules_action_adapter",
+          "specifiers": [
+            "JulesActionAdapter"
+          ]
+        },
+        {
+          "source": "adapters.jules_cli_adapter",
+          "specifiers": [
+            "JulesCliAdapter"
+          ]
+        },
+        {
+          "source": "adapters.local_subprocess_adapter",
+          "specifiers": [
+            "LocalSubprocessAdapter"
+          ]
+        },
+        {
+          "source": "adapters",
+          "specifiers": [
+            "local_subprocess_adapter"
+          ]
+        },
+        {
+          "source": "runtime.heartbeat",
+          "specifiers": [
+            "dispatcher"
+          ]
+        }
+      ],
+      "exports": [
+        "_persisted_job",
+        "_packet",
+        "_wait_for_terminal",
+        "test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job",
+        "test_jules_renderers_preserve_the_same_packet_semantics",
+        "test_direct_registry_contains_only_runtime_lifecycle_conformers",
+        "test_local_subprocess_rejects_parent_directory_session_refs",
+        "test_dispatch_returns_common_receipt_and_passes_same_node_packet",
+        "test_legacy_heartbeat_dispatches_the_central_node_packet",
+        "test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation",
+        "test_local_subprocess_failure_is_durable_and_not_collectable",
+        "test_local_subprocess_default_cwd_is_attempt_isolated",
+        "test_local_subprocess_supervisor_metadata_failure_stops_unpublished_session",
+        "test_local_subprocess_closed_startup_handshake_never_launches_child",
+        "test_local_subprocess_cancel_best_effort_survives_reinstantiation",
+        "test_local_subprocess_cancel_before_launch_persists_terminal_cancellation",
+        "test_local_subprocess_cancel_during_launch_terminates_after_pid_publication",
+        "test_local_subprocess_normal_exit_ignores_stale_cancel_marker"
+      ],
+      "totalLines": 514,
       "hasStructuralAnalysis": true
     },
     "scripts/adapters/test_jules_action_adapter.py": {
       "filePath": "scripts/adapters/test_jules_action_adapter.py",
-      "contentHash": "30360ef8eb0fb448155c4c0d9f9afc93f37e1a2cb5fbf3f2cd2f0425576cf11b",
+      "contentHash": "46516a164949647784c47f6df0c9bab79e73aecac84e01477301be2dac3ce1e5",
       "functions": [],
       "classes": [
         {
@@ -2329,7 +3218,9 @@
             "test_build_issue_body_with_required_artifacts",
             "test_build_issue_body_includes_strengthened_metadata_reminder",
             "test_build_issue_body_without_required_artifacts",
-            "test_dispatch_requires_explicit_token",
+            "test_dispatch_reports_missing_token_when_gh_auth_fails",
+            "test_dispatch_uses_gh_auth_token_fallback",
+            "test_dispatch_reports_missing_token_when_gh_auth_times_out",
             "test_dispatch_success",
             "test_dispatch_failure",
             "test_dispatch_timeout",
@@ -2337,33 +3228,14 @@
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 133
+          "lineCount": 179
         }
       ],
       "imports": [
         {
-          "source": "unittest",
-          "specifiers": [
-            "unittest"
-          ]
-        },
-        {
-          "source": "unittest.mock",
-          "specifiers": [
-            "patch",
-            "MagicMock"
-          ]
-        },
-        {
           "source": "subprocess",
           "specifiers": [
             "subprocess"
-          ]
-        },
-        {
-          "source": "json",
-          "specifiers": [
-            "json"
           ]
         },
         {
@@ -2373,29 +3245,54 @@
           ]
         },
         {
+          "source": "unittest",
+          "specifiers": [
+            "unittest"
+          ]
+        },
+        {
+          "source": "dataclasses",
+          "specifiers": [
+            "replace"
+          ]
+        },
+        {
           "source": "pathlib",
           "specifiers": [
             "Path"
           ]
         },
         {
-          "source": "scripts.adapters.jules_action_adapter",
+          "source": "unittest.mock",
+          "specifiers": [
+            "MagicMock",
+            "patch"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "NodePacket"
+          ]
+        },
+        {
+          "source": "adapters.jules_action_adapter",
           "specifiers": [
             "JulesActionAdapter",
-            "_flatten",
-            "DispatchResult"
+            "_flatten"
           ]
         }
       ],
       "exports": [
         "TestJulesActionAdapter"
       ],
-      "totalLines": 150,
+      "totalLines": 198,
       "hasStructuralAnalysis": true
     },
     "scripts/dry_run.py": {
       "filePath": "scripts/dry_run.py",
-      "contentHash": "c7cdf0d6d72a81f09956367fdb1a673234bb4dde00ad2b8e33b3b4319bd73e29",
+      "contentHash": "54272cc75730767274d2781db188359753206dff08ec0eca69d067fb24d55d13",
       "functions": [
         {
           "name": "now",
@@ -2482,7 +3379,7 @@
           "name": "main",
           "params": [],
           "exported": true,
-          "lineCount": 24
+          "lineCount": 35
         }
       ],
       "classes": [],
@@ -2544,7 +3441,7 @@
         "simulate_merged_pr",
         "main"
       ],
-      "totalLines": 440,
+      "totalLines": 451,
       "hasStructuralAnalysis": true
     },
     "scripts/echo.py": {
@@ -2666,7 +3563,7 @@
     },
     "scripts/heartbeat.py": {
       "filePath": "scripts/heartbeat.py",
-      "contentHash": "6b6c6ec177ea628c652808e934bb076d465ad78b260f8ba4fdb96836553a9642",
+      "contentHash": "f03a9f1f86a1006ae5686e2befbf3e6261413a9cdaad7df6afb25f6d2e6569d6",
       "functions": [
         {
           "name": "now",
@@ -2690,12 +3587,6 @@
           "lineCount": 5
         },
         {
-          "name": "ts_id",
-          "params": [],
-          "exported": true,
-          "lineCount": 2
-        },
-        {
           "name": "classify",
           "params": [
             "event"
@@ -2710,7 +3601,7 @@
             "repo"
           ],
           "exported": true,
-          "lineCount": 97
+          "lineCount": 96
         }
       ],
       "classes": [],
@@ -2759,9 +3650,15 @@
           ]
         },
         {
-          "source": "adapters.jules_action_adapter",
+          "source": "runtime.heartbeat.dispatcher",
           "specifiers": [
-            "JulesActionAdapter"
+            "dispatch"
+          ]
+        },
+        {
+          "source": "runtime.heartbeat.job_factory",
+          "specifiers": [
+            "ts_id"
           ]
         }
       ],
@@ -2769,22 +3666,33 @@
         "now",
         "job_dir",
         "connect",
-        "ts_id",
         "classify",
         "run_heartbeat"
       ],
-      "totalLines": 205,
+      "totalLines": 202,
       "hasStructuralAnalysis": true
     },
     "scripts/init_db.py": {
       "filePath": "scripts/init_db.py",
-      "contentHash": "c0388f0bb2ed1b5b51740b39d82539d4b021b51cd3c16a6f30fef262e8de4519",
+      "contentHash": "db0cfa1633528dbfca069ee339c1378939a21f26172cbd7611a9c3d6a55812de",
       "functions": [
+        {
+          "name": "_ensure_column",
+          "params": [
+            "con",
+            "table",
+            "column",
+            "declaration"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 11
+        },
         {
           "name": "init_db",
           "params": [],
           "exported": true,
-          "lineCount": 166
+          "lineCount": 224
         }
       ],
       "classes": [],
@@ -2803,14 +3711,15 @@
         }
       ],
       "exports": [
+        "_ensure_column",
         "init_db"
       ],
-      "totalLines": 188,
+      "totalLines": 259,
       "hasStructuralAnalysis": true
     },
     "scripts/intake_server.py": {
       "filePath": "scripts/intake_server.py",
-      "contentHash": "ac6ff3cc0efaace3cd99fa3153a2c2e6ac2eed8ebf362b2b706f2e0a660aa787",
+      "contentHash": "ae4d564560f0f6327f378e021581f204a9377019c28108f7cb8e96c37b2e7785",
       "functions": [
         {
           "name": "_resolve_webhook_secret",
@@ -2836,7 +3745,7 @@
           "name": "connect",
           "params": [],
           "exported": true,
-          "lineCount": 5
+          "lineCount": 9
         },
         {
           "name": "verify_signature",
@@ -2941,12 +3850,12 @@
         "webhook",
         "health"
       ],
-      "totalLines": 252,
+      "totalLines": 256,
       "hasStructuralAnalysis": true
     },
     "scripts/node_status.py": {
       "filePath": "scripts/node_status.py",
-      "contentHash": "c7893c58e3d37963396e79e3224deb6b9f927f77a41ba244a33450f7a67c1804",
+      "contentHash": "896301378b1111862ddf85a75aaeea5143b727fa733c3dd2e9855ff683eccba2",
       "functions": [
         {
           "name": "now",
@@ -2992,7 +3901,7 @@
             "full"
           ],
           "exported": true,
-          "lineCount": 21
+          "lineCount": 50
         },
         {
           "name": "cmd_show",
@@ -3003,12 +3912,18 @@
           "lineCount": 20
         },
         {
+          "name": "config_root",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
           "name": "cmd_results",
           "params": [
             "args"
           ],
           "exported": true,
-          "lineCount": 19
+          "lineCount": 50
         },
         {
           "name": "cmd_set",
@@ -3022,7 +3937,7 @@
           "name": "main",
           "params": [],
           "exported": true,
-          "lineCount": 26
+          "lineCount": 27
         }
       ],
       "classes": [],
@@ -3085,11 +4000,12 @@
         "parse_check",
         "print_evaluation",
         "cmd_show",
+        "config_root",
         "cmd_results",
         "cmd_set",
         "main"
       ],
-      "totalLines": 228,
+      "totalLines": 293,
       "hasStructuralAnalysis": true
     },
     "scripts/rollback.py": {
@@ -3296,14 +4212,14 @@
     },
     "scripts/runtime/decision_loop/engine.py": {
       "filePath": "scripts/runtime/decision_loop/engine.py",
-      "contentHash": "196ea936c8d3d4a0bed6bc67a9d0a64e8b71164b52ccb6b1b3e5604335eda1ab",
+      "contentHash": "fa86a7dba2966fa1fe5f29e520a65807f45c1b4ce197ba182472563194836595",
       "functions": [
         {
           "name": "_connect",
           "params": [],
           "returnType": "sqlite3.Connection",
           "exported": true,
-          "lineCount": 4
+          "lineCount": 8
         },
         {
           "name": "_clean_stale_state",
@@ -3536,7 +4452,7 @@
         "_resolve_repo",
         "main"
       ],
-      "totalLines": 369,
+      "totalLines": 373,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/decision_loop/powers/__init__.py": {
@@ -4531,7 +5447,7 @@
     },
     "scripts/runtime/heartbeat/dispatcher.py": {
       "filePath": "scripts/runtime/heartbeat/dispatcher.py",
-      "contentHash": "12e012273f59c5034a648d4bf0a4a159be93f4f1f17bafc2127ab3f53a004954",
+      "contentHash": "5db664549bd511ff1369c70c3e360115b1e0c394f855103b376dd21a75707513",
       "functions": [
         {
           "name": "dispatch",
@@ -4541,34 +5457,73 @@
           ],
           "returnType": "DispatchResult",
           "exported": true,
-          "lineCount": 16
+          "lineCount": 23
         },
         {
-          "name": "_build_adapter_payload",
+          "name": "cancel_remote_session",
+          "params": [
+            "session_ref",
+            "repo"
+          ],
+          "returnType": "tuple[bool, str]",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "_build_node_packet",
           "params": [
             "job"
           ],
-          "returnType": "dict",
+          "returnType": "NodePacket",
           "exported": true,
-          "lineCount": 19
-        }
-      ],
-      "classes": [
+          "lineCount": 35
+        },
         {
-          "name": "DispatchResult",
-          "methods": [
-            "__init__"
+          "name": "_decode_sequence",
+          "params": [
+            "value",
+            "field_name"
           ],
-          "properties": [],
+          "returnType": "Sequence[object]",
           "exported": true,
-          "lineCount": 5
+          "lineCount": 9
+        },
+        {
+          "name": "_decode_optional_mapping",
+          "params": [
+            "value",
+            "field_name"
+          ],
+          "returnType": "Mapping[str, object] | None",
+          "exported": true,
+          "lineCount": 9
         }
       ],
+      "classes": [],
       "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
         {
           "source": "sys",
           "specifiers": [
             "sys"
+          ]
+        },
+        {
+          "source": "collections.abc",
+          "specifiers": [
+            "Mapping",
+            "Sequence"
           ]
         },
         {
@@ -4578,18 +5533,40 @@
           ]
         },
         {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "DispatchResult",
+            "NodePacket",
+            "SessionRef"
+          ]
+        },
+        {
           "source": "adapters.jules_action_adapter",
           "specifiers": [
             "JulesActionAdapter"
           ]
+        },
+        {
+          "source": "adapters.jules_cli_adapter",
+          "specifiers": [
+            "JulesCliAdapter"
+          ]
+        },
+        {
+          "source": "adapters.local_subprocess_adapter",
+          "specifiers": [
+            "LocalSubprocessAdapter"
+          ]
         }
       ],
       "exports": [
-        "DispatchResult",
         "dispatch",
-        "_build_adapter_payload"
+        "cancel_remote_session",
+        "_build_node_packet",
+        "_decode_sequence",
+        "_decode_optional_mapping"
       ],
-      "totalLines": 65,
+      "totalLines": 132,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/heartbeat/graph_reader.py": {
@@ -4686,7 +5663,7 @@
     },
     "scripts/runtime/heartbeat/job_factory.py": {
       "filePath": "scripts/runtime/heartbeat/job_factory.py",
-      "contentHash": "23515fac95e842408259ab82484c7cee3c9bffa8dbf2b92615a0aad90e9a4656",
+      "contentHash": "3047cc036e22e62ab1f95fc6a65d84c93f8edb73a45d2b668516cb8fcf13ec89",
       "functions": [
         {
           "name": "now",
@@ -4700,7 +5677,7 @@
           "params": [],
           "returnType": "str",
           "exported": true,
-          "lineCount": 2
+          "lineCount": 7
         },
         {
           "name": "build_job",
@@ -4732,6 +5709,12 @@
           ]
         },
         {
+          "source": "uuid",
+          "specifiers": [
+            "uuid"
+          ]
+        },
+        {
           "source": "datetime",
           "specifiers": [
             "datetime",
@@ -4750,19 +5733,256 @@
         "ts_id",
         "build_job"
       ],
-      "totalLines": 57,
+      "totalLines": 63,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/runtime/heartbeat/reconciler.py": {
+      "filePath": "scripts/runtime/heartbeat/reconciler.py",
+      "contentHash": "cdd8a9745ba04c2f232c5d52bbe1548a5eef2128cf7a727f91ecdcafdfcb5fbd",
+      "functions": [
+        {
+          "name": "reconcile_sessions",
+          "params": [
+            "con",
+            "repo_path",
+            "repo",
+            "current_time",
+            "dispatching_stale_after",
+            "missing_stale_after"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 65
+        },
+        {
+          "name": "cancel_executor_session",
+          "params": [
+            "con",
+            "session_db_id"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 82
+        },
+        {
+          "name": "_reconcile_one",
+          "params": [
+            "con",
+            "session",
+            "repo_path",
+            "current_time",
+            "missing_stale_after"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 79
+        },
+        {
+          "name": "_handle_completed",
+          "params": [
+            "con",
+            "adapter",
+            "session_ref",
+            "session",
+            "repo_path",
+            "job_row"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 90
+        },
+        {
+          "name": "_handle_failed",
+          "params": [
+            "con",
+            "session",
+            "job",
+            "error",
+            "repo_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 105
+        },
+        {
+          "name": "_handle_needs_operator",
+          "params": [
+            "con",
+            "session_db_id",
+            "job_id",
+            "error"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "_trigger_evaluation",
+          "params": [
+            "con",
+            "session",
+            "job",
+            "result_commit_sha"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 73
+        },
+        {
+          "name": "_get_head_sha",
+          "params": [
+            "repo_path"
+          ],
+          "returnType": "str | None",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "_create_exec_worktree",
+          "params": [
+            "repo_path",
+            "job_id",
+            "base_commit"
+          ],
+          "returnType": "Path | None",
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "_remove_exec_worktree",
+          "params": [
+            "repo_path",
+            "worktree_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "_apply_and_commit",
+          "params": [
+            "worktree_path",
+            "patch_path",
+            "job_id",
+            "session_id"
+          ],
+          "returnType": "tuple[str | None, str | None]",
+          "exported": true,
+          "lineCount": 56
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "shutil",
+          "specifiers": [
+            "shutil"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "tempfile",
+          "specifiers": [
+            "tempfile"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta",
+            "timezone"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "SessionRef"
+          ]
+        },
+        {
+          "source": "..results_store",
+          "specifiers": [
+            "write_result"
+          ]
+        },
+        {
+          "source": "..verification.bridge",
+          "specifiers": [
+            "verify_job_return"
+          ]
+        },
+        {
+          "source": ".dispatcher",
+          "specifiers": [
+            "ADAPTERS",
+            "cancel_remote_session",
+            "dispatch"
+          ]
+        },
+        {
+          "source": ".state_recorder",
+          "specifiers": [
+            "allocate_retry_attempt",
+            "finalize_executor_session_dispatch",
+            "get_active_executor_sessions",
+            "mark_job_cancelled",
+            "mark_job_failed",
+            "mark_job_running",
+            "recover_stale_dispatching_sessions",
+            "update_executor_session_state"
+          ]
+        }
+      ],
+      "exports": [
+        "reconcile_sessions",
+        "cancel_executor_session",
+        "_reconcile_one",
+        "_handle_completed",
+        "_handle_failed",
+        "_handle_needs_operator",
+        "_trigger_evaluation",
+        "_get_head_sha",
+        "_create_exec_worktree",
+        "_remove_exec_worktree",
+        "_apply_and_commit"
+      ],
+      "totalLines": 703,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/heartbeat/runner.py": {
       "filePath": "scripts/runtime/heartbeat/runner.py",
-      "contentHash": "3b46ced185eed17f3bc1dbbc5a4eededac5b579313901df20f31564fd14370a8",
+      "contentHash": "4b93df2a2a163d9b569e523cb66536aad5b4b75f9f280b71d02a5a850a87f371",
       "functions": [
         {
           "name": "connect",
           "params": [],
           "returnType": "sqlite3.Connection",
           "exported": true,
-          "lineCount": 5
+          "lineCount": 9
         },
         {
           "name": "_is_merged_pr_event",
@@ -4778,11 +5998,12 @@
           "params": [
             "project_id",
             "repo",
-            "config_path"
+            "config_path",
+            "repo_path"
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 26
+          "lineCount": 47
         },
         {
           "name": "_plan_dispatches",
@@ -4795,7 +6016,7 @@
           ],
           "returnType": "list[PlannedDispatch]",
           "exported": true,
-          "lineCount": 125
+          "lineCount": 136
         },
         {
           "name": "_execute_dispatches",
@@ -4805,24 +6026,34 @@
           ],
           "returnType": "dict[str, DispatchOutcome]",
           "exported": true,
-          "lineCount": 33
+          "lineCount": 34
         },
         {
           "name": "_record_outcomes",
           "params": [
             "con",
             "planned_dispatches",
-            "outcomes_by_job_id"
+            "outcomes_by_job_id",
+            "repo_path"
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 26
+          "lineCount": 85
+        },
+        {
+          "name": "_get_head_sha",
+          "params": [
+            "repo_path"
+          ],
+          "returnType": "str | None",
+          "exported": true,
+          "lineCount": 18
         },
         {
           "name": "main",
           "params": [],
           "exported": true,
-          "lineCount": 12
+          "lineCount": 14
         }
       ],
       "classes": [
@@ -4832,10 +6063,11 @@
           "properties": [
             "event_id",
             "classification",
-            "job"
+            "job",
+            "session_db_id"
           ],
           "exported": true,
-          "lineCount": 4
+          "lineCount": 6
         },
         {
           "name": "DispatchOutcome",
@@ -4844,10 +6076,11 @@
             "planned",
             "success",
             "issue_url",
-            "error"
+            "error",
+            "session_ref"
           ],
           "exported": true,
-          "lineCount": 5
+          "lineCount": 6
         }
       ],
       "imports": [
@@ -4873,6 +6106,12 @@
           "source": "sqlite3",
           "specifiers": [
             "sqlite3"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
           ]
         },
         {
@@ -4911,6 +6150,7 @@
         {
           "source": ".dispatcher",
           "specifiers": [
+            "cancel_remote_session",
             "dispatch"
           ]
         },
@@ -4927,6 +6167,12 @@
           ]
         },
         {
+          "source": ".reconciler",
+          "specifiers": [
+            "reconcile_sessions"
+          ]
+        },
+        {
           "source": ".scope_checker",
           "specifiers": [
             "check_scope"
@@ -4935,6 +6181,8 @@
         {
           "source": ".state_recorder",
           "specifiers": [
+            "finalize_executor_session_dispatch",
+            "insert_executor_session",
             "insert_job",
             "insert_queue_record",
             "mark_event_classified",
@@ -4961,9 +6209,10 @@
         "_plan_dispatches",
         "_execute_dispatches",
         "_record_outcomes",
+        "_get_head_sha",
         "main"
       ],
-      "totalLines": 327,
+      "totalLines": 451,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/heartbeat/scope_checker.py": {
@@ -5019,17 +6268,10 @@
     },
     "scripts/runtime/heartbeat/state_recorder.py": {
       "filePath": "scripts/runtime/heartbeat/state_recorder.py",
-      "contentHash": "0df9d59941c62628497d8212fd805bfe40af0c2649468b2ab24054e8dd0d0b09",
+      "contentHash": "a1d420f7e759da01db2a2c93c75aecc316923ef0432a559819b284bee315c320",
       "functions": [
         {
           "name": "now",
-          "params": [],
-          "returnType": "str",
-          "exported": true,
-          "lineCount": 2
-        },
-        {
-          "name": "ts_id",
           "params": [],
           "returnType": "str",
           "exported": true,
@@ -5075,7 +6317,7 @@
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 15
+          "lineCount": 17
         },
         {
           "name": "insert_queue_record",
@@ -5116,6 +6358,114 @@
           "returnType": "None",
           "exported": true,
           "lineCount": 11
+        },
+        {
+          "name": "mark_job_cancelled",
+          "params": [
+            "con",
+            "job_id"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "execution_attempt_id",
+          "params": [
+            "job_id",
+            "attempt_index"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "insert_executor_session",
+          "params": [
+            "con",
+            "job_id",
+            "executor",
+            "session_id",
+            "expected_base_commit_sha",
+            "attempt_index",
+            "state"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 41
+        },
+        {
+          "name": "allocate_retry_attempt",
+          "params": [
+            "con",
+            "job",
+            "executor",
+            "expected_base_commit_sha",
+            "previous_findings"
+          ],
+          "returnType": "tuple[dict, str] | None",
+          "exported": true,
+          "lineCount": 50
+        },
+        {
+          "name": "finalize_executor_session_dispatch",
+          "params": [
+            "con",
+            "session_db_id",
+            "state",
+            "executor",
+            "session_id",
+            "expected_base_commit_sha",
+            "error"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 33
+        },
+        {
+          "name": "recover_stale_dispatching_sessions",
+          "params": [
+            "con",
+            "current_time",
+            "stale_after",
+            "repo"
+          ],
+          "returnType": "list[str]",
+          "exported": true,
+          "lineCount": 47
+        },
+        {
+          "name": "update_executor_session_state",
+          "params": [
+            "con",
+            "session_db_id",
+            "state",
+            "error",
+            "result_commit_sha",
+            "patch_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "get_active_executor_sessions",
+          "params": [
+            "con",
+            "repo"
+          ],
+          "returnType": "list",
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "get_executor_session_by_id",
+          "params": [
+            "con",
+            "session_db_id"
+          ],
+          "exported": true,
+          "lineCount": 9
         }
       ],
       "classes": [],
@@ -5136,13 +6486,19 @@
           "source": "datetime",
           "specifiers": [
             "datetime",
+            "timedelta",
             "timezone"
+          ]
+        },
+        {
+          "source": ".job_factory",
+          "specifiers": [
+            "ts_id"
           ]
         }
       ],
       "exports": [
         "now",
-        "ts_id",
         "mark_event_ignored",
         "mark_event_classified",
         "mark_event_scope_blocked",
@@ -5150,9 +6506,18 @@
         "insert_queue_record",
         "mark_job_running",
         "mark_event_mapped",
-        "mark_job_failed"
+        "mark_job_failed",
+        "mark_job_cancelled",
+        "execution_attempt_id",
+        "insert_executor_session",
+        "allocate_retry_attempt",
+        "finalize_executor_session_dispatch",
+        "recover_stale_dispatching_sessions",
+        "update_executor_session_state",
+        "get_active_executor_sessions",
+        "get_executor_session_by_id"
       ],
-      "totalLines": 113,
+      "totalLines": 379,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/heartbeat/test_claiming.py": {
@@ -5303,9 +6668,554 @@
       "totalLines": 102,
       "hasStructuralAnalysis": true
     },
+    "scripts/runtime/heartbeat/test_executor_sessions.py": {
+      "filePath": "scripts/runtime/heartbeat/test_executor_sessions.py",
+      "contentHash": "47d656e49fe5332e2a0d0cc4ee36b180d2b9ae382d558aaa7a868345258d01d6",
+      "functions": [
+        {
+          "name": "_apply_schema",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "con",
+          "params": [],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_insert_job",
+          "params": [
+            "con",
+            "job_id",
+            "executor",
+            "repo",
+            "status",
+            "project_id",
+            "node_id",
+            "attempt",
+            "max_attempts",
+            "required_artifacts",
+            "previous_findings"
+          ],
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "_make_fake_adapter",
+          "params": [
+            "status_state",
+            "status_error",
+            "status_exception",
+            "patch_text",
+            "collect_success",
+            "cancel_result"
+          ],
+          "exported": true,
+          "lineCount": 49
+        },
+        {
+          "name": "_make_git_repo",
+          "params": [
+            "parent"
+          ],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "test_insert_executor_session_creates_row",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "test_update_executor_session_state",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "test_get_active_executor_sessions",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "test_get_active_executor_sessions_filters_by_repo",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_get_executor_session_by_id",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "test_retry_allocation_persists_findings_for_db_replay",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 35
+        },
+        {
+          "name": "test_init_db_safely_migrates_existing_attempt_rows",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 55
+        },
+        {
+          "name": "test_reconcile_no_active_sessions",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_reconcile_completed_session_collects_and_commits",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 43
+        },
+        {
+          "name": "test_reconcile_failed_session_allocates_one_retry_and_preserves_original",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 70
+        },
+        {
+          "name": "test_retry_dispatch_failure_is_visible_and_idempotent",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 42
+        },
+        {
+          "name": "test_reconcile_failed_session_at_attempt_cap_does_not_dispatch",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 38
+        },
+        {
+          "name": "test_reconcile_poll_exception_does_not_allocate_replacement",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "test_reconcile_jules_poll_timeout_does_not_allocate_replacement",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "test_jules_successful_list_without_session_is_missing",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_reconcile_fresh_missing_session_stays_active",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 40
+        },
+        {
+          "name": "test_reconcile_aged_missing_session_retries_below_cap",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 56
+        },
+        {
+          "name": "test_reconcile_aged_missing_session_stops_at_attempt_cap",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 54
+        },
+        {
+          "name": "test_reconcile_running_session_stays_active",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "test_reconcile_needs_operator_persists_state",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "test_restart_recovery_terminalizes_stale_dispatch_without_redispatch",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 41
+        },
+        {
+          "name": "test_restart_recovery_leaves_fresh_dispatch_untouched",
+          "params": [
+            "con",
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "test_persisted_local_cancellation_is_terminal_across_reconciler_restart",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 35
+        },
+        {
+          "name": "test_jules_cancellation_persists_unsupported_without_claiming_remote_success",
+          "params": [
+            "con",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session",
+          "params": [
+            "con",
+            "monkeypatch",
+            "capsys"
+          ],
+          "exported": true,
+          "lineCount": 97
+        },
+        {
+          "name": "test_finalize_executor_session_dispatch_is_compare_and_swap",
+          "params": [
+            "con"
+          ],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "test_reconcile_idempotent_no_double_apply",
+          "params": [
+            "con",
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "test_heartbeat_reconciles_even_without_new_events",
+          "params": [
+            "tmp_path",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "test_runner_persists_initial_attempt_before_dispatch",
+          "params": [
+            "con",
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 67
+        },
+        {
+          "name": "_sample_job",
+          "params": [
+            "job_id",
+            "executor"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_dispatcher_selects_jules_cli_adapter",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "test_dispatcher_selects_jules_action_adapter",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "test_jules_cli_status_awaiting_maps_to_needs_operator",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "test_jules_cli_status_unknown_keyword_still_running",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_jules_cli_status_infrastructure_failure_is_transient",
+          "params": [
+            "monkeypatch",
+            "poll_result"
+          ],
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "test_dispatcher_executor_override_env_var",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "test_dispatcher_executor_override_unset_uses_job_executor",
+          "params": [
+            "monkeypatch"
+          ],
+          "exported": true,
+          "lineCount": 21
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "sqlite3",
+          "specifiers": [
+            "sqlite3"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta",
+            "timezone"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "types",
+          "specifiers": [
+            "SimpleNamespace"
+          ]
+        },
+        {
+          "source": "unittest.mock",
+          "specifiers": [
+            "MagicMock"
+          ]
+        },
+        {
+          "source": "pytest",
+          "specifiers": [
+            "pytest"
+          ]
+        },
+        {
+          "source": "adapters.executor_protocol",
+          "specifiers": [
+            "PatchResult",
+            "SessionRef",
+            "SessionStatus",
+            "ProtocolDispatchResult"
+          ]
+        },
+        {
+          "source": "adapters.jules_action_adapter",
+          "specifiers": [
+            "JulesActionAdapter"
+          ]
+        },
+        {
+          "source": "adapters.jules_cli_adapter",
+          "specifiers": [
+            "JulesCliAdapter"
+          ]
+        },
+        {
+          "source": "scripts.runtime.heartbeat",
+          "specifiers": [
+            "reconciler",
+            "runner"
+          ]
+        },
+        {
+          "source": "scripts.runtime.heartbeat.dispatcher",
+          "specifiers": [
+            "dispatch"
+          ]
+        },
+        {
+          "source": "scripts.runtime.heartbeat.state_recorder",
+          "specifiers": [
+            "allocate_retry_attempt",
+            "finalize_executor_session_dispatch",
+            "get_active_executor_sessions",
+            "get_executor_session_by_id",
+            "insert_job",
+            "insert_executor_session",
+            "update_executor_session_state"
+          ]
+        }
+      ],
+      "exports": [
+        "_apply_schema",
+        "con",
+        "_insert_job",
+        "_make_fake_adapter",
+        "_make_git_repo",
+        "test_insert_executor_session_creates_row",
+        "test_update_executor_session_state",
+        "test_get_active_executor_sessions",
+        "test_get_active_executor_sessions_filters_by_repo",
+        "test_get_executor_session_by_id",
+        "test_retry_allocation_persists_findings_for_db_replay",
+        "test_init_db_safely_migrates_existing_attempt_rows",
+        "test_reconcile_no_active_sessions",
+        "test_reconcile_completed_session_collects_and_commits",
+        "test_reconcile_failed_session_allocates_one_retry_and_preserves_original",
+        "test_retry_dispatch_failure_is_visible_and_idempotent",
+        "test_reconcile_failed_session_at_attempt_cap_does_not_dispatch",
+        "test_reconcile_poll_exception_does_not_allocate_replacement",
+        "test_reconcile_jules_poll_timeout_does_not_allocate_replacement",
+        "test_jules_successful_list_without_session_is_missing",
+        "test_reconcile_fresh_missing_session_stays_active",
+        "test_reconcile_aged_missing_session_retries_below_cap",
+        "test_reconcile_aged_missing_session_stops_at_attempt_cap",
+        "test_reconcile_running_session_stays_active",
+        "test_reconcile_needs_operator_persists_state",
+        "test_restart_recovery_terminalizes_stale_dispatch_without_redispatch",
+        "test_restart_recovery_leaves_fresh_dispatch_untouched",
+        "test_persisted_local_cancellation_is_terminal_across_reconciler_restart",
+        "test_jules_cancellation_persists_unsupported_without_claiming_remote_success",
+        "test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session",
+        "test_finalize_executor_session_dispatch_is_compare_and_swap",
+        "test_reconcile_idempotent_no_double_apply",
+        "test_heartbeat_reconciles_even_without_new_events",
+        "test_runner_persists_initial_attempt_before_dispatch",
+        "_sample_job",
+        "test_dispatcher_selects_jules_cli_adapter",
+        "test_dispatcher_selects_jules_action_adapter",
+        "test_jules_cli_status_awaiting_maps_to_needs_operator",
+        "test_jules_cli_status_unknown_keyword_still_running",
+        "test_jules_cli_status_infrastructure_failure_is_transient",
+        "test_dispatcher_executor_override_env_var",
+        "test_dispatcher_executor_override_unset_uses_job_executor"
+      ],
+      "totalLines": 1566,
+      "hasStructuralAnalysis": true
+    },
     "scripts/runtime/heartbeat/test_parallel_dispatch.py": {
       "filePath": "scripts/runtime/heartbeat/test_parallel_dispatch.py",
-      "contentHash": "afc49b0bfe0f997bc8eff5e1e1c1ff808a7fe78970d13df47fb094e31da8f3f5",
+      "contentHash": "1071c645d4b31f70a825b8a6a4a8b39c44fa0cfc48f77bef56b69b59da3a8d1a",
       "functions": [
         {
           "name": "_init_db",
@@ -5314,7 +7224,7 @@
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 79
+          "lineCount": 98
         },
         {
           "name": "_insert_event",
@@ -5460,7 +7370,7 @@
         "test_cross_project_event_filtering",
         "test_unowned_event_adopted_by_repo_match"
       ],
-      "totalLines": 411,
+      "totalLines": 430,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/heartbeat/test_runner.py": {
@@ -5637,8 +7547,15 @@
     },
     "scripts/runtime/results_store.py": {
       "filePath": "scripts/runtime/results_store.py",
-      "contentHash": "789888be99d5a04a5f9203ee67a59806f162ce0498c40fea50fb132a080cd011",
+      "contentHash": "d72bbd19c2ed6e0d7e89fc5702aa040298c60865bb157bf8b904e9ea7ea9e09b",
       "functions": [
+        {
+          "name": "_connect",
+          "params": [],
+          "returnType": "sqlite3.Connection",
+          "exported": true,
+          "lineCount": 11
+        },
         {
           "name": "_now",
           "params": [],
@@ -5739,6 +7656,7 @@
         }
       ],
       "exports": [
+        "_connect",
         "_now",
         "_json_or_none",
         "init_db",
@@ -5746,12 +7664,12 @@
         "init_decision_results",
         "write_decision_result"
       ],
-      "totalLines": 208,
+      "totalLines": 221,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/return_router.py": {
       "filePath": "scripts/runtime/return_router.py",
-      "contentHash": "a76f9ee2c653c895bf217afe7ca53949cded0df93839a7ba477395e0dac3c9be",
+      "contentHash": "c23041a726c42735fd474c3a932948892190b028bc34abb6dbb33517d8ba6a86",
       "functions": [
         {
           "name": "parse_node_id",
@@ -5786,7 +7704,7 @@
           "params": [],
           "returnType": "sqlite3.Connection",
           "exported": true,
-          "lineCount": 5
+          "lineCount": 9
         },
         {
           "name": "_refresh_evaluations_export",
@@ -5820,7 +7738,7 @@
           ],
           "returnType": "dict",
           "exported": true,
-          "lineCount": 107
+          "lineCount": 117
         },
         {
           "name": "_config_root",
@@ -5838,7 +7756,7 @@
             "result_id"
           ],
           "exported": true,
-          "lineCount": 63
+          "lineCount": 130
         }
       ],
       "classes": [],
@@ -5885,6 +7803,14 @@
           "specifiers": [
             "verify_job_return"
           ]
+        },
+        {
+          "source": ".heartbeat.state_recorder",
+          "specifiers": [
+            "allocate_retry_attempt",
+            "finalize_executor_session_dispatch",
+            "mark_job_running"
+          ]
         }
       ],
       "exports": [
@@ -5899,12 +7825,12 @@
         "_config_root",
         "_redispatch_with_findings"
       ],
-      "totalLines": 281,
+      "totalLines": 367,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/test_full_cycle_e2e.py": {
       "filePath": "scripts/runtime/test_full_cycle_e2e.py",
-      "contentHash": "03ae7ea3d0319205b7b1e73ba4dd894a2866f29e66ac79e3ec499ba6cb6b3b13",
+      "contentHash": "d1e5be59edb0643f50fec28ad636387873ec77554f5895c507b32f96aebc5cba",
       "functions": [
         {
           "name": "_now",
@@ -5919,7 +7845,7 @@
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 98
+          "lineCount": 117
         },
         {
           "name": "_write_graph",
@@ -6014,7 +7940,7 @@
         "e2e_env",
         "test_full_cycle_dispatch_to_review"
       ],
-      "totalLines": 347,
+      "totalLines": 366,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/test_graph_updater.py": {
@@ -6272,7 +8198,7 @@
     },
     "scripts/runtime/test_return_router.py": {
       "filePath": "scripts/runtime/test_return_router.py",
-      "contentHash": "36605f88889c3879dcbf126d3c878cbf660ed4498898d109bd9d4af60f6f24b9",
+      "contentHash": "a37eaeabebff6889076eae18ffbf4f4028f5c08453fcf814cebd46e040dfaa3a",
       "functions": [],
       "classes": [
         {
@@ -6290,7 +8216,7 @@
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 187
+          "lineCount": 192
         },
         {
           "name": "TestReturnRouterRetry",
@@ -6300,14 +8226,15 @@
             "_base_payload",
             "_fail_verdict_with_evidence",
             "_make_project_yaml",
-            "test_redispatch_on_non_pass_verdict_with_evidence",
-            "test_dispatch_failure_does_not_increment_attempt",
+            "test_redispatch_allocates_attempt_and_persists_packet_before_dispatch",
+            "test_retry_dispatch_failure_keeps_allocated_attempt_visible",
+            "test_redispatch_cas_loss_cancels_late_remote_and_preserves_job_state",
             "test_attempt_at_cap_routes_to_awaiting_review",
             "test_criteria_findings_passed_to_should_retry"
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 165
+          "lineCount": 265
         },
         {
           "name": "TestReturnRouterRepoValidation",
@@ -6380,7 +8307,7 @@
         "TestReturnRouterRetry",
         "TestReturnRouterRepoValidation"
       ],
-      "totalLines": 432,
+      "totalLines": 537,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/__init__.py": {
@@ -6395,7 +8322,7 @@
     },
     "scripts/runtime/verification/bridge.py": {
       "filePath": "scripts/runtime/verification/bridge.py",
-      "contentHash": "f61e9384df4ba88d9584ce0cbaad680f7d44bed002092c5f97b19020a5fe5b9e",
+      "contentHash": "ffd5859dfd5f890f6be95d1556f0783ae4de4f52d2391e95c1178e8976fdd5d8",
       "functions": [
         {
           "name": "_config_root",
@@ -6415,21 +8342,66 @@
           "name": "verify_job_return",
           "params": [
             "project_id",
-            "node_id"
+            "node_id",
+            "merge_commit_sha",
+            "pr_ref",
+            "job_id",
+            "attempt"
           ],
           "returnType": "dict",
           "exported": true,
-          "lineCount": 19
+          "lineCount": 27
         },
         {
           "name": "_verify_once",
           "params": [
             "project_id",
-            "node_id"
+            "node_id",
+            "merge_commit_sha",
+            "pr_ref",
+            "job_id",
+            "attempt"
           ],
           "returnType": "dict",
           "exported": true,
-          "lineCount": 115
+          "lineCount": 52
+        },
+        {
+          "name": "_create_worktree",
+          "params": [
+            "repo",
+            "commit_sha"
+          ],
+          "returnType": "Path | None",
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "_remove_worktree",
+          "params": [
+            "repo",
+            "path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "_run_cli",
+          "params": [
+            "eval_repo",
+            "node_yaml",
+            "project_yaml",
+            "config_root",
+            "receipt_dir",
+            "merge_commit_sha",
+            "pr_ref",
+            "job_id",
+            "attempt"
+          ],
+          "returnType": "dict",
+          "exported": true,
+          "lineCount": 100
         },
         {
           "name": "_parse_cli_summary",
@@ -6484,6 +8456,12 @@
           "specifiers": [
             "Path"
           ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.timeouts",
+          "specifiers": [
+            "bridge_timeout_seconds"
+          ]
         }
       ],
       "exports": [
@@ -6491,14 +8469,17 @@
         "_repos_root",
         "verify_job_return",
         "_verify_once",
+        "_create_worktree",
+        "_remove_worktree",
+        "_run_cli",
         "_parse_cli_summary"
       ],
-      "totalLines": 189,
+      "totalLines": 307,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/cli.py": {
       "filePath": "scripts/runtime/verification/cli.py",
-      "contentHash": "a7c66ef4b31a5bc087ec65e7dd2c6479cc04584f58c0fa0ae9339f66adb53c88",
+      "contentHash": "7e4e281b7ed51469b873e4baa1c109fb057076b6dadf1adce1ea6c5bad9408ad",
       "functions": [
         {
           "name": "_extract_prompt_context",
@@ -6523,7 +8504,7 @@
           "params": [],
           "returnType": "argparse.ArgumentParser",
           "exported": true,
-          "lineCount": 86
+          "lineCount": 91
         },
         {
           "name": "_env_int",
@@ -6578,7 +8559,7 @@
           ],
           "returnType": "int",
           "exported": true,
-          "lineCount": 91
+          "lineCount": 145
         }
       ],
       "classes": [
@@ -6680,7 +8661,7 @@
         "_pi_provider",
         "main"
       ],
-      "totalLines": 355,
+      "totalLines": 414,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/decision_engine.py": {
@@ -7756,7 +9737,7 @@
     },
     "scripts/runtime/verification/orchestrator.py": {
       "filePath": "scripts/runtime/verification/orchestrator.py",
-      "contentHash": "84f2de28ede03697aa3f282e1195e7b344be2544fbf747fb463fae9229c6d3c7",
+      "contentHash": "90a1af2eaa4aef16ea4a40cf9f6e9645f610d49e9c5d285a51d7e8dce549777e",
       "functions": [
         {
           "name": "verify",
@@ -7771,11 +9752,32 @@
             "semantic_agent_kwargs",
             "semantic_harness",
             "integrity_harness",
+            "merge_commit_sha",
+            "pr_ref",
+            "job_id",
             "now"
           ],
           "returnType": "VerdictReceipt",
           "exported": true,
-          "lineCount": 75
+          "lineCount": 92
+        },
+        {
+          "name": "_capture_tree_sha",
+          "params": [
+            "repo"
+          ],
+          "returnType": "str | None",
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "_capture_commit_sha",
+          "params": [
+            "repo"
+          ],
+          "returnType": "str | None",
+          "exported": true,
+          "lineCount": 21
         },
         {
           "name": "_should_run_semantic",
@@ -7794,6 +9796,69 @@
           "returnType": "str",
           "exported": true,
           "lineCount": 6
+        },
+        {
+          "name": "_compute_context_coverage",
+          "params": [
+            "canonical",
+            "semantic",
+            "integrity",
+            "repo"
+          ],
+          "returnType": "ContextCoverage | None",
+          "exported": true,
+          "lineCount": 72
+        },
+        {
+          "name": "_extract_accessed_paths",
+          "params": [
+            "output",
+            "is_semantic",
+            "repo"
+          ],
+          "returnType": "set[str]",
+          "exported": true,
+          "lineCount": 53
+        },
+        {
+          "name": "_tool_results",
+          "params": [
+            "trace"
+          ],
+          "returnType": "dict[str, bool]",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "_successful_content_access",
+          "params": [
+            "entry",
+            "results"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "_rate_lane",
+          "params": [
+            "accessed",
+            "all_offered",
+            "doc_paths",
+            "neighbor_paths"
+          ],
+          "returnType": "LaneCoverage",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "_sev_to_rating",
+          "params": [
+            "sev"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 5
         }
       ],
       "classes": [],
@@ -7813,7 +9878,8 @@
         {
           "source": "typing",
           "specifiers": [
-            "Any"
+            "Any",
+            "Literal"
           ]
         },
         {
@@ -7827,7 +9893,9 @@
         {
           "source": ".schemas",
           "specifiers": [
+            "ContextCoverage",
             "IntegrityOutput",
+            "LaneCoverage",
             "SemanticOutput",
             "VerdictReceipt"
           ]
@@ -7837,52 +9905,72 @@
           "specifiers": [
             "SemanticAgent"
           ]
+        },
+        {
+          "source": ".semantic.context_builder",
+          "specifiers": [
+            "build_canonical_pointers"
+          ]
         }
       ],
       "exports": [
         "verify",
+        "_capture_tree_sha",
+        "_capture_commit_sha",
         "_should_run_semantic",
-        "_completeness_status"
+        "_completeness_status",
+        "_compute_context_coverage",
+        "_extract_accessed_paths",
+        "_tool_results",
+        "_successful_content_access",
+        "_rate_lane",
+        "_sev_to_rating"
       ],
-      "totalLines": 106,
+      "totalLines": 372,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/receipt_sink.py": {
       "filePath": "scripts/runtime/verification/receipt_sink.py",
-      "contentHash": "ea5b8997efe419526c15ab0187305be78f3597c5b742b3ab9553612f45a95390",
+      "contentHash": "44a17ab2e027c47eb8a1ad605b64b100bfc4f391ebf378a2f5799b221563072c",
       "functions": [
         {
           "name": "receipt_path",
           "params": [
             "project_id",
             "node_id",
-            "base"
+            "base",
+            "job_id",
+            "attempt"
           ],
           "returnType": "Path",
           "exported": true,
-          "lineCount": 3
+          "lineCount": 20
         },
         {
           "name": "write_receipt",
           "params": [
             "receipt",
             "project_id",
-            "base"
+            "base",
+            "job_id",
+            "attempt"
           ],
           "returnType": "Path",
           "exported": true,
-          "lineCount": 5
+          "lineCount": 28
         },
         {
           "name": "receipt_exists",
           "params": [
             "project_id",
             "node_id",
-            "base"
+            "base",
+            "job_id",
+            "attempt"
           ],
           "returnType": "bool",
           "exported": true,
-          "lineCount": 2
+          "lineCount": 10
         }
       ],
       "classes": [],
@@ -7905,7 +9993,7 @@
         "write_receipt",
         "receipt_exists"
       ],
-      "totalLines": 21,
+      "totalLines": 69,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/retry_budget.py": {
@@ -7969,9 +10057,16 @@
     },
     "scripts/runtime/verification/schemas.py": {
       "filePath": "scripts/runtime/verification/schemas.py",
-      "contentHash": "662650410db3e0cc6c0f9ec3217345e8c966132aec7b86153542ab9256d6a9e9",
+      "contentHash": "20b507db0f814d32c5ccc01aefbce997aae2c5652b7994934e133ae0bbb05070",
       "functions": [],
       "classes": [
+        {
+          "name": "LaneExecutionStatus",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 6
+        },
         {
           "name": "Verdict",
           "methods": [],
@@ -8081,10 +10176,12 @@
             "risks",
             "followup_candidates",
             "budget_exhausted",
-            "budget_trace"
+            "budget_trace",
+            "lane_status",
+            "harness_error"
           ],
           "exported": true,
-          "lineCount": 7
+          "lineCount": 10
         },
         {
           "name": "IntegrityFinding",
@@ -8098,6 +10195,17 @@
           "lineCount": 4
         },
         {
+          "name": "GraphObservation",
+          "methods": [],
+          "properties": [
+            "severity",
+            "summary",
+            "affected_node_ids"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
           "name": "IntegrityOutput",
           "methods": [],
           "properties": [
@@ -8107,10 +10215,39 @@
             "required_human_review",
             "confidence",
             "findings",
-            "reasoning"
+            "reasoning",
+            "tool_trace",
+            "graph_observations",
+            "lane_status",
+            "harness_error"
           ],
           "exported": true,
-          "lineCount": 10
+          "lineCount": 17
+        },
+        {
+          "name": "LaneCoverage",
+          "methods": [],
+          "properties": [
+            "rating",
+            "offered",
+            "content_accessed",
+            "not_observed",
+            "accessed_paths",
+            "not_observed_paths"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "ContextCoverage",
+          "methods": [],
+          "properties": [
+            "criteria",
+            "integrity",
+            "overall"
+          ],
+          "exported": true,
+          "lineCount": 5
         },
         {
           "name": "VerdictReceipt",
@@ -8133,10 +10270,17 @@
             "semantic",
             "decision_reasoning",
             "required_next_action",
-            "generated_at"
+            "generated_at",
+            "evaluated_tree_sha",
+            "evaluated_commit_sha",
+            "merge_commit_sha",
+            "pr_ref",
+            "job_id",
+            "canonical_context",
+            "context_coverage"
           ],
           "exported": true,
-          "lineCount": 55
+          "lineCount": 66
         }
       ],
       "imports": [
@@ -8169,6 +10313,7 @@
         }
       ],
       "exports": [
+        "LaneExecutionStatus",
         "Verdict",
         "CriterionCheck",
         "ConstraintCheck",
@@ -8179,10 +10324,13 @@
         "CriterionJudgment",
         "SemanticOutput",
         "IntegrityFinding",
+        "GraphObservation",
         "IntegrityOutput",
+        "LaneCoverage",
+        "ContextCoverage",
         "VerdictReceipt"
       ],
-      "totalLines": 165,
+      "totalLines": 224,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/__init__.py": {
@@ -8396,7 +10544,7 @@
     },
     "scripts/runtime/verification/semantic/integrity_runner.py": {
       "filePath": "scripts/runtime/verification/semantic/integrity_runner.py",
-      "contentHash": "af28e7a7f819fd5c2449d14391f9f5d6d781657fdb2f2f8924812dd1dc8dd4b2",
+      "contentHash": "0640f610d25f9a87e01f1b8ed8a00526219e958251d2af82da03b619ccbb5c37",
       "functions": [
         {
           "name": "_neighbor_pointers",
@@ -8416,20 +10564,45 @@
             "graph",
             "deterministic_result",
             "neighbors",
-            "config_root"
+            "config_root",
+            "canonical"
           ],
           "returnType": "str",
           "exported": true,
-          "lineCount": 31
+          "lineCount": 39
         },
         {
           "name": "_empty_integrity",
           "params": [
-            "reason"
+            "reason",
+            "tool_trace",
+            "lane_status",
+            "harness_error"
           ],
           "returnType": "IntegrityOutput",
           "exported": true,
-          "lineCount": 10
+          "lineCount": 13
+        },
+        {
+          "name": "_harness_error_with_logs",
+          "params": [
+            "harness_error",
+            "stdout_path",
+            "stderr_path"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "_cleanup_logs",
+          "params": [
+            "stdout_path",
+            "stderr_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
         }
       ],
       "classes": [
@@ -8443,7 +10616,7 @@
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 105
+          "lineCount": 147
         }
       ],
       "imports": [
@@ -8492,7 +10665,28 @@
         {
           "source": "scripts.runtime.verification.schemas",
           "specifiers": [
-            "IntegrityOutput"
+            "IntegrityOutput",
+            "LaneExecutionStatus"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.context_builder",
+          "specifiers": [
+            "build_canonical_pointers"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.subprocess_utils",
+          "specifiers": [
+            "_read_tail",
+            "_read_trace",
+            "_tee_subprocess"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.timeouts",
+          "specifiers": [
+            "PI_TIMEOUT_SECONDS"
           ]
         }
       ],
@@ -8500,14 +10694,16 @@
         "IntegrityHarnessRunner",
         "_neighbor_pointers",
         "_build_integrity_prompt",
-        "_empty_integrity"
+        "_empty_integrity",
+        "_harness_error_with_logs",
+        "_cleanup_logs"
       ],
-      "totalLines": 253,
+      "totalLines": 347,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts": {
       "filePath": "scripts/runtime/verification/semantic/pi_harness/gddp_integrity.ts",
-      "contentHash": "bf55d4e01a339e842d13eda47966f015683d4cb3e0d6f4b2e6f9cf1a9fb62c89",
+      "contentHash": "1f4a86769543015deccaa85cd349bf13e26f3cb78e8964ef4977b6457393f155",
       "functions": [
         {
           "name": "asText",
@@ -8547,12 +10743,12 @@
         }
       ],
       "exports": [],
-      "totalLines": 107,
+      "totalLines": 122,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/pi_harness/gddp_verifier_guard.ts": {
       "filePath": "scripts/runtime/verification/semantic/pi_harness/gddp_verifier_guard.ts",
-      "contentHash": "dcd85e4c96971fc372ca2db0b854a1cad0d2bf726805d195d2806885cc3b4f4f",
+      "contentHash": "1eb488953543dd9fb833c8b8a1f3c5360e9e5e8214bedf04cc3c7db7263880a9",
       "functions": [
         {
           "name": "asText",
@@ -8603,7 +10799,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 156,
+      "totalLines": 171,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/pi_harness/gddp_verifier.ts": {
@@ -8653,7 +10849,7 @@
     },
     "scripts/runtime/verification/semantic/pi_runner.py": {
       "filePath": "scripts/runtime/verification/semantic/pi_runner.py",
-      "contentHash": "e69c03c91b62b5da7bf5fa63dddbd7be4c488c4cdacaf1d657154053d4c2cd66",
+      "contentHash": "b73d2e7c82a69a661e31ae6450cbd6ef059450e8a5c7fbbd76a9f959b2057271",
       "functions": [
         {
           "name": "_extract_user_prompt",
@@ -8668,20 +10864,34 @@
           "name": "_empty_verdict",
           "params": [
             "reason",
-            "trace"
+            "trace",
+            "lane_status",
+            "harness_error"
           ],
           "returnType": "SemanticOutput",
           "exported": true,
-          "lineCount": 9
+          "lineCount": 11
         },
         {
-          "name": "_read_trace",
+          "name": "_harness_error_with_logs",
           "params": [
-            "trace_path"
+            "harness_error",
+            "stdout_path",
+            "stderr_path"
           ],
-          "returnType": "list[dict[str, Any]]",
+          "returnType": "str",
           "exported": true,
-          "lineCount": 14
+          "lineCount": 8
+        },
+        {
+          "name": "_cleanup_logs",
+          "params": [
+            "stdout_path",
+            "stderr_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
         }
       ],
       "classes": [
@@ -8695,7 +10905,7 @@
           ],
           "properties": [],
           "exported": true,
-          "lineCount": 143
+          "lineCount": 170
         }
       ],
       "imports": [
@@ -8744,6 +10954,7 @@
         {
           "source": "scripts.runtime.verification.schemas",
           "specifiers": [
+            "LaneExecutionStatus",
             "SemanticOutput"
           ]
         },
@@ -8758,15 +10969,30 @@
           "specifiers": [
             "build_prompt_messages"
           ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.subprocess_utils",
+          "specifiers": [
+            "_read_tail",
+            "_read_trace",
+            "_tee_subprocess"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.timeouts",
+          "specifiers": [
+            "PI_TIMEOUT_SECONDS"
+          ]
         }
       ],
       "exports": [
         "PiHarnessRunner",
         "_extract_user_prompt",
         "_empty_verdict",
-        "_read_trace"
+        "_harness_error_with_logs",
+        "_cleanup_logs"
       ],
-      "totalLines": 272,
+      "totalLines": 315,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/prompt.py": {
@@ -8805,6 +11031,112 @@
         "build_prompt_messages"
       ],
       "totalLines": 53,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/runtime/verification/semantic/subprocess_utils.py": {
+      "filePath": "scripts/runtime/verification/semantic/subprocess_utils.py",
+      "contentHash": "40f49378ebe6c29c65eb2f527898b2dad24974ca4808c5c4e69d4782f5e6e15a",
+      "functions": [
+        {
+          "name": "tee_subprocess",
+          "params": [
+            "cmd",
+            "env",
+            "cwd",
+            "stdout_path",
+            "stderr_path",
+            "timeout_seconds"
+          ],
+          "exported": true,
+          "lineCount": 42
+        },
+        {
+          "name": "terminate_process_group",
+          "params": [
+            "proc"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "read_trace",
+          "params": [
+            "trace_path"
+          ],
+          "returnType": "list[dict[str, Any]]",
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "read_tail",
+          "params": [
+            "path",
+            "max_chars"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 13
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "signal",
+          "specifiers": [
+            "signal"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Any"
+          ]
+        }
+      ],
+      "exports": [
+        "tee_subprocess",
+        "terminate_process_group",
+        "read_trace",
+        "read_tail"
+      ],
+      "totalLines": 140,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/semantic/test_context_builder.py": {
@@ -9113,6 +11445,35 @@
       "totalLines": 395,
       "hasStructuralAnalysis": true
     },
+    "scripts/runtime/verification/semantic/timeouts.py": {
+      "filePath": "scripts/runtime/verification/semantic/timeouts.py",
+      "contentHash": "cc33340770f009df398a3ace8498b7eef15132931c71b741e4c094bf3c06253f",
+      "functions": [
+        {
+          "name": "bridge_timeout_seconds",
+          "params": [
+            "configured_timeout_seconds"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        }
+      ],
+      "exports": [
+        "bridge_timeout_seconds"
+      ],
+      "totalLines": 22,
+      "hasStructuralAnalysis": true
+    },
     "scripts/runtime/verification/semantic/tools.py": {
       "filePath": "scripts/runtime/verification/semantic/tools.py",
       "contentHash": "9c61c1bb92e93d2f2baa76e4008f81435b9d7098c7d06cfe7ab68b17d4a28cfb",
@@ -9255,7 +11616,7 @@
     },
     "scripts/runtime/verification/test_bridge.py": {
       "filePath": "scripts/runtime/verification/test_bridge.py",
-      "contentHash": "90c4b72c9cab9d24bbc0ba27e51ccf31b1af6c9bef579607334f665a67b07008",
+      "contentHash": "4bdf3b09a255329f80215fc106f6263c66a6a66e70dc0b23002342fbb68e821f",
       "functions": [
         {
           "name": "setUpModule",
@@ -9266,6 +11627,22 @@
         {
           "name": "_fake_paths_exist",
           "params": [],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "_pinned_subject",
+          "params": [],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_verify_return",
+          "params": [
+            "project_id",
+            "node_id",
+            "**kwargs"
+          ],
           "exported": true,
           "lineCount": 3
         }
@@ -9280,6 +11657,15 @@
           "properties": [],
           "exported": true,
           "lineCount": 8
+        },
+        {
+          "name": "TestTimeoutBudget",
+          "methods": [
+            "test_outer_timeout_covers_two_pi_lanes_and_bounded_overhead"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 5
         },
         {
           "name": "TestVerifyJobReturn",
@@ -9319,6 +11705,27 @@
           "properties": [],
           "exported": true,
           "lineCount": 38
+        },
+        {
+          "name": "TestProvenancePassthrough",
+          "methods": [
+            "test_missing_merge_sha_fails_closed_without_cli",
+            "test_merge_sha_creates_worktree_and_passes_args",
+            "test_worktree_failure_returns_subject_mismatch"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 63
+        },
+        {
+          "name": "TestWorktreeLifecycle",
+          "methods": [
+            "test_create_and_remove_clears_worktree_registration",
+            "test_create_worktree_fetches_origin_before_add"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 70
         }
       ],
       "imports": [
@@ -9341,9 +11748,27 @@
           ]
         },
         {
+          "source": "tempfile",
+          "specifiers": [
+            "tempfile"
+          ]
+        },
+        {
           "source": "unittest",
           "specifiers": [
             "unittest"
+          ]
+        },
+        {
+          "source": "contextlib",
+          "specifiers": [
+            "contextmanager"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
           ]
         },
         {
@@ -9357,32 +11782,46 @@
           "specifiers": [
             "bridge"
           ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.timeouts",
+          "specifiers": [
+            "BRIDGE_TIMEOUT_OVERHEAD_SECONDS",
+            "PI_TIMEOUT_SECONDS",
+            "bridge_timeout_seconds"
+          ]
         }
       ],
       "exports": [
         "setUpModule",
         "_fake_paths_exist",
+        "_pinned_subject",
+        "_verify_return",
         "TestParseCliSummary",
+        "TestTimeoutBudget",
         "TestVerifyJobReturn",
         "TestCredentialFetch",
-        "TestIntegrityFlag"
+        "TestIntegrityFlag",
+        "TestProvenancePassthrough",
+        "TestWorktreeLifecycle"
       ],
-      "totalLines": 216,
+      "totalLines": 383,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_cli.py": {
       "filePath": "scripts/runtime/verification/test_cli.py",
-      "contentHash": "6af6b855e3eeeef7ec80c532b760aeca7c33bd91dbfb2c8f647e83ef39eda6f1",
+      "contentHash": "f7ae7d31decaafc86b56db170775cdfdb1adcfdf7358c92323debd908cfcc94d",
       "functions": [
         {
           "name": "test_cli_writes_receipt_with_required_contract_fields",
           "params": [
             "tmp_path",
-            "capsys"
+            "capsys",
+            "monkeypatch"
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 50
+          "lineCount": 88
         },
         {
           "name": "test_live_runner_auto_prefers_deepseek",
@@ -9459,6 +11898,7 @@
         {
           "source": "scripts.runtime.verification.schemas",
           "specifiers": [
+            "SemanticOutput",
             "VerdictReceipt"
           ]
         }
@@ -9471,7 +11911,7 @@
         "test_semantic_budget_args_parse_env_and_cli",
         "test_live_runner_requires_selected_provider_key"
       ],
-      "totalLines": 186,
+      "totalLines": 224,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_decision_engine.py": {
@@ -9690,7 +12130,7 @@
     },
     "scripts/runtime/verification/test_dry_run_e2e.py": {
       "filePath": "scripts/runtime/verification/test_dry_run_e2e.py",
-      "contentHash": "72287574400d9d9b30ec0ffbcaa176fe5a8649c1f3638243a0d58225598d6ba9",
+      "contentHash": "3ccc860f0bc0537849c09c1233822e95e1fc3411bcc874634529cc0bd1a33ea3",
       "functions": [
         {
           "name": "_repo_fingerprint",
@@ -9756,7 +12196,7 @@
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 39
+          "lineCount": 45
         }
       ],
       "classes": [
@@ -9827,12 +12267,267 @@
         "test_verify_e2e_clean_pass_returns_receipt_without_repo_writes",
         "test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes"
       ],
-      "totalLines": 165,
+      "totalLines": 171,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/runtime/verification/test_graded_cases.py": {
+      "filePath": "scripts/runtime/verification/test_graded_cases.py",
+      "contentHash": "32e498437010e65a300ce9fb6c405a717ea57e0491c51ac08e82bf6e052fbf2d",
+      "functions": [
+        {
+          "name": "_criterion",
+          "params": [
+            "cid",
+            "status",
+            "confidence"
+          ],
+          "returnType": "CriterionCheck",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "_constraint",
+          "params": [
+            "status"
+          ],
+          "returnType": "ConstraintCheck",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "_deterministic",
+          "params": [
+            "criteria",
+            "constraints",
+            "artifacts",
+            "deps"
+          ],
+          "returnType": "DeterministicResult",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "_integrity",
+          "params": [
+            "verdict",
+            "intent",
+            "integrity",
+            "review",
+            "findings",
+            "reasoning"
+          ],
+          "returnType": "IntegrityOutput",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "_semantic_pass",
+          "params": [
+            "cid",
+            "confidence"
+          ],
+          "returnType": "SemanticOutput",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "_semantic_fail",
+          "params": [
+            "cid",
+            "confidence"
+          ],
+          "returnType": "SemanticOutput",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "_semantic_indeterminate",
+          "params": [
+            "cid"
+          ],
+          "returnType": "SemanticOutput",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "_run_case",
+          "params": [
+            "tmp_path",
+            "det",
+            "semantic",
+            "integrity",
+            "monkeypatch"
+          ],
+          "returnType": "VerdictReceipt",
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "test_case_1_clear_pass",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_case_2_clear_criteria_failure",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_case_3_criteria_pass_intent_drift",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "test_case_4_insufficient_evidence",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "test_case_5_pass_with_future_concern",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 36
+        }
+      ],
+      "classes": [
+        {
+          "name": "MockRunner",
+          "methods": [
+            "__init__",
+            "chat"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "MockSemanticHarness",
+          "methods": [
+            "__init__",
+            "__call__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "MockIntegrityHarness",
+          "methods": [
+            "__init__",
+            "__call__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 18
+        }
+      ],
+      "imports": [
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Any"
+          ]
+        },
+        {
+          "source": "pytest",
+          "specifiers": [
+            "pytest"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification",
+          "specifiers": [
+            "orchestrator"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.orchestrator",
+          "specifiers": [
+            "verify"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.schemas",
+          "specifiers": [
+            "ConstraintCheck",
+            "CriterionCheck",
+            "DeterministicResult",
+            "GraphObservation",
+            "IntegrityFinding",
+            "IntegrityOutput",
+            "SemanticOutput",
+            "Verdict",
+            "VerdictReceipt"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.agent",
+          "specifiers": [
+            "LLMResponse",
+            "ToolCall"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic.tools",
+          "specifiers": [
+            "SemanticToolbox"
+          ]
+        }
+      ],
+      "exports": [
+        "MockRunner",
+        "MockSemanticHarness",
+        "MockIntegrityHarness",
+        "_criterion",
+        "_constraint",
+        "_deterministic",
+        "_integrity",
+        "_semantic_pass",
+        "_semantic_fail",
+        "_semantic_indeterminate",
+        "_run_case",
+        "test_case_1_clear_pass",
+        "test_case_2_clear_criteria_failure",
+        "test_case_3_criteria_pass_intent_drift",
+        "test_case_4_insufficient_evidence",
+        "test_case_5_pass_with_future_concern"
+      ],
+      "totalLines": 404,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_integrity_combiner.py": {
       "filePath": "scripts/runtime/verification/test_integrity_combiner.py",
-      "contentHash": "720931e58b027623a2ce0cd496b61ae0cd1f2bc3511c741c607bde09614ed000",
+      "contentHash": "0a5645d88e6d1b7d0de9e0cc344bb880ba23d722d99e63a3c1f79a78e7f62e5d",
       "functions": [
         {
           "name": "_integrity",
@@ -9936,6 +12631,27 @@
           "returnType": "None",
           "exported": true,
           "lineCount": 14
+        },
+        {
+          "name": "test_graph_observations_do_not_floor_pass",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_graph_observations_with_findings_still_floors",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "test_graph_observations_only_no_findings_pass",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 21
         }
       ],
       "classes": [],
@@ -9949,6 +12665,7 @@
         {
           "source": ".schemas",
           "specifiers": [
+            "GraphObservation",
             "IntegrityFinding",
             "IntegrityOutput",
             "Verdict"
@@ -9969,14 +12686,17 @@
         "test_combine_pass_with_violated_flags_floors_up",
         "test_combine_pass_with_both_flags_violated_floors_up",
         "test_combine_block_with_violated_flags_stays_blocked",
-        "test_floor_mapping_exhaustive"
+        "test_floor_mapping_exhaustive",
+        "test_graph_observations_do_not_floor_pass",
+        "test_graph_observations_with_findings_still_floors",
+        "test_graph_observations_only_no_findings_pass"
       ],
-      "totalLines": 145,
+      "totalLines": 224,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_integrity_runner.py": {
       "filePath": "scripts/runtime/verification/test_integrity_runner.py",
-      "contentHash": "c08814ebd6e79bd6fca2f7478ea928a84d37a4bdd76823dd6e048e5200f40241",
+      "contentHash": "977373c04fbbe8023414eec8c6fd447e770833c57d98485cc9bca11864350b7f",
       "functions": [
         {
           "name": "_config_root",
@@ -10018,10 +12738,86 @@
           "returnType": "None",
           "exported": true,
           "lineCount": 8
+        },
+        {
+          "name": "test_prompt_includes_canonical_context_block",
+          "params": [
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "test_empty_integrity_accepts_tool_trace",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "test_empty_integrity_accepts_lane_status_and_harness_error",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "test_integrity_timeout_returns_typed_output",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_semantic_timeout_returns_typed_output",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_timeout_kills_stubborn_descendant_after_group_leader_exits",
+          "params": [
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 27
         }
       ],
       "classes": [],
       "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
         {
           "source": "pathlib",
           "specifiers": [
@@ -10029,8 +12825,28 @@
           ]
         },
         {
+          "source": "unittest.mock",
+          "specifiers": [
+            "patch"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.schemas",
+          "specifiers": [
+            "LaneExecutionStatus"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.semantic",
+          "specifiers": [
+            "integrity_runner",
+            "pi_runner"
+          ]
+        },
+        {
           "source": "scripts.runtime.verification.semantic.integrity_runner",
           "specifiers": [
+            "IntegrityHarnessRunner",
             "_build_integrity_prompt",
             "_neighbor_pointers"
           ]
@@ -10041,14 +12857,20 @@
         "test_pointers_map_existing_and_mark_missing",
         "test_no_config_root_marks_all_unavailable",
         "test_no_neighbors_is_empty",
-        "test_prompt_includes_pointers_not_contents"
+        "test_prompt_includes_pointers_not_contents",
+        "test_prompt_includes_canonical_context_block",
+        "test_empty_integrity_accepts_tool_trace",
+        "test_empty_integrity_accepts_lane_status_and_harness_error",
+        "test_integrity_timeout_returns_typed_output",
+        "test_semantic_timeout_returns_typed_output",
+        "test_timeout_kills_stubborn_descendant_after_group_leader_exits"
       ],
-      "totalLines": 46,
+      "totalLines": 169,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_orchestrator.py": {
       "filePath": "scripts/runtime/verification/test_orchestrator.py",
-      "contentHash": "e9e1611666579017f00c94d7ed056be77480bb91f815b358715902808915f484",
+      "contentHash": "4b5c36a315ff0fad4b89984b1da9f5f1a9cdcc20aedd26d7a75abb36ce85d023",
       "functions": [
         {
           "name": "test_clean_deterministic_pass_skips_semantic",
@@ -10068,17 +12890,17 @@
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 59
+          "lineCount": 65
         },
         {
-          "name": "test_orchestrator_passes_semantic_agent_budget_kwargs",
+          "name": "test_orchestrator_passes_correct_args_to_semantic_harness",
           "params": [
             "monkeypatch",
             "tmp_path"
           ],
           "returnType": "None",
           "exported": true,
-          "lineCount": 42
+          "lineCount": 76
         },
         {
           "name": "_row12_deterministic",
@@ -10126,6 +12948,115 @@
           "returnType": "None",
           "exported": true,
           "lineCount": 34
+        },
+        {
+          "name": "_semantic_with_trace",
+          "params": [
+            "tool_calls"
+          ],
+          "returnType": "SemanticOutput",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "_integrity_with_trace",
+          "params": [
+            "tool_calls"
+          ],
+          "returnType": "IntegrityOutput",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_coverage_none_when_zero_canonical_reads",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "test_coverage_high_when_docs_and_neighbors_read",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_coverage_medium_when_docs_only_and_neighbors_offered",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "test_coverage_high_no_neighbor_rule",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "test_coverage_criteria_not_run_when_semantic_none",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "test_coverage_ls_find_do_not_count_as_content_access",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "test_coverage_relative_paths_resolved_against_repo",
+          "params": [
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "test_coverage_per_lane_does_not_mask",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "test_coverage_raw_evidence_present",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "test_coverage_excludes_failed_and_blocked_content_operations",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "test_provenance_keeps_tree_and_commit_shas_separate",
+          "params": [
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "test_receipt_carries_canonical_context_and_coverage",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 42
         }
       ],
       "classes": [
@@ -10161,6 +13092,12 @@
         }
       ],
       "imports": [
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
         {
           "source": "pathlib",
           "specifiers": [
@@ -10201,6 +13138,21 @@
             "IntegrityFinding",
             "IntegrityOutput"
           ]
+        },
+        {
+          "source": "scripts.runtime.verification.orchestrator",
+          "specifiers": [
+            "_capture_commit_sha",
+            "_capture_tree_sha",
+            "_compute_context_coverage",
+            "_rate_lane"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.schemas",
+          "specifiers": [
+            "LaneCoverage"
+          ]
         }
       ],
       "exports": [
@@ -10208,15 +13160,115 @@
         "CapturingRunner",
         "test_clean_deterministic_pass_skips_semantic",
         "test_indeterminate_criterion_invokes_semantic_and_builds_receipt",
-        "test_orchestrator_passes_semantic_agent_budget_kwargs",
+        "test_orchestrator_passes_correct_args_to_semantic_harness",
         "MockIntegrityHarness",
         "_row12_deterministic",
         "test_integrity_runs_on_row12_clean_pass",
         "test_criteria_pass_but_intent_violated_yields_non_pass_verdict",
         "test_integrity_harness_none_does_not_run_integrity",
-        "test_integrity_harness_receives_node_and_graph"
+        "test_integrity_harness_receives_node_and_graph",
+        "_semantic_with_trace",
+        "_integrity_with_trace",
+        "test_coverage_none_when_zero_canonical_reads",
+        "test_coverage_high_when_docs_and_neighbors_read",
+        "test_coverage_medium_when_docs_only_and_neighbors_offered",
+        "test_coverage_high_no_neighbor_rule",
+        "test_coverage_criteria_not_run_when_semantic_none",
+        "test_coverage_ls_find_do_not_count_as_content_access",
+        "test_coverage_relative_paths_resolved_against_repo",
+        "test_coverage_per_lane_does_not_mask",
+        "test_coverage_raw_evidence_present",
+        "test_coverage_excludes_failed_and_blocked_content_operations",
+        "test_provenance_keeps_tree_and_commit_shas_separate",
+        "test_receipt_carries_canonical_context_and_coverage"
       ],
-      "totalLines": 443,
+      "totalLines": 782,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/runtime/verification/test_receipt_sink.py": {
+      "filePath": "scripts/runtime/verification/test_receipt_sink.py",
+      "contentHash": "7c6dbf91c8e193fc56b16033f9abedde2da117e0adce8c2cc66f3a91b2c702f5",
+      "functions": [
+        {
+          "name": "test_receipt_path_includes_zero_based_attempt",
+          "params": [],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_job_id_only_path_remains_compatible",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_writing_retry_receipt_preserves_first_attempt",
+          "params": [],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_same_attempt_rerun_gets_deterministic_collision_suffix",
+          "params": [],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "test_node_only_receipt_overwrites_legacy_path",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_job_id_only_receipt_overwrites_legacy_path",
+          "params": [],
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [
+        {
+          "name": "FakeReceipt",
+          "methods": [
+            "__init__",
+            "model_dump_json"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "imports": [
+        {
+          "source": "tempfile",
+          "specifiers": [
+            "tempfile"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "scripts.runtime.verification.receipt_sink",
+          "specifiers": [
+            "receipt_path",
+            "write_receipt"
+          ]
+        }
+      ],
+      "exports": [
+        "FakeReceipt",
+        "test_receipt_path_includes_zero_based_attempt",
+        "test_job_id_only_path_remains_compatible",
+        "test_writing_retry_receipt_preserves_first_attempt",
+        "test_same_attempt_rerun_gets_deterministic_collision_suffix",
+        "test_node_only_receipt_overwrites_legacy_path",
+        "test_job_id_only_receipt_overwrites_legacy_path"
+      ],
+      "totalLines": 96,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_retry_budget.py": {
@@ -10305,7 +13357,7 @@
     },
     "scripts/runtime/verification/test_schemas.py": {
       "filePath": "scripts/runtime/verification/test_schemas.py",
-      "contentHash": "05f40094dcf652a25bd20a4fa7d5c671c18fc3bbdcefe634097e349105307fd0",
+      "contentHash": "82d62fdc8eb33913bb521fbdcdbde4c0f7560abc8a53c8058607a8808dbc2d2e",
       "functions": [
         {
           "name": "_deterministic",
@@ -10349,6 +13401,20 @@
           "returnType": "None",
           "exported": true,
           "lineCount": 19
+        },
+        {
+          "name": "test_receipt_provenance_fields_default_none_for_legacy",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_receipt_provenance_fields_round_trip",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 18
         }
       ],
       "classes": [],
@@ -10392,9 +13458,11 @@
         "test_verdict_receipt_populates_multiple_axes",
         "test_verdict_receipt_accepts_legacy_confidence_only_payload",
         "test_verdict_receipt_requires_some_confidence_value",
-        "test_ambiguity_receipt_fixtures_validate_contract"
+        "test_ambiguity_receipt_fixtures_validate_contract",
+        "test_receipt_provenance_fields_default_none_for_legacy",
+        "test_receipt_provenance_fields_round_trip"
       ],
-      "totalLines": 101,
+      "totalLines": 136,
       "hasStructuralAnalysis": true
     },
     "scripts/runtime/verification/test_shape_profiles.py": {
@@ -10446,6 +13514,49 @@
         "test_load_nonexistent_profile_returns_none"
       ],
       "totalLines": 46,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/test_dry_run.py": {
+      "filePath": "scripts/test_dry_run.py",
+      "contentHash": "c8da83c9103691eb44cca2c7ebcdee45ed8f212ef95c7671efb082844224a675",
+      "functions": [
+        {
+          "name": "test_main_replaces_only_stale_dry_run_state",
+          "params": [
+            "monkeypatch",
+            "tmp_path"
+          ],
+          "exported": true,
+          "lineCount": 87
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sqlite3",
+          "specifiers": [
+            "sqlite3"
+          ]
+        },
+        {
+          "source": "scripts",
+          "specifiers": [
+            "dry_run",
+            "init_db"
+          ]
+        },
+        {
+          "source": "scripts.runtime",
+          "specifiers": [
+            "results_store",
+            "return_router"
+          ]
+        }
+      ],
+      "exports": [
+        "test_main_replaces_only_stale_dry_run_state"
+      ],
+      "totalLines": 94,
       "hasStructuralAnalysis": true
     },
     "scripts/test_intake_server.py": {
@@ -10689,6 +13800,35 @@
         "test_signed_webhook_post_creates_event_row_and_raw_payload"
       ],
       "totalLines": 82,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/test_node_status_evaluator.py": {
+      "filePath": "scripts/test_node_status_evaluator.py",
+      "contentHash": "1d671216f2e99d65a79e67032b51436a26f16d296f8fe99d841abd3980a37a79",
+      "functions": [
+        {
+          "name": "test_evaluation_summary_uses_coverage_ratings_and_lane_errors",
+          "params": [
+            "capsys"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 23
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "scripts.node_status",
+          "specifiers": [
+            "print_evaluation"
+          ]
+        }
+      ],
+      "exports": [
+        "test_evaluation_summary_uses_coverage_ratings_and_lane_errors"
+      ],
+      "totalLines": 27,
       "hasStructuralAnalysis": true
     },
     "scripts/test_runtime_root_config.py": {

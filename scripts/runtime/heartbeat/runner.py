@@ -29,12 +29,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .classifier import classify
-from .dispatcher import dispatch
+from .dispatcher import cancel_remote_session, dispatch
 from .graph_reader import GraphReader
 from .job_factory import build_job
 from .reconciler import reconcile_sessions
 from .scope_checker import check_scope
 from .state_recorder import (
+    finalize_executor_session_dispatch,
     insert_executor_session,
     insert_job,
     insert_queue_record,
@@ -60,6 +61,7 @@ class PlannedDispatch:
     classification: dict
     job: dict
 
+    session_db_id: str
 
 @dataclass(frozen=True)
 class DispatchOutcome:
@@ -259,11 +261,22 @@ def _plan_dispatches(
 
         insert_job(con, job)
         insert_queue_record(con, job_id)
+        attempt_index = int(job.get("attempt", 0))
+        attempt_id = f"{job_id}:attempt:{attempt_index}"
+        session_db_id = insert_executor_session(
+            con,
+            job_id,
+            job["executor"],
+            attempt_id,
+            attempt_index=attempt_index,
+            state="dispatching",
+        )
         planned_dispatches.append(
             PlannedDispatch(
                 event_id=event_id,
                 classification=classification,
                 job=job,
+                session_db_id=session_db_id,
             )
         )
         print(f"  → job created: {job_id}")
@@ -330,26 +343,66 @@ def _record_outcomes(
 
         print(f"Recording: {event_id} ({planned.job['node_id']})")
         if outcome.success:
-            mark_event_mapped(con, event_id)
-            mark_job_running(con, job_id)
-            print(f"  → dispatched to {planned.classification['executor_recommendation']}")
-            if outcome.issue_url:
-                print(f"  → issue: {outcome.issue_url}")
-            # CLI-based executors return a session_ref; record it so the
-            # reconcile phase can poll for completion on subsequent ticks.
+            # Finalize the reservation before advancing job/queue state.
             if outcome.session_ref is not None:
-                session_db_id = insert_executor_session(
+                finalized = finalize_executor_session_dispatch(
                     con,
-                    job_id,
-                    outcome.session_ref.executor,
-                    outcome.session_ref.session_id,
+                    planned.session_db_id,
+                    state="dispatched",
+                    executor=outcome.session_ref.executor,
+                    session_id=outcome.session_ref.session_id,
                     expected_base_commit_sha=head_sha,
                 )
+            else:
+                finalized = finalize_executor_session_dispatch(
+                    con,
+                    planned.session_db_id,
+                    state="mediated",
+                    session_id=outcome.issue_url or None,
+                    expected_base_commit_sha=head_sha,
+                )
+            if not finalized:
+                cancellation = "reservation is no longer dispatching"
+                if outcome.session_ref is not None:
+                    _, cancellation = cancel_remote_session(
+                        outcome.session_ref,
+                        str(planned.job.get("repo") or ""),
+                    )
+                mark_event_mapped(con, event_id)
+                print(f"  → late dispatch result ignored: {cancellation}")
+                print()
+                continue
+
+            mark_event_mapped(con, event_id)
+            mark_job_running(con, job_id)
+            print(
+                f"  → dispatched to "
+                f"{planned.classification['executor_recommendation']}"
+            )
+            if outcome.issue_url:
+                print(f"  → issue: {outcome.issue_url}")
+            if outcome.session_ref is not None:
                 print(
                     f"  → executor session: "
-                    f"{outcome.session_ref.executor}/{outcome.session_ref.session_id}"
+                    f"{outcome.session_ref.executor}/"
+                    f"{outcome.session_ref.session_id}"
                 )
         else:
+            finalized = finalize_executor_session_dispatch(
+                con,
+                planned.session_db_id,
+                state="dispatch_failed",
+                error=outcome.error or "dispatch failed",
+                expected_base_commit_sha=head_sha,
+            )
+            if not finalized:
+                mark_event_mapped(con, event_id)
+                print(
+                    "  → late dispatch failure ignored: reservation is no "
+                    "longer dispatching"
+                )
+                print()
+                continue
             mark_job_failed(con, job_id)
             print(f"  → DISPATCH FAILED: {outcome.error}")
         print()

@@ -1,29 +1,34 @@
-import unittest
-from unittest.mock import patch, MagicMock
 import subprocess
-import json
 import sys
+import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-# Add the root directory to sys.path to allow importing from scripts.adapters
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-from scripts.adapters.jules_action_adapter import JulesActionAdapter, _flatten, DispatchResult
+from adapters.executor_protocol import DispatchResult, NodePacket
+from adapters.jules_action_adapter import JulesActionAdapter, _flatten
+
 
 class TestJulesActionAdapter(unittest.TestCase):
     def setUp(self):
         self.repo = "owner/repo"
         self.adapter = JulesActionAdapter(self.repo)
-        self.sample_job = {
-            "job_id": "job_123",
-            "node_id": "node_456",
-            "title": "Fix bug",
-            "goal": "Repair the leaking pipe",
-            "why": "Water is everywhere",
-            "constraints": json.dumps(["Don't use duct tape", {"material": "copper"}]),
-            "acceptance_criteria": json.dumps(["No leaks", ["test 1", "test 2"]])
-        }
+        self.sample_packet = NodePacket(
+            job_id="job_123",
+            execution_attempt_id="job_123:attempt:0",
+            node_id="node_456",
+            title="Fix bug",
+            goal="Repair the leaking pipe",
+            why="Water is everywhere",
+            constraints=("Don't use duct tape", {"material": "copper"}),
+            acceptance_criteria=("No leaks", ("test 1", "test 2")),
+            required_artifacts=(),
+            attempt_index=0,
+        )
 
     def test_flatten_string(self):
         self.assertEqual(_flatten("simple string"), "simple string")
@@ -35,7 +40,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertEqual(_flatten(["item1", "item2", 3]), "item1, item2, 3")
 
     def test_build_issue_body(self):
-        body = self.adapter.build_issue_body(self.sample_job)
+        body = self.adapter.build_issue_body(self.sample_packet)
         self.assertIn("## Goal\nRepair the leaking pipe", body)
         self.assertIn("## Why\nWater is everywhere", body)
         self.assertIn("- Don't use duct tape", body)
@@ -47,9 +52,11 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("does not advance graph truth automatically", body)
 
     def test_build_issue_body_with_required_artifacts(self):
-        job = dict(self.sample_job)
-        job["required_artifacts"] = ["decision.md", "result-summary.md", "patch.diff"]
-        body = self.adapter.build_issue_body(job)
+        packet = replace(
+            self.sample_packet,
+            required_artifacts=("decision.md", "result-summary.md", "patch.diff"),
+        )
+        body = self.adapter.build_issue_body(packet)
         self.assertIn("## Required Artifacts", body)
         self.assertIn("decision.md", body)
         self.assertIn("result-summary.md", body)
@@ -57,7 +64,7 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("executor-receipt.md", body)
 
     def test_build_issue_body_includes_strengthened_metadata_reminder(self):
-        body = self.adapter.build_issue_body(self.sample_job)
+        body = self.adapter.build_issue_body(self.sample_packet)
         self.assertIn("CRITICAL", body)
         self.assertIn("PR Metadata Block Required", body)
         self.assertIn("node: node_456", body)
@@ -65,9 +72,8 @@ class TestJulesActionAdapter(unittest.TestCase):
         self.assertIn("This is not optional", body)
 
     def test_build_issue_body_without_required_artifacts(self):
-        job = dict(self.sample_job)
-        job.pop("required_artifacts", None)
-        body = self.adapter.build_issue_body(job)
+        packet = replace(self.sample_packet, required_artifacts=())
+        body = self.adapter.build_issue_body(packet)
         self.assertNotIn("## Required Artifacts", body)
         # Rest of the body is still correct
         self.assertIn("## Goal\nRepair the leaking pipe", body)
@@ -79,7 +85,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_reports_missing_token_when_gh_auth_fails(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not logged in")
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertFalse(result.success)
         self.assertIsNone(result.issue_url)
@@ -106,10 +112,9 @@ class TestJulesActionAdapter(unittest.TestCase):
             ),
         ]
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertTrue(result.success)
-        self.assertEqual(result.issue_number, 42)
         self.assertEqual(mock_run.call_count, 2)
         issue_call = mock_run.call_args_list[1]
         self.assertEqual(issue_call.args[0][:3], ["gh", "issue", "create"])
@@ -120,7 +125,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_reports_missing_token_when_gh_auth_times_out(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh", "auth", "token"], timeout=10)
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertFalse(result.success)
         self.assertEqual(
@@ -137,11 +142,10 @@ class TestJulesActionAdapter(unittest.TestCase):
             stderr=""
         )
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertTrue(result.success)
         self.assertEqual(result.issue_url, "https://github.com/owner/repo/issues/42")
-        self.assertEqual(result.issue_number, 42)
         self.assertIsNone(result.error)
 
         mock_run.assert_called_once()
@@ -163,7 +167,7 @@ class TestJulesActionAdapter(unittest.TestCase):
             stderr="Error: repository not found"
         )
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertFalse(result.success)
         self.assertIsNone(result.issue_url)
@@ -174,7 +178,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_timeout(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "gh CLI timed out")
@@ -184,7 +188,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_exception(self, mock_run):
         mock_run.side_effect = Exception("Unexpected error")
 
-        result = self.adapter.dispatch(self.sample_job)
+        result = self.adapter.dispatch(self.sample_packet)
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "Unexpected error")

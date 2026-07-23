@@ -12,10 +12,13 @@ in a temp dir for worktree/patch-application tests, and mocked subprocess-free
 adapters (the Jules CLI is never actually invoked).
 """
 
+import json
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,14 +33,16 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
-from adapters.jules_action_adapter import DispatchResult as ActionDispatchResult
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from scripts.runtime.heartbeat import reconciler, runner
 from scripts.runtime.heartbeat.dispatcher import dispatch
 from scripts.runtime.heartbeat.state_recorder import (
+    allocate_retry_attempt,
+    finalize_executor_session_dispatch,
     get_active_executor_sessions,
     get_executor_session_by_id,
+    insert_job,
     insert_executor_session,
     update_executor_session_state,
 )
@@ -61,6 +66,7 @@ CREATE TABLE events (
 
 CREATE TABLE jobs (
     job_id              TEXT PRIMARY KEY,
+    event_id            TEXT,
     created_at          TEXT NOT NULL,
     project_id          TEXT,
     repo                TEXT,
@@ -77,7 +83,9 @@ CREATE TABLE jobs (
     status              TEXT DEFAULT 'ready',
     attempt             INTEGER DEFAULT 0,
     max_attempts        INTEGER DEFAULT 3,
-    artifacts_dir       TEXT
+    artifacts_dir       TEXT,
+    required_artifacts  TEXT NOT NULL DEFAULT '[]',
+    previous_findings   TEXT
 );
 
 CREATE TABLE queue_records (
@@ -92,6 +100,8 @@ CREATE TABLE executor_sessions (
     job_id                   TEXT NOT NULL,
     executor                 TEXT NOT NULL,
     session_id               TEXT NOT NULL,
+    execution_attempt_id     TEXT NOT NULL,
+    attempt_index            INTEGER NOT NULL,
     state                    TEXT DEFAULT 'dispatched',
     expected_base_commit_sha TEXT,
     result_commit_sha        TEXT,
@@ -126,15 +136,23 @@ def _insert_job(
     status="running",
     project_id="proj-1",
     node_id="node-1",
+    attempt=0,
+    max_attempts=3,
+    required_artifacts=None,
+    previous_findings=None,
 ):
     """Insert a minimal job + queue record (no event needed; FKs off in tests)."""
     con.execute(
         "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
-        "job_type, executor, queue_state, title, goal, status) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "job_type, executor, queue_state, title, goal, status, attempt, "
+        "max_attempts, required_artifacts, previous_findings) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             job_id, "2026-07-17T00:00:00+00:00", project_id, repo, node_id,
             "implementation", executor, status, "Test", "Test goal", status,
+            attempt, max_attempts,
+            json.dumps(required_artifacts or []),
+            json.dumps(previous_findings) if previous_findings is not None else None,
         ),
     )
     con.execute(
@@ -165,24 +183,30 @@ def _make_fake_adapter(
     *,
     status_state="completed",
     status_error=None,
+    status_exception=None,
     patch_text=_PATCH_ADD_RESULT,
     collect_success=True,
+    cancel_result=False,
 ):
     """Build a configurable fake adapter class.
 
-    The reconciler instantiates ``adapter_cls(repo=...)`` and calls
-    ``.status()`` / ``.collect()``, so we track call counts at the class level.
+    The reconciler instantiates ``adapter_cls(repo=...)`` and calls lifecycle
+    methods, so call counts live at the class level.
     """
 
     class FakeAdapter:
         status_calls = 0
         collect_calls = 0
+        cancel_calls = 0
+        cancelled_session_ids = []
 
         def __init__(self, repo=""):
             self.repo = repo
 
         def status(self, session_ref):
             FakeAdapter.status_calls += 1
+            if status_exception is not None:
+                raise status_exception
             return SessionStatus(state=status_state, error=status_error)
 
         def collect(self, session_ref, dest_path):
@@ -199,7 +223,9 @@ def _make_fake_adapter(
             )
 
         def cancel(self, session_ref):
-            return False
+            FakeAdapter.cancelled_session_ids.append(session_ref.session_id)
+            FakeAdapter.cancel_calls += 1
+            return cancel_result
 
     return FakeAdapter
 
@@ -248,6 +274,8 @@ def test_insert_executor_session_creates_row(con):
     assert row["expected_base_commit_sha"] == "abc123"
     assert row["result_commit_sha"] is None
     assert row["error"] is None
+    assert row["attempt_index"] == 0
+    assert row["execution_attempt_id"] == "job_a:attempt:0"
 
 
 def test_update_executor_session_state(con):
@@ -328,6 +356,100 @@ def test_get_executor_session_by_id(con):
     assert row["state"] == "dispatched"
 
 
+def test_retry_allocation_persists_findings_for_db_replay(con):
+    findings = {
+        "verdict": "changes_requested",
+        "findings": [{"severity": "medium", "summary": "src/a.py:8"}],
+    }
+    _insert_job(
+        con,
+        job_id="job_replay",
+        required_artifacts=["decision.md", "result-summary.md"],
+    )
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
+    ).fetchone()
+
+    allocated = allocate_retry_attempt(
+        con,
+        job,
+        executor="jules_cli",
+        previous_findings=findings,
+    )
+    con.commit()
+
+    assert allocated is not None
+    replayed_job = dict(
+        con.execute(
+            "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
+        ).fetchone()
+    )
+    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
+
+    packet = _build_node_packet(replayed_job)
+    assert packet.attempt_index == 1
+    assert packet.execution_attempt_id == "job_replay:attempt:1"
+    assert packet.required_artifacts == ("decision.md", "result-summary.md")
+    assert packet.previous_findings["findings"][0]["severity"] == "medium"
+
+
+def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
+    from scripts import init_db as init_db_module
+
+    db_path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(db_path)
+    legacy.executescript(
+        """
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            attempt INTEGER DEFAULT 0
+        );
+        CREATE TABLE executor_sessions (
+            session_db_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            executor TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            state TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO jobs (job_id, attempt) VALUES ('job_old', 1);
+        INSERT INTO executor_sessions VALUES
+            ('ses_old_0', 'job_old', 'jules_cli', 'remote-0', 'failed',
+             '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+            ('ses_old_1', 'job_old', 'jules_cli', 'remote-1', 'running',
+             '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z');
+        """
+    )
+    legacy.commit()
+    legacy.close()
+    monkeypatch.setattr(init_db_module, "DB_PATH", db_path)
+
+    init_db_module.init_db()
+    init_db_module.init_db()
+
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    job_columns = {
+        row["name"] for row in migrated.execute("PRAGMA table_info(jobs)")
+    }
+    session_columns = {
+        row["name"]
+        for row in migrated.execute("PRAGMA table_info(executor_sessions)")
+    }
+    assert {"required_artifacts", "previous_findings"} <= job_columns
+    assert {"execution_attempt_id", "attempt_index"} <= session_columns
+    rows = migrated.execute(
+        "SELECT attempt_index, execution_attempt_id "
+        "FROM executor_sessions ORDER BY created_at"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (0, "job_old:attempt:0"),
+        (1, "job_old:attempt:1"),
+    ]
+    migrated.close()
+
+
 # =========================================================================== #
 # 2. Reconciler tests
 # =========================================================================== #
@@ -390,26 +512,397 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
     assert qr["queue"] == "awaiting_review"
 
 
-def test_reconcile_failed_session_marks_job_failed(con, tmp_path, monkeypatch):
-    repo, _ = _make_git_repo(tmp_path)
-    _insert_job(con, job_id="job_fail", executor="jules_cli", status="running")
-    ses_id = insert_executor_session(con, "job_fail", "jules_cli", "sess-fail")
+def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    findings = {
+        "verdict": "changes_requested",
+        "findings": [{"severity": "high", "summary": "src/a.py:4 is wrong"}],
+    }
+    _insert_job(
+        con,
+        job_id="job_fail",
+        executor="jules_cli",
+        status="running",
+        required_artifacts=["decision.md", "patch.diff"],
+        previous_findings=findings,
+    )
+    original_id = insert_executor_session(
+        con,
+        "job_fail",
+        "jules_cli",
+        "sess-fail",
+        expected_base_commit_sha=base_sha,
+    )
     FakeAdapter = _make_fake_adapter(status_state="failed", status_error="boom")
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatched_jobs = []
+
+    def retry_dispatch(job, repo_name):
+        dispatched_jobs.append(dict(job))
+        return ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "sess-retry"),
+        )
+
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
 
     reconciler.reconcile_sessions(con, repo)
 
-    row = get_executor_session_by_id(con, ses_id)
-    assert row["state"] == "failed"
-    assert "boom" in (row["error"] or "")
-    assert FakeAdapter.collect_calls == 0
+    original = get_executor_session_by_id(con, original_id)
+    assert original["state"] == "failed"
+    assert original["session_id"] == "sess-fail"
+    assert original["attempt_index"] == 0
+    assert original["execution_attempt_id"] == "job_fail:attempt:0"
+    assert original["error"] == "boom"
+
+    rows = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
+        ("job_fail",),
+    ).fetchall()
+    assert len(rows) == 2
+    replacement = rows[1]
+    assert replacement["state"] == "dispatched"
+    assert replacement["session_id"] == "sess-retry"
+    assert replacement["attempt_index"] == 1
+    assert replacement["execution_attempt_id"] == "job_fail:attempt:1"
 
     job = con.execute(
-        "SELECT status, queue_state FROM jobs WHERE job_id = ?", ("job_fail",)
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_fail",)
     ).fetchone()
-    assert job["status"] == "failed"
-    assert job["queue_state"] == "failed"
+    assert job["attempt"] == 1
+    assert job["status"] == "running"
+    assert job["queue_state"] == "running"
+    assert len(dispatched_jobs) == 1
 
+    from scripts.runtime.heartbeat.dispatcher import _build_node_packet
+
+    packet = _build_node_packet(dispatched_jobs[0])
+    assert packet.execution_attempt_id == "job_fail:attempt:1"
+    assert packet.required_artifacts == ("decision.md", "patch.diff")
+    assert packet.previous_findings["findings"][0]["severity"] == "high"
+
+
+def test_retry_dispatch_failure_is_visible_and_idempotent(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_dispatch_fail", status="running")
+    original_id = insert_executor_session(
+        con,
+        "job_dispatch_fail",
+        "jules_cli",
+        "sess-original",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="remote failed")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatch_calls = []
+
+    def failed_dispatch(job, repo_name):
+        dispatch_calls.append(job["attempt"])
+        return ProtocolDispatchResult(success=False, error="retry transport failed")
+
+    monkeypatch.setattr(reconciler, "dispatch", failed_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+    reconciler.reconcile_sessions(con, repo)
+
+    rows = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? ORDER BY attempt_index",
+        ("job_dispatch_fail",),
+    ).fetchall()
+    assert len(rows) == 2
+    assert rows[0]["session_db_id"] == original_id
+    assert rows[0]["state"] == "failed"
+    assert rows[1]["state"] == "dispatch_failed"
+    assert rows[1]["error"] == "retry transport failed"
+    assert rows[1]["execution_attempt_id"] == "job_dispatch_fail:attempt:1"
+    assert dispatch_calls == [1]
+
+    job = con.execute(
+        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_dispatch_fail",),
+    ).fetchone()
+    assert tuple(job) == (1, "failed", "failed")
+
+
+def test_reconcile_failed_session_at_attempt_cap_does_not_dispatch(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_exhausted",
+        status="running",
+        attempt=3,
+        max_attempts=3,
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_exhausted",
+        "jules_cli",
+        "sess-last",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="last failure")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "failed"
+    assert row["attempt_index"] == 3
+    retry_dispatch.assert_not_called()
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_exhausted",),
+    ).fetchone()[0] == 1
+    job = con.execute(
+        "SELECT attempt, status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_exhausted",),
+    ).fetchone()
+    assert tuple(job) == (3, "failed", "failed")
+
+
+def test_reconcile_poll_exception_does_not_allocate_replacement(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_poll", status="running")
+    session_id = insert_executor_session(
+        con, "job_poll", "jules_cli", "sess-poll"
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_exception=RuntimeError("temporary network failure")
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_poll",)
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll",)
+    ).fetchone()[0] == 0
+    retry_dispatch.assert_not_called()
+
+
+def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_poll_timeout", status="running")
+    session_id = insert_executor_session(
+        con, "job_poll_timeout", "jules_cli", "sess-poll-timeout"
+    )
+
+    import adapters.jules_cli_adapter as jca
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], 30)
+
+    monkeypatch.setattr(jca.subprocess, "run", timeout)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": JulesCliAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_poll_timeout",),
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_poll_timeout",)
+    ).fetchone()[0] == 0
+    retry_dispatch.assert_not_called()
+
+
+
+def test_jules_successful_list_without_session_is_missing(monkeypatch):
+    import adapters.jules_cli_adapter as jca
+
+    monkeypatch.setattr(
+        jca.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="ID  STATUS\nother-session  Running\n",
+            stderr="",
+        ),
+    )
+
+    status = JulesCliAdapter(repo="owner/repo").status(
+        SessionRef("jules_cli", "expected-session")
+    )
+
+    assert status.state == "missing"
+    assert "not found" in (status.error or "")
+
+
+def test_reconcile_fresh_missing_session_stays_active(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_missing_fresh", status="running")
+    session_id = insert_executor_session(
+        con, "job_missing_fresh", "jules_cli", "missing-fresh"
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:50:00+00:00",
+            "2026-07-18T11:50:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatched"
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_fresh",),
+    ).fetchone()
+    assert tuple(job) == (0, "running")
+    retry_dispatch.assert_not_called()
+
+
+def test_reconcile_aged_missing_session_retries_below_cap(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_missing_retry", status="running")
+    session_id = insert_executor_session(
+        con,
+        "job_missing_retry",
+        "jules_cli",
+        "missing-stale",
+        expected_base_commit_sha=base_sha,
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:29:00+00:00",
+            "2026-07-18T11:29:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock(
+        return_value=ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "replacement-session"),
+        )
+    )
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    stale = get_executor_session_by_id(con, session_id)
+    assert stale["state"] == "failed"
+    assert "not found" in stale["error"]
+    replacement = con.execute(
+        "SELECT state, session_id, attempt_index FROM executor_sessions "
+        "WHERE job_id = ? AND attempt_index = 1",
+        ("job_missing_retry",),
+    ).fetchone()
+    assert tuple(replacement) == ("dispatched", "replacement-session", 1)
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_retry",),
+    ).fetchone()
+    assert tuple(job) == (1, "running")
+
+
+def test_reconcile_aged_missing_session_stops_at_attempt_cap(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_missing_exhausted",
+        status="running",
+        attempt=3,
+        max_attempts=3,
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_missing_exhausted",
+        "jules_cli",
+        "missing-exhausted",
+        attempt_index=3,
+    )
+    con.execute(
+        "UPDATE executor_sessions SET created_at = ?, updated_at = ? "
+        "WHERE session_db_id = ?",
+        (
+            "2026-07-18T11:29:00+00:00",
+            "2026-07-18T11:29:00+00:00",
+            session_id,
+        ),
+    )
+    con.commit()
+    FakeAdapter = _make_fake_adapter(
+        status_state="missing",
+        status_error="session not found in successful jules list",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo,
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        missing_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "failed"
+    job = con.execute(
+        "SELECT attempt, status FROM jobs WHERE job_id = ?",
+        ("job_missing_exhausted",),
+    ).fetchone()
+    assert tuple(job) == (3, "failed")
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?",
+        ("job_missing_exhausted",),
+    ).fetchone()[0] == 1
+    retry_dispatch.assert_not_called()
 
 def test_reconcile_running_session_stays_active(con, tmp_path, monkeypatch):
     repo, _ = _make_git_repo(tmp_path)
@@ -459,6 +952,278 @@ def test_reconcile_needs_operator_persists_state(con, tmp_path, monkeypatch):
     assert job["status"] == "running"
     active = get_active_executor_sessions(con)
     assert any(r["session_db_id"] == ses_id for r in active)
+    assert con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id = ?", ("job_op",)
+    ).fetchone()[0] == 1
+    assert con.execute(
+        "SELECT attempt FROM jobs WHERE job_id = ?", ("job_op",)
+    ).fetchone()[0] == 0
+
+def test_restart_recovery_terminalizes_stale_dispatch_without_redispatch(
+    con, tmp_path, monkeypatch
+):
+    repo_path, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_stale_dispatch", status="ready")
+    session_id = insert_executor_session(
+        con,
+        "job_stale_dispatch",
+        "jules_cli",
+        "job_stale_dispatch:attempt:0",
+        state="dispatching",
+    )
+    con.execute(
+        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
+        ("2026-07-18T10:00:00+00:00", session_id),
+    )
+    con.commit()
+    retry_dispatch = MagicMock()
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(
+        con,
+        repo_path,
+        repo="owner/repo",
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        dispatching_stale_after=timedelta(minutes=30),
+    )
+
+    session = get_executor_session_by_id(con, session_id)
+    assert session["state"] == "dispatch_failed"
+    assert "outcome unknown" in session["error"]
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_stale_dispatch",),
+    ).fetchone()
+    assert tuple(job) == ("failed", "failed")
+    assert con.execute(
+        "SELECT queue FROM queue_records WHERE job_id = ?",
+        ("job_stale_dispatch",),
+    ).fetchone()[0] == "failed"
+    retry_dispatch.assert_not_called()
+
+
+def test_restart_recovery_leaves_fresh_dispatch_untouched(con, tmp_path):
+    repo_path, _ = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_fresh_dispatch", status="ready")
+    session_id = insert_executor_session(
+        con,
+        "job_fresh_dispatch",
+        "jules_cli",
+        "job_fresh_dispatch:attempt:0",
+        state="dispatching",
+    )
+    con.execute(
+        "UPDATE executor_sessions SET updated_at = ? WHERE session_db_id = ?",
+        ("2026-07-18T11:45:00+00:00", session_id),
+    )
+    con.commit()
+
+    reconciler.reconcile_sessions(
+        con,
+        repo_path,
+        repo="owner/repo",
+        current_time=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        dispatching_stale_after=timedelta(minutes=30),
+    )
+
+    assert get_executor_session_by_id(con, session_id)["state"] == "dispatching"
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_fresh_dispatch",),
+    ).fetchone()
+    assert tuple(job) == ("ready", "ready")
+
+
+
+def test_persisted_local_cancellation_is_terminal_across_reconciler_restart(
+    con, tmp_path, monkeypatch
+):
+    repo, _ = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_cancel_local",
+        executor="local_subprocess",
+        status="running",
+    )
+    session_id = insert_executor_session(
+        con,
+        "job_cancel_local",
+        "local_subprocess",
+        "local-session",
+    )
+    FakeLocal = _make_fake_adapter(status_state="running", cancel_result=True)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"local_subprocess": FakeLocal})
+
+    result = reconciler.cancel_executor_session(con, session_id)
+
+    assert result == "cancelled"
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "cancelled"
+    assert FakeLocal.cancel_calls == 1
+    assert get_active_executor_sessions(con) == []
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_cancel_local",),
+    ).fetchone()
+    assert tuple(job) == ("cancelled", "cancelled")
+
+    reconciler.reconcile_sessions(con, repo)
+    assert FakeLocal.status_calls == 0
+    assert FakeLocal.collect_calls == 0
+
+
+def test_jules_cancellation_persists_unsupported_without_claiming_remote_success(
+    con, monkeypatch
+):
+    _insert_job(con, job_id="job_cancel_jules", status="running")
+    session_id = insert_executor_session(
+        con,
+        "job_cancel_jules",
+        "jules_cli",
+        "jules-session",
+    )
+    FakeJules = _make_fake_adapter(status_state="running", cancel_result=False)
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeJules})
+
+    result = reconciler.cancel_executor_session(con, session_id)
+
+    assert result == "cancel_unsupported"
+    row = get_executor_session_by_id(con, session_id)
+    assert row["state"] == "cancel_unsupported"
+    assert "unsupported" in row["error"].lower()
+    assert "cancelled" not in row["error"].lower()
+    assert get_active_executor_sessions(con) == []
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", ("job_cancel_jules",)
+    ).fetchone()[0] == "cancelled"
+
+
+def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
+    con, monkeypatch, capsys
+):
+    con.execute(
+        "INSERT INTO events "
+        "(event_id, received_at, source, event_type, repo, project_id, status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "evt_cancel_race",
+            "2026-07-18T12:00:00+00:00",
+            "github",
+            "issues",
+            "owner/repo",
+            "proj-1",
+            "classified",
+        ),
+    )
+    _insert_job(con, job_id="job_cancel_race", status="ready")
+    session_db_id = insert_executor_session(
+        con,
+        "job_cancel_race",
+        "jules_cli",
+        "job_cancel_race:attempt:0",
+        state="dispatching",
+    )
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state="cancel_unsupported",
+        error="Jules CLI cancellation is unsupported",
+    )
+    con.execute(
+        "UPDATE jobs SET status = 'cancelled', queue_state = 'cancelled' "
+        "WHERE job_id = ?",
+        ("job_cancel_race",),
+    )
+    con.execute(
+        "UPDATE queue_records SET queue = 'cancelled' WHERE job_id = ?",
+        ("job_cancel_race",),
+    )
+    con.commit()
+
+    from scripts.runtime.heartbeat import dispatcher as heartbeat_dispatcher
+
+    FakeJules = _make_fake_adapter(cancel_result=False)
+    monkeypatch.setattr(
+        heartbeat_dispatcher, "ADAPTERS", {"jules_cli": FakeJules}
+    )
+    planned = runner.PlannedDispatch(
+        event_id="evt_cancel_race",
+        classification={"executor_recommendation": "jules_cli"},
+        job={
+            "job_id": "job_cancel_race",
+            "node_id": "node-1",
+            "repo": "owner/repo",
+        },
+        session_db_id=session_db_id,
+    )
+    outcome = runner.DispatchOutcome(
+        planned=planned,
+        success=True,
+        session_ref=SessionRef("jules_cli", "late-remote-session"),
+    )
+
+    runner._record_outcomes(
+        con,
+        [planned],
+        {"job_cancel_race": outcome},
+    )
+
+    session = get_executor_session_by_id(con, session_db_id)
+    assert session["state"] == "cancel_unsupported"
+    assert session["session_id"] == "job_cancel_race:attempt:0"
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+        ("job_cancel_race",),
+    ).fetchone()
+    assert tuple(job) == ("cancelled", "cancelled")
+    assert con.execute(
+        "SELECT queue FROM queue_records WHERE job_id = ?",
+        ("job_cancel_race",),
+    ).fetchone()[0] == "cancelled"
+    assert FakeJules.cancelled_session_ids == ["late-remote-session"]
+    assert con.execute(
+        "SELECT status FROM events WHERE event_id = ?",
+        ("evt_cancel_race",),
+    ).fetchone()[0] == "mapped"
+    assert runner._plan_dispatches(
+        con,
+        "proj-1",
+        "owner/repo",
+        [],
+        MagicMock(),
+    ) == []
+    output = capsys.readouterr().out.lower()
+    assert "unsupported" in output
+    assert "cancellation accepted" not in output
+
+
+def test_finalize_executor_session_dispatch_is_compare_and_swap(con):
+    _insert_job(con, job_id="job_finalize_cas", status="cancelled")
+    session_db_id = insert_executor_session(
+        con,
+        "job_finalize_cas",
+        "jules_cli",
+        "job_finalize_cas:attempt:0",
+        state="dispatching",
+    )
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state="cancel_unsupported",
+        error="cancelled while dispatch was in flight",
+    )
+
+    finalized = finalize_executor_session_dispatch(
+        con,
+        session_db_id,
+        state="dispatched",
+        session_id="late-remote-session",
+    )
+
+    assert finalized is False
+    session = get_executor_session_by_id(con, session_db_id)
+    assert session["state"] == "cancel_unsupported"
+    assert session["session_id"] == "job_finalize_cas:attempt:0"
 
 
 # =========================================================================== #
@@ -528,6 +1293,75 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
     assert called["reconcile"] is True
 
 
+def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
+    con.execute(
+        """INSERT INTO events
+           (event_id, received_at, source, event_type, repo, project_id, status)
+           VALUES ('evt_initial', '2026-01-01T00:00:00Z', 'manual',
+                   'issue.opened', 'owner/repo', 'proj-1', 'received')"""
+    )
+    con.commit()
+    node = SimpleNamespace(node_id="node-1")
+    monkeypatch.setattr(
+        runner,
+        "classify",
+        lambda event, nodes: {
+            "matched_node_id": "node-1",
+            "executor_recommendation": "jules_cli",
+        },
+    )
+    monkeypatch.setattr(runner, "mark_event_classified", lambda *args: None)
+    monkeypatch.setattr(runner, "check_scope", lambda *args: True)
+    monkeypatch.setattr(
+        runner,
+        "build_job",
+        lambda *args: {
+            "job_id": "job_initial",
+            "created_at": "2026-01-01T00:00:00Z",
+            "event_id": "evt_initial",
+            "project_id": "proj-1",
+            "repo": "owner/repo",
+            "node_id": "node-1",
+            "job_type": "implementation",
+            "executor": "jules_cli",
+            "queue_state": "ready",
+            "title": "Initial",
+            "goal": "Dispatch once",
+            "why": "",
+            "constraints": "[]",
+            "acceptance_criteria": "[]",
+            "priority": "medium",
+            "status": "ready",
+            "attempt": 0,
+            "max_attempts": 3,
+            "artifacts_dir": "/tmp/job_initial/",
+            "required_artifacts": '["decision.md"]',
+            "previous_findings": None,
+        },
+    )
+
+    planned = runner._plan_dispatches(
+        con,
+        "proj-1",
+        "owner/repo",
+        [node],
+        SimpleNamespace(),
+    )
+
+    assert len(planned) == 1
+    assert planned[0].session_db_id
+    row = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = 'job_initial'"
+    ).fetchone()
+    assert row["state"] == "dispatching"
+    assert row["attempt_index"] == 0
+    assert row["execution_attempt_id"] == "job_initial:attempt:0"
+    persisted_job = con.execute(
+        "SELECT required_artifacts FROM jobs WHERE job_id = 'job_initial'"
+    ).fetchone()
+    assert json.loads(persisted_job["required_artifacts"]) == ["decision.md"]
+
+
 # =========================================================================== #
 # 5. Adapter selection — executor field routes to the correct adapter
 # =========================================================================== #
@@ -576,11 +1410,9 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
     job = _sample_job(executor="jules")
 
     action_dispatch = MagicMock(
-        return_value=ActionDispatchResult(
+        return_value=ProtocolDispatchResult(
             success=True,
             issue_url="https://github.com/owner/repo/issues/1",
-            issue_number=1,
-            error=None,
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
@@ -647,6 +1479,36 @@ def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
     assert status.state == "running"
 
 
+@pytest.mark.parametrize(
+    "poll_result",
+    [
+        subprocess.TimeoutExpired(["jules", "remote", "list"], 30),
+        FileNotFoundError("jules"),
+        OSError("subprocess unavailable"),
+        SimpleNamespace(returncode=2, stdout="", stderr="service unavailable"),
+    ],
+    ids=["timeout", "missing-binary", "subprocess-error", "nonzero"],
+)
+def test_jules_cli_status_infrastructure_failure_is_transient(
+    monkeypatch, poll_result
+):
+    import adapters.jules_cli_adapter as jca
+
+    def fake_run(*args, **kwargs):
+        if isinstance(poll_result, BaseException):
+            raise poll_result
+        return poll_result
+
+    monkeypatch.setattr(jca.subprocess, "run", fake_run)
+
+    status = JulesCliAdapter(repo="owner/repo").status(
+        SessionRef(executor="jules_cli", session_id="target-session")
+    )
+
+    assert status.state == "poll_error"
+    assert status.error
+
+
 # =========================================================================== #
 # 7. Issue #6 — GDDP_EXECUTOR_OVERRIDE reroutes dispatch without graph changes
 # =========================================================================== #
@@ -687,11 +1549,9 @@ def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
     monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
 
     action_dispatch = MagicMock(
-        return_value=ActionDispatchResult(
+        return_value=ProtocolDispatchResult(
             success=True,
             issue_url="https://github.com/owner/repo/issues/2",
-            issue_number=2,
-            error=None,
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)

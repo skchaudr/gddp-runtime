@@ -84,6 +84,8 @@ def _init_db(db_path: Path) -> None:
             attempt             INTEGER DEFAULT 0,
             max_attempts        INTEGER DEFAULT 3,
             artifacts_dir       TEXT,
+            required_artifacts  TEXT NOT NULL DEFAULT '[]',
+            previous_findings   TEXT,
             result_summary_path TEXT,
             FOREIGN KEY(event_id) REFERENCES events(event_id)
         );
@@ -98,6 +100,23 @@ def _init_db(db_path: Path) -> None:
             lease_expires_at TEXT,
             retry_count      INTEGER DEFAULT 0,
             last_error       TEXT,
+            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+        );
+
+        CREATE TABLE executor_sessions (
+            session_db_id              TEXT PRIMARY KEY,
+            job_id                     TEXT NOT NULL,
+            executor                   TEXT NOT NULL,
+            session_id                 TEXT NOT NULL,
+            state                      TEXT DEFAULT 'dispatched',
+            execution_attempt_id       TEXT NOT NULL,
+            attempt_index              INTEGER NOT NULL,
+            expected_base_commit_sha   TEXT,
+            result_commit_sha          TEXT,
+            patch_path                 TEXT,
+            error                      TEXT,
+            created_at                 TEXT NOT NULL,
+            updated_at                 TEXT NOT NULL,
             FOREIGN KEY(job_id) REFERENCES jobs(job_id)
         );
 

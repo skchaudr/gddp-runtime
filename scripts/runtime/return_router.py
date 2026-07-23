@@ -13,6 +13,11 @@ from typing import Optional
 
 from .results_store import DB_PATH, write_result
 from .verification.bridge import verify_job_return
+from .heartbeat.state_recorder import (
+    allocate_retry_attempt,
+    finalize_executor_session_dispatch,
+    mark_job_running,
+)
 
 _FALLBACK_ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project", "skchaudr/gddp-runtime"]
 
@@ -230,37 +235,77 @@ def _config_root():
 
 
 def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
-    """Re-dispatch the same node to the executor with findings in the issue body.
+    """Persist a correction attempt before dispatch and retain its evidence."""
+    from .heartbeat.dispatcher import cancel_remote_session, dispatch
 
-    On dispatch failure, falls back to awaiting_review so the human can inspect
-    the findings and decide — the job never sits in limbo.
-    """
-    import json
-    from .heartbeat.dispatcher import dispatch
-
-    # Build the job dict with findings injected
-    job_with_findings = dict(job)
-    # NOTE: Do NOT convert constraints/acceptance_criteria from JSON strings to
-    # lists here — the adapter's build_issue_body calls json.loads() on them and
-    # expects JSON strings. Converting them to lists causes a TypeError.
-
-    # Add findings to the job for the adapter to include in the issue body
-    integrity = verification.get("integrity", {}) if verification.get("verification_status") == "ok" else {}
-    job_with_findings["_previous_findings"] = {
+    integrity = (
+        verification.get("integrity", {})
+        if verification.get("verification_status") == "ok"
+        else {}
+    )
+    previous_findings = {
         "verdict": verification.get("verdict", ""),
         "integrity_verdict": integrity.get("verdict", ""),
         "findings": integrity.get("findings", []),
         "reasoning": integrity.get("reasoning", ""),
-        "criteria_findings": verification.get("criteria_findings", []) if verification.get("verification_status") == "ok" else [],
+        "criteria_findings": (
+            verification.get("criteria_findings", [])
+            if verification.get("verification_status") == "ok"
+            else []
+        ),
     }
 
-    # Dispatch
-    dispatch_result = dispatch(job_with_findings, job["repo"])
+    con = _connect()
+    allocated = allocate_retry_attempt(
+        con,
+        job,
+        executor=job["executor"],
+        previous_findings=previous_findings,
+    )
+    if allocated is None:
+        con.close()
+        _mark_job_awaiting_review(job_id)
+        return {
+            "status": "needs_review",
+            "result_id": result_id,
+            "job_id": job_id,
+            "node_id": node_id,
+            "verification": verification,
+            "dispatch_attempted": False,
+            "dispatch_success": False,
+        }
 
-    if not dispatch_result.success:
-        # Dispatch failed — fall back to awaiting_review so the human sees the
-        # findings and can re-dispatch manually. The job must not sit unattended.
-        # Attempt is NOT incremented on failure so the retry budget stays intact.
+    job_with_findings, session_db_id = allocated
+    con.commit()
+    try:
+        dispatch_result = dispatch(job_with_findings, job["repo"])
+    except Exception as exc:
+        dispatch_result = None
+        dispatch_error = f"retry dispatch raised exception: {exc}"
+    else:
+        dispatch_error = dispatch_result.error or "retry dispatch failed"
+
+    if dispatch_result is None or not dispatch_result.success:
+        finalized = finalize_executor_session_dispatch(
+            con,
+            session_db_id,
+            state="dispatch_failed",
+            error=dispatch_error,
+        )
+        con.commit()
+        con.close()
+        if not finalized:
+            return {
+                "status": "dispatch_superseded",
+                "result_id": result_id,
+                "job_id": job_id,
+                "node_id": node_id,
+                "verification": verification,
+                "dispatch_attempted": True,
+                "dispatch_success": False,
+                "dispatch_error": dispatch_error,
+                "reservation_finalized": False,
+            }
         _mark_job_awaiting_review(job_id)
         return {
             "status": "needs_review",
@@ -270,18 +315,45 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
             "verification": verification,
             "dispatch_attempted": True,
             "dispatch_success": False,
-            "dispatch_error": dispatch_result.error,
+            "dispatch_error": dispatch_error,
         }
 
-    # Dispatch succeeded — increment attempt now that the retry is confirmed.
-    con = _connect()
-    try:
-        con.execute(
-            "UPDATE jobs SET attempt = attempt + 1 WHERE job_id = ?", (job_id,)
+    if dispatch_result.session_ref is not None:
+        finalized = finalize_executor_session_dispatch(
+            con,
+            session_db_id,
+            state="dispatched",
+            executor=dispatch_result.session_ref.executor,
+            session_id=dispatch_result.session_ref.session_id,
         )
+    else:
+        finalized = finalize_executor_session_dispatch(
+            con,
+            session_db_id,
+            state="mediated",
+            session_id=dispatch_result.issue_url,
+        )
+    if not finalized:
+        cancellation = "reservation is no longer dispatching"
+        if dispatch_result.session_ref is not None:
+            _, cancellation = cancel_remote_session(
+                dispatch_result.session_ref, job["repo"]
+            )
         con.commit()
-    finally:
         con.close()
+        return {
+            "status": "dispatch_superseded",
+            "result_id": result_id,
+            "job_id": job_id,
+            "node_id": node_id,
+            "verification": verification,
+            "dispatch_success": True,
+            "reservation_finalized": False,
+            "cancellation": cancellation,
+        }
+    mark_job_running(con, job_id)
+    con.commit()
+    con.close()
 
     return {
         "status": "redispatched",

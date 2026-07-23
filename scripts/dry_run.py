@@ -416,6 +416,17 @@ def main():
 
     con = connect()
     cur = con.cursor()
+    dry_job_ids = "SELECT job_id FROM jobs WHERE event_id LIKE 'evt_dry_%'"
+    for table in (
+        "queue_records",
+        "results",
+        "artifact_verifications",
+        "executor_sessions",
+    ):
+        cur.execute(f"DELETE FROM {table} WHERE job_id IN ({dry_job_ids})")
+    cur.execute("DELETE FROM jobs WHERE event_id LIKE 'evt_dry_%'")
+    cur.execute("DELETE FROM events WHERE event_id LIKE 'evt_dry_%'")
+
 
     event_id = inject_event(cur)
     classify_and_scope(cur, event_id)
