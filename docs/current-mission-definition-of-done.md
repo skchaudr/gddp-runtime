@@ -1,58 +1,74 @@
-# GDDP Jules Dispatch Recovery and Remote Async Executor Architecture - 2026-07-16
+# Node 2 Direct-Executor Stabilization — 2026-07-23
 
-Date: 2026-07-16
+Date: 2026-07-23
 
 ## Outcome
 
-Recover the two dispatched runtime nodes, land only evidence-backed fixes, finish
-evaluator hardening, then define the next executor boundary. GDDP remains the
-intent and graph-integrity layer; only Sab changes graph truth.
+Prove `direct-executor-round-trip` via a repeatable stabilization loop, not one
+canary. GDDP remains the intent and graph-integrity layer; only Sab changes
+graph truth.
 
-## Momentum Contract
+## Frame
 
-- Root owns the plan, decisions, and conversation. GPT-5.3 Codex Spark handles
-  bounded work after its success signal is defined.
-- Workers run in the background and report results, not traces. Independent work
-  runs concurrently; future architecture never blocks current recovery.
-- Ordinary code and Git work proceeds. Live/system actions and merges stop at an
-  explicit human gate.
-- Every item ends in evidence, a clean pushed commit, or a recorded rejection.
+5-node hardening plan, same stabilization discipline per node, in dependency
+order: `neutral-executor-contract` -> `direct-executor-round-trip` ->
+`immediate-evaluator-round-trip` -> `concurrent-node-flow` ->
+`graph-frontier-operations`. Node 1 code merged to main as inherited
+infrastructure (`36cd93b`); node itself is `deferred`, not accepted. Node 2 is
+the next real work.
+
+## Proof bar (not one clean run)
+
+- [ ] 3 consecutive clean fresh runs: dispatch -> poll -> collect -> worktree
+  apply -> commit -> durable git ref -> evaluate -> `awaiting_review`
+- [ ] 1 controlled interruption/retry cycle: kill subprocess mid-run -> stale
+  recovery -> retry allocation -> retry completes -> both attempts visible
+- [ ] No hidden state or manual DB/file repair in any clean run
+- [ ] Every run stops at `awaiting_review` (never `complete`, never stuck
+  `running`)
+- [ ] `gddp-config/graphs/gddp-runtime/project.yaml` SHA-256 unchanged across
+  every run
+
+On any failure: inspect -> patch smallest responsible part -> rerun the
+failing step, then the full fresh run -> log the patch as a corrective-node
+candidate. Clean-run counter resets to 0 on any patch. Capped at 10 iterations
+total.
+
+## Setup (base state, already done as of 2026-07-23)
+
+- [x] `feat/capability-spine@1539921` merged into `gddp-runtime` main
+  (`36cd93b`) as inherited infra, not node acceptance. 373 tests pass.
+- [x] `neutral-executor-contract` set to `deferred` in `gddp-config`
+  (`9ea58ee`). Sab's edit, Sab's decision.
+- [x] 3 orphaned pre-session-tracking jobs triaged to `failed`
+  (pi-evaluator-harness, job-state-consistency, heartbeat-crash-recovery).
+- [x] Stray noise removed (`package-lock.json` gitignored).
+- [ ] `project.yaml` SHA-256 baseline snapshot taken.
+- [ ] Fresh-state reset procedure defined (delete canary job/session/result
+  rows, remove `gddp/result-*` refs, prune worktrees).
+- [ ] `GDDP_LOCAL_SUBPROCESS_ARGV` configured for a trivial script.
 
 ## Checklist
 
-- [x] **Foundation recovered:** concurrent dispatch proved; ID collisions, SQLite
-  contention, and GitHub auth fixed; PR #107/#108 independently audited.
-- [x] **PR #108 - state consistency:** undo `f01d5ba`'s regression; ensure a failed
-  job cannot retain `queue_state=running`; restore direct tests and truthful
-  artifacts; focused/full tests pass; commit and push for Sab's merge decision.
-  Verified at `1f1e16d` (`2` focused and `269` full tests passed).
-- [x] **PR #107 - crash recovery:** reconfirm tests; with Sab's approval run the
-  intake-only live drill; record PID replacement and `/health` HTTP 200 without
-  dispatching unrelated events; commit and push for Sab's merge decision.
-  Drill complete at `dfbfc6c`: PID 46896 killed, PID 46948 respawned, `/health`
-  200 on both, event hash unchanged (28/6), heartbeat never armed, restored dormant.
-- [ ] **Land and reconcile:** Sab accepts/rejects both PRs; accepted work lands on
-  main; full tests pass; main equals `origin/main`; after fresh inspection and
-  approval, sanctioned SQL reconciles only stale runtime rows. Sab alone updates
-  `gddp-config` node status.
-- [x] **Evaluator hardening:** update `evaluator-hardening` from decided main;
-  preserve completed P1 fixes; resolve or explicitly defer known P2 gaps; pass
-  focused/full tests; commit and push for Sab's merge decision.
-  Merged to main at `08fbf2a` (306 tests pass). Five P2 issues found and fixed
-  through two-agent review (Codex found+fixed, Factory verified): provenance
-  tree-vs-commit SHA mismatch, failed reads inflating coverage, TIMED_OUT
-  status unreachable, lane status missing from operator summary, and receipt
-  overwrite on rerun. Regression fix: timeout budget now contains 2 sequential
-  lanes + cleanup; receipt collision avoidance scoped to job-attempt only.
-  P2 gaps deferred: commit/tree SHA display in external v5 spec, built-in agent
-  path coverage underreporting.
-- [ ] **Executor boundary:** accept a small contract for durable sessions,
-  transcripts, message/pause/resume/cancel, structured results, model/effort and
-  mutation policies, retries, and recovery. Git remains the artifact layer;
-  Jules/relay remain optional. Convert the decision into graph node(s) before code.
+- [ ] **Phase 1 - snapshot + config:** hash `project.yaml`; define reset
+  procedure; configure `LocalSubprocessAdapter`; pick the bounded node
+  (`canary-retry-proof` or a new trivial node).
+- [ ] **Phase 2A - fresh run x3:** reset -> inject event -> heartbeat plans +
+  reserves attempt -> dispatch -> reconcile polls/collects -> worktree
+  apply/commit -> durable ref -> evaluate -> `awaiting_review` -> hash check.
+  Repeat until 3 consecutive clean.
+- [ ] **Phase 2B - interruption x1:** kill subprocess mid-run -> stale-session
+  recovery -> retry attempt allocated (original attempt preserved) -> retry
+  completes clean.
+- [ ] **Phase 3 - forensic evidence:** attempt-identity trace (event -> job ->
+  execution_attempt_id -> session -> result -> receipt), per-run receipt +
+  patch + git ref, stabilization log (what broke, what was patched).
+- [ ] **Corrective nodes:** any patch applied during stabilization becomes a
+  named corrective-node candidate, not a silent fix.
 
 ## Mission Complete
 
-All boxes checked; relevant branches and main clean and pushed; claims link to
-reproducible evidence; live state reconciled; current handoff names no hidden work;
-and no agent changed human-owned graph truth.
+3 consecutive clean fresh runs plus 1 clean interruption/retry cycle proven;
+no manual repair in any of them; every run stopped at `awaiting_review`;
+`project.yaml` hash unchanged throughout; stabilization log and corrective-node
+candidates (if any) recorded; Sab reviews and decides Node 2's status.
