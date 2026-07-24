@@ -1,0 +1,9 @@
+diff --git a/docs/canary-stabilization-marker.md b/docs/canary-stabilization-marker.md
+new file mode 100644
+index 0000000..8e39d5f
+--- /dev/null
++++ b/docs/canary-stabilization-marker.md
+@@ -0,0 +1,3 @@
++# Canary Stabilization Marker
++
++Synthetic artifact produced by the Node 2 direct-executor stabilization loop.
