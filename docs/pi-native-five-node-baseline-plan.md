@@ -6,7 +6,7 @@
 
 ### Binding invariants (keep)
 
-- Same wave means **eligible**, not automatically launched.
+- Same wave means **eligible** 
 - Concurrent writers require isolated worktrees and disjoint ownership.
 - One live DB/control-plane actor; observers remain read-only.
 - Children return evidence; **parent** verifies and integrates.
@@ -225,3 +225,112 @@ Every packet writes an immutable attempt receipt before its worktree may be reti
 ## Activation
 
 **Paused after r1 corrections.** Say **go** (or name a subset) to start W00: `N00-W01A` + `N00-W01C` in parallel.
+
+
+========== 
+
+Full critique: r1 is substantially better, but I would do a small r2 before `go`. I retract my earlier W00 approval after auditing semantics rather than just structure.
+
+## Blocking defects
+
+1. **Node 4 overlap proof is impossible as wired.**
+
+[N04-W05A](/Users/sab-mini/repos/gddp-runtime/docs/pi-native-five-node-baseline-ledger.yaml:981) completes only after both jobs reach `awaiting_review`. [N04-W05C](/Users/sab-mini/repos/gddp-runtime/docs/pi-native-five-node-baseline-ledger.yaml:1031) depends on that completion but requires one job still executing/evaluating.
+
+The wave schedule repeats the contradiction: both stop before W22b, yet W22b requires an active peer. W05C must occur inside the live W05A/B window, not afterward.
+
+2. **The epoch hash is not reproducibly defined.**
+
+The ledger names a canonical `epoch_manifest_sha256`, but the only command runs `shasum ... | sort`. That produces a list containing absolute paths; it does not hash that list into one manifest digest and will differ across machines.
+
+Define one exact command/script using relative paths, canonical serialization, and a final SHA-256.
+
+3. **W00 is not executable yet.**
+
+48 of 49 packet verification commands are placeholders. N00-W01C has no concrete fixture, command, timeout, or assertions. N00-W01A has three commands but promises DB anchors, intake-critical enumeration, config dirtiness, process inventory, worktrees, and Factory state that those commands do not collect.
+
+Materializing exact packet files at activation is a valid approach—but `go` must first mean “materialize and validate W00 contracts,” not immediately dispatch.
+
+4. **Packet IDs contradict Pi’s wave semantics.**
+
+Pi’s own ledger rules say same-wave letters are parallel siblings. Nine groups contain internal dependencies—for example:
+
+- `N00-W01B` depends on `N00-W01A`
+- `N02-W01B/C` depend on earlier `N02-W01*`
+- `N04-W05C` depends on `W05A/B`
+- `N05-W01D` depends on `W01B/C`
+
+`depends_on` keeps the graph technically correct, but the IDs lie to humans, diagrams, and any wave-aware tooling. Re-ID before receipts make these identifiers durable. [Pi ledger rule](/Users/sab-mini/.pi/agent/skills/node-packet-ledger/SKILL.md:157)
+
+## Architecture and operational concerns
+
+5. **The DAG is mostly a pipeline.**
+
+It has 49 packets but a 39-packet longest path. That is the real complexity problem—not merely “49 sounds large.”
+
+The plan asks Sab at N00-W03A to choose the Node1→Node2 policy, but then hardcodes Node2 behind the complete Node1 milestone anyway. That means the supposed soft-walk choice cannot actually alter scheduling without another ledger rewrite.
+
+Likewise, Node3’s read-only preparation waits for Sab’s Node2 decision even though Pi doctrine allows preparation while a node remains pending/deferred. Separate preparation dependencies from live execution/graph-claim dependencies.
+
+6. **Cross-epoch concurrency is underspecified.**
+
+The repaired Node4 scenario necessarily has:
+
+- one peer attempt still running under the old epoch;
+- Sab acceptance creating a successor epoch;
+- a newly unblocked attempt starting under the new epoch.
+
+The plan needs explicit per-attempt epoch pinning and a rule stating which canon evaluates the old attempt after graph truth changes. A global “current epoch” is insufficient.
+
+7. **No realistic execution budget exists.**
+
+The plan includes:
+
+- 34 chain-routed packets;
+- 8 explicit human packets;
+- 7 live-control packets;
+- repeated chains that internally spawn several scouts/reviewers/writers.
+
+This is far more than 49 agent calls. There is no elapsed-time ceiling, token/cost ceiling, maximum agent-call count, or maximum operator-touch budget. This is not one overnight run; it is a multi-checkpoint program. Say that explicitly and budget each milestone.
+
+8. **Parent recovery is asserted, not proven.**
+
+The typed progress log is described but has no concrete location, schema file, checkpoint cadence, or cold-resume test. Before the long critical path, prove a fresh parent Pi can reconstruct ready/running/blocked state without chat history.
+
+9. **Evidence durability is incomplete.**
+
+Receipts are called immutable, but the plan does not say when the parent commits and pushes them. Files in `.handoffs/artifacts` are only durable once checkpointed in Git or another immutable store. Define commit/push ownership and cadence.
+
+10. **Some runtime primitives remain unverified.**
+
+The named chains exist. I did not find an existing `gddp-live-control` room definition. That is fine if created later, but it should be marked unverified until the live preflight proves it.
+
+11. **Concurrent writer isolation is still partly vague.**
+
+N04-W02A may touch an “exact config/DB helper”; N04-W02B may touch a “claim persistence seam.” Those could become the same DB/schema file. Activation contracts must freeze non-overlapping writable paths or explicitly declare the shared interface and integration order.
+
+## What is strong
+
+- Human graph authority is preserved throughout.
+- Executor/evaluator success never becomes completion.
+- Intake restoration no longer blocks definition work.
+- Capacity enforcement moved to the correct reservation layer.
+- Actor/observer separation is good.
+- Retry evidence is append-only.
+- Existing evidence is reused instead of automatically rerun.
+- N04 bundle/audit and N05 prototype checkpoints are properly separated.
+- Structurally, the YAML parses: 49 unique packets, complete schedule coverage, no missing dependencies, acyclic graph, correct roots.
+- `main` is clean and equals `origin/main@e449ff4`.
+
+## My recommendation
+
+Do one narrow r2 before starting:
+
+1. Repair W05A/B/C timing.
+2. Define the exact portable epoch-manifest algorithm.
+3. Re-ID packets so waves match dependencies.
+4. Materialize and validate the two W00 executable contracts.
+5. Make the Node1 soft-walk choice operational, not merely documented.
+6. Add milestone budgets, parent recovery proof, and evidence commit cadence.
+
+Then run W00. No need to redesign the five-node mission.
