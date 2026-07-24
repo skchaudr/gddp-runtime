@@ -1,336 +1,177 @@
 # Pi-Native Five-Node Baseline Plan
 
-## Operating rewrite (r2) — verified surfaces, manual parent, suggested topology
-
-**Status:** prepended after design critique. This section is the binding operating posture for execution. Sections below remain historical plan material (ledger spine, milestones, review corrections). Where they conflict with this rewrite, **this rewrite wins** until jointly revised.
-
-### Binding invariants (keep)
-
-- Same wave means **eligible** 
-- Concurrent writers require isolated worktrees and disjoint ownership.
-- One live DB/control-plane actor; observers remain read-only.
-- Children return evidence; **parent** verifies and integrates.
-- Human packets stop for Sab.
-- Provider failure / peer silence → **blocked-capability**, not a node verdict.
-- Failed work blocks dependents; isolated siblings may continue.
-
-### What this rewrite drops as binding choreography
-
-Ledger `run:` strings, fixed worktree names, triple-audit-everywhere, auto “ready-set scheduler,” per-packet epoch YAML materialization as ceremony, and invented launch syntax are **suggestions or legacy labels**. They do not authorize a route. Each activated NTP chooses its actual route from live evidence at activation time.
-
-### Verified Pi surfaces (checked live at r2 write)
-
-| Surface | How it actually works | Verified |
-|---------|----------------------|----------|
-| Parent Pi tools | `read` / `bash` / `edit` / `write` / `grep` / `find` in this session | yes — primary loop |
-| `subagent` single | `subagent({ agent, task, async, context, cwd, output, acceptance })` | yes — used this mission |
-| `subagent` parallel | `subagent({ tasks: [{agent,task,...}], concurrency })` | config allows maxTasks 8 / concurrency 4 |
-| `subagent` chain array | Load `~/.pi/agent/chains/<name>.chain.json`, interpolate `{task}`, pass **array** as `subagent({ chain: [...] })`. Tool does **not** run saved chains by name string | yes — docs + chain files present |
-| Named agents | `scout`, `reviewer`, `delegate`, `planner`, `worker`, … via `subagent({ action: "list" })` | package live |
-| Agent-bus | `bus ask` / `bus send` / `bus history`; `bus whoami` → `agent-sab-mini` @ `:8765`; client/server 2.0.0 | yes |
-| Codex / Claude peers | Reachable only if they poll the bus; silence = unavailable, not approval. Prior ASKs 610/611 had no replies at last check | transport yes; peer liveness per-call |
-| `pi-brief` | Separate Pi sessions per brief step; `pi-brief validate\|step\|run` | binary present; `gddp-node2-prep.brief.json` exists |
-| Herdr | `herdr` CLI present; visible panes via harness `spawn` when used | binary present |
-| Worktrees | `git worktree add` under repo; one writer per worktree | git standard |
-| Evidence root | `.handoffs/artifacts/five-node-baseline/` (create on first write) | path convention |
-
-**Config fact (not doctrine):** `maxSubagentDepth: 1`, `asyncByDefault: true`, global concurrency 8. Treat as current machine settings to re-check, not sacred law.
-
-### Manual parent operating loop
-
-Parent Pi is the only orchestrator. No auto-dispatcher.
-
-1. **Pick next work with Sab** — name packet id(s) from the ledger DAG and ready frontier; confirm gates.
-2. **Preflight the route** — for that packet only: confirm agent/bus/worktree/cwd; one known-good smoke if the surface is cold.
-3. **Choose topology from live evidence** — pick among verified surfaces above; record the choice in the packet receipt (`route_used`).
-4. **Dispatch** — launch child(ren); if results are load-bearing for the next human decision, parent depends on them (parallel is fine; “walk away async” is not automatic).
-5. **Verify** — parent re-checks evidence paths, commands, hashes; write receipt under evidence root.
-6. **Update frontier by hand** — mark packet checkpointed/blocked; list what becomes eligible; stop for human packets.
-7. **Escalate** — scope breach, isolation conflict, or missing capability → stop that line, preserve evidence, ask Sab.
-
-Session note: async run ids are session-local. A new parent session re-reads evidence + ledger status; it does not resume invisible scheduler state.
-
-### Suggested topology per wave (non-binding)
-
-Activate one wave at a time. Re-validate routes when the wave opens.
-
-| Wave | Packets | Suggested topology | Why suggested |
-|------|---------|--------------------|---------------|
-| W00 | N00-W01A, N00-W01C | Parent-dependent parallel: two routes — (A) `scout` or loaded `contract-scout` chain array; (C) same plus `bus ask` codex + claude if peers alive | Freeze shared truth + prove peer lanes before definition/live work |
-| W01 | N00-W01B, N00-W02A | B: parent/direct or visible live pane after Sab auth; A: review agents / bus auditors after snapshot | Service restore separate from definition review |
-| W02 | N00-W03A | Human only | Graph epoch / def policy |
-| W03–W06 | N01 recon → optional fix → audit → Sab | Recon: scout; fix: worker in isolated worktree if gap proven; audit: reviewer (+ peers if useful) | Node1 policy evidence |
-| W07–W13 | N02 lineage → smoke → live gate → actor+observer → archive → audit → Sab | Smoke/fix in worktree; live actor parent-visible; observer separate read-only child; peers optional on audit | Real round-trip evidence |
-| W14–W17 | N03 | Prefer receipt reuse; writer only if named gap; Sab decision | Avoid re-prove |
-| W20 | N04-W02A ∥ N04-W02B | **Required dual writer:** two worktrees, two worker sessions, path-disjoint; parent integrates later | Concurrency implementation |
-| W22 | N04-W05A ∥ N04-W05B | One live actor + read-only observer | Live concurrency proof |
-| W22b | N04-W05C | Human acceptance during overlap; parent captures | acceptance-unblocks-downstream |
-| W23 / W23b | bundle then audit | Parent/scout bundle; then review agents (peers optional, not mandatory triple) | Evidence then challenge |
-| W26 / W26b | N05-W01B ∥ N05-W01C → selection | Two isolated prototype writers; then bakeoff packet | Dual prototype |
-| W31 | N99 manifest / validation / inventory | Parallel read-only where isolation holds | Closeout evidence |
-
-**Audits:** use multi-lane review when the packet is high-stakes or disputed; default is parent + one reviewer. Codex/Claude are optional evidence lanes when bus peers respond.
-
-### Per-NTP activation rule
-
-When a packet starts:
-
-1. Read its outcome, boundary, depends_on, checkpoint from the ledger.
-2. Ignore ledger `run:` as a hard command; treat it as a hint.
-3. From verified surfaces + current peer/worktree state, write `route_used` into the attempt receipt.
-4. Execute that route only.
-
-### Immediate intent of W00 (why two read-only packets)
-
-W00 exists to put one shared baseline under the long path above (M0→M6, human gates, dual-writer and live actor/observer waves later). N00-W01A freezes runtime/config/DB/launchd/worktree truth (including measuring intake criticals). N00-W01C proves whether Pi children and bus peers can return correlated receipts **now**. Neither mutates the project. After both checkpoint: optional N00-W01B (Sab live auth), N00-W02A definition review, then hard stop at N00-W03A.
-
----
-
-# Pi-Native Five-Node Baseline Plan (ledger body)
-
-**Plan ID:** `gddp-five-node-new-baseline`  
-**Schema:** `pi.node-packet-ledger.v1`  
-**Status:** r1 review corrections landed — **paused** (not started)  
-**Revision:** `r1-review-corrections`  
-**Machine ledger:** [`pi-native-five-node-baseline-ledger.yaml`](./pi-native-five-node-baseline-ledger.yaml)  
-**Adversarial review:** [`pi-native-five-node-baseline-review.md`](./pi-native-five-node-baseline-review.md)
+**Plan ID:** `gddp-five-node-baseline`  
+**Revision:** v3  
+**Status:** active map (pivot when reality changes)  
+**Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
+**Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
 ## Goal
 
-Finish the five-node GDDP capability spine baseline with Pi-native multiagent orchestration (parent Pi + subagents + Codex/Claude via agent-bus). Preserve Sab-owned graph truth. Reuse Factory/052/053 evidence. Do not resume Factory mission `3efe69ab` unless Sab chooses it as executor.
+Finish the five-node GDDP capability spine baseline with Pi as executor. Sab alone owns graph definitions, node status, acceptance, and completion. Packet success, tests, executor success, and evaluator verdicts are **evidence only** — never completion.
 
-## Current truth (E0)
+Factory mission `3efe69ab` is **closed**. Its commits and receipts are historical evidence. Do not resume Factory mission mode.
 
-| Surface | State |
-|---------|-------|
-| Runtime | `main@35b41a1` clean; 379 tests pass |
-| Production intake | BROKEN — launchd registered, not running; critical count **unverified** until N00-W01A measures it |
-| Graph statuses | Node1 `deferred`; Nodes2–5 `pending` (zero accepted) |
-| Config dirty | `job-state-consistency.yaml` adds `local_subprocess` first in `allowed_execution_modes` — Sab-owned disposition |
-| Node2 evidence | Synthetic + real evaluator receipt preserved (052/053); **no real ready-node dispatch yet** |
-| Factory | Mission paused (stale wrapper asserts + 429); archive/wrapper commits are evidence only |
+## How this plan behaves
+
+- **Packets chart current intent.** They size and order work. They are not a frozen program.
+- **Pivot rule:** when reality changes (stuck job, design change, wrong surface), supersede the next packet. Keep evidence. Do not re-validate against a dead script.
+- **Parallel when isolation holds.** Same phase can run concurrent work if paths, jobs, and control-plane ownership do not collide.
+- **Sequential only at real gates.** A later **capability node** opens after the prior node’s human decision (or explicit waiver) — not after ceremony.
+- **Deferred is a decision, not a queue.** Node 1 does not invent a task list that blocks Node 2.
 
 ## Authority
 
 | Domain | Owner |
-|--------|-------|
-| Graph definitions/status/acceptance/completion | **Sab only** |
-| Live production dispatch / launchd / credentials | **Sab authorizes windows** |
-| Packet dispatch, topology, evidence synthesis | Parent Pi |
-| Codex / Claude | Advisors only — silence ≠ approval; outputs are evidence |
-
-**Invariant:** Packet success, tests, executor success, and evaluator verdicts are evidence, never completion.
-
-## Operating model (Factory lessons baked in)
-
-1. **Contract/version co-evolution** — definition rewrite + validator assertions = one transaction; superseded contracts are historical only.
-2. **Async steering** — dispatch returns; parent stays alive; interrupt pauses worker only.
-3. **Worker handoff receipts** — every worker returns structured handoff (commands, issues, leftover work).
-4. **Typed progress log** — append-only reconstructable log; chat is not the log.
-5. **Scoped gates + env baselining** — gate only packet-owned surface; pre-existing reds are baseline.
-6. **No false semantic verdicts** — 429 / peer silence / harness crash = blocked-capability, not node fail/pass.
-7. **Graph epochs** — freeze `epoch_manifest_sha256` over `project.yaml` + all node YAMLs for one proof epoch; intentional Sab edits open a successor epoch.
-8. **Reuse, don’t re-prove** — Factory M1 + 052/053 carry forward; Node2 real receipt doubles as Node3 when complete.
-9. **Concurrent writers only with isolation** — worktrees/branches/paths; parent owns integration.
-
-## Milestone spine (M0–M6)
-
-| Milestone | Outcome | Key packets |
-|-----------|---------|-------------|
-| **M0** Control plane | Freeze truth, capability, five-definition authority into E0 | N00-W01A…W03A |
-| **M1** Node1 | Retain deferred policy or re-scope with criterion evidence | N01-W01A…W04A |
-| **M2** Node2 real dispatch | One real `job-state-consistency` round-trip → `awaiting_review`, no override | N02-W01A…W04A |
-| **M3** Node3 evaluator | Criterion + canonical-context; reuse Node2 receipt | N03-W01A…W04A |
-| **M4** Concurrency | Capacity at runner reservation + claim writer; two-real-node live proof; **acceptance-during-overlap** | N04-W01A…W07A (incl. W05C, W06A/B) |
-| **M5** Frontier | Dual prototypes (separate packets) → selection → before/after Sab acceptance | N05-W01A…W04A (incl. W01B/C/D) |
-| **M6** Baseline close | Manifest, validation, retirement inventory, Sab baseline hash | N99-W01A…W03A |
+|--------|--------|
+| Graph definitions / status / acceptance / baseline completion | **Sab** |
+| Live production dispatch windows, credentials, launchd unload/load | **Sab authorizes** |
+| Packet dispatch, evidence capture, synthesis | Parent Pi |
+| Subagents / peers (Codex, Claude, …) | Bounded help; silence ≠ approval; outputs = evidence |
 
-**Counts:** 49 packets · 7 milestones · waves W00–W33 (+ W22b/W23b/W26b) · DAG acyclic · roots `N00-W01A`, `N00-W01C`.
+## Current truth (re-check before each live step)
 
-## Ready frontier (now)
+| Fact | State |
+|------|--------|
+| Runtime | `main` with minimal local worktree wrapper (`local_agent_executor`); suite green at last check |
+| Factory | Mission ended; ignore stale wrapper-validator loops |
+| Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
+| Capability Nodes 2–5 | **pending** until Sab accepts |
+| Ready work subject for N2 proof | `job-state-consistency` (`ready` in graph) |
+| Config delta | Dirty `+local_subprocess` first in that node’s `allowed_execution_modes` (local FS load sees it; commit seals provenance) |
+| Live queue | Historical canary job on that node may sit `awaiting_review` and block a new job until **job-disposed** (failed), with all evidence kept |
+| Forbidden for real N2 | `GDDP_EXECUTOR_OVERRIDE` |
 
-**Run now (read-only, parallel):**
-- `N00-W01A` — current snapshot (runtime/config/DB/launchd/worktrees)
-- `N00-W01C` — Pi-subagent + agent-bus capability smoke
+Re-verify live before dispatch; this table is a pointer, not a substitute for a fresh check.
 
-**Held:**
-- `N00-W01B` — intake restore (needs Sab live-service auth + snapshot); **does not block definition work**
-- `N00-W02A` — five-definition review (needs snapshot)
-- `N00-W03A` — Sab graph-definition + Node1 dependency policy (depends on N00-W02A only)
+## Scope of this document
 
-**Exact resume:** start N00-W01A + N00-W01C → then N00-W01B (if authorized) + N00-W02A → stop for N00-W03A before any Node1/2 execution.
+| Layer | Meaning |
+|-------|---------|
+| **Baseline** | All five capability nodes + closeout |
+| **Active workstream** | **Node 2** real local round-trip |
+| **Charted next** | Node 3 → 4 → 5 → close (not in flight until their gates open) |
 
-## Critical path (human gates)
+---
 
-```
-N00-W03A (Sab defs/epoch; not gated on intake)
-  → N01-W04A (Sab Node1 policy)
-    → N02-W01C (Sab live gate; requires N00-W01B disposition)
-      → N02-W02A real dispatch + N02-W02B observer
-        → N02-W04A (Sab Node2)
-          → N03-W04A (Sab Node3)
-            → N04 two-writer → live two-node → N04-W05C acceptance-overlap
-              → W06A bundle → W06B audits → N04-W07A (Sab)
-                → N05-W01B/C prototypes → W01D selection → before/after → N05-W04A
-                  → N99-W03A (Sab baseline)
-```
+## Node 1 — `neutral-executor-contract`
 
-## Parallelism that matters
+**Done when:** node status is **deferred** (Sab-owned graph toggle).
 
-| Wave | What runs together | Isolation rule |
-|------|--------------------|----------------|
-| W00 | N00-W01A + N00-W01C | Read-only, separate evidence files |
-| W10 | N02 actor + observer | Observer never control-plane |
-| W20 | N04 capacity (`runner.py` reservation) + claim writer | Separate worktrees/paths/tests |
-| W22 | N04 live actor + observer | Same as W10 |
-| W22b | N04-W05C acceptance during overlap | Sab-gated; peer still active |
-| W23 / W23b | Bundle then triple audit | Separate packets |
-| W26 / W26b | N05 prototypes A+B then selection | Separate packet checkpoints |
-| W31 | Manifest + validation + retirement inventory | Separate evidence outputs |
+No criterion map, adapter audit, or implementation list. Deferred does **not** block Node 2.
 
-## Primary live proof target
+---
 
-**Node:** `job-state-consistency`  
-**Path:** minimal worktree-only `local_agent_executor`  
-**Forbidden:** `GDDP_EXECUTOR_OVERRIDE`, manual DB repair/reset/delete, auto-complete past `awaiting_review`
+## Node 2 — real local executor round-trip (active)
 
-## Evidence root
+**Capability intent:** prove a real ready node through local subprocess / worktree transport to human review, without override.
 
-```
-/Users/sab-mini/repos/gddp-runtime/.handoffs/artifacts/five-node-baseline/
-```
+**Work subject:** `job-state-consistency` (ready).  
+**Transport:** graph-selected `local_subprocess` → adapter → `local_agent_executor` + real agent argv.  
+**Stop:** job reaches `awaiting_review`. Sab decides accept / retry / revise.
 
-Every packet writes an immutable attempt receipt before its worktree may be retired.
+### Tasks (all required unless Sab waives)
 
-## Review corrections (r1 — landed)
+| # | Task | Notes |
+|---|------|--------|
+| N2-1 | **Dispose stuck canary job** | Mark the blocking job **failed** (human disposition). Keep receipt, DB rows, refs, patch. **Do not delete/reset.** Prefer an honest job-dispose path; do not misuse graph “node status” UI/CLI for job janitor work. |
+| N2-2 | **Seal routing provenance** | Commit dirty `local_subprocess` first on `job-state-consistency` as Sab-owned graph config (or explicit Sab waiver to run dirty-only). |
+| N2-3 | **Pin run-scoped execution env** | Set `GDDP_LOCAL_SUBPROCESS_ARGV` (wrapper + agent) and spool dir; **unset** override; keep automatic heartbeat from firing a bad env (manual ticks or unload for the window). |
+| N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. |
+| N2-5 | **Manual dispatch tick** | One controlled heartbeat/runner tick: classify → reserve → dispatch. Observe session/agent. |
+| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks: collect patch, reconcile, evaluate with real credentials as required. Stop at human review. |
+| N2-7 | **Archive + Sab decision** | Packet, job/attempt/session/result IDs, spool metadata, diff/ref/SHA, lane status, pre/post config hashes. Then Sab accept / retry / revise. |
 
-| Sev | Finding | Status in ledger |
-|-----|---------|------------------|
-| Blocker | N04 capacity on `dispatcher.py` | **Fixed** — N04-W02A owns `runner.py` reservation/planning |
-| Blocker | No `acceptance-unblocks-downstream` proof | **Fixed** — N04-W05C Sab-gated acceptance-during-overlap |
-| High | Epochs = project.yaml only | **Fixed** — `epoch_manifest_sha256` over project + all node YAMLs |
-| High | N00-W01B blocked definitions | **Fixed** — N00-W03A depends on N00-W02A only; N02-W01C requires N00-W01B |
-| High | Checkpoints not executable | **Partial** — `packet_contract` + default `verification` fields; per-packet files materialize at activation |
-| Medium | N04-W06 composite | **Fixed** — W06A bundle / W06B triple audit |
-| Medium | N05 shared prototype checkpoint | **Fixed** — W01B / W01C / W01D selection |
-| Medium | 4 intake criticals | **Fixed** — marked `unverified`; measure in N00-W01A |
+**Parallel inside N2 (optional, isolation-safe):** after N2-2/N2-3 are set, prepare archive layout while N2-4/N2-5 run; read-only observer on logs/DB during live ticks if desired. No second control-plane actor.
 
-## What this plan deliberately does not do
+**N2 exit gate:** Sab’s decision on the real receipt. That opens Node 3 work.
 
-- Resume Factory mission `3efe69ab` (paused; stale-contract theater)
-- Infer node acceptance from tests/executor/evaluator
-- Allow agent graph writes
-- Reset/delete evidence or force-cleanup worktrees as part of packets
+---
 
-## Activation
+## Node 3 — immediate evaluator round-trip
 
-**Paused after r1 corrections.** Say **go** (or name a subset) to start W00: `N00-W01A` + `N00-W01C` in parallel.
+**Opens after:** Node 2 Sab decision (or explicit waiver).
 
+| # | Task | Notes |
+|---|------|--------|
+| N3-1 | Map N3 criteria to the **existing N2 receipt** + evaluator code | Read-only |
+| N3-2 | Fix only a demonstrated gap **or** record no-change | Isolated writer if code changes |
+| N3-3 | Reuse N2 proof; rerun evaluation only for a **named** missing criterion | No full re-prove by default |
+| N3-4 | Archive + **Sab** decision | |
 
-========== 
+**Parallel:** N3-1 can start as soon as N2 archive exists; N3-2 only if N3-1 finds a real gap.
 
-Full critique: r1 is substantially better, but I would do a small r2 before `go`. I retract my earlier W00 approval after auditing semantics rather than just structure.
+---
 
-## Blocking defects
+## Node 4 — concurrent node flow
 
-1. **Node 4 overlap proof is impossible as wired.**
+**Opens after:** Node 2 and Node 3 Sab decisions (or waivers).
 
-[N04-W05A](/Users/sab-mini/repos/gddp-runtime/docs/pi-native-five-node-baseline-ledger.yaml:981) completes only after both jobs reach `awaiting_review`. [N04-W05C](/Users/sab-mini/repos/gddp-runtime/docs/pi-native-five-node-baseline-ledger.yaml:1031) depends on that completion but requires one job still executing/evaluating.
+| # | Task | Notes |
+|---|------|--------|
+| N4-1 | Implement capacity at **reservation/planning** (not post-hoc dispatch-only) | Path ownership: runner/reservation surface |
+| N4-2 | Implement evaluation **claim** isolation | **Parallel with N4-1** — separate worktrees/paths |
+| N4-3 | Integrate + pre-run gate for two real nodes | Parent integration |
+| N4-4 | Live two-node run (+ read-only observer); prove overlap | One control-plane actor |
+| N4-5 | If criterion still requires it: acceptance that unblocks downstream **while peer work continues** | Sab-gated |
+| N4-6 | Archive + **Sab** decision | |
 
-The wave schedule repeats the contradiction: both stop before W22b, yet W22b requires an active peer. W05C must occur inside the live W05A/B window, not afterward.
+---
 
-2. **The epoch hash is not reproducibly defined.**
+## Node 5 — graph frontier operations
 
-The ledger names a canonical `epoch_manifest_sha256`, but the only command runs `shasum ... | sort`. That produces a list containing absolute paths; it does not hash that list into one manifest digest and will differ across machines.
+**Opens after:** Node 3 and Node 4 Sab decisions (or waivers).
 
-Define one exact command/script using relative paths, canonical serialization, and a final SHA-256.
+| # | Task | Notes |
+|---|------|--------|
+| N5-1 | Frontier prototype A | Isolated worktree |
+| N5-2 | Frontier prototype B | **Parallel with N5-1** |
+| N5-3 | Select, integrate, derived-state check | |
+| N5-4 | Before/after report around **Sab** acceptance of a named review item | |
+| N5-5 | Archive + **Sab** decision | |
 
-3. **W00 is not executable yet.**
+---
 
-48 of 49 packet verification commands are placeholders. N00-W01C has no concrete fixture, command, timeout, or assertions. N00-W01A has three commands but promises DB anchors, intake-critical enumeration, config dirtiness, process inventory, worktrees, and Factory state that those commands do not collect.
+## Baseline close
 
-Materializing exact packet files at activation is a valid approach—but `go` must first mean “materialize and validate W00 contracts,” not immediately dispatch.
+**Opens after:** Nodes 1–5 each have an explicit Sab disposition (deferred counts for N1).
 
-4. **Packet IDs contradict Pi’s wave semantics.**
+| # | Task | Notes |
+|---|------|--------|
+| C-1 | Manifest of receipts, hashes, decisions | Read-only assembly |
+| C-2 | Final runtime/config/health snapshot | Validation only; no silent repair |
+| C-3 | **Sab** baseline decision + final graph hash | |
 
-Pi’s own ledger rules say same-wave letters are parallel siblings. Nine groups contain internal dependencies—for example:
+---
 
-- `N00-W01B` depends on `N00-W01A`
-- `N02-W01B/C` depend on earlier `N02-W01*`
-- `N04-W05C` depends on `W05A/B`
-- `N05-W01D` depends on `W01B/C`
+## What we refuse (pace / theater)
 
-`depends_on` keeps the graph technically correct, but the IDs lie to humans, diagrams, and any wave-aware tooling. Re-ID before receipts make these identifiers durable. [Pi ledger rule](/Users/sab-mini/.pi/agent/skills/node-packet-ledger/SKILL.md:157)
+- Stale validator contracts blocking an intentional design (Factory failure mode)
+- Snapshot/smoke “milestones” that delay the real loop without new proof
+- Triple-audit or multi-agent review as a default tax (use when high-stakes or disputed)
+- Treating tests, green suites, or `awaiting_review` as node acceptance
+- Deleting or resetting evidence to “clear” a job
+- Auto-completing past human review
 
-## Architecture and operational concerns
+## Pi execution posture (when using helpers)
 
-5. **The DAG is mostly a pipeline.**
+- **Parent Pi** owns the live control plane for dispatch ticks and evidence synthesis.
+- **Subagents** for bounded recon, isolated implementation, or review — load-bearing results stay parent-owned; children are not a black box you abandon mid-flight when you need the outcome this turn.
+- **Multiagent / visible peers** when Sab wants more visibility and control (bus, panes, separate sessions).
+- **Job dispose ≠ graph node toggle.** Keep those surfaces honest.
 
-It has 49 packets but a 39-packet longest path. That is the real complexity problem—not merely “49 sounds large.”
+## Exact resume (now)
 
-The plan asks Sab at N00-W03A to choose the Node1→Node2 policy, but then hardcodes Node2 behind the complete Node1 milestone anyway. That means the supposed soft-walk choice cannot actually alter scheduling without another ledger rewrite.
+1. Confirm Node 1 remains **deferred** (status only).  
+2. Execute **N2-1 → N2-7** (Node 2 list).  
+3. Stop for Sab on the real N2 receipt.  
+4. Only then open Node 3.
 
-Likewise, Node3’s read-only preparation waits for Sab’s Node2 decision even though Pi doctrine allows preparation while a node remains pending/deferred. Separate preparation dependencies from live execution/graph-claim dependencies.
+## Related artifacts
 
-6. **Cross-epoch concurrency is underspecified.**
-
-The repaired Node4 scenario necessarily has:
-
-- one peer attempt still running under the old epoch;
-- Sab acceptance creating a successor epoch;
-- a newly unblocked attempt starting under the new epoch.
-
-The plan needs explicit per-attempt epoch pinning and a rule stating which canon evaluates the old attempt after graph truth changes. A global “current epoch” is insufficient.
-
-7. **No realistic execution budget exists.**
-
-The plan includes:
-
-- 34 chain-routed packets;
-- 8 explicit human packets;
-- 7 live-control packets;
-- repeated chains that internally spawn several scouts/reviewers/writers.
-
-This is far more than 49 agent calls. There is no elapsed-time ceiling, token/cost ceiling, maximum agent-call count, or maximum operator-touch budget. This is not one overnight run; it is a multi-checkpoint program. Say that explicitly and budget each milestone.
-
-8. **Parent recovery is asserted, not proven.**
-
-The typed progress log is described but has no concrete location, schema file, checkpoint cadence, or cold-resume test. Before the long critical path, prove a fresh parent Pi can reconstruct ready/running/blocked state without chat history.
-
-9. **Evidence durability is incomplete.**
-
-Receipts are called immutable, but the plan does not say when the parent commits and pushes them. Files in `.handoffs/artifacts` are only durable once checkpointed in Git or another immutable store. Define commit/push ownership and cadence.
-
-10. **Some runtime primitives remain unverified.**
-
-The named chains exist. I did not find an existing `gddp-live-control` room definition. That is fine if created later, but it should be marked unverified until the live preflight proves it.
-
-11. **Concurrent writer isolation is still partly vague.**
-
-N04-W02A may touch an “exact config/DB helper”; N04-W02B may touch a “claim persistence seam.” Those could become the same DB/schema file. Activation contracts must freeze non-overlapping writable paths or explicitly declare the shared interface and integration order.
-
-## What is strong
-
-- Human graph authority is preserved throughout.
-- Executor/evaluator success never becomes completion.
-- Intake restoration no longer blocks definition work.
-- Capacity enforcement moved to the correct reservation layer.
-- Actor/observer separation is good.
-- Retry evidence is append-only.
-- Existing evidence is reused instead of automatically rerun.
-- N04 bundle/audit and N05 prototype checkpoints are properly separated.
-- Structurally, the YAML parses: 49 unique packets, complete schedule coverage, no missing dependencies, acyclic graph, correct roots.
-- `main` is clean and equals `origin/main@e449ff4`.
-
-## My recommendation
-
-Do one narrow r2 before starting:
-
-1. Repair W05A/B/C timing.
-2. Define the exact portable epoch-manifest algorithm.
-3. Re-ID packets so waves match dependencies.
-4. Materialize and validate the two W00 executable contracts.
-5. Make the Node1 soft-walk choice operational, not merely documented.
-6. Add milestone budgets, parent recovery proof, and evidence commit cadence.
-
-Then run W00. No need to redesign the five-node mission.
+- Machine ledger (historical, superseded as binding choreography): `docs/pi-native-five-node-baseline-ledger.yaml`  
+- Prior review notes: `docs/pi-native-five-node-baseline-review.md`  
+- Node 2 preflight (config + dispatch):  
+  `.pi-subagents/artifacts/outputs/023beec1-3443-4d0a-b914-4c057152883f/n2-preflight-config.md`  
+  `.pi-subagents/artifacts/outputs/023beec1-3443-4d0a-b914-4c057152883f/n2-preflight-dispatch.md`  
+- Factory 12h forensic: `~/.pi/agent/observability/factory/shadow/3efe69ab-0dc5/factory-last-12h-analysis.md`
