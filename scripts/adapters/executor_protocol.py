@@ -63,6 +63,7 @@ class NodePacket:
     required_artifacts: tuple[str, ...]
     attempt_index: int
     previous_findings: Mapping[str, FrozenJSON] | None = None
+    expected_base_commit_sha: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -102,6 +103,7 @@ class NodePacket:
                 if self.previous_findings is not None
                 else None
             ),
+            "expected_base_commit_sha": self.expected_base_commit_sha,
         }
 
     def to_json(self) -> str:

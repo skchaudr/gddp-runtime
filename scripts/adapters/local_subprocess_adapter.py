@@ -189,7 +189,6 @@ class LocalSubprocessAdapter:
             return True
         try:
             os.killpg(pid, signal.SIGTERM)
-            _atomic_write(attempt_dir / "cancel.signalled", "")
         except OSError:
             pass
         return True
@@ -304,13 +303,12 @@ def _run_attempt(attempt_dir: Path, start_fd: int | None = None) -> int:
                 if (attempt_dir / "cancel.requested").exists():
                     try:
                         os.killpg(process.pid, signal.SIGTERM)
-                        _atomic_write(attempt_dir / "cancel.signalled", "")
                     except OSError:
                         pass
                 returncode = process.wait()
                 cancelled = (
                     returncode != 0
-                    and (attempt_dir / "cancel.signalled").exists()
+                    and (attempt_dir / "cancel.requested").exists()
                 )
     except Exception as exc:
         with (attempt_dir / "stderr").open("ab") as stderr:

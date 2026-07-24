@@ -374,11 +374,13 @@ def test_retry_allocation_persists_findings_for_db_replay(con):
         con,
         job,
         executor="jules_cli",
+        expected_base_commit_sha="abc123",
         previous_findings=findings,
     )
     con.commit()
 
     assert allocated is not None
+    assert allocated[0]["expected_base_commit_sha"] == "abc123"
     replayed_job = dict(
         con.execute(
             "SELECT * FROM jobs WHERE job_id = ?", ("job_replay",)
@@ -1346,6 +1348,7 @@ def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
         "owner/repo",
         [node],
         SimpleNamespace(),
+        expected_base_commit_sha="abc123",
     )
 
     assert len(planned) == 1
@@ -1356,6 +1359,8 @@ def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
     assert row["state"] == "dispatching"
     assert row["attempt_index"] == 0
     assert row["execution_attempt_id"] == "job_initial:attempt:0"
+    assert row["expected_base_commit_sha"] == "abc123"
+    assert planned[0].job["expected_base_commit_sha"] == "abc123"
     persisted_job = con.execute(
         "SELECT required_artifacts FROM jobs WHERE job_id = 'job_initial'"
     ).fetchone()

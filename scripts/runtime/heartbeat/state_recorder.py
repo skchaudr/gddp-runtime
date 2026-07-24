@@ -210,6 +210,7 @@ def allocate_retry_attempt(
         return None
 
     persisted_job["attempt"] = next_attempt
+    persisted_job["expected_base_commit_sha"] = expected_base_commit_sha
     if encoded_findings is not None:
         persisted_job["previous_findings"] = encoded_findings
     attempt_id = execution_attempt_id(persisted_job["job_id"], next_attempt)

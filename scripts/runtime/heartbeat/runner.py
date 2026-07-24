@@ -134,7 +134,12 @@ def run_heartbeat(
 
         # Phase A-C: Plan and dispatch new events.
         planned_dispatches = _plan_dispatches(
-            con, project_id, repo, ready_nodes, reader
+            con,
+            project_id,
+            repo,
+            ready_nodes,
+            reader,
+            repo_path=repo_path,
         )
 
         if not planned_dispatches:
@@ -155,6 +160,9 @@ def _plan_dispatches(
     repo: str,
     ready_nodes: list,
     reader: GraphReader,
+    *,
+    expected_base_commit_sha: str | None = None,
+    repo_path: str | None = None,
 ) -> list[PlannedDispatch]:
     """
     Phase A: Fetch events, classify, scope-check, and reserve jobs on the main thread.
@@ -186,6 +194,7 @@ def _plan_dispatches(
     print(f"Found {len(events)} pending event(s).\n")
 
     planned_dispatches: list[PlannedDispatch] = []
+    base_commit_resolved = expected_base_commit_sha is not None
 
     for event in events:
         event_id = event["event_id"]
@@ -249,6 +258,9 @@ def _plan_dispatches(
             continue
 
         # Reserve the job before dispatch so other heartbeats see it immediately.
+        if not base_commit_resolved:
+            expected_base_commit_sha = _get_head_sha(repo_path)
+            base_commit_resolved = True
         job = build_job(
             node,
             event,
@@ -257,6 +269,7 @@ def _plan_dispatches(
             RUNTIME_ROOT,
             classification["executor_recommendation"],
         )
+        job["expected_base_commit_sha"] = expected_base_commit_sha
         job_id = job["job_id"]
 
         insert_job(con, job)
@@ -268,6 +281,7 @@ def _plan_dispatches(
             job_id,
             job["executor"],
             attempt_id,
+            expected_base_commit_sha=expected_base_commit_sha,
             attempt_index=attempt_index,
             state="dispatching",
         )
@@ -332,14 +346,14 @@ def _record_outcomes(
     """
     Phase C: Record results sequentially on the main thread.
     """
-    # Capture the current HEAD as the expected base commit for CLI-dispatched
-    # sessions. This pins the worktree the reconcile phase will create.
-    head_sha = _get_head_sha(repo_path)
-
     for planned in planned_dispatches:
         outcome = outcomes_by_job_id[planned.job["job_id"]]
         event_id = planned.event_id
         job_id = planned.job["job_id"]
+        expected_base_commit_sha = (
+            planned.job.get("expected_base_commit_sha")
+            or _get_head_sha(repo_path)
+        )
 
         print(f"Recording: {event_id} ({planned.job['node_id']})")
         if outcome.success:
@@ -351,7 +365,7 @@ def _record_outcomes(
                     state="dispatched",
                     executor=outcome.session_ref.executor,
                     session_id=outcome.session_ref.session_id,
-                    expected_base_commit_sha=head_sha,
+                    expected_base_commit_sha=expected_base_commit_sha,
                 )
             else:
                 finalized = finalize_executor_session_dispatch(
@@ -359,7 +373,7 @@ def _record_outcomes(
                     planned.session_db_id,
                     state="mediated",
                     session_id=outcome.issue_url or None,
-                    expected_base_commit_sha=head_sha,
+                    expected_base_commit_sha=expected_base_commit_sha,
                 )
             if not finalized:
                 cancellation = "reservation is no longer dispatching"
@@ -393,7 +407,7 @@ def _record_outcomes(
                 planned.session_db_id,
                 state="dispatch_failed",
                 error=outcome.error or "dispatch failed",
-                expected_base_commit_sha=head_sha,
+                expected_base_commit_sha=expected_base_commit_sha,
             )
             if not finalized:
                 mark_event_mapped(con, event_id)

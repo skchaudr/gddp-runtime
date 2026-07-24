@@ -1,12 +1,12 @@
-"""Tests for scripts/local_agent_executor.py — packet, prompt, diff emission."""
+"""Tests for the worktree-only local agent executor."""
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,215 +16,178 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import local_agent_executor as lae  # noqa: E402
 
 
-def _sample_packet(**overrides) -> dict:
-    packet = {
-        "job_id": "job-abc",
-        "execution_attempt_id": "job-abc:attempt:0",
-        "node_id": "job-state-consistency",
-        "title": "Make jobs.status and jobs.queue_state agree",
-        "goal": "Fix mismatched status/queue_state writers",
-        "why": "Dashboard lied about running count",
-        "constraints": [
-            "do not change receipt semantics",
-            {"scope": "column semantics only"},
-        ],
-        "acceptance_criteria": [
-            {
-                "id": "root-cause-documented",
-                "criterion": "decision.md names the write path",
-            },
-            "suite-green",
-        ],
-        "required_artifacts": ["decision.md", "result-summary.md", "patch.diff"],
-        "attempt_index": 0,
-        "previous_findings": None,
-        "expected_base_commit_sha": "deadbeef",
-    }
-    packet.update(overrides)
-    return packet
-
-
-def test_load_packet_requires_fields():
-    with pytest.raises(ValueError, match="missing required"):
-        lae.load_packet("{}")
-    with pytest.raises(ValueError, match="not valid JSON"):
-        lae.load_packet("not-json")
-    data = lae.load_packet(json.dumps(_sample_packet()))
-    assert data["job_id"] == "job-abc"
-    assert data["expected_base_commit_sha"] == "deadbeef"
-
-
-def test_build_prompt_includes_goal_criteria_db_and_worktree(tmp_path):
-    packet = _sample_packet()
-    wt = tmp_path / "wt"
-    db = tmp_path / "queue.db"
-    prompt = lae.build_prompt(packet, worktree=wt, queue_db=db)
-
-    assert "Fix mismatched status/queue_state writers" in prompt
-    assert "decision.md names the write path" in prompt
-    assert "do not change receipt semantics" in prompt
-    assert "suite-green" in prompt
-    assert str(wt) in prompt
-    assert str(db) in prompt
-    assert "READ-ONLY" in prompt
-    assert "never execute" in prompt.lower() or "NOT run UPDATE" in prompt
-    assert "job-state-consistency" in prompt
-    assert "job-abc" in prompt
-    assert "decision.md" in prompt
-
-
-def test_build_prompt_includes_previous_findings():
-    packet = _sample_packet(
-        previous_findings={
-            "verdict": "fail",
-            "reasoning": "missing decision.md root cause",
-        }
-    )
-    prompt = lae.build_prompt(
-        packet, worktree=Path("/tmp/wt"), queue_db=Path("/tmp/db")
-    )
-    assert "Previous Attempt Findings" in prompt
-    assert "missing decision.md root cause" in prompt
-
-
-def test_agent_argv_default_is_pinned_grok(tmp_path):
-    argv = lae.agent_argv(tmp_path, tmp_path / "prompt.md")
-    assert argv[0] == "grok"
-    assert "--cwd" in argv
-    assert str(tmp_path) in argv
-    assert "--prompt-file" in argv
-    assert str(tmp_path / "prompt.md") in argv
-    assert "--always-approve" in argv
-
-
-def test_agent_argv_env_override(monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        lae._AGENT_ARGV_ENV,
-        json.dumps(["echo", "agent", "{worktree}", "{prompt_file}"]),
-    )
-    argv = lae.agent_argv(tmp_path, tmp_path / "p.md")
-    assert argv == ["echo", "agent", str(tmp_path), str(tmp_path / "p.md")]
-
-
-def test_resolve_base_commit_prefers_packet_then_env(monkeypatch, tmp_path):
-    monkeypatch.setenv(lae._BASE_ENV, "from-env")
-    assert (
-        lae.resolve_base_commit({"expected_base_commit_sha": "from-packet"}, tmp_path)
-        == "from-packet"
-    )
-    assert lae.resolve_base_commit({}, tmp_path) == "from-env"
-
-
-def test_resolve_base_commit_falls_back_to_head(tmp_path, monkeypatch):
-    monkeypatch.delenv(lae._BASE_ENV, raising=False)
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+def _init_repo(path: Path) -> str:
+    path.mkdir()
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "t@example.com"],
-        cwd=tmp_path,
+        cwd=path,
         check=True,
         capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "t"],
-        cwd=tmp_path,
+        cwd=path,
         check=True,
         capture_output=True,
     )
-    (tmp_path / "f").write_text("x")
-    subprocess.run(["git", "add", "f"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert lae.resolve_base_commit({}, tmp_path) == head
-
-
-def test_emit_diff_captures_new_file(tmp_path):
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "t"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    (tmp_path / "seed").write_text("seed\n")
-    subprocess.run(["git", "add", "seed"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "seed"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    (tmp_path / "decision.md").write_text("# root cause\n")
-    patch = lae.emit_diff(tmp_path)
-    assert "decision.md" in patch
-    assert "root cause" in patch
-    assert patch.startswith("diff --git")
-
-
-def test_run_pipeline_with_fake_agent_emits_diff(tmp_path, monkeypatch, capsys):
-    """End-to-end without calling a real agent CLI."""
-    # Isolated repo
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "t"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    (repo / "README").write_text("base\n")
-    subprocess.run(["git", "add", "README"], cwd=repo, check=True, capture_output=True)
+    (path / "README").write_text("base\n")
+    subprocess.run(["git", "add", "README"], cwd=path, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "base"],
-        cwd=repo,
+        cwd=path,
         check=True,
         capture_output=True,
     )
-    head = subprocess.run(
+    return subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=repo,
+        cwd=path,
+        check=True,
         capture_output=True,
         text=True,
-        check=True,
     ).stdout.strip()
 
-    def fake_agent(argv, worktree: Path) -> int:
-        # Agent "works" only in the worktree.
-        (worktree / "decision.md").write_text("root cause: expiry path\n")
-        (worktree / "result-summary.md").write_text("fixed writers\n")
+
+def _packet(base_sha: str) -> str:
+    return json.dumps(
+        {
+            "job_id": "job-abc",
+            "goal": "Preserve this raw packet",
+            "constraints": ["do not decompose me"],
+            "expected_base_commit_sha": base_sha,
+        },
+        indent=2,
+    )
+
+
+def test_load_packet_requires_expected_base_commit_sha():
+    with pytest.raises(ValueError, match="not valid JSON"):
+        lae.load_packet("not-json")
+    with pytest.raises(ValueError, match="must be an object"):
+        lae.load_packet("[]")
+    with pytest.raises(ValueError, match="expected_base_commit_sha"):
+        lae.load_packet("{}")
+
+    assert lae.load_packet('{"expected_base_commit_sha":"abc"}') == {
+        "expected_base_commit_sha": "abc"
+    }
+
+
+def test_run_pipes_raw_packet_in_expected_detached_worktree(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+    packet_raw = _packet(base_sha)
+    observed: dict[str, object] = {}
+
+    def fake_agent(argv, raw, worktree):
+        observed.update(argv=argv, raw=raw, worktree=worktree)
+        actual_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=worktree,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        detached = subprocess.run(
+            ["git", "symbolic-ref", "-q", "HEAD"],
+            cwd=worktree,
+            capture_output=True,
+        ).returncode
+        assert actual_head == base_sha
+        assert detached == 1
+        (worktree / "agent-change.txt").write_text("worktree only\n")
         return 0
 
-    packet = _sample_packet(expected_base_commit_sha=head)
-    code = lae.run(json.dumps(packet), repo=repo, run_agent_fn=fake_agent)
+    assert lae.run(
+        packet_raw,
+        ["chosen-agent", "--batch"],
+        repo=repo,
+        run_agent_fn=fake_agent,
+    ) == 0
+
     captured = capsys.readouterr()
-    assert code == 0
-    assert "decision.md" in captured.out
-    assert "root cause: expiry path" in captured.out
-    assert "result-summary.md" in captured.out
-    # prompt file must not leak into the patch
-    assert ".gddp-agent-prompt.md" not in captured.out
-    # live repo tree untouched
-    assert not (repo / "decision.md").exists()
+    worktree = observed["worktree"]
+    assert observed["argv"] == ["chosen-agent", "--batch"]
+    assert observed["raw"] == packet_raw
+    assert "diff --git a/agent-change.txt b/agent-change.txt" in captured.out
+    assert "worktree only" in captured.out
+    assert not Path(worktree).exists()
+    assert not (repo / "agent-change.txt").exists()
+
+
+def test_run_agent_sends_agent_output_to_stderr(tmp_path, capfd):
+    script = (
+        "import pathlib,sys; "
+        "pathlib.Path('change.txt').write_text(sys.stdin.read()); "
+        "print('agent log')"
+    )
+
+    assert lae.run_agent(
+        [sys.executable, "-c", script],
+        '{"raw": true}\n',
+        tmp_path,
+    ) == 0
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert captured.err == "agent log\n"
+    assert (tmp_path / "change.txt").read_text() == '{"raw": true}\n'
+
+
+def test_run_removes_worktree_when_agent_fails(tmp_path):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+    worktrees: list[Path] = []
+
+    def failing_agent(argv, raw, worktree):
+        worktrees.append(worktree)
+        raise RuntimeError("agent crashed")
+
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        lae.run(
+            _packet(base_sha),
+            ["chosen-agent"],
+            repo=repo,
+            run_agent_fn=failing_agent,
+        )
+
+    assert len(worktrees) == 1
+    assert not worktrees[0].exists()
+    listing = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert str(worktrees[0]) not in listing
+
+
+def test_run_returns_agent_failure_after_emitting_partial_diff(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+
+    def failing_agent(argv, raw, worktree):
+        (worktree / "partial.txt").write_text("salvage me\n")
+        return 7
+
+    assert lae.run(
+        _packet(base_sha),
+        ["chosen-agent"],
+        repo=repo,
+        run_agent_fn=failing_agent,
+    ) == 7
+    assert "partial.txt" in capsys.readouterr().out
+
+
+def test_main_uses_agent_cli_from_its_argv(monkeypatch):
+    run = MagicMock(return_value=0)
+    monkeypatch.setattr(lae, "run", run)
+    monkeypatch.setattr(lae.sys.stdin, "read", lambda: '{"packet":true}')
+
+    assert lae.main(["--", "codex", "exec", "-"]) == 0
+
+    run.assert_called_once_with(
+        '{"packet":true}',
+        ["codex", "exec", "-"],
+    )

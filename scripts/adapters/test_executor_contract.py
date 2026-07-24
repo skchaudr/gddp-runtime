@@ -64,6 +64,7 @@ def _persisted_job(*, executor: str = "jules_cli", attempt: int = 2) -> dict:
             ],
         }),
         "executor": executor,
+        "expected_base_commit_sha": "abc123",
     }
 
 
@@ -92,6 +93,7 @@ def test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job():
     assert packet.node_id == "node-456"
     assert packet.attempt_index == 2
     assert packet.execution_attempt_id == "job-123:attempt:2"
+    assert packet.expected_base_commit_sha == "abc123"
     assert packet.constraints[1]["platform"] == ("darwin", "linux")
     assert packet.acceptance_criteria[1]["tests"] == ("success", "failure")
     assert packet.required_artifacts == ("decision.md", "patch.diff")
@@ -423,6 +425,8 @@ def test_local_subprocess_cancel_best_effort_survives_reinstantiation(tmp_path):
     assert terminal.state == "failed"
     assert terminal.error is not None
     assert "cancel" in terminal.error.lower()
+    attempt_dir = tmp_path / result.session_ref.session_id
+    assert not (attempt_dir / "cancel.signalled").exists()
 
 
 def test_local_subprocess_cancel_before_launch_persists_terminal_cancellation(
@@ -486,6 +490,7 @@ def test_local_subprocess_cancel_during_launch_terminates_after_pid_publication(
 
     killpg.assert_called_once_with(process.pid, signal.SIGTERM)
     assert json.loads((attempt_dir / "exit.json").read_text())["cancelled"] is True
+    assert not (attempt_dir / "cancel.signalled").exists()
     assert adapter.collect(session_ref, tmp_path / "must-not-exist.patch").success is False
 
 

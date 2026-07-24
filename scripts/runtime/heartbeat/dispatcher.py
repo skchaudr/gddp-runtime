@@ -106,6 +106,11 @@ def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
         required_artifacts=tuple(str(item) for item in required_artifacts),
         attempt_index=attempt_index,
         previous_findings=previous_findings,
+        expected_base_commit_sha=(
+            str(job["expected_base_commit_sha"])
+            if job.get("expected_base_commit_sha")
+            else None
+        ),
     )
 
 
