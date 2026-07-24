@@ -1,8 +1,9 @@
 # Pi-Native Five-Node Baseline Plan
 
 **Plan ID:** `gddp-five-node-baseline`  
-**Revision:** v3  
+**Revision:** v3.1  
 **Status:** active map (pivot when reality changes)  
+**v3.1:** N2-0 commit-ref transport; N2-1 `mark_job_failed`; secrets preflight (`gpg`, not `pass` under launchd).  
 **Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
 **Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
@@ -56,7 +57,7 @@ Only the active slice is rewritten when evidence changes. Charted later nodes re
 
 | Fact | State |
 |------|--------|
-| Runtime | `main` with minimal local worktree wrapper (`local_agent_executor`); suite green at last check |
+| Runtime | `main` with worktree wrapper (`local_agent_executor`); suite green at last check. **Known landmine:** current wrapper still emits worktree **diff on stdout** — fix to **commit-ref handoff** before live dispatch (N2-0). |
 | Factory | Mission ended; ignore stale wrapper-validator loops |
 | Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
 | Capability Nodes 2–5 | **pending** until Sab accepts |
@@ -92,7 +93,7 @@ No criterion map, adapter audit, or implementation list. Deferred does **not** b
 **Capability intent:** prove a real ready node through local subprocess / worktree transport to human review, without override.
 
 **Work subject:** `job-state-consistency` (ready).  
-**Transport:** graph-selected `local_subprocess` → adapter → `local_agent_executor` + real agent argv.  
+**Transport (target):** graph-selected `local_subprocess` → adapter → `local_agent_executor` + real agent argv → **worktree commit + ref/SHA on the handoff** → adapter `collect` takes the ref; diffs derived from git afterward if needed. **Do not** use diff-on-stdout as the production handoff (current code still does that until N2-0 lands).  
 **Stop:** job reaches `awaiting_review`. Sab decides accept / retry / revise.
 
 ### One active attempt record
@@ -109,15 +110,16 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 | # | Task | Evidence / pivot condition |
 |---|------|----------------------------|
-| N2-1 | **Dispose stuck canary job** | Sab confirms the preserved `awaiting_review` evidence is not being accepted. Use the existing audited job-state surface (`python3 scripts/node_status.py set <job-id> failed --reason "…"`), which updates job/queue state and writes `manual_status_change`. Keep receipt, DB rows, refs, and patch. If disposal would mutate graph truth or delete evidence, stop and pivot. |
+| N2-0 | **Fix transport: commit-ref, not diff-emit** | Bounded code change **before** live dispatch. Wrapper commits in the worktree and surfaces **ref/SHA**; adapter `collect` picks up the ref; any diff is derived from git afterward. Replace stdout patch-as-handoff (`emit_diff` path). Focused tests green. Route failure here is engineering, not a node verdict. |
+| N2-1 | **Dispose stuck canary job** | Sab confirms the preserved `awaiting_review` evidence is not being accepted. Fail the **job** via existing `state_recorder.mark_job_failed` (same mechanism `scripts/runtime/replay.py` uses) + durable reason/receipt. Keep DB rows, refs, patch. **Do not** delete/reset; **do not** use graph “node status” tooling for job disposal. Graph truth untouched. |
 | N2-2 | **Seal routing provenance** | Sab decides whether to commit/push the known one-line `local_subprocess`-first config delta or explicitly authorize the dirty epoch. Record the exact config hash used by the attempt. Do not broaden the graph edit. |
-| N2-3 | **Pin and smoke the exact route** | Choose `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. Run one disposable no-DB smoke through that exact argv and raw packet contract. Require an intentional worktree edit/diff, clean exit, and cleanup. Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution otherwise has sole heartbeat ownership. |
+| N2-3 | **Pin env, secrets preflight, smoke exact route** | Choose post-N2-0 `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. **Secrets:** any GDDP key/cmd used in this window must use direct `gpg --decrypt` (or equivalent non-hanging decrypt) — **not** `pass` under launchd/agent, which can hang. Run one disposable no-DB smoke on the exact argv/packet contract (commit-ref handoff). Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution has sole heartbeat ownership. |
 | N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. Preserve the exact payload/INSERT and resulting event row. A second event or wrong node classification stops the route. |
-| N2-5 | **One controlled dispatch tick** | Immediately before the tick, re-check HEAD, config hash, event ID, required env names, absent override, and single control-plane ownership. Record selected executor and job/attempt/session IDs. Stop before retry if selection is not `local_subprocess`. |
-| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks collect patch, reconcile, and evaluate with real credentials. Join packet → attempt → session → result commit/ref → evaluator receipt. Independently verify every required artifact was created or changed by this attempt relative to its expected base; pre-existing files do not count. If receipt provenance points at the wrong node/SHA or duplicate evaluation appears, preserve and pivot. Stop at human review. |
-| N2-7 | **Archive + Sab decision** | Archive packet, event/job/attempt/session/result IDs, spool metadata, diff/ref/SHA, artifact-provenance check, lane status, command log, and pre/post config hashes. Sab then accepts, retries, revises, defers, or abandons the capability node. |
+| N2-5 | **One controlled dispatch tick** | Only after N2-0 is landed. Immediately before the tick, re-check HEAD, config hash, event ID, required env names, absent override, secrets preflight, and single control-plane ownership. Record selected executor and job/attempt/session IDs. Stop before retry if selection is not `local_subprocess`. |
+| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks: collect **ref**, reconcile, evaluate with real credentials (same secrets rule as N2-3). Join packet → attempt → session → result commit/ref → evaluator receipt. Independently verify artifacts for this attempt; pre-existing files do not count. If provenance is wrong or duplicate evaluation appears, preserve and pivot. Stop at human review. |
+| N2-7 | **Archive + Sab decision** | Archive packet, event/job/attempt/session/result IDs, spool metadata, **result ref/SHA** (and derived diff if useful), artifact-provenance check, lane status, command log, and pre/post config hashes. Sab then accepts, retries, revises, defers, or abandons the capability node. |
 
-**Parallel inside N2 (optional, isolation-safe):** once N2-2/N2-3 checkpoint, prepare archive structure and run a read-only observer while the parent owns live ticks. Spend additional review capacity on a named uncertainty from the live evidence; do not add a second control-plane actor or default audit swarm.
+**Parallel inside N2 (optional, isolation-safe):** N2-0 can proceed while N2-1 is prepared (code vs queue isolation). Once N2-0/N2-2/N2-3 checkpoint, prepare archive structure and run a read-only observer while the parent owns live ticks. No second control-plane actor or default audit swarm.
 
 **N2 exit gate:** Sab’s decision on the real receipt. That opens Node 3 work.
 
@@ -198,9 +200,10 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 ## Exact resume (now)
 
 1. Confirm Node 1 remains **deferred** (status only).  
-2. Execute **N2-1 → N2-7** (Node 2 list).  
-3. Stop for Sab on the real N2 receipt.  
-4. Only then open Node 3.
+2. **N2-0** transport fix (commit-ref) in parallel with **N2-1** job dispose when useful.  
+3. **N2-2 → N2-3** (seal config, pin env + secrets preflight + smoke).  
+4. **N2-4 → N2-7** live loop; stop for Sab on the real receipt.  
+5. Only then open Node 3.
 
 ## Related artifacts
 
