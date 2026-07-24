@@ -558,7 +558,13 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
             outcome=outcome,
             status="awaiting_review",
             changed_files=verification.get("changed_files", []),
-            acceptance_check=verification.get("acceptance_check"),
+            # The CLI summary has no top-level "acceptance_check" key — it
+            # returns verdict/criteria_verdict/integrity/lane_status/etc.
+            # directly. The mediated path (return_router.py) stores the
+            # whole verification dict as acceptance_check; mirror that here
+            # so node_status.py show has something to display instead of
+            # silently storing None on every direct-path result.
+            acceptance_check=verification,
             risks=verification.get("risks"),
             followup_candidates=verification.get("followup_candidates"),
             github_action=verification.get("github_action"),
