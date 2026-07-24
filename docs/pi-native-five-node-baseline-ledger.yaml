@@ -1,28 +1,34 @@
 schema: pi.node-packet-ledger.v1
 plan_id: gddp-five-node-new-baseline
 shape: graph
-problem: The five draft capability nodes have substantial but uneven evidence, live production intake is unhealthy, and no packetized path yet preserves Sab-owned graph truth while completing the missing real proofs.
-goal: Produce an evidence-complete, human-decided five-node GDDP baseline whose recorded graph epochs, live receipts, and frontier behavior are independently reviewable.
+problem: The five draft capability nodes have substantial but uneven evidence, live production intake
+  is unhealthy, and no packetized path yet preserves Sab-owned graph truth while completing the missing
+  real proofs.
+goal: Produce an evidence-complete, human-decided five-node GDDP baseline whose recorded graph epochs,
+  live receipts, and frontier behavior are independently reviewable.
 sources:
-  - /Users/sab-mini/repos/gddp-runtime/PROJECT-BRIEF.md
-  - /Users/sab-mini/repos/gddp-runtime/AGENTS.md
-  - /Users/sab-mini/repos/gddp-runtime/docs/node2-real-round-trip-plan.md
-  - /Users/sab-mini/repos/gddp-runtime/.handoffs/051-capability-spine-merge-node2-stabilization-plan.md
-  - /Users/sab-mini/repos/gddp-runtime/.handoffs/052-node2-stabilization-loop-evidence.md
-  - /Users/sab-mini/repos/gddp-runtime/.handoffs/artifacts/053-node2-real-round-trip/
-  - /Users/sab-mini/.pi/agent/observability/factory/shadow/3efe69ab-0dc5/audit-session.md
-  - /Users/sab-mini/.pi/agent/observability/factory/shadow/3efe69ab-0dc5/audit-code-surface.md
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/project.yaml
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/neutral-executor-contract.yaml
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/immediate-evaluator-round-trip.yaml
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/concurrent-node-flow.yaml
-  - /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/graph-frontier-operations.yaml
+- /Users/sab-mini/repos/gddp-runtime/PROJECT-BRIEF.md
+- /Users/sab-mini/repos/gddp-runtime/AGENTS.md
+- /Users/sab-mini/repos/gddp-runtime/docs/node2-real-round-trip-plan.md
+- /Users/sab-mini/repos/gddp-runtime/.handoffs/051-capability-spine-merge-node2-stabilization-plan.md
+- /Users/sab-mini/repos/gddp-runtime/.handoffs/052-node2-stabilization-loop-evidence.md
+- /Users/sab-mini/repos/gddp-runtime/.handoffs/artifacts/053-node2-real-round-trip/
+- /Users/sab-mini/.pi/agent/observability/factory/shadow/3efe69ab-0dc5/audit-session.md
+- /Users/sab-mini/.pi/agent/observability/factory/shadow/3efe69ab-0dc5/audit-code-surface.md
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/project.yaml
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/neutral-executor-contract.yaml
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/direct-executor-round-trip.yaml
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/immediate-evaluator-round-trip.yaml
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/concurrent-node-flow.yaml
+- /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/graph-frontier-operations.yaml
 authority:
-  execution: Parent Pi controls packet dispatch, topology selection, evidence synthesis, and runtime operations within each packet's declared gate.
-  external: Sab authorizes live production-shaped dispatch windows, launchd state changes, and any external credentialed or service action.
+  execution: Parent Pi controls packet dispatch, topology selection, evidence synthesis, and runtime operations
+    within each packet's declared gate.
+  external: Sab authorizes live production-shaped dispatch windows, launchd state changes, and any external
+    credentialed or service action.
   graph: Sab alone authors or changes gddp-config graph definitions, node status, acceptance, and completion.
-  completion: Sab records the five-node baseline decision and final graph epoch; executor, test, evaluator, Pi, Codex, and Claude outputs are evidence only.
+  completion: Sab records the five-node baseline decision and final graph epoch; executor, test, evaluator,
+    Pi, Codex, and Claude outputs are evidence only.
 current_truth:
   audited_runtime:
     repo: /Users/sab-mini/repos/gddp-runtime
@@ -32,7 +38,11 @@ current_truth:
     tests: 379 passed via python3 -m pytest -q
   production:
     baseline: broken
-    intake_health_criticals: 4
+    intake_health_criticals:
+      claimed: 4
+      status: unverified
+      measure_in: N00-W01A
+      note: Do not treat count as frozen until N00-W01A records exact command/output and enumerates criticals.
     intake_launchd: registered but not running
   graph:
     config_repo: /Users/sab-mini/repos/gddp-config
@@ -43,699 +53,1641 @@ current_truth:
       immediate-evaluator-round-trip: pending
       concurrent-node-flow: pending
       graph-frontier-operations: pending
-    definition_state: All five definitions and criteria remain draft until Sab explicitly accepts their final definitions.
+    definition_state: All five definitions and criteria remain draft until Sab explicitly accepts their
+      final definitions.
   inherited_dirty_state:
     repo: /Users/sab-mini/repos/gddp-config
     path: graphs/gddp-runtime/nodes/job-state-consistency.yaml
     change: local_subprocess is first in allowed_execution_modes
     handling: Preserve and classify it; only Sab decides whether to commit, amend, or supersede it.
   preserved_evidence:
-    - Node 1 inherited infrastructure is merged; 048 receipts are harness-crash evidence and not semantic acceptance.
-    - Node 2 synthetic stabilization and retry receipts are preserved in handoff 052 and 053 artifacts.
-    - A real evaluator receipt exists for the surviving synthetic canary, including completed criteria and integrity lanes.
-    - Factory mission 3efe69ab is paused after stale wrapper assertions and a 429; its archive/wrapper commits are evidence, and its stale validator contract is historical.
-  prohibition: No real ready-node dispatch has yet occurred; the next claimed Node 2 proof must be real job-state-consistency dispatch without GDDP_EXECUTOR_OVERRIDE.
+  - Node 1 inherited infrastructure is merged; 048 receipts are harness-crash evidence and not semantic
+    acceptance.
+  - Node 2 synthetic stabilization and retry receipts are preserved in handoff 052 and 053 artifacts.
+  - A real evaluator receipt exists for the surviving synthetic canary, including completed criteria and
+    integrity lanes.
+  - Factory mission 3efe69ab is paused after stale wrapper assertions and a 429; its archive/wrapper commits
+    are evidence, and its stale validator contract is historical.
+  prohibition: No real ready-node dispatch has yet occurred; the next claimed Node 2 proof must be real
+    job-state-consistency dispatch without GDDP_EXECUTOR_OVERRIDE.
 operating_model:
-  control: Parent Pi remains in the primary runtime checkout for coordination only; Pi subagent primitives select the smallest topology per packet and children do not orchestrate children.
-  writers: Concurrent writers are required where this ledger names them, each owns one isolated git worktree and branch, and parent integration is a separate packet.
+  control: Parent Pi remains in the primary runtime checkout for coordination only; Pi subagent primitives
+    select the smallest topology per packet and children do not orchestrate children.
+  writers: Concurrent writers are required where this ledger names them, each owns one isolated git worktree
+    and branch, and parent integration is a separate packet.
   advisors:
-    codex: Agent-bus advisor/auditor for code, execution trace, tests, and diff claims; it has no graph authority.
-    claude: Agent-bus advisor/auditor for architecture, intent, canonical-context, and integrity claims; it has no graph authority.
+    codex: Agent-bus advisor/auditor for code, execution trace, tests, and diff claims; it has no graph
+      authority.
+    claude: Agent-bus advisor/auditor for architecture, intent, canonical-context, and integrity claims;
+      it has no graph authority.
     rule: Peer outputs are cited evidence; peer silence is unavailable evidence, never approval.
   evidence_root: /Users/sab-mini/repos/gddp-runtime/.handoffs/artifacts/five-node-baseline/
-  receipt_rule: Every packet writes an immutable attempt receipt under the evidence root with command output, hashes, changed paths, limits, and exact resume point before its worktree may be retired.
+  receipt_rule: Every packet writes an immutable attempt receipt under the evidence root with command
+    output, hashes, changed paths, limits, and exact resume point before its worktree may be retired.
   graph_epochs:
-    rule: project.yaml is immutable throughout one live-proof epoch; record its SHA-256 before dispatch and after every proof action.
-    transition: An intentional Sab graph/config change occurs only between epochs, receives a new recorded project.yaml SHA-256 plus Sab decision record, and invalidates no earlier receipt identity.
-    validator_contract: Validators consume the current Sab-approved node-definition hash and packet hash for their epoch; validators tied to superseded hashes remain historical evidence and cannot block the current epoch.
+    rule: One live-proof epoch freezes project.yaml and every project node YAML under graphs/gddp-runtime/nodes/.
+      Record epoch_manifest_sha256 (canonical sorted path→sha256 map) before dispatch and after every
+      proof action.
+    manifest_inputs:
+    - graphs/gddp-runtime/project.yaml
+    - graphs/gddp-runtime/nodes/*.yaml
+    transition: An intentional Sab graph/config change occurs only between epochs, receives a new epoch_manifest_sha256
+      plus Sab decision record, and invalidates no earlier receipt identity.
+    validator_contract: Validators consume the current Sab-approved node-definition hashes and packet
+      hash for their epoch; validators tied to superseded hashes remain historical evidence and cannot
+      block the current epoch.
+    project_yaml_alone_forbidden: Recording only project.yaml SHA-256 is insufficient for epoch identity.
   live_safety:
-    - No reset, delete, forced cleanup, manual database repair, or evidence removal.
-    - Runtime jobs stop at awaiting_review; no packet auto-completes a node.
-    - Live observers are read-only and never run an extra dispatch, reconcile, or heartbeat tick.
-    - Existing valid receipts are reused; rerun only a named missing criterion or a proof invalidated by a recorded epoch change.
+  - No reset, delete, forced cleanup, manual database repair, or evidence removal.
+  - Runtime jobs stop at awaiting_review; no packet auto-completes a node.
+  - Live observers are read-only and never run an extra dispatch, reconcile, or heartbeat tick.
+  - Existing valid receipts are reused; rerun only a named missing criterion or a proof invalidated by
+    a recorded epoch change.
   factory_lessons:
-    contract_version_coevolution: A node definition rewrite and its validator assertions are one transaction. Any simplify/re-scope decision must list invalidated assertion IDs before acceptance; validators bind only to the declared contract version/hash for the current epoch (see graph_epochs.validator_contract). Superseded contracts remain historical evidence and never gate the current epoch.
-    async_steering: Packet dispatch returns immediately; worker events stream to the parent; an interrupt pauses the worker only and never collapses the parent loop; resume is one explicit action. Blocking dispatch without a steering channel is forbidden.
-    worker_handoff_receipts: Every completed or failed worker returns a Factory-shaped handoff receipt under the evidence root with salientSummary, whatWasImplemented, whatWasLeftUndone, verification.commandsRun[] (command + exit code), discoveredIssues[] (severity + suggestedFix), and skillFeedback. This is the Pi worker return contract.
-    typed_progress_log: Parent maintains an append-only typed progress log (worker_started/worker_completed with session ids, commit ids, validatorsPassed/failed, and resume point). Reconstructability is required; free-form chat is not a substitute.
-    environment_baselining_and_scoped_gates: Gates run only the node-relevant subset. Pre-existing reds are baselined at packet creation and diffed against the worker; env allowlists prevent evaluator/subprocess leakage (e.g. GDDP_EXECUTOR_OVERRIDE) from becoming false gates. Full-suite reds outside packet ownership are baseline, not worker failure.
-    no_false_semantic_verdicts_from_provider_failure: Provider 429/quota, peer silence, harness crash, spawn flake, or missing capability is blocked-capability or unavailable evidence, never a semantic fail/pass on the node. Do not invent acceptance, rejection, or criterion scores from infrastructure failure.
+    contract_version_coevolution: A node definition rewrite and its validator assertions are one transaction.
+      Any simplify/re-scope decision must list invalidated assertion IDs before acceptance; validators
+      bind only to the declared contract version/hash for the current epoch (see graph_epochs.validator_contract).
+      Superseded contracts remain historical evidence and never gate the current epoch.
+    async_steering: Packet dispatch returns immediately; worker events stream to the parent; an interrupt
+      pauses the worker only and never collapses the parent loop; resume is one explicit action. Blocking
+      dispatch without a steering channel is forbidden.
+    worker_handoff_receipts: Every completed or failed worker returns a Factory-shaped handoff receipt
+      under the evidence root with salientSummary, whatWasImplemented, whatWasLeftUndone, verification.commandsRun[]
+      (command + exit code), discoveredIssues[] (severity + suggestedFix), and skillFeedback. This is
+      the Pi worker return contract.
+    typed_progress_log: Parent maintains an append-only typed progress log (worker_started/worker_completed
+      with session ids, commit ids, validatorsPassed/failed, and resume point). Reconstructability is
+      required; free-form chat is not a substitute.
+    environment_baselining_and_scoped_gates: Gates run only the node-relevant subset. Pre-existing reds
+      are baselined at packet creation and diffed against the worker; env allowlists prevent evaluator/subprocess
+      leakage (e.g. GDDP_EXECUTOR_OVERRIDE) from becoming false gates. Full-suite reds outside packet
+      ownership are baseline, not worker failure.
+    no_false_semantic_verdicts_from_provider_failure: Provider 429/quota, peer silence, harness crash,
+      spawn flake, or missing capability is blocked-capability or unavailable evidence, never a semantic
+      fail/pass on the node. Do not invent acceptance, rejection, or criterion scores from infrastructure
+      failure.
+  packet_contract:
+    required_fields:
+    - id
+    - outcome
+    - depends_on
+    - run
+    - boundary
+    - checkpoint
+    - status
+    - inputs
+    - verification
+    - return_schema
+    - retirement
+    checkpoint: evidence path + parent verify procedure
+    verification: commands[] with command, expected (exit/stdout assertions), and optional cwd
+    inputs: paths, hashes, epoch_manifest_sha256, fixture IDs as known at packet start
+    return_schema: handoff receipt fields under worker_handoff_receipts
+    retirement: when worktree/session may retire (only after immutable receipt)
+    materialization: At packet activation, write one file under .handoffs/artifacts/five-node-baseline/packets/{id}.yaml
+      with frozen inputs/hashes and exact commands; ledger entries are the contract, packet files are
+      the executable instance.
 milestones:
-  - id: M0
-    outcome: Current production/runtime truth, agent capability, and five-definition authority are frozen into an executable starting epoch.
-    evidence: N00-W01A, N00-W01B, N00-W01C, N00-W02A, and Sab's N00-W03A decision record.
-  - id: M1
-    outcome: Node 1 is explicitly retained as deferred policy or re-scoped by Sab from a criterion-level, two-adapter evidence bundle.
-    evidence: N01-W01A through N01-W04A.
-  - id: M2
-    outcome: Node 2 has one real, unoverridden local-agent round trip ending at awaiting_review with durable, independently observed evidence.
-    evidence: N02-W01A through N02-W04A.
-  - id: M3
-    outcome: Node 3 has criterion and canonical-context evidence, reusing the Node 2 receipt unless a named criterion is missing.
-    evidence: N03-W01A through N03-W04A.
-  - id: M4
-    outcome: Node 4 has isolated implementation, controlled two-real-node concurrent execution/evaluation proof, and a Sab decision.
-    evidence: N04-W01A through N04-W07A.
-  - id: M5
-    outcome: Node 5 has an audited derived frontier surface and an epoch-bounded before/after proof around a Sab acceptance.
-    evidence: N05-W01A through N05-W04A.
-  - id: M6
-    outcome: A final manifest, independent validation, retirement inventory, and Sab baseline hash make the five-node result resumable and auditable.
-    evidence: N99-W01A through N99-W03A.
+- id: M0
+  outcome: Current production/runtime truth, agent capability, and five-definition authority are frozen
+    into an executable starting epoch.
+  evidence: N00-W01A, N00-W01B, N00-W01C, N00-W02A, and Sab's N00-W03A decision record.
+- id: M1
+  outcome: Node 1 is explicitly retained as deferred policy or re-scoped by Sab from a criterion-level,
+    two-adapter evidence bundle.
+  evidence: N01-W01A through N01-W04A.
+- id: M2
+  outcome: Node 2 has one real, unoverridden local-agent round trip ending at awaiting_review with durable,
+    independently observed evidence.
+  evidence: N02-W01A through N02-W04A.
+- id: M3
+  outcome: Node 3 has criterion and canonical-context evidence, reusing the Node 2 receipt unless a named
+    criterion is missing.
+  evidence: N03-W01A through N03-W04A.
+- id: M4
+  outcome: Node 4 has isolated implementation (capacity at runner reservation + claim writer), controlled
+    two-real-node concurrent execution/evaluation proof, acceptance-unblocks-downstream under overlap,
+    and a Sab decision.
+  evidence: N04-W01A through N04-W07A (includes N04-W05C acceptance-overlap and split W06A/W06B).
+- id: M5
+  outcome: Node 5 has an audited derived frontier surface and an epoch-bounded before/after proof around
+    a Sab acceptance.
+  evidence: N05-W01A through N05-W04A (split prototypes N05-W01B/C + selection N05-W01D).
+- id: M6
+  outcome: A final manifest, independent validation, retirement inventory, and Sab baseline hash make
+    the five-node result resumable and auditable.
+  evidence: N99-W01A through N99-W03A.
 completion:
   owner: Sab
-  evidence: A signed-by-decision final bundle containing all packet receipts, current node-definition and project.yaml hashes per epoch, live proof traces, final validation, and the N99-W02A triple audit.
-  decision_options: [accept-baseline, accept-with-deferred-node1-policy, revise, split, supersede, defer, abandon]
-  invariant: Completion records graph truth only after Sab's decision; it is never inferred from all packets being checkpointed.
+  evidence: A signed-by-decision final bundle containing all packet receipts, current node-definition
+    and project.yaml hashes per epoch, live proof traces, final validation, and the N99-W02A triple audit.
+  decision_options:
+  - accept-baseline
+  - accept-with-deferred-node1-policy
+  - revise
+  - split
+  - supersede
+  - defer
+  - abandon
+  invariant: Completion records graph truth only after Sab's decision; it is never inferred from all packets
+    being checkpointed.
 ready_frontier:
   checked_at_epoch: E0
   ready:
-    - N00-W01A
-    - N00-W01C
+  - N00-W01A
+  - N00-W01C
   held:
-    - N00-W01B: awaits N00-W01A snapshot and Sab's live-service authorization.
-    - N00-W02A: awaits the snapshot so reviewers receive a fixed source/hash set.
-    - N00-W03A: awaits M0 evidence and is Sab-only.
+  - N00-W01B: awaits N00-W01A snapshot and Sab's live-service authorization; does not block definition
+      review.
+  - N00-W02A: awaits the snapshot so reviewers receive a fixed source/hash set.
+  - N00-W03A: awaits N00-W02A only (not intake restore); Sab-only graph decision.
   blocked_by_node_dag:
-    - N01 preparation follows M0 definition/dependency decision.
-    - N02 live dispatch follows the Node 1 policy decision and N02-W01C live gate.
-    - N03 formal decision follows Node 2's Sab decision.
-    - N04 follows Node 2 and Node 3 Sab decisions.
-    - N05 follows Node 3 and Node 4 Sab decisions.
-    - M6 follows all five node decisions and final epoch recording.
+  - N01 preparation follows M0 definition/dependency decision.
+  - N02 live dispatch follows Node 1 policy, N00-W01B intake disposition, and N02-W01C live gate.
+  - N03 formal decision follows Node 2's Sab decision.
+  - N04 follows Node 2 and Node 3 Sab decisions; N04-W05C required for acceptance-unblocks-downstream.
+  - N05 follows Node 3 and Node 4 Sab decisions.
+  - M6 follows all five node decisions and final epoch recording.
 packets:
-  - id: N00-W01A
-    outcome: Return a current, immutable snapshot of runtime, intake, config dirtiness, graph hashes, DB evidence anchors, launchd state, and live-process/worktree inventory.
-    depends_on: []
-    run: chain:contract-scout
-    boundary: Read-only across runtime, gddp-config, launchd, DB, and Factory artifacts; do not start/stop services or alter files; stop on contradictory source/hash evidence.
-    checkpoint:
-      evidence: evidence/M0/N00-W01A-current-snapshot.md plus SHA-256 manifest and command transcript.
-      verify: Parent Pi independently resolves every cited path, confirms runtime HEAD/status, project.yaml SHA, four intake criticals, and launchd registered/not-running state.
-    status: ready
-    milestone: M0
-  - id: N00-W01B
-    outcome: Restore the declared production intake baseline and return a before/after health receipt that accounts for each of the four intake criticals.
-    depends_on: [N00-W01A]
-    run: room:gddp-live-control
-    boundary: Production service operations only after Sab authorizes this run window; do not edit runtime source, gddp-config, DB rows, or graph status; no reset/delete/forced cleanup; stop if remediation requires any of those actions.
-    checkpoint:
-      evidence: evidence/M0/N00-W01B-intake-baseline.md with launchd operation record, health outputs, process identity, and unresolved-critical list.
-      verify: Parent Pi repeats the named health checks from a fresh shell and confirms intake is running or records the precise non-code blocker.
-    gate: Sab authorizes production launchd/service action after reviewing N00-W01A.
-    status: held
-    milestone: M0
-  - id: N00-W01C
-    outcome: Prove one Pi-subagent route and both agent-bus peer routes can return a bounded, correlated read-only receipt.
-    depends_on: []
-    run:
-      all:
-        - chain:contract-scout
-        - peer:codex/advisor@agent-bus
-        - peer:claude/advisor@agent-bus
-    boundary: Read-only smoke against a known-good fixture; no project, graph, production, or peer-side mutation; mark unavailable lanes blocked-capability rather than substituting claims.
-    checkpoint:
-      evidence: evidence/M0/N00-W01C-capability-smoke.json containing route, correlation ID, version/doctor output, and each reply or timeout.
-      verify: Parent Pi verifies correlation IDs with bus history and confirms Pi child receipt is readable.
-    status: ready
-    milestone: M0
-  - id: N00-W02A
-    outcome: Produce a single five-definition and Node 1 deferred-dependency review that identifies semantic gaps, soft-walk policy, and proposed evidence boundaries.
-    depends_on: [N00-W01A, N00-W01C]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only review of the five YAMLs, project brief, Node 1 receipts, and current snapshot; stale Factory wrapper validators are historical only; do not change definitions or statuses.
-    checkpoint:
-      evidence: evidence/M0/N00-W02A-definition-dependency-review.md with separate Pi/Codex/Claude findings, cited hashes, and a reconciled dependency table.
-      verify: Parent Pi verifies every finding against the current YAML hashes and labels disputed advice rather than merging it into graph truth.
-    status: held
-    milestone: M0
-  - id: N00-W03A
-    outcome: Record Sab's graph-definition decision, Node 1 dependency policy, and initial graph epoch E0 or successor epoch.
-    depends_on: [N00-W01B, N00-W02A]
-    run: human:Sab-graph-definition-decision
-    boundary: Sab alone may accept/revise/defer definitions or make gddp-config changes; any change starts a new epoch after this packet and cannot occur during a live proof.
-    checkpoint:
-      evidence: evidence/M0/N00-W03A-sab-decision.md with decision, node-definition hashes, project.yaml SHA-256, and explicit N01-to-N02 policy.
-      verify: Parent Pi reads the committed/current gddp-config state and matches it to Sab's decision record.
-    status: held
-    milestone: M0
-  - id: N01-W01A
-    outcome: Map every Node 1 criterion to current contract code, tests, receipts, and the exact missing evidence if any.
-    depends_on: [N00-W03A]
-    run: chain:contract-scout
-    boundary: Read-only; use 048/051 and current main, distinguish harness crashes from semantic evidence, and do not rerun broad tests unless a cited criterion lacks a current test.
-    checkpoint:
-      evidence: evidence/M1/N01-W01A-criterion-evidence-map.md.
-      verify: Parent Pi samples each criterion-to-path link and confirms the active node YAML hash.
-    status: held
-    milestone: M1
-  - id: N01-W01B
-    outcome: Return independent conformance audits for LocalSubprocessAdapter and the Jules/mediated adapter against the shared NodePacket/result contract.
-    depends_on: [N00-W03A]
-    run:
-      all:
-        - session:n01-local-audit/chain:contract-scout
-        - session:n01-jules-audit/chain:contract-scout
-    boundary: Two read-only sessions with separate evidence files; inspect adapter behavior and focused tests only; do not invoke remote Jules work or mutate adapters.
-    checkpoint:
-      evidence: evidence/M1/N01-W01B-local.md and evidence/M1/N01-W01B-jules.md with contract field matrix and divergence list.
-      verify: Parent Pi checks both matrices against executor_protocol.py and focused contract-test names.
-    status: held
-    milestone: M1
-  - id: N01-W02A
-    outcome: Close only a demonstrated Node 1 contract gap, or return a no-change receipt proving the existing implementation is sufficient for review.
-    depends_on: [N01-W01A, N01-W01B]
-    run: session:n01-contract-fix/chain:feature-slice
-    boundary: Isolated worktree .worktrees/n01-w02a; writable only scripts/adapters/, directly related tests, and handoff evidence; stop-record-propose for graph changes, non-contract refactors, or adapter API redesign.
-    checkpoint:
-      evidence: evidence/M1/N01-W02A-receipt.md with commit/diff or no-change rationale and focused test output.
-      verify: Parent Pi reproduces focused tests in the packet worktree and confirms no gddp-config mutation.
-    status: held
-    milestone: M1
-  - id: N01-W03A
-    outcome: Produce Pi, Codex, and Claude audits of the Node 1 evidence bundle and any N01-W02A change.
-    depends_on: [N01-W02A]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only audit; classify test/transport evidence separately from acceptance; no reviewer resolves a graph status.
-    checkpoint:
-      evidence: evidence/M1/N01-W03A-triple-audit.md.
-      verify: Parent Pi resolves cited paths and records blocking findings as follow-up proposals, not silent fixes.
-    status: held
-    milestone: M1
-  - id: N01-W04A
-    outcome: Record Sab's Node 1 decision, including the explicit deferred-with-inherited-infrastructure policy if it remains deferred.
-    depends_on: [N01-W03A]
-    run: human:Sab-node-decision
-    boundary: Decision applies only to neutral-executor-contract; any status/definition edit is a between-epoch Sab action.
-    checkpoint:
-      evidence: evidence/M1/N01-W04A-sab-decision.md with epoch hash and stated effect on Node 2 eligibility.
-      verify: Parent Pi matches the record to current graph YAML and opens a new epoch only if its hash changed.
-    status: held
-    milestone: M1
-  - id: N02-W01A
-    outcome: Carry forward Factory, 052, and 053 evidence into a Node 2 bundle and retire stale Factory assertions as historically scoped without deleting them.
-    depends_on: [N01-W04A]
-    run: chain:contract-scout
-    boundary: Read-only evidence synthesis; preserve Factory mission 3efe69ab and its stale prompt/DB/pinned-CLI validator assertions as historical; identify 31f549d, 3092206, and 35b41a1 evidence precisely.
-    checkpoint:
-      evidence: evidence/M2/N02-W01A-evidence-lineage.md with source hashes, valid/rejected claim table, and no-rerun justification.
-      verify: Parent Pi confirms all preserved receipt paths and verifies that stale validators are excluded from the current approved packet hash.
-    status: held
-    milestone: M2
-  - id: N02-W01B
-    outcome: Smoke the exact local-agent raw packet path through local_agent_executor in a disposable isolated worktree without a live graph dispatch.
-    depends_on: [N02-W01A]
-    run: session:n02-raw-packet-smoke/chain:pre-run-gate
-    boundary: Isolated worktree and disposable packet fixture only; no DB write, heartbeat, gddp-config edit, fake credential, or GDDP_EXECUTOR_OVERRIDE; preserve stdout diff and cleanup eligibility evidence.
-    checkpoint:
-      evidence: evidence/M2/N02-W01B-raw-packet-smoke.md with raw packet SHA, stdout diff SHA, worktree lifecycle, and focused wrapper tests.
-      verify: Parent Pi confirms stdout is a patch, live runtime tree is unchanged, and the temporary worktree is normally retired only after evidence capture.
-    status: held
-    milestone: M2
-  - id: N02-W01C
-    outcome: Obtain Sab's explicit live dispatch/config/heartbeat decision and record the active epoch, local_subprocess precondition disposition, and heartbeat ownership for one run window.
-    depends_on: [N02-W01A, N02-W01B]
-    run: human:Sab-live-dispatch-gate
-    boundary: Sab decides whether the inherited dirty node mode edit is committed/amended/superseded, whether heartbeat is left running or intentionally unloaded, and whether job-state-consistency may be dispatched; no runtime proof begins before this record.
-    checkpoint:
-      evidence: evidence/M2/N02-W01C-live-gate.md with config/node hash, project.yaml SHA-256, service choice, credentials readiness confirmation, and stop conditions.
-      verify: Parent Pi independently rehashes project.yaml and the target node YAML immediately before dispatch.
-    status: held
-    milestone: M2
-  - id: N02-W02A
-    outcome: Dispatch real ready job-state-consistency through local_subprocess/local_agent_executor without override and preserve its complete attempt-to-awaiting_review chain.
-    depends_on: [N02-W01C]
-    run: room:gddp-live-control
-    boundary: One Sab-authorized live run in the recorded epoch; use real evaluator credentials, no GDDP_EXECUTOR_OVERRIDE, no manual DB repair/reset/delete, no graph mutation, and stop at awaiting_review or first integrity/service failure.
-    checkpoint:
-      evidence: evidence/M2/N02-W02A-real-round-trip.md plus DB query export, packet/session/result IDs, git result ref/commit, lane receipt, artifact hashes, pre/post graph hashes, and launchd choice.
-      verify: Parent Pi joins job->attempt->session->result->receipt, confirms completed lane_status or labels harness failure, confirms awaiting_review, and rehashes project.yaml unchanged.
-    status: held
-    milestone: M2
-  - id: N02-W02B
-    outcome: Independently observe the real Node 2 run without issuing control-plane commands and report any duplicate tick, cross-session, or evidence-integrity anomaly.
-    depends_on: [N02-W01C]
-    run: session:n02-live-observer/chain:contract-scout
-    boundary: Read-only observation of logs, DB, refs, and process state during N02-W02A; never run dispatch/reconcile/heartbeat, alter credentials, or write runtime evidence destinations used by the actor.
-    checkpoint:
-      evidence: evidence/M2/N02-W02B-observer-trace.md with timestamped observations and correlation to N02-W02A IDs.
-      verify: Parent Pi compares observer timestamps against actor logs and treats disagreement as a proof blocker.
-    status: held
-    milestone: M2
-  - id: N02-W03A
-    outcome: Archive the real receipt and make an A/B comparison against surviving synthetic evidence and the known Jules branch/reference fix.
-    depends_on: [N02-W02A, N02-W02B]
-    run: chain:contract-scout
-    boundary: Evidence/archive paths only; read the Jules branch for comparison without merge/cherry-pick; no reset, cleanup, or claim that a synthetic receipt is a real-node receipt.
-    checkpoint:
-      evidence: evidence/M2/N02-W03A-archive-ab-jules.md with durable copies/hashes, comparison table, and explicit remaining criterion gaps.
-      verify: Parent Pi verifies archive hashes, result-ref reachability, and each A/B classification.
-    status: held
-    milestone: M2
-  - id: N02-W03B
-    outcome: Obtain Pi, Codex, and Claude challenge audits of the real Node 2 evidence against all four Node 2 criteria.
-    depends_on: [N02-W03A]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only, current-hash audit; evaluator/harness failure is not a semantic judgment and peer responses cannot accept a node.
-    checkpoint:
-      evidence: evidence/M2/N02-W03B-triple-audit.md with per-criterion verdict support, falsification attempts, and unresolved risks.
-      verify: Parent Pi independently samples all four criteria against the real receipt and current epoch hashes.
-    status: held
-    milestone: M2
-  - id: N02-W04A
-    outcome: Record Sab's Node 2 accept/retry/revise/defer decision and resulting next epoch if graph state changes.
-    depends_on: [N02-W03B]
-    run: human:Sab-node-decision
-    boundary: Sab-only decision for direct-executor-round-trip; no automatic acceptance from awaiting_review or audits.
-    checkpoint:
-      evidence: evidence/M2/N02-W04A-sab-decision.md.
-      verify: Parent Pi records the new or unchanged graph hash and marks Node 3 packets eligible only when Sab's decision permits it.
-    status: held
-    milestone: M2
-  - id: N03-W01A
-    outcome: Audit Node 3 automatic-entry and canonical-context criteria against the real Node 2 receipt and evaluator code/context assembly.
-    depends_on: [N02-W04A]
-    run: chain:contract-scout
-    boundary: Read-only; prove README, PROJECT-BRIEF, and foundational node context while confirming AGENTS.md exclusion; do not rerun evaluator yet.
-    checkpoint:
-      evidence: evidence/M3/N03-W01A-success-canonical-context.md.
-      verify: Parent Pi traces context inputs from code and receipt provenance to current epoch hashes.
-    status: held
-    milestone: M3
-  - id: N03-W01B
-    outcome: Audit Node 3 failure semantics, lane independence, decision-shaped output, and evaluator read-only graph boundary.
-    depends_on: [N02-W04A]
-    run: chain:contract-scout
-    boundary: Read-only receipt/code/test audit; distinguish semantic fail from harness failure and do not change evaluator behavior in this packet.
-    checkpoint:
-      evidence: evidence/M3/N03-W01B-failure-semantics.md.
-      verify: Parent Pi maps each finding to a Node 3 criterion and recorded receipt/code citation.
-    status: held
-    milestone: M3
-  - id: N03-W02A
-    outcome: Close only an evidenced Node 3 gap, or return a no-change receipt demonstrating that the existing real receipt satisfies the audited behavior.
-    depends_on: [N03-W01A, N03-W01B]
-    run: session:n03-evaluator-fix/chain:feature-slice
-    boundary: Isolated worktree .worktrees/n03-w02a; writable only evaluator/context assembly, related tests, and evidence; graph config and live DB are read-only; stop on canon/definition change proposal.
-    checkpoint:
-      evidence: evidence/M3/N03-W02A-receipt.md with change/no-change decision and focused validation.
-      verify: Parent Pi reproduces named focused tests and confirms no evaluator graph-write path was introduced.
-    status: held
-    milestone: M3
-  - id: N03-W03A
-    outcome: Reuse the Node 2 real receipt as Node 3 proof, rerunning evaluation only for an explicitly named missing criterion.
-    depends_on: [N03-W02A]
-    run: chain:pre-run-gate
-    boundary: Receipt-first; a rerun requires parent naming the missing criterion, Sab authorizing any live effect, and a stable recorded epoch; otherwise produce a no-rerun proof map.
-    checkpoint:
-      evidence: evidence/M3/N03-W03A-receipt-reuse-or-rerun.md.
-      verify: Parent Pi verifies each Node 3 criterion against the existing receipt or the narrowly scoped rerun receipt.
-    status: held
-    milestone: M3
-  - id: N03-W03B
-    outcome: Obtain Pi, Codex, and Claude audits that challenge Node 3 criterion sufficiency and canonical/integrity claims.
-    depends_on: [N03-W03A]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only audit of current proof map; no peer can waive a missing canonical-context proof.
-    checkpoint:
-      evidence: evidence/M3/N03-W03B-triple-audit.md.
-      verify: Parent Pi resolves contradictions with source citations before Sab review.
-    status: held
-    milestone: M3
-  - id: N03-W04A
-    outcome: Record Sab's Node 3 decision and the graph epoch/hash that governs Nodes 4 and 5.
-    depends_on: [N03-W03B]
-    run: human:Sab-node-decision
-    boundary: Sab-only immediate-evaluator-round-trip decision; graph edits, if any, occur after proof close and create a successor epoch.
-    checkpoint:
-      evidence: evidence/M3/N03-W04A-sab-decision.md.
-      verify: Parent Pi rehashes project.yaml and updates the packet validator baseline.
-    status: held
-    milestone: M3
-  - id: N04-W01A
-    outcome: Produce a concurrency gap map from Node 2 duplicate-evaluation race evidence through all Node 4 criteria, including exact ownership and test seams.
-    depends_on: [N03-W04A]
-    run: chain:contract-scout
-    boundary: Read-only; use the 053 duplicate-evaluation pair as negative evidence and identify minimal corrective surfaces without editing code.
-    checkpoint:
-      evidence: evidence/M4/N04-W01A-concurrency-gap-map.md.
-      verify: Parent Pi checks each gap against code paths, capacity=2, and the Node 4 criterion table.
-    status: held
-    milestone: M4
-  - id: N04-W01B
-    outcome: Select two independent real ready nodes and a downstream-unlock scenario that can prove Node 4 without inventing graph status.
-    depends_on: [N04-W01A]
-    run: chain:contract-scout
-    boundary: Read-only graph/runtime selection; candidate nodes must be ready in the active Sab-approved epoch, have independent writable scopes, and include a named acceptance candidate whose downstream impact is observable.
-    checkpoint:
-      evidence: evidence/M4/N04-W01B-live-scenario.md with candidates, dependency proof, resource/port/DB conflict matrix, and Sab decision needed for live run.
-      verify: Parent Pi resolves candidate readiness from current project.yaml and confirms the two jobs are not duplicate dispatches.
-    status: held
-    milestone: M4
-  - id: N04-W02A
-    outcome: Implement and test max_concurrent_jobs enforcement for dispatch without altering evaluation claim semantics.
-    depends_on: [N04-W01B]
-    run: session:n04-capacity-writer/chain:feature-slice
-    boundary: Isolated worktree .worktrees/n04-w02a-capacity; writable scripts/runtime/heartbeat/dispatcher.py, its capacity helpers, and dedicated tests only; no reconciler files, graph config, DB, or live service.
-    checkpoint:
-      evidence: evidence/M4/N04-W02A-capacity-writer.md with branch/commit, diff, focused tests, and conflict declaration.
-      verify: Parent Pi checks that the diff does not touch N04-W02B owned paths and reruns focused capacity tests.
-    status: held
-    milestone: M4
-  - id: N04-W02B
-    outcome: Implement per-session reconcile/evaluation claim and test intentional parallel evaluation without changing dispatch capacity logic.
-    depends_on: [N04-W01B]
-    run: session:n04-evaluation-claim-writer/chain:feature-slice
-    boundary: Isolated worktree .worktrees/n04-w02b-claim; writable scripts/runtime/heartbeat/reconciler.py, claim persistence seam, and dedicated tests only; no dispatcher files, graph config, DB, or live service.
-    checkpoint:
-      evidence: evidence/M4/N04-W02B-claim-writer.md with branch/commit, diff, duplicate-claim prevention test, and intentional parallel-evaluation test.
-      verify: Parent Pi checks that the diff does not touch N04-W02A owned paths and reruns focused claim/evaluation tests.
-    status: held
-    milestone: M4
-  - id: N04-W03A
-    outcome: Integrate the two isolated Node 4 writer branches, resolve only declared interface conflicts, and run the combined concurrency test set.
-    depends_on: [N04-W02A, N04-W02B]
-    run: session:n04-integration/chain:heavy-implement
-    boundary: Parent-owned integration worktree .worktrees/n04-integration; only merges/cherry-picks the two declared branches and directly required conflict resolutions; stop for any additional architectural change.
-    checkpoint:
-      evidence: evidence/M4/N04-W03A-integration.md with integration commit, merged branch hashes, conflict log, and combined test output.
-      verify: Parent Pi confirms provenance of every changed path and runs combined tests from a clean integration worktree.
-    status: held
-    milestone: M4
-  - id: N04-W04A
-    outcome: Pass a Sab-reviewed pre-run gate for the dual real-node proof, including service ownership, resource isolation, graph epoch freeze, and evidence destination separation.
-    depends_on: [N04-W03A]
-    run: room:gddp-live-control
-    boundary: Preflight only; no dispatch until Sab names the two nodes and acceptance candidate, confirms max capacity two, and approves the live window.
-    checkpoint:
-      evidence: evidence/M4/N04-W04A-pre-run-gate.md with pre/post hash baseline, process/heartbeat plan, two-job IDs reserved only after authorization, and observer route.
-      verify: Parent Pi confirms all concurrency eligibility rules and that N04-W05B has no control-plane capability.
-    gate: Sab authorizes the two-node live proof and any intentional heartbeat state choice.
-    status: held
-    milestone: M4
-  - id: N04-W05A
-    outcome: Run two independent real nodes through simultaneous dispatch and intentional parallel evaluation, preserving isolated evidence and stopping both at human review states.
-    depends_on: [N04-W04A]
-    run: room:gddp-live-control
-    boundary: One frozen graph epoch and exactly the N04-W04A node pair; max two jobs; no manual DB repair/reset/delete or graph mutation; stop on cross-node evidence, duplicate claim, capacity breach, or service failure.
-    checkpoint:
-      evidence: evidence/M4/N04-W05A-live-two-node-proof.md with time-aligned dispatch/session/evaluation traces, result refs, lane receipts, and per-node isolation comparison.
-      verify: Parent Pi joins each chain independently, proves overlapping execution/evaluation intervals, and confirms no shared result/session identifiers.
-    status: held
-    milestone: M4
-  - id: N04-W05B
-    outcome: Independently observe the N04 live run and verify capacity, claim ownership, evidence isolation, and unrelated-work continuity without controlling the run.
-    depends_on: [N04-W04A]
-    run: session:n04-concurrent-observer/chain:contract-scout
-    boundary: Read-only observation only; no tick, dispatch, reconcile, DB write, process signal, or shared evidence filename.
-    checkpoint:
-      evidence: evidence/M4/N04-W05B-observer.md with sampled DB/log/ref state and overlap calculations.
-      verify: Parent Pi compares observer and actor timelines; discrepancy blocks N04-W06A until reconciled.
-    status: held
-    milestone: M4
-  - id: N04-W06A
-    outcome: Bundle Node 4 evidence and obtain Pi, Codex, and Claude audits of all four concurrency criteria.
-    depends_on: [N04-W05A, N04-W05B]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only bundle/audit; assess implementation and live proof separately; no auditor may infer acceptance from concurrency tests.
-    checkpoint:
-      evidence: evidence/M4/N04-W06A-bundle-triple-audit.md.
-      verify: Parent Pi verifies each criterion has an actor trace, observer corroboration, and current epoch hash.
-    status: held
-    milestone: M4
-  - id: N04-W07A
-    outcome: Record Sab's Node 4 decision and successor epoch required before Node 5 live frontier proof.
-    depends_on: [N04-W06A]
-    run: human:Sab-node-decision
-    boundary: Sab-only concurrent-node-flow decision; status/definition changes are recorded only between proof epochs.
-    checkpoint:
-      evidence: evidence/M4/N04-W07A-sab-decision.md.
-      verify: Parent Pi rehashes graph config and updates ready frontier.
-    status: held
-    milestone: M4
-  - id: N05-W01A
-    outcome: Audit frontier contract and code for ready/blocked visibility, duplicate suppression, downstream preview, and human-owned acceptance boundary.
-    depends_on: [N04-W07A]
-    run: chain:contract-scout
-    boundary: Read-only audit of graph reader, job state, node status surfaces, and active epoch YAML; no UI expansion or graph mutation.
-    checkpoint:
-      evidence: evidence/M5/N05-W01A-frontier-contract-audit.md.
-      verify: Parent Pi maps every Node 5 criterion to a current source/test/evidence gap.
-    status: held
-    milestone: M5
-  - id: N05-W01B
-    outcome: Build two independently isolated frontier-report prototypes from the audited contract for a deliberate bakeoff.
-    depends_on: [N05-W01A]
-    run:
-      all:
-        - session:n05-prototype-a/chain:feature-slice
-        - session:n05-prototype-b/chain:feature-slice
-    boundary: Two distinct worktrees and branches (.worktrees/n05-prototype-a and .worktrees/n05-prototype-b); each may write its own implementation/tests only, must emit JSON plus log output, and cannot modify gddp-config, live DB, or the other prototype.
-    checkpoint:
-      evidence: evidence/M5/N05-W01B-prototype-a.md and evidence/M5/N05-W01B-prototype-b.md with commits, fixtures, output samples, and criterion tradeoff table.
-      verify: Parent Pi runs both prototypes against the same frozen fixture/epoch and confirms separate branches/evidence names.
-    status: held
-    milestone: M5
-  - id: N05-W02A
-    outcome: Integrate the Sab/Pi-selected frontier prototype into one isolated integration worktree and validate its derived-state contract.
-    depends_on: [N05-W01B]
-    run: session:n05-integration/chain:feature-slice
-    boundary: Isolated worktree .worktrees/n05-integration; select one prototype by recorded rationale, integrate only its necessary changes, and keep graph config/live DB read-only; stop for a new graph API requirement.
-    checkpoint:
-      evidence: evidence/M5/N05-W02A-integration.md with selection rationale, commit, JSON/log fixture output, and focused tests.
-      verify: Parent Pi confirms the report derives state from graph/jobs rather than maintaining parallel state and suppresses in-flight duplicate offers.
-    status: held
-    milestone: M5
-  - id: N05-W03A
-    outcome: Produce a live before/after frontier proof around a named Sab acceptance, recording the frozen pre-acceptance epoch and successor post-acceptance epoch.
-    depends_on: [N05-W02A]
-    run: room:gddp-live-control
-    boundary: Parent captures pre-acceptance derived report; Sab alone accepts the named awaiting-review node between epochs; parent captures post-acceptance report; no automated graph write, reset, delete, or duplicate dispatch.
-    checkpoint:
-      evidence: evidence/M5/N05-W03A-before-after-frontier.md with pre/post report hashes, old/new project.yaml hashes, Sab decision record, ready/blocked delta, and duplicate-suppression proof.
-      verify: Parent Pi confirms project.yaml stayed unchanged within each capture epoch and that the post report reflects only Sab's recorded graph change.
-    gate: Sab authorizes and performs the named acceptance after reviewing the pre-acceptance report.
-    status: held
-    milestone: M5
-  - id: N05-W03B
-    outcome: Obtain Pi, Codex, and Claude audits of the frontier proof, including whether acceptance actually advanced only the correct downstream frontier.
-    depends_on: [N05-W03A]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only audit of code, fixture outputs, and before/after epoch evidence; no peer edits graph state.
-    checkpoint:
-      evidence: evidence/M5/N05-W03B-triple-audit.md.
-      verify: Parent Pi replays report generation read-only against recorded pre/post data and reconciles audit findings.
-    status: held
-    milestone: M5
-  - id: N05-W04A
-    outcome: Record Sab's Node 5 decision and the final working graph epoch for baseline assembly.
-    depends_on: [N05-W03B]
-    run: human:Sab-node-decision
-    boundary: Sab-only graph-frontier-operations decision; record any definition/status mutation as a successor epoch.
-    checkpoint:
-      evidence: evidence/M5/N05-W04A-sab-decision.md.
-      verify: Parent Pi records final working project/node hashes before M6 begins.
-    status: held
-    milestone: M5
-  - id: N99-W01A
-    outcome: Build a manifest that indexes every packet attempt, decision, graph epoch/hash, commit/ref, receipt, and retained historical validator.
-    depends_on: [N01-W04A, N02-W04A, N03-W04A, N04-W07A, N05-W04A]
-    run: chain:contract-scout
-    boundary: Read-only manifest assembly; no cleanup or rewriting history; include historical Factory validators with their superseded hash/status.
-    checkpoint:
-      evidence: evidence/M6/N99-W01A-manifest.yaml.
-      verify: Parent Pi resolves every manifest path/hash and verifies no packet attempt was overwritten.
-    status: held
-    milestone: M6
-  - id: N99-W01B
-    outcome: Run final runtime/config/production validation against the final working epoch and report exact health, test, hash, and service state.
-    depends_on: [N01-W04A, N02-W04A, N03-W04A, N04-W07A, N05-W04A]
-    run: room:gddp-live-control
-    boundary: Validation only; no source/gddp-config edits, graph mutation, reset/delete, forced cleanup, or dispatch beyond named read-only/health commands.
-    checkpoint:
-      evidence: evidence/M6/N99-W01B-final-validation.md with runtime git status/HEAD, pytest output, config status/hashes, intake health, launchd state, and live DB consistency observations.
-      verify: Parent Pi repeats command outputs from fresh shells and labels any production critical as a baseline blocker rather than repairing it here.
-    status: held
-    milestone: M6
-  - id: N99-W01C
-    outcome: Return a read-only retirement inventory for all packet worktrees, branches, Factory processes, orphan worktrees/spools, and retained evidence with eligibility status.
-    depends_on: [N01-W04A, N02-W04A, N03-W04A, N04-W07A, N05-W04A]
-    run: chain:contract-scout
-    boundary: Read-only inventory; no worktree removal, process kill, pruning, reset, deletion, or forced cleanup; list exact owners and blockers.
-    checkpoint:
-      evidence: evidence/M6/N99-W01C-retirement-inventory.md.
-      verify: Parent Pi confirms each listed worktree/process against git/worktree and process state; normal retirement is a later separately authorized operation.
-    status: held
-    milestone: M6
-  - id: N99-W02A
-    outcome: Obtain final Pi, Codex, and Claude audits of manifest integrity, validation evidence, residual risks, graph authority, and epoch consistency.
-    depends_on: [N99-W01A, N99-W01B, N99-W01C]
-    run:
-      all:
-        - chain:parallel-review
-        - peer:codex/auditor@agent-bus
-        - peer:claude/auditor@agent-bus
-    boundary: Read-only final audit; peer output remains evidence and cannot resolve missing Sab decisions or production criticals.
-    checkpoint:
-      evidence: evidence/M6/N99-W02A-final-triple-audit.md.
-      verify: Parent Pi cross-checks blockers against the manifest and reports unresolved findings verbatim to Sab.
-    status: held
-    milestone: M6
-  - id: N99-W03A
-    outcome: Record Sab's five-node completion/baseline decision and final graph/config hash with any deferred/pending exceptions stated explicitly.
-    depends_on: [N99-W02A]
-    run: human:Sab-completion-and-baseline-hash
-    boundary: Sab alone determines baseline completion and graph status; this packet records, but never derives, the decision; no cleanup is bundled into completion.
-    checkpoint:
-      evidence: evidence/M6/N99-W03A-sab-baseline-decision.md with final project.yaml SHA-256, node YAML hashes/statuses, decision scope, and exact resume if incomplete.
-      verify: Parent Pi rehashes all graph files and confirms the decision record matches live gddp-config.
-    status: held
-    milestone: M6
+- id: N00-W01A
+  outcome: Return a current, immutable snapshot of runtime, intake (enumerated criticals with command/output),
+    config dirtiness, epoch_manifest_sha256, DB evidence anchors, launchd state, and live-process/worktree
+    inventory.
+  depends_on: []
+  run: chain:contract-scout
+  boundary: Read-only across runtime, gddp-config, launchd, DB, and Factory artifacts; do not start/stop
+    services or alter files; stop on contradictory source/hash evidence.
+  checkpoint:
+    evidence: evidence/M0/N00-W01A-current-snapshot.md plus SHA-256 manifest, command transcript, and
+      enumerated intake criticals (or explicit zero/unknown with command proof).
+    verify: Parent Pi independently resolves every cited path, confirms runtime HEAD/status, epoch_manifest_sha256,
+      launchd registered/not-running state, and that intake criticals are enumerated from the recorded
+      command—not a prior claim.
+  status: ready
+  milestone: M0
+  verification:
+    commands:
+    - command: git -C /Users/sab-mini/repos/gddp-runtime rev-parse HEAD && git -C /Users/sab-mini/repos/gddp-runtime
+        status -sb
+      expected: HEAD matches claimed commit; status clean or dirtiness listed
+    - command: shasum -a 256 /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/project.yaml /Users/sab-mini/repos/gddp-config/graphs/gddp-runtime/nodes/*.yaml
+        | sort
+      expected: stable sorted path/hash list used as epoch_manifest_sha256 input
+    - command: launchctl print gui/$(id -u) | rg -n "intake|gddp|hermes" || true
+      expected: intake job identity and running/not-running state recorded
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N00-W01B
+  outcome: Restore the declared production intake baseline and return a before/after health receipt that
+    accounts for each of the four intake criticals.
+  depends_on:
+  - N00-W01A
+  run: room:gddp-live-control
+  boundary: Production service operations only after Sab authorizes this run window; do not edit runtime
+    source, gddp-config, DB rows, or graph status; no reset/delete/forced cleanup; stop if remediation
+    requires any of those actions.
+  checkpoint:
+    evidence: evidence/M0/N00-W01B-intake-baseline.md with launchd operation record, health outputs, process
+      identity, and unresolved-critical list.
+    verify: Parent Pi repeats the named health checks from a fresh shell and confirms intake is running
+      or records the precise non-code blocker.
+  gate: Sab authorizes production launchd/service action after reviewing N00-W01A.
+  status: held
+  milestone: M0
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N00-W01B: see checkpoint.verify'
+      expected: Parent Pi repeats the named health checks from a fresh shell and confirms intake is running
+        or records the precise non-code blocker.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N00-W01C
+  outcome: Prove one Pi-subagent route and both agent-bus peer routes can return a bounded, correlated
+    read-only receipt.
+  depends_on: []
+  run:
+    all:
+    - chain:contract-scout
+    - peer:codex/advisor@agent-bus
+    - peer:claude/advisor@agent-bus
+  boundary: Read-only smoke against a known-good fixture; no project, graph, production, or peer-side
+    mutation; mark unavailable lanes blocked-capability rather than substituting claims.
+  checkpoint:
+    evidence: evidence/M0/N00-W01C-capability-smoke.json containing route, correlation ID, version/doctor
+      output, and each reply or timeout.
+    verify: Parent Pi verifies correlation IDs with bus history and confirms Pi child receipt is readable.
+  status: ready
+  milestone: M0
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N00-W01C: see checkpoint.verify'
+      expected: Parent Pi verifies correlation IDs with bus history and confirms Pi child receipt is readable.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N00-W02A
+  outcome: Produce a single five-definition and Node 1 deferred-dependency review that identifies semantic
+    gaps, soft-walk policy, and proposed evidence boundaries.
+  depends_on:
+  - N00-W01A
+  - N00-W01C
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only review of the five YAMLs, project brief, Node 1 receipts, and current snapshot;
+    stale Factory wrapper validators are historical only; do not change definitions or statuses.
+  checkpoint:
+    evidence: evidence/M0/N00-W02A-definition-dependency-review.md with separate Pi/Codex/Claude findings,
+      cited hashes, and a reconciled dependency table.
+    verify: Parent Pi verifies every finding against the current YAML hashes and labels disputed advice
+      rather than merging it into graph truth.
+  status: held
+  milestone: M0
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N00-W02A: see checkpoint.verify'
+      expected: Parent Pi verifies every finding against the current YAML hashes and labels disputed advice
+        rather than merging it into graph truth.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N00-W03A
+  outcome: Record Sab's graph-definition decision, Node 1 dependency policy, and initial graph epoch E0
+    or successor epoch.
+  depends_on:
+  - N00-W02A
+  run: human:Sab-graph-definition-decision
+  boundary: Sab alone may accept/revise/defer definitions or make gddp-config changes; any change starts
+    a new epoch after this packet and cannot occur during a live proof.
+  checkpoint:
+    evidence: evidence/M0/N00-W03A-sab-decision.md with decision, epoch_manifest_sha256 (project.yaml
+      + all node YAMLs), and explicit N01-to-N02 policy.
+    verify: Parent Pi recomputes epoch_manifest_sha256 from live gddp-config and matches Sab decision
+      record.
+  status: held
+  milestone: M0
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N00-W03A: see checkpoint.verify'
+      expected: Parent Pi recomputes epoch_manifest_sha256 from live gddp-config and matches Sab decision
+        record.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N01-W01A
+  outcome: Map every Node 1 criterion to current contract code, tests, receipts, and the exact missing
+    evidence if any.
+  depends_on:
+  - N00-W03A
+  run: chain:contract-scout
+  boundary: Read-only; use 048/051 and current main, distinguish harness crashes from semantic evidence,
+    and do not rerun broad tests unless a cited criterion lacks a current test.
+  checkpoint:
+    evidence: evidence/M1/N01-W01A-criterion-evidence-map.md.
+    verify: Parent Pi samples each criterion-to-path link and confirms the active node YAML hash.
+  status: held
+  milestone: M1
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N01-W01A: see checkpoint.verify'
+      expected: Parent Pi samples each criterion-to-path link and confirms the active node YAML hash.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N01-W01B
+  outcome: Return independent conformance audits for LocalSubprocessAdapter and the Jules/mediated adapter
+    against the shared NodePacket/result contract.
+  depends_on:
+  - N00-W03A
+  run:
+    all:
+    - session:n01-local-audit/chain:contract-scout
+    - session:n01-jules-audit/chain:contract-scout
+  boundary: Two read-only sessions with separate evidence files; inspect adapter behavior and focused
+    tests only; do not invoke remote Jules work or mutate adapters.
+  checkpoint:
+    evidence: evidence/M1/N01-W01B-local.md and evidence/M1/N01-W01B-jules.md with contract field matrix
+      and divergence list.
+    verify: Parent Pi checks both matrices against executor_protocol.py and focused contract-test names.
+  status: held
+  milestone: M1
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N01-W01B: see checkpoint.verify'
+      expected: Parent Pi checks both matrices against executor_protocol.py and focused contract-test
+        names.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N01-W02A
+  outcome: Close only a demonstrated Node 1 contract gap, or return a no-change receipt proving the existing
+    implementation is sufficient for review.
+  depends_on:
+  - N01-W01A
+  - N01-W01B
+  run: session:n01-contract-fix/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n01-w02a; writable only scripts/adapters/, directly related tests,
+    and handoff evidence; stop-record-propose for graph changes, non-contract refactors, or adapter API
+    redesign.
+  checkpoint:
+    evidence: evidence/M1/N01-W02A-receipt.md with commit/diff or no-change rationale and focused test
+      output.
+    verify: Parent Pi reproduces focused tests in the packet worktree and confirms no gddp-config mutation.
+  status: held
+  milestone: M1
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N01-W02A: see checkpoint.verify'
+      expected: Parent Pi reproduces focused tests in the packet worktree and confirms no gddp-config
+        mutation.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N01-W03A
+  outcome: Produce Pi, Codex, and Claude audits of the Node 1 evidence bundle and any N01-W02A change.
+  depends_on:
+  - N01-W02A
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only audit; classify test/transport evidence separately from acceptance; no reviewer
+    resolves a graph status.
+  checkpoint:
+    evidence: evidence/M1/N01-W03A-triple-audit.md.
+    verify: Parent Pi resolves cited paths and records blocking findings as follow-up proposals, not silent
+      fixes.
+  status: held
+  milestone: M1
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N01-W03A: see checkpoint.verify'
+      expected: Parent Pi resolves cited paths and records blocking findings as follow-up proposals, not
+        silent fixes.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N01-W04A
+  outcome: Record Sab's Node 1 decision, including the explicit deferred-with-inherited-infrastructure
+    policy if it remains deferred.
+  depends_on:
+  - N01-W03A
+  run: human:Sab-node-decision
+  boundary: Decision applies only to neutral-executor-contract; any status/definition edit is a between-epoch
+    Sab action.
+  checkpoint:
+    evidence: evidence/M1/N01-W04A-sab-decision.md with epoch hash and stated effect on Node 2 eligibility.
+    verify: Parent Pi matches the record to current graph YAML and opens a new epoch only if its hash
+      changed.
+  status: held
+  milestone: M1
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N01-W04A: see checkpoint.verify'
+      expected: Parent Pi matches the record to current graph YAML and opens a new epoch only if its hash
+        changed.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W01A
+  outcome: Carry forward Factory, 052, and 053 evidence into a Node 2 bundle and retire stale Factory
+    assertions as historically scoped without deleting them.
+  depends_on:
+  - N01-W04A
+  run: chain:contract-scout
+  boundary: Read-only evidence synthesis; preserve Factory mission 3efe69ab and its stale prompt/DB/pinned-CLI
+    validator assertions as historical; identify 31f549d, 3092206, and 35b41a1 evidence precisely.
+  checkpoint:
+    evidence: evidence/M2/N02-W01A-evidence-lineage.md with source hashes, valid/rejected claim table,
+      and no-rerun justification.
+    verify: Parent Pi confirms all preserved receipt paths and verifies that stale validators are excluded
+      from the current approved packet hash.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W01A: see checkpoint.verify'
+      expected: Parent Pi confirms all preserved receipt paths and verifies that stale validators are
+        excluded from the current approved packet hash.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W01B
+  outcome: Smoke the exact local-agent raw packet path through local_agent_executor in a disposable isolated
+    worktree without a live graph dispatch.
+  depends_on:
+  - N02-W01A
+  run: session:n02-raw-packet-smoke/chain:pre-run-gate
+  boundary: Isolated worktree and disposable packet fixture only; no DB write, heartbeat, gddp-config
+    edit, fake credential, or GDDP_EXECUTOR_OVERRIDE; preserve stdout diff and cleanup eligibility evidence.
+  checkpoint:
+    evidence: evidence/M2/N02-W01B-raw-packet-smoke.md with raw packet SHA, stdout diff SHA, worktree
+      lifecycle, and focused wrapper tests.
+    verify: Parent Pi confirms stdout is a patch, live runtime tree is unchanged, and the temporary worktree
+      is normally retired only after evidence capture.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W01B: see checkpoint.verify'
+      expected: Parent Pi confirms stdout is a patch, live runtime tree is unchanged, and the temporary
+        worktree is normally retired only after evidence capture.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W01C
+  outcome: Obtain Sab's explicit live dispatch/config/heartbeat decision and record the active epoch,
+    local_subprocess precondition disposition, and heartbeat ownership for one run window.
+  depends_on:
+  - N02-W01A
+  - N02-W01B
+  - N00-W01B
+  run: human:Sab-live-dispatch-gate
+  boundary: Sab decides whether the inherited dirty node mode edit is committed/amended/superseded, whether
+    heartbeat is left running or intentionally unloaded, whether production intake baseline is acceptable
+    for live proof, and whether job-state-consistency may be dispatched; no runtime proof begins before
+    this record. If N00-W01B left intake unhealthy and no alternate authorized path exists, this gate
+    stays held (blocked-capability), not a semantic node fail.
+  checkpoint:
+    evidence: evidence/M2/N02-W01C-live-gate.md with epoch_manifest_sha256, config/node hashes, service
+      choice, intake health disposition, credentials readiness, and stop conditions.
+    verify: Parent Pi independently recomputes epoch_manifest_sha256 and target node YAML hash immediately
+      before dispatch.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W01C: see checkpoint.verify'
+      expected: Parent Pi independently recomputes epoch_manifest_sha256 and target node YAML hash immediately
+        before dispatch.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W02A
+  outcome: Dispatch real ready job-state-consistency through local_subprocess/local_agent_executor without
+    override and preserve its complete attempt-to-awaiting_review chain.
+  depends_on:
+  - N02-W01C
+  run: room:gddp-live-control
+  boundary: One Sab-authorized live run in the recorded epoch; use real evaluator credentials, no GDDP_EXECUTOR_OVERRIDE,
+    no manual DB repair/reset/delete, no graph mutation, and stop at awaiting_review or first integrity/service
+    failure.
+  checkpoint:
+    evidence: evidence/M2/N02-W02A-real-round-trip.md plus DB query export, packet/session/result IDs,
+      git result ref/commit, lane receipt, artifact hashes, pre/post graph hashes, and launchd choice.
+    verify: Parent Pi joins job->attempt->session->result->receipt, confirms completed lane_status or
+      labels harness failure, confirms awaiting_review, and recomputes epoch_manifest_sha256 unchanged.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W02A: see checkpoint.verify'
+      expected: Parent Pi joins job->attempt->session->result->receipt, confirms completed lane_status
+        or labels harness failure, confirms awaiting_review, and recomputes epoch_manifest_sha256 unchanged.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W02B
+  outcome: Independently observe the real Node 2 run without issuing control-plane commands and report
+    any duplicate tick, cross-session, or evidence-integrity anomaly.
+  depends_on:
+  - N02-W01C
+  run: session:n02-live-observer/chain:contract-scout
+  boundary: Read-only observation of logs, DB, refs, and process state during N02-W02A; never run dispatch/reconcile/heartbeat,
+    alter credentials, or write runtime evidence destinations used by the actor.
+  checkpoint:
+    evidence: evidence/M2/N02-W02B-observer-trace.md with timestamped observations and correlation to
+      N02-W02A IDs.
+    verify: Parent Pi compares observer timestamps against actor logs and treats disagreement as a proof
+      blocker.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W02B: see checkpoint.verify'
+      expected: Parent Pi compares observer timestamps against actor logs and treats disagreement as a
+        proof blocker.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W03A
+  outcome: Archive the real receipt and make an A/B comparison against surviving synthetic evidence and
+    the known Jules branch/reference fix.
+  depends_on:
+  - N02-W02A
+  - N02-W02B
+  run: chain:contract-scout
+  boundary: Evidence/archive paths only; read the Jules branch for comparison without merge/cherry-pick;
+    no reset, cleanup, or claim that a synthetic receipt is a real-node receipt.
+  checkpoint:
+    evidence: evidence/M2/N02-W03A-archive-ab-jules.md with durable copies/hashes, comparison table, and
+      explicit remaining criterion gaps.
+    verify: Parent Pi verifies archive hashes, result-ref reachability, and each A/B classification.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W03A: see checkpoint.verify'
+      expected: Parent Pi verifies archive hashes, result-ref reachability, and each A/B classification.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W03B
+  outcome: Obtain Pi, Codex, and Claude challenge audits of the real Node 2 evidence against all four
+    Node 2 criteria.
+  depends_on:
+  - N02-W03A
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only, current-hash audit; evaluator/harness failure is not a semantic judgment and peer
+    responses cannot accept a node.
+  checkpoint:
+    evidence: evidence/M2/N02-W03B-triple-audit.md with per-criterion verdict support, falsification attempts,
+      and unresolved risks.
+    verify: Parent Pi independently samples all four criteria against the real receipt and current epoch
+      hashes.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W03B: see checkpoint.verify'
+      expected: Parent Pi independently samples all four criteria against the real receipt and current
+        epoch hashes.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N02-W04A
+  outcome: Record Sab's Node 2 accept/retry/revise/defer decision and resulting next epoch if graph state
+    changes.
+  depends_on:
+  - N02-W03B
+  run: human:Sab-node-decision
+  boundary: Sab-only decision for direct-executor-round-trip; no automatic acceptance from awaiting_review
+    or audits.
+  checkpoint:
+    evidence: evidence/M2/N02-W04A-sab-decision.md.
+    verify: Parent Pi records the new or unchanged graph hash and marks Node 3 packets eligible only when
+      Sab's decision permits it.
+  status: held
+  milestone: M2
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N02-W04A: see checkpoint.verify'
+      expected: Parent Pi records the new or unchanged graph hash and marks Node 3 packets eligible only
+        when Sab's decision permits it.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W01A
+  outcome: Audit Node 3 automatic-entry and canonical-context criteria against the real Node 2 receipt
+    and evaluator code/context assembly.
+  depends_on:
+  - N02-W04A
+  run: chain:contract-scout
+  boundary: Read-only; prove README, PROJECT-BRIEF, and foundational node context while confirming AGENTS.md
+    exclusion; do not rerun evaluator yet.
+  checkpoint:
+    evidence: evidence/M3/N03-W01A-success-canonical-context.md.
+    verify: Parent Pi traces context inputs from code and receipt provenance to current epoch hashes.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W01A: see checkpoint.verify'
+      expected: Parent Pi traces context inputs from code and receipt provenance to current epoch hashes.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W01B
+  outcome: Audit Node 3 failure semantics, lane independence, decision-shaped output, and evaluator read-only
+    graph boundary.
+  depends_on:
+  - N02-W04A
+  run: chain:contract-scout
+  boundary: Read-only receipt/code/test audit; distinguish semantic fail from harness failure and do not
+    change evaluator behavior in this packet.
+  checkpoint:
+    evidence: evidence/M3/N03-W01B-failure-semantics.md.
+    verify: Parent Pi maps each finding to a Node 3 criterion and recorded receipt/code citation.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W01B: see checkpoint.verify'
+      expected: Parent Pi maps each finding to a Node 3 criterion and recorded receipt/code citation.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W02A
+  outcome: Close only an evidenced Node 3 gap, or return a no-change receipt demonstrating that the existing
+    real receipt satisfies the audited behavior.
+  depends_on:
+  - N03-W01A
+  - N03-W01B
+  run: session:n03-evaluator-fix/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n03-w02a; writable only evaluator/context assembly, related tests,
+    and evidence; graph config and live DB are read-only; stop on canon/definition change proposal.
+  checkpoint:
+    evidence: evidence/M3/N03-W02A-receipt.md with change/no-change decision and focused validation.
+    verify: Parent Pi reproduces named focused tests and confirms no evaluator graph-write path was introduced.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W02A: see checkpoint.verify'
+      expected: Parent Pi reproduces named focused tests and confirms no evaluator graph-write path was
+        introduced.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W03A
+  outcome: Reuse the Node 2 real receipt as Node 3 proof, rerunning evaluation only for an explicitly
+    named missing criterion.
+  depends_on:
+  - N03-W02A
+  run: chain:pre-run-gate
+  boundary: Receipt-first; a rerun requires parent naming the missing criterion, Sab authorizing any live
+    effect, and a stable recorded epoch; otherwise produce a no-rerun proof map.
+  checkpoint:
+    evidence: evidence/M3/N03-W03A-receipt-reuse-or-rerun.md.
+    verify: Parent Pi verifies each Node 3 criterion against the existing receipt or the narrowly scoped
+      rerun receipt.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W03A: see checkpoint.verify'
+      expected: Parent Pi verifies each Node 3 criterion against the existing receipt or the narrowly
+        scoped rerun receipt.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W03B
+  outcome: Obtain Pi, Codex, and Claude audits that challenge Node 3 criterion sufficiency and canonical/integrity
+    claims.
+  depends_on:
+  - N03-W03A
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only audit of current proof map; no peer can waive a missing canonical-context proof.
+  checkpoint:
+    evidence: evidence/M3/N03-W03B-triple-audit.md.
+    verify: Parent Pi resolves contradictions with source citations before Sab review.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W03B: see checkpoint.verify'
+      expected: Parent Pi resolves contradictions with source citations before Sab review.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N03-W04A
+  outcome: Record Sab's Node 3 decision and the graph epoch/hash that governs Nodes 4 and 5.
+  depends_on:
+  - N03-W03B
+  run: human:Sab-node-decision
+  boundary: Sab-only immediate-evaluator-round-trip decision; graph edits, if any, occur after proof close
+    and create a successor epoch.
+  checkpoint:
+    evidence: evidence/M3/N03-W04A-sab-decision.md.
+    verify: Parent Pi recomputes epoch_manifest_sha256 and updates the packet validator baseline.
+  status: held
+  milestone: M3
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N03-W04A: see checkpoint.verify'
+      expected: Parent Pi recomputes epoch_manifest_sha256 and updates the packet validator baseline.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W01A
+  outcome: Produce a concurrency gap map from Node 2 duplicate-evaluation race evidence through all Node
+    4 criteria, including exact ownership and test seams.
+  depends_on:
+  - N03-W04A
+  run: chain:contract-scout
+  boundary: Read-only; use the 053 duplicate-evaluation pair as negative evidence and identify minimal
+    corrective surfaces without editing code.
+  checkpoint:
+    evidence: evidence/M4/N04-W01A-concurrency-gap-map.md.
+    verify: Parent Pi checks each gap against code paths, capacity=2, and the Node 4 criterion table.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W01A: see checkpoint.verify'
+      expected: Parent Pi checks each gap against code paths, capacity=2, and the Node 4 criterion table.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W01B
+  outcome: Select two independent real ready nodes and a downstream-unlock scenario that can prove Node
+    4 without inventing graph status.
+  depends_on:
+  - N04-W01A
+  run: chain:contract-scout
+  boundary: Read-only graph/runtime selection; candidate nodes must be ready in the active Sab-approved
+    epoch, have independent writable scopes, and include a named acceptance candidate whose downstream
+    impact is observable.
+  checkpoint:
+    evidence: evidence/M4/N04-W01B-live-scenario.md with candidates, dependency proof, resource/port/DB
+      conflict matrix, and Sab decision needed for live run.
+    verify: Parent Pi resolves candidate readiness from current project.yaml and confirms the two jobs
+      are not duplicate dispatches.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W01B: see checkpoint.verify'
+      expected: Parent Pi resolves candidate readiness from current project.yaml and confirms the two
+        jobs are not duplicate dispatches.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W02A
+  outcome: Implement and test max_concurrent_jobs enforcement at the reservation/planning transaction
+    so active + newly planned jobs cannot exceed capacity, without altering evaluation claim semantics
+    or adapter dispatch.
+  depends_on:
+  - N04-W01B
+  run: session:n04-capacity-writer/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n04-w02a-capacity; writable scripts/runtime/heartbeat/runner.py
+    (reservation/planning path that caps active+planned jobs), any exact config/DB helper required for
+    the atomic cap, and dedicated capacity tests only; do not change scripts/runtime/heartbeat/dispatcher.py
+    dispatch contract, reconciler claim semantics, graph config, live DB, or live service. Adapter dispatch
+    remains single-job transport.
+  checkpoint:
+    evidence: evidence/M4/N04-W02A-capacity-writer.md with branch/commit, diff scoped to runner reservation/planning
+      + helpers/tests, focused tests proving cap across existing+planned jobs, and conflict declaration
+      vs N04-W02B paths.
+    verify: Parent Pi confirms diff does not own reconciler claim paths or change dispatcher single-job
+      API; reruns focused capacity tests; confirms enforcement site is pre-dispatch reservation in runner.py
+      (or its called helpers), not post-reservation dispatcher.py alone.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W02A: see checkpoint.verify'
+      expected: Parent Pi confirms diff does not own reconciler claim paths or change dispatcher single-job
+        API; reruns focused capacity tests; confirms enforcement site is pre-dispatch reservation in runner.py
+        (or its called helpers), not post-reservation dispatcher.py alone.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W02B
+  outcome: Implement per-session reconcile/evaluation claim and test intentional parallel evaluation without
+    changing dispatch capacity logic.
+  depends_on:
+  - N04-W01B
+  run: session:n04-evaluation-claim-writer/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n04-w02b-claim; writable scripts/runtime/heartbeat/reconciler.py,
+    claim persistence seam, and dedicated tests only; no dispatcher files, graph config, DB, or live service.
+  checkpoint:
+    evidence: evidence/M4/N04-W02B-claim-writer.md with branch/commit, diff, duplicate-claim prevention
+      test, and intentional parallel-evaluation test.
+    verify: Parent Pi checks that the diff does not touch N04-W02A owned paths and reruns focused claim/evaluation
+      tests.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W02B: see checkpoint.verify'
+      expected: Parent Pi checks that the diff does not touch N04-W02A owned paths and reruns focused
+        claim/evaluation tests.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W03A
+  outcome: Integrate the two isolated Node 4 writer branches, resolve only declared interface conflicts,
+    and run the combined concurrency test set.
+  depends_on:
+  - N04-W02A
+  - N04-W02B
+  run: session:n04-integration/chain:heavy-implement
+  boundary: Parent-owned integration worktree .worktrees/n04-integration; only merges/cherry-picks the
+    two declared branches and directly required conflict resolutions; stop for any additional architectural
+    change.
+  checkpoint:
+    evidence: evidence/M4/N04-W03A-integration.md with integration commit, merged branch hashes, conflict
+      log, and combined test output.
+    verify: Parent Pi confirms provenance of every changed path and runs combined tests from a clean integration
+      worktree.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W03A: see checkpoint.verify'
+      expected: Parent Pi confirms provenance of every changed path and runs combined tests from a clean
+        integration worktree.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W04A
+  outcome: Pass a Sab-reviewed pre-run gate for the dual real-node proof, including service ownership,
+    resource isolation, graph epoch freeze, and evidence destination separation.
+  depends_on:
+  - N04-W03A
+  run: room:gddp-live-control
+  boundary: Preflight only; no dispatch until Sab names the two nodes and acceptance candidate, confirms
+    max capacity two, and approves the live window.
+  checkpoint:
+    evidence: evidence/M4/N04-W04A-pre-run-gate.md with pre/post hash baseline, process/heartbeat plan,
+      two-job IDs reserved only after authorization, and observer route.
+    verify: Parent Pi confirms all concurrency eligibility rules and that N04-W05B has no control-plane
+      capability.
+  gate: Sab authorizes the two-node live proof and any intentional heartbeat state choice.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W04A: see checkpoint.verify'
+      expected: Parent Pi confirms all concurrency eligibility rules and that N04-W05B has no control-plane
+        capability.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W05A
+  outcome: Run two independent real nodes through simultaneous dispatch and intentional parallel evaluation,
+    preserving isolated evidence; hold both at awaiting_review until N04-W05C performs the named acceptance-during-overlap
+    proof.
+  depends_on:
+  - N04-W04A
+  run: room:gddp-live-control
+  boundary: One frozen graph epoch and exactly the N04-W04A node pair; max two jobs; no manual DB repair/reset/delete
+    or graph mutation; stop on cross-node evidence, duplicate claim, capacity breach, or service failure.
+  checkpoint:
+    evidence: evidence/M4/N04-W05A-live-two-node-proof.md with time-aligned dispatch/session/evaluation
+      traces, result refs, lane receipts, and per-node isolation comparison.
+    verify: Parent Pi joins each chain independently; proves overlapping execution/evaluation intervals
+      via DB timestamps (jobs.updated_at / attempts / sessions) with wall-clock source recorded; confirms
+      no shared result/session identifiers; confirms both jobs remain awaiting_review before N04-W05C.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W05A: see checkpoint.verify'
+      expected: Parent Pi joins each chain independently; proves overlapping execution/evaluation intervals
+        via DB timestamps (jobs.updated_at / attempts / sessions) with wall-clock source recorded; confirms
+        no shared result/session identifiers; confirms both jobs remain awaiting_review before N04-W05C.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W05B
+  outcome: Independently observe the N04 live run and verify capacity, claim ownership, evidence isolation,
+    and unrelated-work continuity without controlling the run.
+  depends_on:
+  - N04-W04A
+  run: session:n04-concurrent-observer/chain:contract-scout
+  boundary: Read-only observation only; no tick, dispatch, reconcile, DB write, process signal, or shared
+    evidence filename.
+  checkpoint:
+    evidence: evidence/M4/N04-W05B-observer.md with sampled DB/log/ref state and overlap calculations.
+    verify: Parent Pi compares observer and actor timelines; discrepancy blocks N04-W06A until reconciled.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W05B: see checkpoint.verify'
+      expected: Parent Pi compares observer and actor timelines; discrepancy blocks N04-W06A until reconciled.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W05C
+  outcome: During the observed two-job window, Sab accepts the named acceptance candidate; capture that
+    a newly unblocked downstream job begins while the second independent job is still executing or evaluating—proving
+    acceptance-unblocks-downstream.
+  depends_on:
+  - N04-W05A
+  - N04-W05B
+  run: room:gddp-live-control
+  boundary: Sab alone performs the named acceptance between epochs; parent records pre-acceptance epoch_manifest_sha256,
+    performs/observes acceptance, captures post-acceptance epoch and the newly unblocked job start while
+    the peer job is still active. No automated graph write by agents; no reset/delete; stop if the second
+    job has already finished before acceptance (window missed—checkpoint as incomplete criterion, do not
+    fake overlap).
+  checkpoint:
+    evidence: evidence/M4/N04-W05C-acceptance-unblocks-downstream.md with pre/post epoch_manifest_sha256,
+      Sab acceptance record, newly unblocked job/session IDs, peer job still-active proof (timestamps),
+      and ready/blocked delta.
+    verify: Parent Pi confirms peer job was non-terminal at acceptance time, unblocked job transitioned
+      from blocked/not-started to running under the post-acceptance epoch, and only the Sab-named acceptance
+      changed graph status.
+  gate: Sab authorizes and performs the named acceptance while the second job is still live.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W05C: see checkpoint.verify'
+      expected: Parent Pi confirms peer job was non-terminal at acceptance time, unblocked job transitioned
+        from blocked/not-started to running under the post-acceptance epoch, and only the Sab-named acceptance
+        changed graph status.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W06A
+  outcome: Assemble the immutable Node 4 evidence bundle from implementation, live two-node, observer,
+    and acceptance-overlap receipts.
+  depends_on:
+  - N04-W05A
+  - N04-W05B
+  - N04-W05C
+  run: chain:contract-scout
+  boundary: Read-only bundle assembly only; no audits inside this packet; no acceptance inference; freeze
+    input receipt hashes.
+  checkpoint:
+    evidence: evidence/M4/N04-W06A-bundle.md with indexed receipt hashes for W02A/W02B/W03A/W05A/W05B/W05C
+      and criterion coverage matrix skeleton.
+    verify: Parent Pi resolves every bundled path/hash and confirms N04-W05C acceptance-overlap receipt
+      is present before audits start.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W06A: see checkpoint.verify'
+      expected: Parent Pi resolves every bundled path/hash and confirms N04-W05C acceptance-overlap receipt
+        is present before audits start.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W06B
+  outcome: Obtain Pi, Codex, and Claude audits of all four concurrency criteria against the frozen N04-W06A
+    bundle.
+  depends_on:
+  - N04-W06A
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only audit of the frozen bundle only; assess implementation and live proof separately;
+    no auditor may infer acceptance from concurrency tests; provider failure is blocked-capability.
+  checkpoint:
+    evidence: evidence/M4/N04-W06B-triple-audit.md with per-criterion support including acceptance-unblocks-downstream.
+    verify: Parent Pi verifies each criterion has actor trace, observer corroboration, acceptance-overlap
+      receipt, and current epoch_manifest_sha256.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W06B: see checkpoint.verify'
+      expected: Parent Pi verifies each criterion has actor trace, observer corroboration, acceptance-overlap
+        receipt, and current epoch_manifest_sha256.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N04-W07A
+  outcome: Record Sab's Node 4 decision and successor epoch required before Node 5 live frontier proof.
+  depends_on:
+  - N04-W06B
+  run: human:Sab-node-decision
+  boundary: Sab-only concurrent-node-flow decision; status/definition changes are recorded only between
+    proof epochs.
+  checkpoint:
+    evidence: evidence/M4/N04-W07A-sab-decision.md.
+    verify: Parent Pi recomputes epoch_manifest_sha256 and updates ready frontier.
+  status: held
+  milestone: M4
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N04-W07A: see checkpoint.verify'
+      expected: Parent Pi recomputes epoch_manifest_sha256 and updates ready frontier.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W01A
+  outcome: Audit frontier contract and code for ready/blocked visibility, duplicate suppression, downstream
+    preview, and human-owned acceptance boundary.
+  depends_on:
+  - N04-W07A
+  run: chain:contract-scout
+  boundary: Read-only audit of graph reader, job state, node status surfaces, and active epoch YAML; no
+    UI expansion or graph mutation.
+  checkpoint:
+    evidence: evidence/M5/N05-W01A-frontier-contract-audit.md.
+    verify: Parent Pi maps every Node 5 criterion to a current source/test/evidence gap.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W01A: see checkpoint.verify'
+      expected: Parent Pi maps every Node 5 criterion to a current source/test/evidence gap.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W01B
+  outcome: Build frontier-report prototype A from the audited contract in an isolated worktree.
+  depends_on:
+  - N05-W01A
+  run: session:n05-prototype-a/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n05-prototype-a and dedicated branch; write only prototype A
+    implementation/tests; must emit JSON plus log output; cannot modify gddp-config, live DB, or prototype
+    B paths.
+  checkpoint:
+    evidence: evidence/M5/N05-W01B-prototype-a.md with commit, fixtures, output samples, criterion tradeoff
+      notes.
+    verify: Parent Pi runs prototype A against the frozen fixture/epoch and confirms branch/evidence name
+      isolation.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W01B: see checkpoint.verify'
+      expected: Parent Pi runs prototype A against the frozen fixture/epoch and confirms branch/evidence
+        name isolation.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W01C
+  outcome: Build frontier-report prototype B from the audited contract in an isolated worktree.
+  depends_on:
+  - N05-W01A
+  run: session:n05-prototype-b/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n05-prototype-b and dedicated branch; write only prototype B
+    implementation/tests; must emit JSON plus log output; cannot modify gddp-config, live DB, or prototype
+    A paths.
+  checkpoint:
+    evidence: evidence/M5/N05-W01C-prototype-b.md with commit, fixtures, output samples, criterion tradeoff
+      notes.
+    verify: Parent Pi runs prototype B against the same frozen fixture/epoch as A and confirms branch/evidence
+      name isolation.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W01C: see checkpoint.verify'
+      expected: Parent Pi runs prototype B against the same frozen fixture/epoch as A and confirms branch/evidence
+        name isolation.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W01D
+  outcome: Record bakeoff comparison and Sab/Pi selection of one frontier prototype for integration.
+  depends_on:
+  - N05-W01B
+  - N05-W01C
+  run: chain:contract-scout
+  boundary: Read-only comparison of independently checkpointed prototype receipts; selection rationale
+    recorded; no integration edits in this packet; if one prototype is blocked-capability, selection may
+    proceed with explicit degraded rationale only if Sab approves.
+  checkpoint:
+    evidence: evidence/M5/N05-W01D-bakeoff-selection.md with side-by-side criterion table, chosen prototype
+      id, and rationale.
+    verify: Parent Pi confirms both input receipt hashes (or explicit blocked-capability) and that selection
+      names exactly one prototype branch.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W01D: see checkpoint.verify'
+      expected: Parent Pi confirms both input receipt hashes (or explicit blocked-capability) and that
+        selection names exactly one prototype branch.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W02A
+  outcome: Integrate the N05-W01D-selected frontier prototype into one isolated integration worktree and
+    validate its derived-state contract.
+  depends_on:
+  - N05-W01D
+  run: session:n05-integration/chain:feature-slice
+  boundary: Isolated worktree .worktrees/n05-integration; integrate only the selected prototype's necessary
+    changes; graph config/live DB read-only; stop for a new graph API requirement.
+  checkpoint:
+    evidence: evidence/M5/N05-W02A-integration.md with selection rationale, commit, JSON/log fixture output,
+      and focused tests.
+    verify: Parent Pi confirms the report derives state from graph/jobs rather than maintaining parallel
+      state and suppresses in-flight duplicate offers.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W02A: see checkpoint.verify'
+      expected: Parent Pi confirms the report derives state from graph/jobs rather than maintaining parallel
+        state and suppresses in-flight duplicate offers.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W03A
+  outcome: Produce a live before/after frontier proof around a named Sab acceptance, recording the frozen
+    pre-acceptance epoch and successor post-acceptance epoch.
+  depends_on:
+  - N05-W02A
+  run: room:gddp-live-control
+  boundary: Parent captures pre-acceptance derived report; Sab alone accepts the named awaiting-review
+    node between epochs; parent captures post-acceptance report; no automated graph write, reset, delete,
+    or duplicate dispatch.
+  checkpoint:
+    evidence: evidence/M5/N05-W03A-before-after-frontier.md with pre/post report hashes, old/new epoch_manifest_sha256,
+      Sab decision record, ready/blocked delta, and duplicate-suppression proof.
+    verify: Parent Pi confirms epoch_manifest_sha256 stayed unchanged within each capture epoch and that
+      the post report reflects only Sab's recorded graph change.
+  gate: Sab authorizes and performs the named acceptance after reviewing the pre-acceptance report.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W03A: see checkpoint.verify'
+      expected: Parent Pi confirms epoch_manifest_sha256 stayed unchanged within each capture epoch and
+        that the post report reflects only Sab's recorded graph change.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W03B
+  outcome: Obtain Pi, Codex, and Claude audits of the frontier proof, including whether acceptance actually
+    advanced only the correct downstream frontier.
+  depends_on:
+  - N05-W03A
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only audit of code, fixture outputs, and before/after epoch evidence; no peer edits graph
+    state.
+  checkpoint:
+    evidence: evidence/M5/N05-W03B-triple-audit.md.
+    verify: Parent Pi replays report generation read-only against recorded pre/post data and reconciles
+      audit findings.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W03B: see checkpoint.verify'
+      expected: Parent Pi replays report generation read-only against recorded pre/post data and reconciles
+        audit findings.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N05-W04A
+  outcome: Record Sab's Node 5 decision and the final working graph epoch for baseline assembly.
+  depends_on:
+  - N05-W03B
+  run: human:Sab-node-decision
+  boundary: Sab-only graph-frontier-operations decision; record any definition/status mutation as a successor
+    epoch.
+  checkpoint:
+    evidence: evidence/M5/N05-W04A-sab-decision.md.
+    verify: Parent Pi records final working project/node hashes before M6 begins.
+  status: held
+  milestone: M5
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N05-W04A: see checkpoint.verify'
+      expected: Parent Pi records final working project/node hashes before M6 begins.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N99-W01A
+  outcome: Build a manifest that indexes every packet attempt, decision, graph epoch/hash, commit/ref,
+    receipt, and retained historical validator.
+  depends_on:
+  - N01-W04A
+  - N02-W04A
+  - N03-W04A
+  - N04-W07A
+  - N05-W04A
+  run: chain:contract-scout
+  boundary: Read-only manifest assembly; no cleanup or rewriting history; include historical Factory validators
+    with their superseded hash/status.
+  checkpoint:
+    evidence: evidence/M6/N99-W01A-manifest.yaml.
+    verify: Parent Pi resolves every manifest path/hash and verifies no packet attempt was overwritten.
+  status: held
+  milestone: M6
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N99-W01A: see checkpoint.verify'
+      expected: Parent Pi resolves every manifest path/hash and verifies no packet attempt was overwritten.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N99-W01B
+  outcome: Run final runtime/config/production validation against the final working epoch and report exact
+    health, test, hash, and service state.
+  depends_on:
+  - N01-W04A
+  - N02-W04A
+  - N03-W04A
+  - N04-W07A
+  - N05-W04A
+  run: room:gddp-live-control
+  boundary: Validation only; no source/gddp-config edits, graph mutation, reset/delete, forced cleanup,
+    or dispatch beyond named read-only/health commands.
+  checkpoint:
+    evidence: evidence/M6/N99-W01B-final-validation.md with runtime git status/HEAD, pytest output, config
+      status/hashes, intake health, launchd state, and live DB consistency observations.
+    verify: Parent Pi repeats command outputs from fresh shells and labels any production critical as
+      a baseline blocker rather than repairing it here.
+  status: held
+  milestone: M6
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N99-W01B: see checkpoint.verify'
+      expected: Parent Pi repeats command outputs from fresh shells and labels any production critical
+        as a baseline blocker rather than repairing it here.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N99-W01C
+  outcome: Return a read-only retirement inventory for all packet worktrees, branches, Factory processes,
+    orphan worktrees/spools, and retained evidence with eligibility status.
+  depends_on:
+  - N01-W04A
+  - N02-W04A
+  - N03-W04A
+  - N04-W07A
+  - N05-W04A
+  run: chain:contract-scout
+  boundary: Read-only inventory; no worktree removal, process kill, pruning, reset, deletion, or forced
+    cleanup; list exact owners and blockers.
+  checkpoint:
+    evidence: evidence/M6/N99-W01C-retirement-inventory.md.
+    verify: Parent Pi confirms each listed worktree/process against git/worktree and process state; normal
+      retirement is a later separately authorized operation.
+  status: held
+  milestone: M6
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N99-W01C: see checkpoint.verify'
+      expected: Parent Pi confirms each listed worktree/process against git/worktree and process state;
+        normal retirement is a later separately authorized operation.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N99-W02A
+  outcome: Obtain final Pi, Codex, and Claude audits of manifest integrity, validation evidence, residual
+    risks, graph authority, and epoch consistency.
+  depends_on:
+  - N99-W01A
+  - N99-W01B
+  - N99-W01C
+  run:
+    all:
+    - chain:parallel-review
+    - peer:codex/auditor@agent-bus
+    - peer:claude/auditor@agent-bus
+  boundary: Read-only final audit; peer output remains evidence and cannot resolve missing Sab decisions
+    or production criticals.
+  checkpoint:
+    evidence: evidence/M6/N99-W02A-final-triple-audit.md.
+    verify: Parent Pi cross-checks blockers against the manifest and reports unresolved findings verbatim
+      to Sab.
+  status: held
+  milestone: M6
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N99-W02A: see checkpoint.verify'
+      expected: Parent Pi cross-checks blockers against the manifest and reports unresolved findings verbatim
+        to Sab.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
+- id: N99-W03A
+  outcome: Record Sab's five-node completion/baseline decision and final graph/config hash with any deferred/pending
+    exceptions stated explicitly.
+  depends_on:
+  - N99-W02A
+  run: human:Sab-completion-and-baseline-hash
+  boundary: Sab alone determines baseline completion and graph status; this packet records, but never
+    derives, the decision; no cleanup is bundled into completion.
+  checkpoint:
+    evidence: evidence/M6/N99-W03A-sab-baseline-decision.md with final epoch_manifest_sha256, node YAML
+      hashes/statuses, decision scope, and exact resume if incomplete.
+    verify: Parent Pi rehashes all graph files and confirms the decision record matches live gddp-config.
+  status: held
+  milestone: M6
+  inputs:
+    epoch_manifest_sha256: record at packet start (or inherit frozen epoch)
+    source_paths: listed in packet boundary/evidence
+  verification:
+    commands:
+    - command: '# parent verifies checkpoint for N99-W03A: see checkpoint.verify'
+      expected: Parent Pi rehashes all graph files and confirms the decision record matches live gddp-config.
+  return_schema: worker_handoff_receipts under operating_model.factory_lessons
+  retirement: Only after immutable attempt receipt is written under evidence_root; no force cleanup.
 wave_schedule:
-  - wave: W00
-    packets: [N00-W01A, N00-W01C]
-    actual_parallelism: Run both now; both are read-only and use separate evidence files.
-  - wave: W01
-    packets: [N00-W01B, N00-W02A]
-    actual_parallelism: After snapshot, N00-W01B is a Sab-gated live service action while N00-W02A is read-only review; run concurrently only after the live action has exclusive service ownership.
-  - wave: W02
-    packets: [N00-W03A]
-    actual_parallelism: Human gate only.
-  - wave: W03
-    packets: [N01-W01A, N01-W01B]
-    actual_parallelism: Run criterion map plus two adapter audit sessions concurrently; all are read-only with distinct outputs.
-  - wave: W04
-    packets: [N01-W02A]
-    actual_parallelism: One isolated writer/no-change worker.
-  - wave: W05
-    packets: [N01-W03A]
-    actual_parallelism: Pi/Codex/Claude read-only audit lanes run in parallel.
-  - wave: W06
-    packets: [N01-W04A]
-    actual_parallelism: Human gate only.
-  - wave: W07
-    packets: [N02-W01A]
-    actual_parallelism: Read-only lineage synthesis.
-  - wave: W08
-    packets: [N02-W01B]
-    actual_parallelism: Isolated disposable raw-packet smoke.
-  - wave: W09
-    packets: [N02-W01C]
-    actual_parallelism: Human gate only.
-  - wave: W10
-    packets: [N02-W02A, N02-W02B]
-    actual_parallelism: One live actor and one read-only observer run concurrently; observer never issues a control-plane command.
-  - wave: W11
-    packets: [N02-W03A]
-    actual_parallelism: Archive/comparison after both live receipts close.
-  - wave: W12
-    packets: [N02-W03B]
-    actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
-  - wave: W13
-    packets: [N02-W04A]
-    actual_parallelism: Human gate only.
-  - wave: W14
-    packets: [N03-W01A, N03-W01B]
-    actual_parallelism: Success/context and failure-semantics audits run concurrently, read-only.
-  - wave: W15
-    packets: [N03-W02A, N03-W03A]
-    actual_parallelism: N03-W03A begins only after N03-W02A; it is receipt-first and normally no live rerun.
-  - wave: W16
-    packets: [N03-W03B]
-    actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
-  - wave: W17
-    packets: [N03-W04A]
-    actual_parallelism: Human gate only.
-  - wave: W18
-    packets: [N04-W01A]
-    actual_parallelism: Read-only gap mapping.
-  - wave: W19
-    packets: [N04-W01B]
-    actual_parallelism: Scenario selection follows gap map.
-  - wave: W20
-    packets: [N04-W02A, N04-W02B]
-    actual_parallelism: "Required two-writer wave: capacity writer and evaluation-claim writer use separate worktrees, branches, paths, tests, and evidence roots."
-  - wave: W21
-    packets: [N04-W03A, N04-W04A]
-    actual_parallelism: Parent integrates first; pre-run gate follows integration before any live action.
-  - wave: W22
-    packets: [N04-W05A, N04-W05B]
-    actual_parallelism: Required live actor plus read-only concurrent observer.
-  - wave: W23
-    packets: [N04-W06A]
-    actual_parallelism: Bundle then triple audit lanes in parallel inside the packet.
-  - wave: W24
-    packets: [N04-W07A]
-    actual_parallelism: Human gate only.
-  - wave: W25
-    packets: [N05-W01A]
-    actual_parallelism: Read-only contract audit.
-  - wave: W26
-    packets: [N05-W01B]
-    actual_parallelism: "Required dual prototype bakeoff: two isolated writers concurrently, no shared paths or evidence names."
-  - wave: W27
-    packets: [N05-W02A]
-    actual_parallelism: Parent-selected prototype integration only.
-  - wave: W28
-    packets: [N05-W03A]
-    actual_parallelism: Parent capture, Sab acceptance between epochs, parent post-capture; no concurrent graph writer.
-  - wave: W29
-    packets: [N05-W03B]
-    actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
-  - wave: W30
-    packets: [N05-W04A]
-    actual_parallelism: Human gate only.
-  - wave: W31
-    packets: [N99-W01A, N99-W01B, N99-W01C]
-    actual_parallelism: Manifest, validation, and read-only retirement inventory run concurrently with separate evidence outputs.
-  - wave: W32
-    packets: [N99-W02A]
-    actual_parallelism: Pi/Codex/Claude final audit lanes run in parallel.
-  - wave: W33
-    packets: [N99-W03A]
-    actual_parallelism: Sab completion decision only.
+- wave: W00
+  packets:
+  - N00-W01A
+  - N00-W01C
+  actual_parallelism: Run both now; both are read-only and use separate evidence files.
+- wave: W01
+  packets:
+  - N00-W01B
+  - N00-W02A
+  actual_parallelism: After snapshot, N00-W01B is a Sab-gated live service action while N00-W02A is read-only
+    review; run concurrently only after the live action has exclusive service ownership.
+- wave: W02
+  packets:
+  - N00-W03A
+  actual_parallelism: Human gate only.
+- wave: W03
+  packets:
+  - N01-W01A
+  - N01-W01B
+  actual_parallelism: Run criterion map plus two adapter audit sessions concurrently; all are read-only
+    with distinct outputs.
+- wave: W04
+  packets:
+  - N01-W02A
+  actual_parallelism: One isolated writer/no-change worker.
+- wave: W05
+  packets:
+  - N01-W03A
+  actual_parallelism: Pi/Codex/Claude read-only audit lanes run in parallel.
+- wave: W06
+  packets:
+  - N01-W04A
+  actual_parallelism: Human gate only.
+- wave: W07
+  packets:
+  - N02-W01A
+  actual_parallelism: Read-only lineage synthesis.
+- wave: W08
+  packets:
+  - N02-W01B
+  actual_parallelism: Isolated disposable raw-packet smoke.
+- wave: W09
+  packets:
+  - N02-W01C
+  actual_parallelism: Human gate only.
+- wave: W10
+  packets:
+  - N02-W02A
+  - N02-W02B
+  actual_parallelism: One live actor and one read-only observer run concurrently; observer never issues
+    a control-plane command.
+- wave: W11
+  packets:
+  - N02-W03A
+  actual_parallelism: Archive/comparison after both live receipts close.
+- wave: W12
+  packets:
+  - N02-W03B
+  actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
+- wave: W13
+  packets:
+  - N02-W04A
+  actual_parallelism: Human gate only.
+- wave: W14
+  packets:
+  - N03-W01A
+  - N03-W01B
+  actual_parallelism: Success/context and failure-semantics audits run concurrently, read-only.
+- wave: W15
+  packets:
+  - N03-W02A
+  - N03-W03A
+  actual_parallelism: N03-W03A begins only after N03-W02A; it is receipt-first and normally no live rerun.
+- wave: W16
+  packets:
+  - N03-W03B
+  actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
+- wave: W17
+  packets:
+  - N03-W04A
+  actual_parallelism: Human gate only.
+- wave: W18
+  packets:
+  - N04-W01A
+  actual_parallelism: Read-only gap mapping.
+- wave: W19
+  packets:
+  - N04-W01B
+  actual_parallelism: Scenario selection follows gap map.
+- wave: W20
+  packets:
+  - N04-W02A
+  - N04-W02B
+  actual_parallelism: 'Required two-writer wave: capacity writer and evaluation-claim writer use separate
+    worktrees, branches, paths, tests, and evidence roots.'
+- wave: W21
+  packets:
+  - N04-W03A
+  - N04-W04A
+  actual_parallelism: Parent integrates first; pre-run gate follows integration before any live action.
+- wave: W22
+  packets:
+  - N04-W05A
+  - N04-W05B
+  actual_parallelism: Required live actor plus read-only concurrent observer; both stop at awaiting_review
+    before W22b.
+- wave: W22b
+  packets:
+  - N04-W05C
+  actual_parallelism: Sab-gated acceptance during overlap; parent captures unblocked downstream while
+    peer job still active.
+- wave: W23
+  packets:
+  - N04-W06A
+  actual_parallelism: Bundle assembly only; frozen inputs for audits.
+- wave: W23b
+  packets:
+  - N04-W06B
+  actual_parallelism: Pi/Codex/Claude audit lanes run in parallel against frozen bundle.
+- wave: W24
+  packets:
+  - N04-W07A
+  actual_parallelism: Human gate only.
+- wave: W25
+  packets:
+  - N05-W01A
+  actual_parallelism: Read-only contract audit.
+- wave: W26
+  packets:
+  - N05-W01B
+  - N05-W01C
+  actual_parallelism: 'Required dual prototype bakeoff: two isolated writers concurrently, separate packet
+    checkpoints.'
+- wave: W26b
+  packets:
+  - N05-W01D
+  actual_parallelism: Bakeoff selection after both prototype receipts (or explicit blocked-capability).
+- wave: W27
+  packets:
+  - N05-W02A
+  actual_parallelism: Parent-selected prototype integration only.
+- wave: W28
+  packets:
+  - N05-W03A
+  actual_parallelism: Parent capture, Sab acceptance between epochs, parent post-capture; no concurrent
+    graph writer.
+- wave: W29
+  packets:
+  - N05-W03B
+  actual_parallelism: Pi/Codex/Claude audit lanes run in parallel.
+- wave: W30
+  packets:
+  - N05-W04A
+  actual_parallelism: Human gate only.
+- wave: W31
+  packets:
+  - N99-W01A
+  - N99-W01B
+  - N99-W01C
+  actual_parallelism: Manifest, validation, and read-only retirement inventory run concurrently with separate
+    evidence outputs.
+- wave: W32
+  packets:
+  - N99-W02A
+  actual_parallelism: Pi/Codex/Claude final audit lanes run in parallel.
+- wave: W33
+  packets:
+  - N99-W03A
+  actual_parallelism: Sab completion decision only.
 failure_escalation:
-  default: A failed, blocked, or contradicted packet stops only its transitive dependents; unrelated ready siblings continue when their isolation and gates remain valid.
+  default: A failed, blocked, or contradicted packet stops only its transitive dependents; unrelated ready
+    siblings continue when their isolation and gates remain valid.
   classes:
-    - condition: Hash/definition drift during a live proof.
-      action: Stop the proof, preserve all evidence, mark the attempt invalid-for-current-epoch, and request Sab's between-epoch decision; do not overwrite prior receipts.
-    - condition: Production intake remains unhealthy after N00-W01B or requires forbidden repair.
-      action: Mark production baseline blocked, preserve health outputs, and let read-only definition work continue; do not begin a proof that depends on the broken service.
-    - condition: Missing local agent, agent-bus peer, credential, or evaluator capability.
-      action: Mark blocked-capability; do not fabricate a semantic result. Optional peer audits may be degraded only when the packet does not require all lanes; required triple-audit packets wait for Sab to waive/re-route explicitly.
-    - condition: Live actor/observer detects duplicate evaluation, cross-node evidence, capacity breach, or manual repair need.
-      action: Stop the affected live proof immediately, preserve DB/ref/log state, block Node 4/5 dependents, and create a bounded corrective proposal rather than retrying the same proof.
-    - condition: Writer scope breach or shared-path/isolation conflict.
-      action: Stop the later/conflicting writer, preserve branch state, do not merge it, and require a new packet with corrected path ownership.
-    - condition: Test/verification failure.
-      action: Permit at most one bounded corrective pass when the packet explicitly owns the failing surface; otherwise checkpoint failed-verification with command output and escalate to parent/Sab.
-    - condition: Stale Factory or validator assertion conflicts with the current human-approved packet hash.
-      action: Preserve it as historical evidence, record the supersession link, and validate only the current epoch contract.
-    - condition: Any request for reset, deletion, forced worktree removal, DB repair, or graph mutation by an agent.
-      action: Stop and escalate to Sab; no packet authorizes it.
-  retry_rule: Retries append a new attempt receipt with a new attempt identity; they never rewrite a failed receipt or make a failed executor attempt invisible.
-exact_resume_point: Start N00-W01A and N00-W01C concurrently. After their receipts, run N00-W01B only with Sab's production-service authorization and N00-W02A as the read-only definition review; then stop for N00-W03A before any Node 1 or Node 2 execution.
+  - condition: Hash/definition drift during a live proof.
+    action: Stop the proof, preserve all evidence, mark the attempt invalid-for-current-epoch, and request
+      Sab's between-epoch decision; do not overwrite prior receipts.
+  - condition: Production intake remains unhealthy after N00-W01B or requires forbidden repair.
+    action: Mark production baseline blocked, preserve health outputs, and let read-only definition work
+      continue; do not begin a proof that depends on the broken service.
+  - condition: Missing local agent, agent-bus peer, credential, or evaluator capability.
+    action: Mark blocked-capability; do not fabricate a semantic result. Optional peer audits may be degraded
+      only when the packet does not require all lanes; required triple-audit packets wait for Sab to waive/re-route
+      explicitly.
+  - condition: Live actor/observer detects duplicate evaluation, cross-node evidence, capacity breach,
+      or manual repair need.
+    action: Stop the affected live proof immediately, preserve DB/ref/log state, block Node 4/5 dependents,
+      and create a bounded corrective proposal rather than retrying the same proof.
+  - condition: Writer scope breach or shared-path/isolation conflict.
+    action: Stop the later/conflicting writer, preserve branch state, do not merge it, and require a new
+      packet with corrected path ownership.
+  - condition: Test/verification failure.
+    action: Permit at most one bounded corrective pass when the packet explicitly owns the failing surface;
+      otherwise checkpoint failed-verification with command output and escalate to parent/Sab.
+  - condition: Stale Factory or validator assertion conflicts with the current human-approved packet hash.
+    action: Preserve it as historical evidence, record the supersession link, and validate only the current
+      epoch contract.
+  - condition: Any request for reset, deletion, forced worktree removal, DB repair, or graph mutation
+      by an agent.
+    action: Stop and escalate to Sab; no packet authorizes it.
+  - condition: N04-W05C acceptance window missed (peer job finished before acceptance).
+    action: Checkpoint incomplete for acceptance-unblocks-downstream; do not fabricate overlap; schedule
+      a bounded re-run of the live pair under a new attempt identity with Sab re-authorization.
+  retry_rule: Retries append a new attempt receipt with a new attempt identity; they never rewrite a failed
+    receipt or make a failed executor attempt invisible.
+exact_resume_point: Start N00-W01A and N00-W01C concurrently. After their receipts, run N00-W01B only
+  with Sab's production-service authorization and N00-W02A as the read-only definition review; then stop
+  for N00-W03A before any Node 1 or Node 2 execution.
+plan_revision: r1-review-corrections
+revision_notes:
+- N04 capacity ownership moved to runner.py reservation/planning (not dispatcher.py).
+- N04 acceptance-unblocks-downstream proved via N04-W05C during two-job overlap.
+- Epoch identity is project.yaml + all project node YAMLs (epoch_manifest_sha256).
+- N00-W01B removed from N00-W03A; live health attached to N02-W01C and later live gates.
+- N04-W06 split into bundle (W06A) + triple audit (W06B).
+- N05 prototypes split into W01B/W01C + selection W01D.
+- Intake critical count marked unverified until N00-W01A measures it.
+- packet_contract schema added for executable checkpoints; per-packet files materialize at activation.

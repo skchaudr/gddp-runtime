@@ -1,3 +1,7 @@
+## Disposition
+
+**r1 landed** into `pi-native-five-node-baseline-ledger.yaml` (`plan_revision: r1-review-corrections`). All eight findings addressed; residual: full per-packet executable files still materialize at activation (schema + default verification present). Plan paused — not executing.
+
 ## Review
 
 - **Blocker — N04-W02A owns the wrong enforcement surface.** `compiled-five-node-ledger.yaml:411-418` limits the capacity writer to `heartbeat/dispatcher.py` and helpers. Live code shows `dispatcher.py:34-56` receives only one job and a repo, with no DB connection or project policy; all events are classified and job/session reservations are created in `heartbeat/runner.py:157-301` before `dispatch()` is called. **Impact:** `max_concurrent_jobs: 2` cannot be durably enforced across existing plus newly reserved jobs within the declared packet scope, so the N04 live proof can exceed capacity. **Smallest fix:** move W02A ownership to the reservation/planning transaction in `runner.py` plus the exact config/DB helper and tests needed to atomically cap active + planned jobs; keep adapter dispatch unchanged.
