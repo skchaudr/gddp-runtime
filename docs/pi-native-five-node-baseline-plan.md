@@ -20,6 +20,29 @@ Factory mission `3efe69ab` is **closed**. Its commits and receipts are historica
 - **Sequential only at real gates.** A later **capability node** opens after the prior node’s human decision (or explicit waiver) — not after ceremony.
 - **Deferred is a decision, not a queue.** Node 1 does not invent a task list that blocks Node 2.
 
+### Execution horizon
+
+Plan at different resolutions instead of pretending future knowledge is current:
+
+| Horizon | Commitment |
+|---------|------------|
+| **Now — active node** | Specify the next actions, owner, live boundary, evidence, and stop gate tightly enough to execute. Node 2 below is at this resolution. |
+| **Next — next capability** | Preserve intent, entry gate, likely proof, and known risks. Read-only preparation may run early when it shortens the next gate without changing code, graph, or live state. |
+| **Later — remaining baseline** | Preserve outcomes, authority, and dependency shape only. Task lists are hypotheses to re-check when their gate opens. |
+
+Abundant model/token capacity is used on independent evidence gathering, route smoke, competing analysis, and failure-mode review that reduces a named uncertainty in **Now** or **Next**. It is not a reason to implement later-node guesses or repeat already-settled validation.
+
+### Checkpoint and pivot rule
+
+After each active task, parent Pi records the new facts and chooses exactly one:
+
+- **continue** — evidence supports the next listed task;
+- **repair in scope** — a load-bearing failure is owned by the active node and has a bounded fix;
+- **pivot** — supersede the next task/route because live evidence changed, preserving the abandoned attempt and its effect on dependencies;
+- **propose graph amendment** — the node meaning, criteria, dependency, or frontier should change; stop implementation for Sab.
+
+Only the active slice is rewritten when evidence changes. Charted later nodes remain a map until their entry gate. Provider failure, an empty/incorrect agent diff, wrong executor selection, stale artifact provenance, duplicate control-plane activity, or unexpected graph/DB state stops the affected route; it does not become a node verdict or trigger a wholesale mission rewrite.
+
 ## Authority
 
 | Domain | Owner |
@@ -52,6 +75,8 @@ Re-verify live before dispatch; this table is a pointer, not a substitute for a 
 | **Active workstream** | **Node 2** real local round-trip |
 | **Charted next** | Node 3 → 4 → 5 → close (not in flight until their gates open) |
 
+For Nodes 3–5, the stated outcome and human entry/exit gates are durable intent. Their numbered tasks are the best current decomposition, not advance authorization to execute or a promise that the decomposition survives new evidence.
+
 ---
 
 ## Node 1 — `neutral-executor-contract`
@@ -70,19 +95,29 @@ No criterion map, adapter audit, or implementation list. Deferred does **not** b
 **Transport:** graph-selected `local_subprocess` → adapter → `local_agent_executor` + real agent argv.  
 **Stop:** job reaches `awaiting_review`. Sab decides accept / retry / revise.
 
-### Tasks (all required unless Sab waives)
+### One active attempt record
 
-| # | Task | Notes |
-|---|------|--------|
-| N2-1 | **Dispose stuck canary job** | Mark the blocking job **failed** (human disposition). Keep receipt, DB rows, refs, patch. **Do not delete/reset.** Prefer an honest job-dispose path; do not misuse graph “node status” UI/CLI for job janitor work. |
-| N2-2 | **Seal routing provenance** | Commit dirty `local_subprocess` first on `job-state-consistency` as Sab-owned graph config (or explicit Sab waiver to run dirty-only). |
-| N2-3 | **Pin run-scoped execution env** | Set `GDDP_LOCAL_SUBPROCESS_ARGV` (wrapper + agent) and spool dir; **unset** override; keep automatic heartbeat from firing a bad env (manual ticks or unload for the window). |
-| N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. |
-| N2-5 | **Manual dispatch tick** | One controlled heartbeat/runner tick: classify → reserve → dispatch. Observe session/agent. |
-| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks: collect patch, reconcile, evaluate with real credentials as required. Stop at human review. |
-| N2-7 | **Archive + Sab decision** | Packet, job/attempt/session/result IDs, spool metadata, diff/ref/SHA, lane status, pre/post config hashes. Then Sab accept / retry / revise. |
+Use one attempt directory for N2 rather than seven ceremonial packet files:
 
-**Parallel inside N2 (optional, isolation-safe):** after N2-2/N2-3 are set, prepare archive layout while N2-4/N2-5 run; read-only observer on logs/DB during live ticks if desired. No second control-plane actor.
+```text
+.handoffs/artifacts/five-node-baseline/N2/<attempt-id>/
+```
+
+Before the first mutation, record runtime HEAD/status, target node/config hash and diff, blocking job/result/session IDs, selected agent argv (no secret values), heartbeat ownership, and the intended stop condition. Append command outcomes and identifiers as the attempt runs; close it with the archived receipt or a pivot record.
+
+### Tasks (current route; re-check at every checkpoint)
+
+| # | Task | Evidence / pivot condition |
+|---|------|----------------------------|
+| N2-1 | **Dispose stuck canary job** | Sab confirms the preserved `awaiting_review` evidence is not being accepted. Use the existing audited job-state surface (`python3 scripts/node_status.py set <job-id> failed --reason "…"`), which updates job/queue state and writes `manual_status_change`. Keep receipt, DB rows, refs, and patch. If disposal would mutate graph truth or delete evidence, stop and pivot. |
+| N2-2 | **Seal routing provenance** | Sab decides whether to commit/push the known one-line `local_subprocess`-first config delta or explicitly authorize the dirty epoch. Record the exact config hash used by the attempt. Do not broaden the graph edit. |
+| N2-3 | **Pin and smoke the exact route** | Choose `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. Run one disposable no-DB smoke through that exact argv and raw packet contract. Require an intentional worktree edit/diff, clean exit, and cleanup. Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution otherwise has sole heartbeat ownership. |
+| N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. Preserve the exact payload/INSERT and resulting event row. A second event or wrong node classification stops the route. |
+| N2-5 | **One controlled dispatch tick** | Immediately before the tick, re-check HEAD, config hash, event ID, required env names, absent override, and single control-plane ownership. Record selected executor and job/attempt/session IDs. Stop before retry if selection is not `local_subprocess`. |
+| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks collect patch, reconcile, and evaluate with real credentials. Join packet → attempt → session → result commit/ref → evaluator receipt. Independently verify every required artifact was created or changed by this attempt relative to its expected base; pre-existing files do not count. If receipt provenance points at the wrong node/SHA or duplicate evaluation appears, preserve and pivot. Stop at human review. |
+| N2-7 | **Archive + Sab decision** | Archive packet, event/job/attempt/session/result IDs, spool metadata, diff/ref/SHA, artifact-provenance check, lane status, command log, and pre/post config hashes. Sab then accepts, retries, revises, defers, or abandons the capability node. |
+
+**Parallel inside N2 (optional, isolation-safe):** once N2-2/N2-3 checkpoint, prepare archive structure and run a read-only observer while the parent owns live ticks. Spend additional review capacity on a named uncertainty from the live evidence; do not add a second control-plane actor or default audit swarm.
 
 **N2 exit gate:** Sab’s decision on the real receipt. That opens Node 3 work.
 
