@@ -66,13 +66,18 @@ total.
 ## Checklist
 
 - [x] **Phase 1 - snapshot + config:** done, see Setup above.
-- [x] **Phase 2A - fresh run x3:** done 2026-07-23. Run #1 surfaced a real bug
-  (see Bug found below), fixed and committed (`7756a36`), which reset the
+- [x] **Phase 2A - fresh run x3:** done 2026-07-23/24. Run #1 surfaced a real
+  bug (see Bug found below), fixed and committed (`7756a36`), which reset the
   clean-run counter to zero per our own rule. Runs #1-#3 post-fix all
-  completed cleanly in exactly 2 ticks each (dispatch, reconcile), reaching
-  `awaiting_review` with an unchanged `project.yaml` hash. See
-  `.handoffs/052-node2-stabilization-loop-evidence.md` for full per-run
-  evidence (job_ids, session_ids, receipts).
+  completed cleanly in exactly 2 ticks each, reaching `awaiting_review` with
+  an unchanged `project.yaml` hash — but used a deliberately invalid
+  evaluator credential, so their `needs-human-review` outcomes were harness
+  crashes, not real judgments (caught by Sab, corrected). A 4th run with a
+  real credential then surfaced and fixed a second bug (`acceptance_check`
+  never stored on the direct path, `fde0fc4`) and produced a genuine
+  semantic verdict (`fail`, `lane_status: completed`) that `node_status.py
+  show` now displays in full. See
+  `.handoffs/052-node2-stabilization-loop-evidence.md` for full evidence.
 - [x] **Phase 2B - interruption x1:** done 2026-07-23. Killed the executor
   subprocess mid-execution (SIGTERM, not the adapter's graceful cancel) on a
   slow variant script. Reconciler detected `failed`, automatically allocated
