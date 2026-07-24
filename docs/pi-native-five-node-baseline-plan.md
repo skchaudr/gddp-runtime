@@ -1,5 +1,93 @@
 # Pi-Native Five-Node Baseline Plan
 
+## Operating rewrite (r2) — verified surfaces, manual parent, suggested topology
+
+**Status:** prepended after design critique. This section is the binding operating posture for execution. Sections below remain historical plan material (ledger spine, milestones, review corrections). Where they conflict with this rewrite, **this rewrite wins** until jointly revised.
+
+### Binding invariants (keep)
+
+- Same wave means **eligible**, not automatically launched.
+- Concurrent writers require isolated worktrees and disjoint ownership.
+- One live DB/control-plane actor; observers remain read-only.
+- Children return evidence; **parent** verifies and integrates.
+- Human packets stop for Sab.
+- Provider failure / peer silence → **blocked-capability**, not a node verdict.
+- Failed work blocks dependents; isolated siblings may continue.
+
+### What this rewrite drops as binding choreography
+
+Ledger `run:` strings, fixed worktree names, triple-audit-everywhere, auto “ready-set scheduler,” per-packet epoch YAML materialization as ceremony, and invented launch syntax are **suggestions or legacy labels**. They do not authorize a route. Each activated NTP chooses its actual route from live evidence at activation time.
+
+### Verified Pi surfaces (checked live at r2 write)
+
+| Surface | How it actually works | Verified |
+|---------|----------------------|----------|
+| Parent Pi tools | `read` / `bash` / `edit` / `write` / `grep` / `find` in this session | yes — primary loop |
+| `subagent` single | `subagent({ agent, task, async, context, cwd, output, acceptance })` | yes — used this mission |
+| `subagent` parallel | `subagent({ tasks: [{agent,task,...}], concurrency })` | config allows maxTasks 8 / concurrency 4 |
+| `subagent` chain array | Load `~/.pi/agent/chains/<name>.chain.json`, interpolate `{task}`, pass **array** as `subagent({ chain: [...] })`. Tool does **not** run saved chains by name string | yes — docs + chain files present |
+| Named agents | `scout`, `reviewer`, `delegate`, `planner`, `worker`, … via `subagent({ action: "list" })` | package live |
+| Agent-bus | `bus ask` / `bus send` / `bus history`; `bus whoami` → `agent-sab-mini` @ `:8765`; client/server 2.0.0 | yes |
+| Codex / Claude peers | Reachable only if they poll the bus; silence = unavailable, not approval. Prior ASKs 610/611 had no replies at last check | transport yes; peer liveness per-call |
+| `pi-brief` | Separate Pi sessions per brief step; `pi-brief validate\|step\|run` | binary present; `gddp-node2-prep.brief.json` exists |
+| Herdr | `herdr` CLI present; visible panes via harness `spawn` when used | binary present |
+| Worktrees | `git worktree add` under repo; one writer per worktree | git standard |
+| Evidence root | `.handoffs/artifacts/five-node-baseline/` (create on first write) | path convention |
+
+**Config fact (not doctrine):** `maxSubagentDepth: 1`, `asyncByDefault: true`, global concurrency 8. Treat as current machine settings to re-check, not sacred law.
+
+### Manual parent operating loop
+
+Parent Pi is the only orchestrator. No auto-dispatcher.
+
+1. **Pick next work with Sab** — name packet id(s) from the ledger DAG and ready frontier; confirm gates.
+2. **Preflight the route** — for that packet only: confirm agent/bus/worktree/cwd; one known-good smoke if the surface is cold.
+3. **Choose topology from live evidence** — pick among verified surfaces above; record the choice in the packet receipt (`route_used`).
+4. **Dispatch** — launch child(ren); if results are load-bearing for the next human decision, parent depends on them (parallel is fine; “walk away async” is not automatic).
+5. **Verify** — parent re-checks evidence paths, commands, hashes; write receipt under evidence root.
+6. **Update frontier by hand** — mark packet checkpointed/blocked; list what becomes eligible; stop for human packets.
+7. **Escalate** — scope breach, isolation conflict, or missing capability → stop that line, preserve evidence, ask Sab.
+
+Session note: async run ids are session-local. A new parent session re-reads evidence + ledger status; it does not resume invisible scheduler state.
+
+### Suggested topology per wave (non-binding)
+
+Activate one wave at a time. Re-validate routes when the wave opens.
+
+| Wave | Packets | Suggested topology | Why suggested |
+|------|---------|--------------------|---------------|
+| W00 | N00-W01A, N00-W01C | Parent-dependent parallel: two routes — (A) `scout` or loaded `contract-scout` chain array; (C) same plus `bus ask` codex + claude if peers alive | Freeze shared truth + prove peer lanes before definition/live work |
+| W01 | N00-W01B, N00-W02A | B: parent/direct or visible live pane after Sab auth; A: review agents / bus auditors after snapshot | Service restore separate from definition review |
+| W02 | N00-W03A | Human only | Graph epoch / def policy |
+| W03–W06 | N01 recon → optional fix → audit → Sab | Recon: scout; fix: worker in isolated worktree if gap proven; audit: reviewer (+ peers if useful) | Node1 policy evidence |
+| W07–W13 | N02 lineage → smoke → live gate → actor+observer → archive → audit → Sab | Smoke/fix in worktree; live actor parent-visible; observer separate read-only child; peers optional on audit | Real round-trip evidence |
+| W14–W17 | N03 | Prefer receipt reuse; writer only if named gap; Sab decision | Avoid re-prove |
+| W20 | N04-W02A ∥ N04-W02B | **Required dual writer:** two worktrees, two worker sessions, path-disjoint; parent integrates later | Concurrency implementation |
+| W22 | N04-W05A ∥ N04-W05B | One live actor + read-only observer | Live concurrency proof |
+| W22b | N04-W05C | Human acceptance during overlap; parent captures | acceptance-unblocks-downstream |
+| W23 / W23b | bundle then audit | Parent/scout bundle; then review agents (peers optional, not mandatory triple) | Evidence then challenge |
+| W26 / W26b | N05-W01B ∥ N05-W01C → selection | Two isolated prototype writers; then bakeoff packet | Dual prototype |
+| W31 | N99 manifest / validation / inventory | Parallel read-only where isolation holds | Closeout evidence |
+
+**Audits:** use multi-lane review when the packet is high-stakes or disputed; default is parent + one reviewer. Codex/Claude are optional evidence lanes when bus peers respond.
+
+### Per-NTP activation rule
+
+When a packet starts:
+
+1. Read its outcome, boundary, depends_on, checkpoint from the ledger.
+2. Ignore ledger `run:` as a hard command; treat it as a hint.
+3. From verified surfaces + current peer/worktree state, write `route_used` into the attempt receipt.
+4. Execute that route only.
+
+### Immediate intent of W00 (why two read-only packets)
+
+W00 exists to put one shared baseline under the long path above (M0→M6, human gates, dual-writer and live actor/observer waves later). N00-W01A freezes runtime/config/DB/launchd/worktree truth (including measuring intake criticals). N00-W01C proves whether Pi children and bus peers can return correlated receipts **now**. Neither mutates the project. After both checkpoint: optional N00-W01B (Sab live auth), N00-W02A definition review, then hard stop at N00-W03A.
+
+---
+
+# Pi-Native Five-Node Baseline Plan (ledger body)
+
 **Plan ID:** `gddp-five-node-new-baseline`  
 **Schema:** `pi.node-packet-ledger.v1`  
 **Status:** r1 review corrections landed — **paused** (not started)  
