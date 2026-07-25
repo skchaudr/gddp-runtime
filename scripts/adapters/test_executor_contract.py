@@ -374,6 +374,38 @@ def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
     assert "code 7" in (collected.error or "")
 
 
+def test_failed_status_surfaces_handoff_worktree_path(tmp_path):
+    # Agent exits non-zero AND writes a v1 fail handoff (null SHA + path + error).
+    kept_path = "/tmp/gddp-kept-worktree-xyz"
+    handoff = {
+        "schema": "gddp.local_result.v1",
+        "result_commit_sha": None,
+        "result_ref": None,
+        "expected_base_commit_sha": "abc123",
+        "worktree_path": kept_path,
+        "error": "git commit failed",
+    }
+    argv = (
+        sys.executable,
+        "-c",
+        (
+            "import sys; sys.stdin.buffer.read(); "
+            f"sys.stdout.write({json.dumps(handoff)!r}+'\\n'); "
+            "raise SystemExit(1)"
+        ),
+    )
+    adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
+    result = adapter.dispatch(_packet())
+
+    status = _wait_for_terminal(adapter, result)
+    assert status.state == "failed"
+    assert status.error is not None
+    assert "code 1" in status.error
+    assert kept_path in status.error
+    assert "worktree kept at" in status.error
+    assert "git commit failed" in status.error
+
+
 def test_local_subprocess_default_cwd_is_attempt_isolated(tmp_path):
     adapter = LocalSubprocessAdapter(
         repo="owner/repo",

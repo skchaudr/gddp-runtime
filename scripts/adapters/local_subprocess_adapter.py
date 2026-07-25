@@ -132,6 +132,18 @@ class LocalSubprocessAdapter:
                 detail = f"local subprocess exited with code {returncode}"
             if stderr:
                 detail = f"{detail}: {stderr}"
+            # Surface persist-fail recovery path from v1 fail handoff on stdout.
+            handoff = _parse_local_result_handoff(_read_text(attempt_dir / "stdout"))
+            if handoff is not None:
+                worktree_path = handoff.get("worktree_path")
+                handoff_error = handoff.get("error")
+                if isinstance(worktree_path, str) and worktree_path:
+                    path_detail = f"persist failed; worktree kept at {worktree_path}"
+                    if handoff_error:
+                        path_detail = f"{path_detail}: {handoff_error}"
+                    detail = f"{detail}; {path_detail}"
+                elif handoff_error:
+                    detail = f"{detail}; {handoff_error}"
             return SessionStatus(state="failed", error=detail)
 
         pid = _read_pid(attempt_dir / "pid")

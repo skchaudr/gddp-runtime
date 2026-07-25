@@ -246,12 +246,14 @@ def run(
         worktree = create_worktree(repo, str(packet["expected_base_commit_sha"]))
         agent_code = run_agent_fn(agent_argv, packet_raw, worktree)
         handoff = persist_result(worktree, packet)
+        # Set keep policy before stdout write so a write_handoff failure
+        # cannot undo persist-fail recovery (worktree must survive).
+        keep_worktree = not bool(handoff.get("result_commit_sha"))
         write_handoff(handoff)
         if handoff.get("result_commit_sha"):
             # Persist succeeded; safe to remove worktree A.
             return agent_code
         # Persist failed: keep worktree for operator recovery; fail closed.
-        keep_worktree = True
         return agent_code if agent_code != 0 else 1
     finally:
         if worktree is not None and not keep_worktree:
