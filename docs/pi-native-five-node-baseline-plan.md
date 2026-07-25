@@ -1,10 +1,11 @@
 # Pi-Native Five-Node Baseline Plan
 
 **Plan ID:** `gddp-five-node-baseline`  
-**Revision:** v3.2  
+**Revision:** v3.3  
 **Status:** active map (pivot when reality changes)  
 **v3.1:** N2-0 commit-ref transport; secrets preflight (`gpg`, not `pass` under launchd).  
 **v3.2:** N2-7 = two Sab decisions; N2-1 uses **jobs** path (`gddp jobs set` when landed), never graph node write.  
+**v3.3:** N2-0 ref consumed directly (descends-from check, no reconstruction worktree); N2-1 landed argv (`jobs_status.py set --reason`).  
 **Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
 **Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
