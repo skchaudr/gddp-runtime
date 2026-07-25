@@ -187,6 +187,8 @@ def _make_fake_adapter(
     patch_text=_PATCH_ADD_RESULT,
     collect_success=True,
     cancel_result=False,
+    result_commit_sha=None,
+    result_ref=None,
 ):
     """Build a configurable fake adapter class.
 
@@ -215,6 +217,21 @@ def _make_fake_adapter(
                 return PatchResult(success=False, error="collect failed (mock)")
             dest_path = Path(dest_path)
             dest_path.parent.mkdir(parents=True, exist_ok=True)
+            if result_commit_sha:
+                payload = json.dumps(
+                    {
+                        "schema": "gddp.local_result.v1",
+                        "result_commit_sha": result_commit_sha,
+                        "result_ref": result_ref,
+                    }
+                )
+                dest_path.write_text(payload)
+                return PatchResult(
+                    success=True,
+                    patch_path=str(dest_path),
+                    result_commit_sha=result_commit_sha,
+                    result_ref=result_ref,
+                )
             dest_path.write_text(patch_text)
             return PatchResult(
                 success=True,
@@ -512,6 +529,137 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
         "SELECT queue FROM queue_records WHERE job_id = ?", ("job_done",)
     ).fetchone()
     assert qr["queue"] == "awaiting_review"
+
+
+def test_reconcile_local_commit_ref_skips_apply_worktree(con, tmp_path, monkeypatch):
+    repo, base_sha = _make_git_repo(tmp_path)
+    # Create a real descendant commit for the commit-ref path.
+    (repo / "result.txt").write_text("from local agent\n")
+    subprocess.run(["git", "add", "result.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "agent result", "-q"], cwd=str(repo), check=True
+    )
+    result_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+    _insert_job(
+        con, job_id="job_local", executor="local_subprocess",
+        repo="owner/repo", status="running",
+    )
+    ses_id = insert_executor_session(
+        con, "job_local", "local_subprocess", "sess-local",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="completed",
+        result_commit_sha=result_sha,
+        result_ref=f"gddp/attempt-job_local",
+    )
+    monkeypatch.setattr(
+        reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
+    )
+    monkeypatch.setattr(
+        reconciler, "verify_job_return",
+        lambda **kw: {"verification_status": "ok", "verdict": "pass"},
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
+
+    create_calls = []
+    apply_calls = []
+    monkeypatch.setattr(
+        reconciler,
+        "_create_exec_worktree",
+        lambda *a, **k: create_calls.append((a, k)) or (_ for _ in ()).throw(
+            AssertionError("worktree must not be created on commit-ref path")
+        ),
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "_apply_and_commit",
+        lambda *a, **k: apply_calls.append((a, k)) or (None, "should not run"),
+    )
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "evaluated"
+    assert row["result_commit_sha"] == result_sha
+    assert FakeAdapter.collect_calls == 1
+    assert create_calls == []
+    assert apply_calls == []
+    # Durable reconciler ref adopted.
+    ref = subprocess.run(
+        ["git", "rev-parse", "gddp/result-job_local-sess-local"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert ref == result_sha
+
+    job = con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", ("job_local",)
+    ).fetchone()
+    assert job["status"] == "awaiting_review"
+
+
+def test_reconcile_rejects_ref_not_descending_from_base(con, tmp_path, monkeypatch):
+    repo, base_sha = _make_git_repo(tmp_path)
+    # Unrelated orphan commit (not descending from base).
+    orphan_repo = tmp_path / "orphan"
+    orphan_repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=str(orphan_repo), check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=str(orphan_repo), check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=str(orphan_repo), check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "orphan", "-q"],
+        cwd=str(orphan_repo), check=True,
+    )
+    orphan_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(orphan_repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    # Fetch the orphan object into the main repo without linking ancestry.
+    subprocess.run(
+        ["git", "fetch", str(orphan_repo), "HEAD:refs/heads/orphan-tmp"],
+        cwd=str(repo), capture_output=True, check=True,
+    )
+
+    _insert_job(
+        con, job_id="job_bad", executor="local_subprocess",
+        status="running",
+    )
+    ses_id = insert_executor_session(
+        con, "job_bad", "local_subprocess", "sess-bad",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="completed",
+        result_commit_sha=orphan_sha,
+        result_ref="gddp/attempt-bad",
+    )
+    monkeypatch.setattr(
+        reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
+    )
+    monkeypatch.setattr(
+        reconciler, "verify_job_return",
+        lambda **kw: {"verification_status": "ok", "verdict": "pass"},
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "failed"
+    assert "does not descend" in (row["error"] or "")
+    job = con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", ("job_bad",)
+    ).fetchone()
+    assert job["status"] == "failed"
 
 
 def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(

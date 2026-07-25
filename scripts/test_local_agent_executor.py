@@ -1,4 +1,4 @@
-"""Tests for the worktree-only local agent executor."""
+"""Tests for the worktree-only local agent executor (commit-ref handoff)."""
 
 from __future__ import annotations
 
@@ -48,16 +48,26 @@ def _init_repo(path: Path) -> str:
     ).stdout.strip()
 
 
-def _packet(base_sha: str) -> str:
-    return json.dumps(
-        {
-            "job_id": "job-abc",
-            "goal": "Preserve this raw packet",
-            "constraints": ["do not decompose me"],
-            "expected_base_commit_sha": base_sha,
-        },
-        indent=2,
-    )
+def _packet(base_sha: str, **extra) -> str:
+    body = {
+        "job_id": "job-abc",
+        "execution_attempt_id": "job-abc:attempt:1",
+        "goal": "Preserve this raw packet",
+        "constraints": ["do not decompose me"],
+        "expected_base_commit_sha": base_sha,
+    }
+    body.update(extra)
+    return json.dumps(body, indent=2)
+
+
+def _parse_handoff(stdout: str) -> dict:
+    text = stdout.strip()
+    assert text, "expected commit-ref handoff on stdout"
+    # last non-empty line is the JSON object
+    line = [ln for ln in text.splitlines() if ln.strip()][-1]
+    payload = json.loads(line)
+    assert payload["schema"] == lae.HANDOFF_SCHEMA
+    return payload
 
 
 def test_load_packet_requires_expected_base_commit_sha():
@@ -109,10 +119,105 @@ def test_run_pipes_raw_packet_in_expected_detached_worktree(tmp_path, capsys):
     worktree = observed["worktree"]
     assert observed["argv"] == ["chosen-agent", "--batch"]
     assert observed["raw"] == packet_raw
-    assert "diff --git a/agent-change.txt b/agent-change.txt" in captured.out
-    assert "worktree only" in captured.out
+    assert "diff --git" not in captured.out
+    handoff = _parse_handoff(captured.out)
+    assert handoff["result_commit_sha"]
+    assert handoff["result_ref"] == "gddp/attempt-job-abc-attempt-1"
+    assert handoff["expected_base_commit_sha"] == base_sha
+    assert handoff["worktree_path"] is None
+
+    # Object identity lives in the main repo via the durable ref.
+    resolved = subprocess.run(
+        ["git", "rev-parse", handoff["result_ref"]],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert resolved == handoff["result_commit_sha"]
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_sha, handoff["result_commit_sha"]],
+        cwd=repo,
+        check=False,
+    )
+    assert ancestor.returncode == 0
     assert not Path(worktree).exists()
     assert not (repo / "agent-change.txt").exists()
+
+
+def test_persist_result_creates_ref_before_cleanup(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+
+    def fake_agent(argv, raw, worktree):
+        (worktree / "change.txt").write_text("saved\n")
+        return 0
+
+    assert lae.run(
+        _packet(base_sha),
+        ["chosen-agent"],
+        repo=repo,
+        run_agent_fn=fake_agent,
+    ) == 0
+    handoff = _parse_handoff(capsys.readouterr().out)
+    assert handoff["result_commit_sha"]
+    assert (
+        subprocess.run(
+            ["git", "cat-file", "-t", handoff["result_commit_sha"]],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        == "commit"
+    )
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", handoff["result_ref"]],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        == handoff["result_commit_sha"]
+    )
+
+
+def test_persist_failure_keeps_worktree_and_records_path(tmp_path, capsys, monkeypatch):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+    observed: dict[str, Path] = {}
+
+    def fake_agent(argv, raw, worktree):
+        observed["worktree"] = worktree
+        (worktree / "partial.txt").write_text("keep me\n")
+        return 0
+
+    def boom(worktree, packet):
+        return {
+            "schema": lae.HANDOFF_SCHEMA,
+            "result_commit_sha": None,
+            "result_ref": None,
+            "expected_base_commit_sha": packet["expected_base_commit_sha"],
+            "worktree_path": str(worktree),
+            "error": "forced persist failure",
+        }
+
+    monkeypatch.setattr(lae, "persist_result", boom)
+
+    assert lae.run(
+        _packet(base_sha),
+        ["chosen-agent"],
+        repo=repo,
+        run_agent_fn=fake_agent,
+    ) == 1
+
+    handoff = _parse_handoff(capsys.readouterr().out)
+    assert handoff["result_commit_sha"] is None
+    assert handoff["worktree_path"] == str(observed["worktree"])
+    assert handoff["error"] == "forced persist failure"
+    assert Path(handoff["worktree_path"]).exists()
+    assert (Path(handoff["worktree_path"]) / "partial.txt").read_text() == "keep me\n"
 
 
 def test_run_agent_sends_agent_output_to_stderr(tmp_path, capfd):
@@ -163,7 +268,7 @@ def test_run_removes_worktree_when_agent_fails(tmp_path):
     assert str(worktrees[0]) not in listing
 
 
-def test_run_returns_agent_failure_after_emitting_partial_diff(tmp_path, capsys):
+def test_run_returns_agent_failure_after_persisting_partial_result(tmp_path, capsys):
     repo = tmp_path / "repo"
     base_sha = _init_repo(repo)
 
@@ -177,7 +282,18 @@ def test_run_returns_agent_failure_after_emitting_partial_diff(tmp_path, capsys)
         repo=repo,
         run_agent_fn=failing_agent,
     ) == 7
-    assert "partial.txt" in capsys.readouterr().out
+    handoff = _parse_handoff(capsys.readouterr().out)
+    assert handoff["result_commit_sha"]
+    assert handoff["result_ref"]
+    # Partial evidence is durable even though agent failed.
+    tree = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", handoff["result_commit_sha"]],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "partial.txt" in tree
 
 
 def test_main_uses_agent_cli_from_its_argv(monkeypatch):

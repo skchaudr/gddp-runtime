@@ -297,9 +297,13 @@ def _reconcile_one(
 def _handle_completed(
     con, adapter, session_ref, session, repo_path: Path, job_row
 ) -> None:
-    """Collect patch, apply in an isolated worktree, commit, trigger evaluation.
+    """Collect result, record commit SHA, trigger evaluation.
 
-    Any failure in the collect→apply→commit→evaluate sequence marks BOTH the
+    Local commit-ref handoff: consume result_commit_sha directly (verify it
+    descends from expected_base_commit_sha); no reconstruction worktree.
+    Patch-only executors (Jules/remote): apply in an isolated worktree, commit.
+
+    Any failure in the collect→(apply)→commit→evaluate sequence marks BOTH the
     session and the job as failed, so jobs are never stranded in 'running'.
     """
     session_db_id = session["session_db_id"]
@@ -311,7 +315,7 @@ def _handle_completed(
         if not base_commit:
             raise ValueError("missing expected_base_commit_sha")
 
-        # 1. Collect the patch from the executor.
+        # 1. Collect the handoff from the executor.
         patch_fd, patch_path_str = tempfile.mkstemp(
             prefix=f"gddp-patch-{job_id}-", suffix=".diff"
         )
@@ -322,7 +326,35 @@ def _handle_completed(
         if not patch_result.success:
             raise RuntimeError(f"collect failed: {patch_result.error}")
 
-        # 2. Create an isolated exec worktree at the expected base commit.
+        # Commit-ref path (local_subprocess): skip reconstruction worktree.
+        if getattr(patch_result, "result_commit_sha", None):
+            result_sha = patch_result.result_commit_sha
+            if not _is_ancestor(repo_path, base_commit, result_sha):
+                raise RuntimeError(
+                    f"result {result_sha} does not descend from "
+                    f"expected base {base_commit}"
+                )
+            update_executor_session_state(
+                con, session_db_id, state="collected",
+                result_commit_sha=result_sha,
+                patch_path=(
+                    patch_result.patch_path
+                    or getattr(patch_result, "result_ref", None)
+                    or str(dest_path)
+                ),
+            )
+            con.commit()
+            _ensure_result_ref(
+                repo_path, job_id, session_id, result_sha
+            )
+            _trigger_evaluation(con, session, job_row, result_sha)
+            print(
+                f"[reconcile] {session_db_id}: result commit {result_sha[:12]} "
+                f"(commit-ref), job {job_id} → awaiting_review"
+            )
+            return
+
+        # 2. Patch path (Jules/remote): create worktree at expected base.
         worktree = _create_exec_worktree(repo_path, job_id, base_commit)
         if worktree is None:
             raise RuntimeError(f"could not create worktree at {base_commit}")
@@ -344,24 +376,8 @@ def _handle_completed(
             con.commit()
 
             # 5. Create a durable ref so the result commit is not garbage
-            #    collected after the worktree is removed.  The worktree shares
-            #    the main repo's object store, so the commit SHA is valid here.
-            #    The ref includes the session id so each session attempt gets
-            #    its own ref; retries no longer collide with a dangling ref
-            #    from a previous attempt.
-            ref_name = f"gddp/result-{job_id}-{session['session_id']}"
-            ref_proc = subprocess.run(
-                ["git", "branch", ref_name, result_sha],
-                cwd=str(repo_path),
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,  # non-fatal if it fails
-            )
-            if ref_proc.returncode != 0:
-                print(
-                    f"  ⚠ ref creation failed: {ref_proc.stderr.strip()}"
-                )
+            #    collected after the worktree is removed.
+            _ensure_result_ref(repo_path, job_id, session_id, result_sha)
 
             # 6. Trigger evaluation: run the evaluator, then mark job
             #    awaiting_review and session evaluated.
@@ -604,9 +620,54 @@ def _get_head_sha(repo_path: Path) -> str | None:
 
 
 # ------------------------------------------------------------------ #
-# Worktree helpers — mirror verification/bridge.py pattern.
-# Used for applying executor patches (not evaluation).
+# Commit-ref helpers (local_subprocess) and worktree helpers (patch).
 # ------------------------------------------------------------------ #
+
+def _is_ancestor(repo_path: Path, base_sha: str, result_sha: str) -> bool:
+    """True when result_sha descends from base_sha (inclusive)."""
+    try:
+        proc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, result_sha],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _ensure_result_ref(
+    repo_path: Path, job_id: str, session_id: str, result_sha: str
+) -> None:
+    """Ensure gddp/result-{job}-{session} points at result_sha (best-effort)."""
+    ref_name = f"gddp/result-{job_id}-{session_id}"
+    try:
+        ref_proc = subprocess.run(
+            ["git", "update-ref", f"refs/heads/{ref_name}", result_sha],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if ref_proc.returncode != 0:
+            # Fall back to branch create for older environments.
+            ref_proc = subprocess.run(
+                ["git", "branch", "-f", ref_name, result_sha],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        if ref_proc.returncode != 0:
+            print(f"  ⚠ ref creation failed: {ref_proc.stderr.strip()}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"  ⚠ ref creation failed: {exc}")
+
 
 def _create_exec_worktree(
     repo_path: Path, job_id: str, base_commit: str

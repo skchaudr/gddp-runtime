@@ -266,10 +266,23 @@ def test_legacy_heartbeat_dispatches_the_central_node_packet(monkeypatch, tmp_pa
     )
 
 def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation(tmp_path):
+    # Lifecycle fixture: emit a valid gddp.local_result.v1 handoff on stdout.
+    handoff = {
+        "schema": "gddp.local_result.v1",
+        "result_commit_sha": "a" * 40,
+        "result_ref": "gddp/attempt-job-123-attempt-2",
+        "expected_base_commit_sha": "abc123",
+        "worktree_path": None,
+    }
     argv = (
         sys.executable,
         "-c",
-        "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)",
+        (
+            "import json,sys; "
+            "sys.stdin.buffer.read(); "
+            f"sys.stdout.write({json.dumps(handoff)!r}); "
+            "sys.stdout.write('\\n')"
+        ),
     )
     adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
     packet = _packet()
@@ -286,21 +299,52 @@ def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiati
     assert _wait_for_terminal(adapter, first).state == "completed"
     assert _wait_for_terminal(adapter, second).state == "completed"
 
+    # Packet identity is still spooled for the supervisor, independent of handoff.
+    spool_packet = json.loads(
+        (tmp_path / first.session_ref.session_id / "packet.json").read_text()
+    )
+    assert spool_packet["execution_attempt_id"] == "job-123:attempt:2"
+    assert spool_packet == packet.to_json_value()
+
     reinstantiated = LocalSubprocessAdapter(
         repo="owner/repo", argv=argv, spool_root=tmp_path
     )
     assert reinstantiated.status(first.session_ref).state == "completed"
-    destination = tmp_path / "collected" / "result.patch"
+    destination = tmp_path / "collected" / "result.handoff"
     collected = reinstantiated.collect(first.session_ref, destination)
 
     assert collected.success is True
     assert collected.patch_path == str(destination)
-    assert collected.patch_text == packet.to_json()
-    assert destination.read_text() == packet.to_json()
-    assert json.loads(collected.patch_text) == packet.to_json_value()
-    assert json.loads(collected.patch_text)["execution_attempt_id"] == (
-        "job-123:attempt:2"
+    assert collected.result_commit_sha == "a" * 40
+    assert collected.result_ref == "gddp/attempt-job-123-attempt-2"
+    assert collected.patch_text is None
+    assert json.loads(destination.read_text())["schema"] == "gddp.local_result.v1"
+
+
+def test_collect_returns_commit_ref_not_patch(tmp_path):
+    handoff = {
+        "schema": "gddp.local_result.v1",
+        "result_commit_sha": "b" * 40,
+        "result_ref": "gddp/attempt-x",
+        "expected_base_commit_sha": "base",
+        "worktree_path": None,
+    }
+    argv = (
+        sys.executable,
+        "-c",
+        (
+            "import sys; sys.stdin.buffer.read(); "
+            f"sys.stdout.write({json.dumps(handoff)!r}+'\\n')"
+        ),
     )
+    adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
+    result = adapter.dispatch(_packet())
+    assert _wait_for_terminal(adapter, result).state == "completed"
+    collected = adapter.collect(result.session_ref, tmp_path / "out.json")
+    assert collected.success is True
+    assert collected.result_commit_sha == "b" * 40
+    assert collected.result_ref == "gddp/attempt-x"
+    assert collected.patch_text is None
 
 
 def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):

@@ -139,10 +139,18 @@ class SessionStatus:
 
 @dataclass
 class PatchResult:
-    """Result of collecting a completed session's work."""
+    """Result of collecting a completed session's work.
+
+    Two success shapes:
+    - patch handoff (remote/patch-only): patch_text / patch_path set
+    - commit-ref handoff (local_subprocess): result_commit_sha / result_ref set
+    """
     success: bool
     patch_text: str | None = None       # unified diff text
     patch_path: str | None = None       # path to saved patch file
+    result_commit_sha: str | None = None  # commit-ref transport (local)
+    result_ref: str | None = None         # durable per-attempt ref name
+    worktree_path: str | None = None      # kept on persist failure
     error: str | None = None
 
 
@@ -168,8 +176,12 @@ class ExecutorAdapter(Protocol):
         ...
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
-        """Retrieve patch from completed session. Does NOT apply or commit.
-        Saves patch to dest_path."""
+        """Retrieve result from a completed session. Does NOT apply or commit.
+
+        Success is either a patch handoff (patch_text/path) or a commit-ref
+        handoff (result_commit_sha/result_ref). Saves raw payload to dest_path
+        when a file form is available.
+        """
         ...
 
     def cancel(self, session_ref: SessionRef) -> bool:

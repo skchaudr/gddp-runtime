@@ -156,21 +156,49 @@ class LocalSubprocessAdapter:
         attempt_dir = self._attempt_dir(session_ref)
         if attempt_dir is None:
             return PatchResult(success=False, error="invalid local subprocess session")
-        patch_text = _read_text(attempt_dir / "stdout")
+        stdout_text = _read_text(attempt_dir / "stdout")
         try:
             destination = Path(dest_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(patch_text)
+            destination.write_text(stdout_text)
         except OSError as exc:
             return PatchResult(
                 success=False,
-                patch_text=patch_text,
-                error=f"failed to write patch to {dest_path}: {exc}",
+                error=f"failed to write handoff to {dest_path}: {exc}",
             )
+
+        handoff = _parse_local_result_handoff(stdout_text)
+        if handoff is None:
+            return PatchResult(
+                success=False,
+                patch_path=str(destination),
+                error="stdout is not a gddp.local_result.v1 commit-ref handoff",
+            )
+
+        result_sha = handoff.get("result_commit_sha")
+        worktree_path = handoff.get("worktree_path")
+        if isinstance(result_sha, str) and result_sha:
+            return PatchResult(
+                success=True,
+                patch_path=str(destination),
+                result_commit_sha=result_sha,
+                result_ref=handoff.get("result_ref")
+                if isinstance(handoff.get("result_ref"), str)
+                else None,
+                worktree_path=worktree_path
+                if isinstance(worktree_path, str)
+                else None,
+            )
+
+        error = handoff.get("error")
         return PatchResult(
-            success=True,
-            patch_text=patch_text,
+            success=False,
             patch_path=str(destination),
+            result_ref=handoff.get("result_ref")
+            if isinstance(handoff.get("result_ref"), str)
+            else None,
+            worktree_path=worktree_path if isinstance(worktree_path, str) else None,
+            error=str(error) if error else "persist failed without result commit",
         )
 
     def cancel(self, session_ref: SessionRef) -> bool:
@@ -241,6 +269,30 @@ def _read_text(path: Path) -> str:
         return path.read_text(errors="replace")
     except OSError:
         return ""
+
+
+def _parse_local_result_handoff(stdout_text: str) -> dict | None:
+    """Parse gddp.local_result.v1 JSON from attempt stdout.
+
+    Accepts a single JSON object, optionally surrounded by whitespace or a
+    trailing newline. Returns None when stdout is not that handoff schema.
+    """
+    text = (stdout_text or "").strip()
+    if not text:
+        return None
+    # Prefer the last non-empty line in case residual agent noise leaked.
+    candidates = [text]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        candidates.insert(0, lines[-1])
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("schema") == "gddp.local_result.v1":
+            return payload
+    return None
 
 
 def _read_pid(path: Path) -> int | None:
