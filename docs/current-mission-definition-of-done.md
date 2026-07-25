@@ -75,7 +75,7 @@ total.
   crashes, not real judgments (caught by Sab, corrected). A 4th run with a
   real credential then surfaced and fixed a second bug (`acceptance_check`
   never stored on the direct path, `fde0fc4`) and produced a genuine
-  semantic verdict (`fail`, `lane_status: completed`) that `node_status.py
+  semantic verdict (`fail`, `lane_status: completed`) that `gddp jobs show`
   show` now displays in full. See
   `.handoffs/052-node2-stabilization-loop-evidence.md` for full evidence.
 - [x] **Phase 2B - interruption x1:** done 2026-07-23. Killed the executor

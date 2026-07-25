@@ -52,7 +52,7 @@ Reproduce the evaluator's `suite-green` result from the 2026-07-24 receipt. Run 
 ## Testing
 
 - Milestone gate: `python3 -m pytest -q`
-- User testing surface: CLI (`node_status.py show/list`), SQLite queries, git refs, file existence checks, `project.yaml` hash verification
+- User testing surface: CLI (`gddp jobs show/list`), SQLite queries, git refs, file existence checks, `project.yaml` hash verification
 
 ## Mission Readiness
 

@@ -342,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
         "completeness_status": receipt.completeness_status,
         "required_next_action": receipt.required_next_action,
     }
-    # Phase 1 provenance: surface in the summary so node_status.py can display it.
+    # Phase 1 provenance: surface in the summary so jobs_status.py can display it.
     if receipt.evaluated_tree_sha:
         summary["evaluated_tree_sha"] = receipt.evaluated_tree_sha
     if receipt.evaluated_commit_sha:

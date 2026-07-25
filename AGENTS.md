@@ -2,6 +2,10 @@
 
 Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
 
+`gddp` is the single operator-facing control plane. Runtime job reads and
+writes route through `scripts/jobs_status.py`; that backend may update runtime
+job/queue state but must never update graph/node status.
+
 The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to drift from user intent or project integrity. 
 
 Not spec-driven-development; the mission here is create a agentic harness that oversees the execution of a graph of project nodes. It's entire purpose is to detect drift, both of intent or project integrity. 

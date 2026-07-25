@@ -540,7 +540,7 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
         print(f"  → evaluation ERROR (non-fatal): {exc}")
         verification = {"verification_status": "error", "error": str(exc)}
 
-    # Write a results row so node_status.py can display the evaluator output
+    # Write a results row so jobs_status.py can display the evaluator output
     # for human review. The verification dict from verify_job_return carries
     # verdict/criteria/risks evidence; fields the dict does not provide get
     # safe defaults. The important invariant is that a results row exists.
@@ -562,7 +562,7 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
             # returns verdict/criteria_verdict/integrity/lane_status/etc.
             # directly. The mediated path (return_router.py) stores the
             # whole verification dict as acceptance_check; mirror that here
-            # so node_status.py show has something to display instead of
+            # so jobs_status.py show has something to display instead of
             # silently storing None on every direct-path result.
             acceptance_check=verification,
             risks=verification.get("risks"),

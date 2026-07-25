@@ -1,4 +1,6 @@
-from scripts.node_status import print_evaluation
+"""Evaluator rendering coverage for the jobs-status backend."""
+
+from scripts.jobs_status import print_evaluation
 
 
 def test_evaluation_summary_uses_coverage_ratings_and_lane_errors(capsys) -> None:

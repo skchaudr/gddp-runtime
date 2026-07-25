@@ -1,22 +1,13 @@
 """
-node_status.py — Inspect and set job/node queue state (human-operated).
+jobs_status.py — Inspect and set runtime job state.
 
 Usage:
-    python3 scripts/node_status.py list [--state awaiting_review]
-    python3 scripts/node_status.py show <job_id | node_id> [--full]
-    python3 scripts/node_status.py results [--all]
-    python3 scripts/node_status.py set <job_id | node_id> <state> --reason "..."
+    python3 scripts/jobs_status.py list [--state awaiting_review]
+    python3 scripts/jobs_status.py show <job_id | node_id> [--full]
+    python3 scripts/jobs_status.py results [--all]
+    python3 scripts/jobs_status.py set <job_id | node_id> <state> --reason "..."
 
-States (canon: gddp-config schemas/v1/queue_record.yaml):
-    intake classified blocked ready running awaiting_result
-    awaiting_review complete failed deferred cancelled
-
-What `set` does:
-    1. Shows current state and asks for confirmation
-    2. Updates jobs.queue_state (+ jobs.status when the state is a valid
-       job status) and any queue_records rows for the job
-    3. Writes a decision_results audit row — action 'accept_node' for
-       awaiting_review → complete, 'manual_status_change' otherwise
+This module owns runtime job state only. It never writes graph/node status.
 """
 
 import argparse
@@ -32,18 +23,32 @@ _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
 DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
-# Canon queue states — keep in sync with gddp-config schemas/v1/queue_record.yaml
-QUEUE_STATES = [
-    "intake", "classified", "blocked", "ready", "running",
-    "awaiting_result", "awaiting_review", "complete", "failed",
-    "deferred", "cancelled",
-]
-# jobs.status is a narrower enum; only mirror queue_state into it when valid
-JOB_STATUSES = {"ready", "running", "awaiting_result", "awaiting_review", "complete", "failed"}
+QUEUE_STATES = (
+    "intake",
+    "classified",
+    "blocked",
+    "ready",
+    "running",
+    "awaiting_result",
+    "awaiting_review",
+    "complete",
+    "failed",
+    "deferred",
+    "cancelled",
+)
+JOB_STATUSES = {
+    "ready",
+    "running",
+    "awaiting_result",
+    "awaiting_review",
+    "complete",
+    "failed",
+}
 
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
 
 def connect():
     con = sqlite3.connect(DB_PATH)
@@ -224,42 +229,91 @@ def cmd_results(args):
           f"{len(projects)} project(s).  (--all for every row)")
 
 
+def _apply_resolved_state_change(con, job, state: str, reason: str) -> int:
+    old = job["queue_state"]
+    if old == state:
+        print(f"{job['job_id']} already '{old}' — nothing to do.")
+        return 0
+
+    con.execute(
+        "UPDATE jobs SET queue_state = ? WHERE job_id = ?",
+        (state, job["job_id"]),
+    )
+    if state in JOB_STATUSES:
+        con.execute(
+            "UPDATE jobs SET status = ? WHERE job_id = ?",
+            (state, job["job_id"]),
+        )
+    con.execute(
+        "UPDATE queue_records SET queue = ? WHERE job_id = ?",
+        (state, job["job_id"]),
+    )
+
+    action = (
+        "accept_node"
+        if old == "awaiting_review" and state == "complete"
+        else "manual_status_change"
+    )
+    con.execute(
+        "INSERT INTO decision_results "
+        "(result_id, action, node_id, project_id, reason, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            f"dec_{uuid.uuid4().hex[:12]}",
+            action,
+            job["node_id"],
+            job["project_id"],
+            reason,
+            now(),
+        ),
+    )
+    con.commit()
+    print(f"Done: {job['job_id']} -> {state}  (audit: {action})")
+    return 0
+
+
+def apply_state_change(*, ref: str, state: str, reason: str) -> int:
+    """Apply one menu-confirmed job-state change."""
+    if state not in QUEUE_STATES:
+        raise ValueError(
+            f"Invalid state {state!r}. Valid: {' '.join(QUEUE_STATES)}"
+        )
+    reason_text = reason.strip()
+    if not reason_text:
+        raise ValueError("A reason is required for every runtime state change.")
+    con = connect()
+    try:
+        job = resolve_job(con, ref)
+        return _apply_resolved_state_change(con, job, state, reason_text)
+    finally:
+        con.close()
+
+
 def cmd_set(args):
     if args.state not in QUEUE_STATES:
         sys.exit(f"Invalid state '{args.state}'. Valid: {' '.join(QUEUE_STATES)}")
+    reason = args.reason.strip()
+    if not reason:
+        sys.exit("A reason is required for every runtime state change.")
+
     con = connect()
-    job = resolve_job(con, args.ref)
-    old = job["queue_state"]
-    if old == args.state:
-        print(f"{job['job_id']} already '{old}' — nothing to do.")
-        return
-    print(f"{job['job_id']}  ({job['node_id']})")
-    print(f"  {old}  ->  {args.state}")
-    if not args.yes:
-        if input("Proceed? [y/N] ").strip().lower() != "y":
-            sys.exit("Aborted.")
-
-    con.execute("UPDATE jobs SET queue_state = ? WHERE job_id = ?",
-                (args.state, job["job_id"]))
-    if args.state in JOB_STATUSES:
-        con.execute("UPDATE jobs SET status = ? WHERE job_id = ?",
-                    (args.state, job["job_id"]))
-    con.execute("UPDATE queue_records SET queue = ? WHERE job_id = ?",
-                (args.state, job["job_id"]))
-
-    action = "accept_node" if (old == "awaiting_review" and args.state == "complete") \
-             else "manual_status_change"
-    con.execute(
-        "INSERT INTO decision_results (result_id, action, node_id, project_id, reason, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (f"dec_{uuid.uuid4().hex[:12]}", action, job["node_id"], job["project_id"],
-         args.reason, now()),
-    )
-    con.commit()
-    print(f"Done: {job['job_id']} -> {args.state}  (audit: {action})")
+    try:
+        job = resolve_job(con, args.ref)
+        old = job["queue_state"]
+        if old == args.state:
+            print(f"{job['job_id']} already '{old}' — nothing to do.")
+            return 0
+        print(f"{job['job_id']}  ({job['node_id']})")
+        print(f"  {old}  ->  {args.state}")
+        if not args.yes:
+            if input("Proceed? [y/N] ").strip().lower() != "y":
+                sys.exit("Aborted.")
+        return _apply_resolved_state_change(con, job, args.state, reason)
+    finally:
+        con.close()
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -277,14 +331,14 @@ def main():
     p_results.add_argument("--all", action="store_true", help="list every result row instead of the summary")
     p_results.set_defaults(fn=cmd_results)
 
-    p_set = sub.add_parser("set", help="set queue state (accepts job_id or node_id)")
-    p_set.add_argument("ref")
+    p_set = sub.add_parser("set", help="set runtime job state")
+    p_set.add_argument("ref", help="job ID or uniquely matching node ID")
     p_set.add_argument("state")
     p_set.add_argument("--reason", required=True, help="why — stored in the audit row")
     p_set.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     p_set.set_defaults(fn=cmd_set)
 
-    args = p.parse_args()
+    args = p.parse_args(argv)
     args.fn(args)
 
 
