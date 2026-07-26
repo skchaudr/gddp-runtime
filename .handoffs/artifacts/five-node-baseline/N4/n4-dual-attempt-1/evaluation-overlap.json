@@ -1,0 +1,27 @@
+{
+  "observed_at": "2026-07-26T11:10:22Z",
+  "local_lane": {
+    "job_id": "job_20260726T1059546275a44bb7bbd0",
+    "node_id": "pi-evaluator-harness",
+    "executor": "local_subprocess",
+    "job_status": "awaiting_review",
+    "session_state": "evaluated",
+    "result_commit_sha": "21ced0c2f11926e87dd85d9d6c5733b497d7ac44",
+    "verdict": "fail",
+    "criteria_verdict": "fail",
+    "integrity_verdict": "pass"
+  },
+  "independent_peer": {
+    "job_id": "job_20260726T1059546235f910ffd05c",
+    "node_id": "heartbeat-crash-recovery",
+    "executor": "jules_api",
+    "session_id": "16828659161506833111",
+    "adapter_status": "running",
+    "job_status": "running",
+    "session_state": "running"
+  },
+  "evidence": {
+    "reconcile_log": "jobs/n4-dual-attempt-1/local-complete-reconcile.stdout",
+    "evaluator_receipt": "/Users/sab-mini/repos/gddp-config/verification-runtime-live/gddp-runtime/pi-evaluator-harness/job_20260726T1059546275a44bb7bbd0-attempt0.json"
+  }
+}
