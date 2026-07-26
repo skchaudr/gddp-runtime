@@ -1,0 +1,26 @@
+{
+  "observed_at": "2026-07-26T11:00:16Z",
+  "runtime_head": "3ac39145fc80b25622f2046bf087eb3434b4d5af",
+  "config_head": "4bc20f5263ec4e9628d4419d9d24df539ef828af",
+  "capacity": 2,
+  "jobs": [
+    {
+      "job_id": "job_20260726T1059546235f910ffd05c",
+      "node_id": "heartbeat-crash-recovery",
+      "executor": "jules_api",
+      "session_id": "16828659161506833111",
+      "adapter_status": "running",
+      "database_status": "running",
+      "database_session_state": "dispatched"
+    },
+    {
+      "job_id": "job_20260726T1059546275a44bb7bbd0",
+      "node_id": "pi-evaluator-harness",
+      "executor": "local_subprocess",
+      "session_id": "job_20260726T1059546275a44bb7bbd0-pi-evaluator-harness-attempt-0-bd3bfa477ee840fd9adc2f4c8607945c",
+      "adapter_status": "running",
+      "database_status": "running",
+      "database_session_state": "dispatched"
+    }
+  ]
+}
