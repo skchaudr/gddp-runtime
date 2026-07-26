@@ -48,6 +48,21 @@ class JobsStatusTests(unittest.TestCase):
                 reason TEXT,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE executor_sessions (
+                session_db_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                executor TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                state TEXT,
+                expected_base_commit_sha TEXT,
+                result_commit_sha TEXT,
+                patch_path TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                execution_attempt_id TEXT,
+                attempt_index INTEGER
+            );
             INSERT INTO jobs
                 (job_id, project_id, node_id, queue_state, status, created_at,
                  title, executor, job_type, attempt, max_attempts, artifacts_dir)
@@ -94,6 +109,86 @@ class JobsStatusTests(unittest.TestCase):
     def test_show_accepts_unique_node_id(self):
         with patch.object(jobs_status, "DB_PATH", self.db_path):
             jobs_status.main(["show", "node-1"])
+
+    def test_show_prints_executor_attempt_evidence_for_local_subprocess(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            """
+            INSERT INTO executor_sessions
+                (session_db_id, job_id, executor, session_id, state, error,
+                 result_commit_sha, expected_base_commit_sha,
+                 created_at, updated_at, execution_attempt_id, attempt_index)
+            VALUES
+                ('ses-1', 'job-1', 'local_subprocess',
+                 'job-1-node-1-attempt-0-abc', 'failed',
+                 'worker exited rc=1',
+                 'db292014490aecba5f157bc9d31f28b1810164cb',
+                 '3d530ad76b4f2e00d858e967d88c6af50314c86e',
+                 '2026-07-26T04:50:20+00:00', '2026-07-26T04:50:25+00:00',
+                 'job-1:attempt:0', 0)
+            """
+        )
+        con.commit()
+        con.close()
+
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+             patch.object(jobs_status, "_read_local_subprocess_status",
+                          return_value=("failed", "Codex error: Unsupported parameter: session_id")):
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                jobs_status.main(["show", "job-1"])
+            out = buf.getvalue()
+
+        self.assertIn("executor attempt: idx=0", out)
+        self.assertIn("db_state=failed", out)
+        self.assertIn("result sha: db292014490aecba5f157bc9d31f28b1810164cb", out)
+        self.assertIn("db error:   worker exited rc=1", out)
+        self.assertIn("adapter:    failed  (ok)", out)
+        self.assertIn("adapter err: Codex error: Unsupported parameter: session_id", out)
+        self.assertIn("base sha:   3d530ad76b4f2e00d858e967d88c6af50314c86e", out)
+
+    def test_show_surfaces_db_vs_adapter_divergence(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            """
+            INSERT INTO executor_sessions
+                (session_db_id, job_id, executor, session_id, state, error,
+                 created_at, updated_at, execution_attempt_id, attempt_index)
+            VALUES
+                ('ses-2', 'job-1', 'local_subprocess',
+                 'job-1-node-1-attempt-0-div', 'dispatched', NULL,
+                 '2026-07-26T05:00:00+00:00', '2026-07-26T05:00:00+00:00',
+                 'job-1:attempt:0', 0)
+            """
+        )
+        con.commit()
+        con.close()
+
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+             patch.object(jobs_status, "_read_local_subprocess_status",
+                          return_value=("failed", "exited without durable exit state")):
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                jobs_status.main(["show", "job-1"])
+            out = buf.getvalue()
+
+        self.assertIn("db_state=dispatched", out)
+        self.assertIn("adapter:    failed  (DIVERGENT)", out)
+        self.assertIn("adapter err: exited without durable exit state", out)
+
+    def test_show_handles_missing_executor_sessions(self):
+        with patch.object(jobs_status, "DB_PATH", self.db_path):
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                jobs_status.main(["show", "job-1"])
+            out = buf.getvalue()
+        self.assertIn("executor attempt: (none on record)", out)
 
 
 if __name__ == "__main__":

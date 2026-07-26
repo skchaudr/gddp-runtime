@@ -19,6 +19,11 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure adapters package is importable for the read-only local_subprocess
+# status probe in cmd_show. Local execution is the only adapter that owns
+# durable on-disk state, so a read-only comparison is meaningful here.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 _default_root = Path(__file__).parent.parent
 RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
 DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
@@ -151,12 +156,82 @@ def print_evaluation(check, full=False):
         print(f"       reasoning: {integrity['reasoning']}")
 
 
+def _read_local_subprocess_status(session_id: str) -> tuple[str | None, str | None]:
+    """Read-only durable adapter probe for one local_subprocess session.
+
+    Returns (adapter_state, adapter_error) or (None, None) if the session is
+    not local_subprocess or the adapter can't be loaded. Never mutates the
+    adapter state, the spool, or the DB.
+    """
+    try:
+        from adapters.executor_protocol import SessionRef
+        from adapters.local_subprocess_adapter import LocalSubprocessAdapter
+    except Exception as exc:  # pragma: no cover - import path is stable in this repo
+        return None, f"adapter import failed: {exc}"
+    try:
+        adapter = LocalSubprocessAdapter(repo="local-probe")
+        status = adapter.status(SessionRef(executor="local_subprocess", session_id=session_id))
+    except Exception as exc:
+        return None, f"adapter probe failed: {exc}"
+    return status.state, status.error
+
+
+def _print_executor_attempts(con, job_id: str) -> None:
+    """Print the per-attempt executor evidence: DB state + durable adapter view.
+
+    Goal: when a job is `running`/`dispatched` in the DB but the worker is
+    already terminal on disk (or vice versa), the operator sees the divergence
+    without re-running the dispatcher.
+    """
+    sessions = con.execute(
+        """
+        SELECT attempt_index, executor, session_id, state, error,
+               result_commit_sha, expected_base_commit_sha, created_at, updated_at
+          FROM executor_sessions
+         WHERE job_id = ?
+         ORDER BY COALESCE(attempt_index, 0), created_at
+        """,
+        (job_id,),
+    ).fetchall()
+    if not sessions:
+        print(f"  executor attempt: (none on record)")
+        return
+    for s in sessions:
+        attempt = s["attempt_index"] if s["attempt_index"] is not None else "?"
+        print(
+            f"  executor attempt: idx={attempt}  executor={s['executor']}  "
+            f"db_state={s['state']}  session_id={s['session_id']}"
+        )
+        if s["result_commit_sha"]:
+            print(f"        result sha: {s['result_commit_sha']}")
+        if s["expected_base_commit_sha"] and s["expected_base_commit_sha"] != s["result_commit_sha"]:
+            print(f"        base sha:   {s['expected_base_commit_sha']}")
+        if s["error"]:
+            print(f"        db error:   {s['error']}")
+        if s["executor"] == "local_subprocess":
+            adapter_state, adapter_error = _read_local_subprocess_status(s["session_id"])
+            if adapter_state is not None:
+                agreement = "ok" if adapter_state == s["state"] else "DIVERGENT"
+                print(
+                    f"        adapter:    {adapter_state}  ({agreement})"
+                )
+                if adapter_error:
+                    print(f"        adapter err: {adapter_error}")
+            else:
+                if adapter_error:
+                    print(f"        adapter:    (probe failed) {adapter_error}")
+        print(
+            f"        timestamps: created={s['created_at']}  updated={s['updated_at']}"
+        )
+
+
 def cmd_show(args):
     con = connect()
     job = resolve_job(con, args.ref)
     for key in ("job_id", "node_id", "title", "queue_state", "status", "executor",
                 "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
         print(f"{key:>16}: {job[key]}")
+    _print_executor_attempts(con, job["job_id"])
     results = con.execute(
         "SELECT received_at, outcome, status, acceptance_check "
         "FROM results WHERE job_id = ? ORDER BY received_at",
