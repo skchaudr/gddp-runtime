@@ -1,0 +1,6 @@
+{
+  "issue": {
+    "title": "N2 live attempt",
+    "body": "node: job-state-consistency\n\nFirst real local round-trip."
+  }
+}

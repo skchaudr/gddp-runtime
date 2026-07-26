@@ -1,0 +1,7 @@
+ts=2026-07-26T08:20:06Z
+ref=6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff
+parent=665465e54b3b60951c9e2931852d36295f1fdfad
+expected_base=665465e54b3b60951c9e2931852d36295f1fdfad
+exit_json={"cancelled":false,"returncode":0}
+launchd_heartbeat=
+launchd_intake=-

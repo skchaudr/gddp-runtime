@@ -1,12 +1,13 @@
 # Pi-Native Five-Node Baseline Plan
 
 **Plan ID:** `gddp-five-node-baseline`  
-**Revision:** v3.4<br>
+**Revision:** v3.5<br>
 **Status:** active map (pivot when reality changes)  
 **v3.1:** N2-0 commit-ref transport; secrets preflight (`gpg`, not `pass` under launchd).  
 **v3.2:** N2-7 = two Sab decisions; N2-1 uses **jobs** path (`gddp jobs set` when landed), never graph node write.  
 **v3.3:** N2-0 ref consumed directly (descends-from check, no reconstruction worktree); N2-1 landed argv (`jobs_status.py set --reason`).  
-**v3.4:** N2-0/N2-1/N2-2 closed from live evidence; **N2-3 is next**.<br>
+**v3.4:** N2-0/N2-1/N2-2 closed from live evidence; **N2-3 is next**.  
+**v3.5:** N2-3/4/5/6 closed from live evidence (attempt 0 failed on Codex `session_id`; attempt 1 used the exact proven MiniMax smoke argv and reached `awaiting_review`); **N2-7 is next** — archive + two Sab decisions on `.handoffs/.../n2-live-attempt-1/`.
 **Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
 **Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
@@ -60,14 +61,17 @@ Only the active slice is rewritten when evidence changes. Charted later nodes re
 
 | Fact | State |
 |------|--------|
-| Runtime | `main`; N2-0 commit/ref handoff landed and pushed (`f4c3b11`, `8fa4bd5`, `b28125d`); full suite passed 389 tests. |
+| Runtime | `main`; N2-0 commit/ref handoff landed and pushed (`f4c3b11`, `8fa4bd5`, `b28125d`); suite green at `665465e` (the HEAD N2-5 dispatched from). |
 | Factory | Mission ended; ignore stale wrapper-validator loops |
 | Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
 | Capability Nodes 2–5 | **pending** until Sab accepts |
 | Ready work subject for N2 proof | `job-state-consistency` (`ready` in graph) |
 | Config delta | `local_subprocess` is first in `job-state-consistency.allowed_execution_modes`; committed and pushed in `gddp-config` (`4657c86`). |
-| Live queue | Historical canary `job_20260724T010811130dd14802e579` moved from `awaiting_review` to `failed` through `gddp jobs set`; evidence retained. |
+| N2 attempt 0 (`n2-live-attempt-0/`) | **failed at the worker layer**: `pi` v0.82.1 emitted `session_id` to the Codex-compatible backend and got `Unsupported parameter: session_id`; transport produced a valid empty commit + ref but no work. Event `evt_n2_live_attempt_0_8c2f1a` preserved, job `job_20260726T04502048326609c51da5` marked `failed`, evidence intact. |
+| N2 attempt 1 (`n2-live-attempt-1/`) | **success**: event `evt_n2_live_attempt_1_3f7b2e` → job `job_20260726T081330259c7d2af87dc3` → `awaiting_review`; result `pass` (criteria pass, integrity pass @ 0.95, intent + graph integrity preserved); result commit `6c0a4b2d…b5ff` (parent `665465e…`), ref `gddp/attempt-job_20260726T081330259c7d2af87dc3-attempt-0`. Live argv **identical to smoke argv**: `pi` + `clinepass/cline-pass/minimax-m3` (the proven model+provider). |
+| Pinned worker for N2 | `pi` (Homebrew) + `clinepass/cline-pass/minimax-m3` (matching smoke); Codex-compatible backends (openai, openai-codex) are **out** until `pi` stops sending `session_id`. |
 | Forbidden for real N2 | `GDDP_EXECUTOR_OVERRIDE` |
+| Service state | `com.gddp.heartbeat` and `com.gddp.intake` both loaded; no eligible events; no active executor_sessions for `skchaudr/gddp-runtime`. |
 
 Re-verify live before dispatch; this table is a pointer, not a substitute for a fresh check.
 
@@ -116,11 +120,11 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 | N2-0 | **CLOSED — Fix transport: commit-ref, not diff-emit** | Commit/ref transport, retained-worktree recovery, create-only refs, and ref-to-SHA verification landed in `f4c3b11`, `8fa4bd5`, and `b28125d`; 389 tests passed. |
 | N2-1 | **CLOSED — Dispose stuck canary job** | Sab moved `job_20260724T010811130dd14802e579` from `awaiting_review` to `failed` through `gddp jobs set`; job evidence retained and graph truth untouched. |
 | N2-2 | **CLOSED — Seal routing provenance** | `local_subprocess` is first for `job-state-consistency`; the one-line graph config delta is committed and pushed at `4657c86`. |
-| N2-3 | **NEXT — Pin env, secrets preflight, smoke exact route** | Choose post-N2-0 `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. **Secrets:** any GDDP key/cmd used in this window must use direct `gpg --decrypt` (or equivalent non-hanging decrypt) — **not** `pass` under launchd/agent, which can hang. Run one disposable no-DB smoke on the exact argv/packet contract (commit-ref handoff). Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution has sole heartbeat ownership. |
-| N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. Preserve the exact payload/INSERT and resulting event row. A second event or wrong node classification stops the route. |
-| N2-5 | **One controlled dispatch tick** | Only after N2-0 is landed. Immediately before the tick, re-check HEAD, config hash, event ID, required env names, absent override, secrets preflight, and single control-plane ownership. Record selected executor and job/attempt/session IDs. Stop before retry if selection is not `local_subprocess`. |
-| N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks: collect **ref**, reconcile, evaluate with real credentials (same secrets rule as N2-3). Join packet → attempt → session → result commit/ref → evaluator receipt. Independently verify artifacts for this attempt; pre-existing files do not count. If provenance is wrong or duplicate evaluation appears, preserve and pivot. Stop at human review. |
-| N2-7 | **Archive + two Sab decisions** | Archive packet, event/job/attempt/session/result IDs, spool metadata, **result ref/SHA** (and derived diff if useful), artifact-provenance check, lane status, command log, and pre/post config hashes. Then **two separate human calls:** (1) **Job/receipt** — is this attempt valid real-round-trip evidence (accept proof / retry run / revise route)? (2) **Capability node** — accept / retry / revise / defer / abandon **`direct-executor-round-trip`** in the graph. (1) does not imply (2). Retry and dependency questions live here, not as new plan branches. |
+| N2-3 | **CLOSED — Pin env, secrets preflight, smoke exact route** | Smoke at ref `gddp/attempt-n2-smoke-0a7051c01ea3-attempt-0` → commit `b785375…` (parent `3d530ad`); 1 file, 1 insertion (`gddp-n2-smoke-marker`); argv identical to attempt-1 live argv except worker model. Secrets preflight: direct `gpg --decrypt` (no `pass` under launchd); gpg rc=0 with no key on disk. |
+| N2-4 | **CLOSED — Inject one tagged work event** | Event `evt_n2_live_attempt_1_3f7b2e` injected (in-tx, commit-only-on-validation); classified as `implementation_request` → node `job-state-consistency`; executor recommendation `local_subprocess`. No second event; no other eligible events; no active sessions touched. |
+| N2-5 | **CLOSED — One controlled dispatch tick** | Runner rc=0; invariant `OK: N2-5 dispatch boundary holds`; blast-radius `OK: no unrelated rows changed`; one job, one `executor_session` (state `dispatched`), zero `results` rows. Selected executor `local_subprocess`; no `GDDP_EXECUTOR_OVERRIDE`. Receipt at `jobs/local-subprocess-spool/<session_id>/`. |
+| N2-6 | **CLOSED — Collect → evaluate → `awaiting_review`** | Reconcile stdout: `1 active executor session(s) to poll … completed → evaluation: ok → verdict: pass → result commit 6c0a4b2d… → job → awaiting_review`. Verdict: criteria pass, integrity pass @ 0.95, intent preserved, graph integrity preserved. `evaluated_commit_sha` = `merge_commit_sha` = `6c0a4b2d…b5ff` (direct local, not a PR). Receipt at `verification-runtime-live/gddp-runtime/job-state-consistency/job_20260726T081330259c7d2af87dc3-attempt0.json`. |
+| N2-7 | **NEXT — Archive + two Sab decisions** | Archive at `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/` (N2-5 dispatch, N2-6 reconcile, evaluator JSON receipt, this summary). **PENDING Sab decisions:** (1) Job/receipt — is attempt 1 valid real-round-trip evidence (accept / retry / revise)? (2) Capability node — accept / retry / revise / defer / abandon `direct-executor-round-trip` in the graph. (1) does not imply (2). |
 
 **Parallel inside N2 (optional, isolation-safe):** N2-0 can proceed while N2-1 is prepared (code vs queue isolation). Once N2-0/N2-2/N2-3 checkpoint, prepare archive structure and run a read-only observer while the parent owns live ticks. No second control-plane actor or default audit swarm.
 
@@ -202,9 +206,10 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 ## Exact resume (now)
 
-1. **NEXT: N2-3** — pin the Pi argv and environment, run the secrets preflight, then prove the exact commit/ref route with one disposable no-DB smoke.
-2. **N2-4 → N2-7** live loop; stop for Sab on the real receipt.
-3. Only then open Node 3.
+1. **N2-7 — pending two Sab decisions** on `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/`:
+   (1) accept/retry/revise this attempt as real-round-trip evidence;
+   (2) accept/retry/revise/defer/abandon `direct-executor-round-trip` in the graph.
+2. Node 3 opens only after the N2 capability-node decision (or an explicit waiver).
 
 ## Related artifacts
 

@@ -1,0 +1,10 @@
+runtime_head=3d530ad76b4f2e00d858e967d88c6af50314c86e
+runtime_status=
+config_head=4657c86aa69ea0236b90d8e719536ae993b4f08a
+config_status=
+event_id=evt_n2_live_attempt_0_8c2f1a
+stop_condition=N2-5 dispatch recorded; no reconciliation
+smoke_model=clinepass/cline-pass/minimax-m3
+live_model=openai-codex/gpt-5.6-sol
+model_change=Sab explicitly selected live model
+argv=["/usr/bin/python3","/Users/sab-mini/repos/gddp-runtime/scripts/local_agent_executor.py","--","/opt/homebrew/bin/pi","--model","openai-codex/gpt-5.6-sol","--thinking","high","--print","--no-session","--approve","--tools","read,bash,edit,write,grep,find,ls","Treat piped JSON as the authoritative GDDP NodePacket. Work only in the current worktree. Implement its goal within its constraints, create its required artifacts, run relevant checks, then stop. Never modify graph truth or runtime databases."]

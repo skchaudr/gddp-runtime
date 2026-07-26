@@ -1,0 +1,14 @@
+ts=2026-07-26T08:23:10Z
+ref=6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff
+job_status=awaiting_review
+job_queue_state=awaiting_review
+session_state=evaluated
+result_count=1
+result_verdict=pass
+result_commit_sha=6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff
+result_evaluated_commit_sha=6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff
+result_merge_commit_sha=6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff
+result_required_next_action=Proceed to accept_node (open evidence PR)
+result_receipt_path=/Users/sab-mini/repos/gddp-config/verification-runtime-live/gddp-runtime/job-state-consistency/job_20260726T081330259c7d2af87dc3-attempt0.json
+gddp_config_head=4657c86aa69ea0236b90d8e719536ae993b4f08a
+runtime_head=665465e54b3b60951c9e2931852d36295f1fdfad

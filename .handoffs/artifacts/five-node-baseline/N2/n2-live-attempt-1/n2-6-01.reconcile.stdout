@@ -1,0 +1,7 @@
+[n2-6] calling reconcile_sessions for repo=skchaudr/gddp-runtime
+[reconcile] 1 active executor session(s) to poll.
+[reconcile] ses_20260726T081330263a8fbf31b139 (local_subprocess/job_20260726T081330259c7d2af87dc3-job-state-consistency-attempt-0-fce8cfb20bdc460a89badba27c072379): completed
+  → evaluation: ok
+  → verdict: pass
+[reconcile] ses_20260726T081330263a8fbf31b139: result commit 6c0a4b2ddc41 (commit-ref), job job_20260726T081330259c7d2af87dc3 → awaiting_review
+[n2-6] reconcile_sessions returned

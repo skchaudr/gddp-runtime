@@ -1,0 +1,11 @@
+runtime_head=665465e54b3b60951c9e2931852d36295f1fdfad
+runtime_status=
+config_head=4657c86aa69ea0236b90d8e719536ae993b4f08a
+config_status=
+event_id=evt_n2_live_attempt_1_3f7b2e
+stop_condition=N2-5 dispatch recorded; no reconciliation
+smoke_model=clinepass/cline-pass/minimax-m3
+live_model=clinepass/cline-pass/minimax-m3
+model_change=none; live reuses the smoke's proven model+provider
+codex_path_status=deferred; pi v0.82.1 emits session_id that openai/openai-codex endpoints reject
+argv=["/usr/bin/python3","/Users/sab-mini/repos/gddp-runtime/scripts/local_agent_executor.py","--","/opt/homebrew/bin/pi","--model","clinepass/cline-pass/minimax-m3","--thinking","high","--print","--no-session","--approve","--tools","read,bash,edit,write,grep,find,ls","Treat piped JSON as the authoritative GDDP NodePacket. Work only in the current worktree. Implement its goal within its constraints, create its required artifacts, run relevant checks, then stop. Never modify graph truth or runtime databases."]

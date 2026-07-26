@@ -1,0 +1,13 @@
+Ready nodes: ['verdict-confidence-split', 'pi-evaluator-harness', 'pi-evaluator-guard', 'canary-retry-proof', 'job-state-consistency', 'heartbeat-crash-recovery']
+Found 1 pending event(s).
+
+Processing: evt_n2_live_attempt_1_3f7b2e (issue.opened)
+  → job created: job_20260726T081330259c7d2af87dc3
+
+Dispatching 1 job(s) in parallel.
+
+Recording: evt_n2_live_attempt_1_3f7b2e (job-state-consistency)
+  → dispatched to local_subprocess
+  → executor session: local_subprocess/job_20260726T081330259c7d2af87dc3-job-state-consistency-attempt-0-fce8cfb20bdc460a89badba27c072379
+
+Heartbeat complete.
