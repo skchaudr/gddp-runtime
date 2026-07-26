@@ -8,7 +8,7 @@ Branch: main
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
-N2-0 replaced the local stdout-diff handoff with a durable commit/ref return in `f4c3b11`; `8fa4bd5` then surfaced retained-worktree recovery failures. Focused validation passed 68 tests and the full suite passed 387; no live job, graph node, or runtime configuration was mutated. Later advisor review found two remaining pre-dispatch gaps: ref creation can overwrite a colliding attempt ref, and reconciliation trusts the returned SHA without resolving and matching the returned ref.
+N2-0 replaced the local stdout-diff handoff with a durable commit/ref return in `f4c3b11`; `8fa4bd5` surfaced retained-worktree recovery failures, and `b28125d` closed ref-collision and ref-to-SHA integrity gaps. The full suite passes 389 tests; no live job, graph node, or runtime configuration was mutated. N2-0 is closed; N2-1 and N2-2 are the next human-owned gates.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 
@@ -30,7 +30,7 @@ Local executor return transport and reconciliation only. Jules/remote patch hand
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Implementation commits `f4c3b11` and `8fa4bd5` are on `main` and pushed. The three loose, untracked N2-0 documents were consolidated here and removed with Sab's approval.
+N2-0 commits `f4c3b11`, `8fa4bd5`, and `b28125d` are on `main` and pushed with this handoff correction. The three loose, untracked N2-0 documents were consolidated here and removed with Sab's approval.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
@@ -38,7 +38,7 @@ Implementation commits `f4c3b11` and `8fa4bd5` are on `main` and pushed. The thr
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
-Before live N2, make per-attempt ref creation non-overwriting and require reconciliation to resolve the returned ref and verify it matches the returned SHA; add collision and mismatch tests. Rerun the three focused test files plus the full suite, commit/push cleanly, then proceed to N2-1.
+Sab runs N2-1 to dispose the canary and decides N2-2 by sealing or explicitly authorizing the one-line `gddp-config` delta. After both, N2-3 selects the real-agent argv and runs the secrets preflight plus exact-route smoke before live dispatch.
 
 ------------------------------------------------ Agent Section END
 
