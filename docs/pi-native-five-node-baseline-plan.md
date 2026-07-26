@@ -1,11 +1,12 @@
 # Pi-Native Five-Node Baseline Plan
 
 **Plan ID:** `gddp-five-node-baseline`  
-**Revision:** v3.3  
+**Revision:** v3.4<br>
 **Status:** active map (pivot when reality changes)  
 **v3.1:** N2-0 commit-ref transport; secrets preflight (`gpg`, not `pass` under launchd).  
 **v3.2:** N2-7 = two Sab decisions; N2-1 uses **jobs** path (`gddp jobs set` when landed), never graph node write.  
 **v3.3:** N2-0 ref consumed directly (descends-from check, no reconstruction worktree); N2-1 landed argv (`jobs_status.py set --reason`).  
+**v3.4:** N2-0/N2-1/N2-2 closed from live evidence; **N2-3 is next**.<br>
 **Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
 **Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
@@ -59,13 +60,13 @@ Only the active slice is rewritten when evidence changes. Charted later nodes re
 
 | Fact | State |
 |------|--------|
-| Runtime | `main` with worktree wrapper (`local_agent_executor`); suite green at last check. **Known landmine:** current wrapper still emits worktree **diff on stdout** — fix to **commit-ref handoff** before live dispatch (N2-0). |
+| Runtime | `main`; N2-0 commit/ref handoff landed and pushed (`f4c3b11`, `8fa4bd5`, `b28125d`); full suite passed 389 tests. |
 | Factory | Mission ended; ignore stale wrapper-validator loops |
 | Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
 | Capability Nodes 2–5 | **pending** until Sab accepts |
 | Ready work subject for N2 proof | `job-state-consistency` (`ready` in graph) |
-| Config delta | Dirty `+local_subprocess` first in that node’s `allowed_execution_modes` (local FS load sees it; commit seals provenance) |
-| Live queue | Historical canary job on that node may sit `awaiting_review` and block a new job until **job-disposed** (failed), with all evidence kept |
+| Config delta | `local_subprocess` is first in `job-state-consistency.allowed_execution_modes`; committed and pushed in `gddp-config` (`4657c86`). |
+| Live queue | Historical canary `job_20260724T010811130dd14802e579` moved from `awaiting_review` to `failed` through `gddp jobs set`; evidence retained. |
 | Forbidden for real N2 | `GDDP_EXECUTOR_OVERRIDE` |
 
 Re-verify live before dispatch; this table is a pointer, not a substitute for a fresh check.
@@ -112,10 +113,10 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 | # | Task | Evidence / pivot condition |
 |---|------|----------------------------|
-| N2-0 | **Fix transport: commit-ref, not diff-emit** | Bounded code change **before** live dispatch. Preserve worktree A's final result under a durable **per-attempt ref** before cleanup. Reconciler consumes that ref directly, verifies it **descends from `expected_base_commit_sha`**, records the result SHA, and evaluates it. No stdout-diff transport or reconstruction worktree. If persistence fails, keep the worktree and record its path. Focused tests green. Route failure here is engineering, not a node verdict. |
-| N2-1 | **Dispose stuck canary job** | Sab confirms the preserved `awaiting_review` evidence is not being accepted. Fail the **job** (queue), not the graph node. **Landed backend:** `python3 scripts/jobs_status.py set <job-id> failed --reason "…"` (`--reason` required, written to the audit row; interactive confirm unless `--yes`). End-state CLI wraps this as `gddp jobs set`. Graph **node** writes stay interactive-only / human-by-construction — never a node-status write for this. Keep DB rows, refs, patch; no delete/reset. **Policy:** Sab runs it; agents do not dispose jobs. |
-| N2-2 | **Seal routing provenance** | Sab decides whether to commit/push the known one-line `local_subprocess`-first config delta or explicitly authorize the dirty epoch. Record the exact config hash used by the attempt. Do not broaden the graph edit. |
-| N2-3 | **Pin env, secrets preflight, smoke exact route** | Choose post-N2-0 `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. **Secrets:** any GDDP key/cmd used in this window must use direct `gpg --decrypt` (or equivalent non-hanging decrypt) — **not** `pass` under launchd/agent, which can hang. Run one disposable no-DB smoke on the exact argv/packet contract (commit-ref handoff). Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution has sole heartbeat ownership. |
+| N2-0 | **CLOSED — Fix transport: commit-ref, not diff-emit** | Commit/ref transport, retained-worktree recovery, create-only refs, and ref-to-SHA verification landed in `f4c3b11`, `8fa4bd5`, and `b28125d`; 389 tests passed. |
+| N2-1 | **CLOSED — Dispose stuck canary job** | Sab moved `job_20260724T010811130dd14802e579` from `awaiting_review` to `failed` through `gddp jobs set`; job evidence retained and graph truth untouched. |
+| N2-2 | **CLOSED — Seal routing provenance** | `local_subprocess` is first for `job-state-consistency`; the one-line graph config delta is committed and pushed at `4657c86`. |
+| N2-3 | **NEXT — Pin env, secrets preflight, smoke exact route** | Choose post-N2-0 `local_agent_executor` + one non-interactive real-agent argv; set spool dir; **unset** override. **Secrets:** any GDDP key/cmd used in this window must use direct `gpg --decrypt` (or equivalent non-hanging decrypt) — **not** `pass` under launchd/agent, which can hang. Run one disposable no-DB smoke on the exact argv/packet contract (commit-ref handoff). Use the identical argv for the live attempt; route failure is a route problem, not a node failure. Record whether launchd is unloaded or manual execution has sole heartbeat ownership. |
 | N2-4 | **Inject one tagged work event** | One `issue.opened` (or equivalent intake path) tagged `node: job-state-consistency`. Preserve the exact payload/INSERT and resulting event row. A second event or wrong node classification stops the route. |
 | N2-5 | **One controlled dispatch tick** | Only after N2-0 is landed. Immediately before the tick, re-check HEAD, config hash, event ID, required env names, absent override, secrets preflight, and single control-plane ownership. Record selected executor and job/attempt/session IDs. Stop before retry if selection is not `local_subprocess`. |
 | N2-6 | **Collect → evaluate → `awaiting_review`** | Further controlled ticks: collect **ref**, reconcile, evaluate with real credentials (same secrets rule as N2-3). Join packet → attempt → session → result commit/ref → evaluator receipt. Independently verify artifacts for this attempt; pre-existing files do not count. If provenance is wrong or duplicate evaluation appears, preserve and pivot. Stop at human review. |
@@ -201,11 +202,9 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 ## Exact resume (now)
 
-1. Confirm Node 1 remains **deferred** (status only).  
-2. **N2-0** transport fix (commit-ref) in parallel with **N2-1** job dispose when useful.  
-3. **N2-2 → N2-3** (seal config, pin env + secrets preflight + smoke).  
-4. **N2-4 → N2-7** live loop; stop for Sab on the real receipt.  
-5. Only then open Node 3.
+1. **NEXT: N2-3** — pin the Pi argv and environment, run the secrets preflight, then prove the exact commit/ref route with one disposable no-DB smoke.
+2. **N2-4 → N2-7** live loop; stop for Sab on the real receipt.
+3. Only then open Node 3.
 
 ## Related artifacts
 
