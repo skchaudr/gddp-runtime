@@ -543,6 +543,12 @@ def test_reconcile_local_commit_ref_skips_apply_worktree(con, tmp_path, monkeypa
         ["git", "rev-parse", "HEAD"],
         cwd=str(repo), capture_output=True, text=True, check=True,
     ).stdout.strip()
+    # The executor's durable attempt ref: the reconciler resolves it and
+    # requires it to agree with the reported SHA.
+    subprocess.run(
+        ["git", "branch", "gddp/attempt-job_local", result_sha],
+        cwd=str(repo), check=True, capture_output=True,
+    )
 
     _insert_job(
         con, job_id="job_local", executor="local_subprocess",
@@ -640,7 +646,8 @@ def test_reconcile_rejects_ref_not_descending_from_base(con, tmp_path, monkeypat
     FakeAdapter = _make_fake_adapter(
         status_state="completed",
         result_commit_sha=orphan_sha,
-        result_ref="gddp/attempt-bad",
+        # Ref resolves correctly; the ancestry check is what must reject it.
+        result_ref="orphan-tmp",
     )
     monkeypatch.setattr(
         reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
@@ -658,6 +665,70 @@ def test_reconcile_rejects_ref_not_descending_from_base(con, tmp_path, monkeypat
     assert "does not descend" in (row["error"] or "")
     job = con.execute(
         "SELECT status FROM jobs WHERE job_id = ?", ("job_bad",)
+    ).fetchone()
+    assert job["status"] == "failed"
+
+
+def test_reconcile_rejects_ref_that_does_not_resolve_to_reported_sha(
+    con, tmp_path, monkeypatch
+):
+    """The ref is the durability guarantee; a SHA it does not point at is not
+    durable evidence, even when the SHA itself descends from the base."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    # Two real descendant commits; the ref is left pointing at the first.
+    (repo / "result.txt").write_text("first\n")
+    subprocess.run(["git", "add", "result.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "first result", "-q"], cwd=str(repo), check=True
+    )
+    stale_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "branch", "gddp/attempt-job_drift", stale_sha],
+        cwd=str(repo), check=True, capture_output=True,
+    )
+    (repo / "result.txt").write_text("second\n")
+    subprocess.run(["git", "add", "result.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "second result", "-q"], cwd=str(repo), check=True
+    )
+    reported_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+    _insert_job(
+        con, job_id="job_drift", executor="local_subprocess",
+        repo="owner/repo", status="running",
+    )
+    ses_id = insert_executor_session(
+        con, "job_drift", "local_subprocess", "sess-drift",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="completed",
+        result_commit_sha=reported_sha,
+        result_ref="gddp/attempt-job_drift",
+    )
+    monkeypatch.setattr(
+        reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
+    )
+    monkeypatch.setattr(
+        reconciler, "verify_job_return",
+        lambda **kw: pytest.fail("evaluation must not run on ref mismatch"),
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "failed"
+    assert "gddp/attempt-job_drift" in (row["error"] or "")
+    assert row["result_commit_sha"] is None
+    job = con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", ("job_drift",)
     ).fetchone()
     assert job["status"] == "failed"
 

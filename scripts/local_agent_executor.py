@@ -180,8 +180,10 @@ def persist_result(worktree: Path, packet: dict[str, Any]) -> dict[str, Any]:
             )
 
         # Shared object store with main repo; ref must land before worktree removal.
+        # Create-only: a colliding attempt ref means the attempt ID was
+        # reused; never silently overwrite prior evidence.
         update_ref = _run_git(
-            ["git", "update-ref", f"refs/heads/{ref_name}", result_sha],
+            ["git", "update-ref", f"refs/heads/{ref_name}", result_sha, ""],
             cwd=worktree,
         )
         if update_ref.returncode != 0:

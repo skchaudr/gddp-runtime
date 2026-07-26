@@ -329,6 +329,15 @@ def _handle_completed(
         # Commit-ref path (local_subprocess): skip reconstruction worktree.
         if getattr(patch_result, "result_commit_sha", None):
             result_sha = patch_result.result_commit_sha
+            result_ref = getattr(patch_result, "result_ref", None)
+            if not result_ref:
+                raise RuntimeError("commit-ref handoff missing result_ref")
+            resolved = _resolve_ref(repo_path, result_ref)
+            if resolved != result_sha:
+                raise RuntimeError(
+                    f"result_ref {result_ref} resolves to "
+                    f"{resolved or 'nothing'}, expected {result_sha}"
+                )
             if not _is_ancestor(repo_path, base_commit, result_sha):
                 raise RuntimeError(
                     f"result {result_sha} does not descend from "
@@ -637,6 +646,22 @@ def _is_ancestor(repo_path: Path, base_sha: str, result_sha: str) -> bool:
         return proc.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def _resolve_ref(repo_path: Path, ref_name: str) -> str | None:
+    """Resolve refs/heads/{ref_name} to a commit SHA, or None."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{ref_name}^{{commit}}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return proc.stdout.strip() if proc.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def _ensure_result_ref(

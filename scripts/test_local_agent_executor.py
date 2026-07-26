@@ -183,6 +183,39 @@ def test_persist_result_creates_ref_before_cleanup(tmp_path, capsys):
     )
 
 
+def test_persist_result_refuses_to_overwrite_a_reused_attempt_ref(tmp_path):
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+    packet = json.loads(_packet(base_sha))
+
+    first_wt = lae.create_worktree(repo, base_sha)
+    (first_wt / "first.txt").write_text("first attempt\n")
+    first = lae.persist_result(first_wt, packet)
+    assert first["result_commit_sha"]
+    lae.remove_worktree(repo, first_wt)
+
+    # Same execution_attempt_id → same ref name → must not clobber attempt one.
+    second_wt = lae.create_worktree(repo, base_sha)
+    (second_wt / "second.txt").write_text("second attempt\n")
+    second = lae.persist_result(second_wt, packet)
+
+    assert second["result_commit_sha"] is None
+    assert second["worktree_path"] == str(second_wt)
+    assert second["error"]
+    assert first["result_ref"] in second["error"]
+
+    resolved = subprocess.run(
+        ["git", "rev-parse", first["result_ref"]],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert resolved == first["result_commit_sha"]
+
+    lae.remove_worktree(repo, second_wt)
+
+
 def test_persist_failure_keeps_worktree_and_records_path(tmp_path, capsys, monkeypatch):
     repo = tmp_path / "repo"
     base_sha = _init_repo(repo)
