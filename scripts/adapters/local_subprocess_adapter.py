@@ -110,52 +110,7 @@ class LocalSubprocessAdapter:
         )
 
     def status(self, session_ref: SessionRef) -> SessionStatus:
-        attempt_dir = self._attempt_dir(session_ref)
-        if attempt_dir is None or not attempt_dir.is_dir():
-            return SessionStatus(state="failed", error="local subprocess spool not found")
-
-        exit_path = attempt_dir / "exit.json"
-        if exit_path.exists():
-            try:
-                exit_state = json.loads(exit_path.read_text())
-                returncode = int(exit_state["returncode"])
-            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-                return SessionStatus(
-                    state="failed", error=f"invalid local subprocess exit state: {exc}"
-                )
-            if returncode == 0:
-                return SessionStatus(state="completed")
-            stderr = _read_text(attempt_dir / "stderr").strip()
-            if exit_state.get("cancelled"):
-                detail = f"local subprocess cancelled (code {returncode})"
-            else:
-                detail = f"local subprocess exited with code {returncode}"
-            if stderr:
-                detail = f"{detail}: {stderr}"
-            # Surface persist-fail recovery path from v1 fail handoff on stdout.
-            handoff = _parse_local_result_handoff(_read_text(attempt_dir / "stdout"))
-            if handoff is not None:
-                worktree_path = handoff.get("worktree_path")
-                handoff_error = handoff.get("error")
-                if isinstance(worktree_path, str) and worktree_path:
-                    path_detail = f"persist failed; worktree kept at {worktree_path}"
-                    if handoff_error:
-                        path_detail = f"{path_detail}: {handoff_error}"
-                    detail = f"{detail}; {path_detail}"
-                elif handoff_error:
-                    detail = f"{detail}; {handoff_error}"
-            return SessionStatus(state="failed", error=detail)
-
-        pid = _read_pid(attempt_dir / "pid")
-        if pid is not None and _pid_is_running(pid):
-            return SessionStatus(state="running")
-        supervisor_pid = _read_pid(attempt_dir / "supervisor.pid")
-        if supervisor_pid is not None and _pid_is_running(supervisor_pid):
-            return SessionStatus(state="dispatched")
-        return SessionStatus(
-            state="failed",
-            error="local subprocess exited without durable exit state",
-        )
+        return read_local_subprocess_status(self.spool_root, session_ref.session_id)
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
         status = self.status(session_ref)
@@ -244,6 +199,71 @@ class LocalSubprocessAdapter:
         ):
             return None
         return self.spool_root / session_id
+
+
+def read_local_subprocess_status(
+    spool_root: Path, session_id: str
+) -> "SessionStatus":
+    """Read-only durable status of one local_subprocess session.
+
+    Computes the same verdict the adapter's status() would, but takes the
+    spool root as an explicit argument. Safe to call from a normal operator
+    shell that has neither the dispatch argv nor any local_subprocess env
+    set. Never mutates the spool, the adapter object, or any external state.
+    """
+    from adapters.executor_protocol import SessionStatus
+
+    if (
+        not session_id
+        or session_id in {".", ".."}
+        or Path(session_id).name != session_id
+    ):
+        return SessionStatus(state="failed", error="invalid local subprocess session id")
+    attempt_dir = Path(spool_root) / session_id
+    if not attempt_dir.is_dir():
+        return SessionStatus(state="failed", error="local subprocess spool not found")
+
+    exit_path = attempt_dir / "exit.json"
+    if exit_path.exists():
+        try:
+            exit_state = json.loads(exit_path.read_text())
+            returncode = int(exit_state["returncode"])
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            return SessionStatus(
+                state="failed", error=f"invalid local subprocess exit state: {exc}"
+            )
+        if returncode == 0:
+            return SessionStatus(state="completed")
+        stderr = _read_text(attempt_dir / "stderr").strip()
+        if exit_state.get("cancelled"):
+            detail = f"local subprocess cancelled (code {returncode})"
+        else:
+            detail = f"local subprocess exited with code {returncode}"
+        if stderr:
+            detail = f"{detail}: {stderr}"
+        handoff = _parse_local_result_handoff(_read_text(attempt_dir / "stdout"))
+        if handoff is not None:
+            worktree_path = handoff.get("worktree_path")
+            handoff_error = handoff.get("error")
+            if isinstance(worktree_path, str) and worktree_path:
+                path_detail = f"persist failed; worktree kept at {worktree_path}"
+                if handoff_error:
+                    path_detail = f"{path_detail}: {handoff_error}"
+                detail = f"{detail}; {path_detail}"
+            elif handoff_error:
+                detail = f"{detail}; {handoff_error}"
+        return SessionStatus(state="failed", error=detail)
+
+    pid = _read_pid(attempt_dir / "pid")
+    if pid is not None and _pid_is_running(pid):
+        return SessionStatus(state="running")
+    supervisor_pid = _read_pid(attempt_dir / "supervisor.pid")
+    if supervisor_pid is not None and _pid_is_running(supervisor_pid):
+        return SessionStatus(state="dispatched")
+    return SessionStatus(
+        state="failed",
+        error="local subprocess exited without durable exit state",
+    )
 
 
 def _configured_argv(argv: Sequence[str] | None) -> tuple[str, ...]:

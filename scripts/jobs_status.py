@@ -159,18 +159,24 @@ def print_evaluation(check, full=False):
 def _read_local_subprocess_status(session_id: str) -> tuple[str | None, str | None]:
     """Read-only durable adapter probe for one local_subprocess session.
 
-    Returns (adapter_state, adapter_error) or (None, None) if the session is
-    not local_subprocess or the adapter can't be loaded. Never mutates the
-    adapter state, the spool, or the DB.
+    Resolves the spool root from $GDDP_LOCAL_SUBPROCESS_SPOOL_DIR when
+    present, otherwise from the runtime default at
+    RUNTIME_ROOT/jobs/local-subprocess-spool. Calls the adapter module's
+    free read function directly, so a normal operator shell without
+    dispatch argv or local_subprocess env can still see durable state.
+
+    Returns (adapter_state, adapter_error) or (None, error_string) if the
+    read couldn't run. Never mutates the spool, the adapter, or the DB.
     """
     try:
-        from adapters.executor_protocol import SessionRef
-        from adapters.local_subprocess_adapter import LocalSubprocessAdapter
-    except Exception as exc:  # pragma: no cover - import path is stable in this repo
+        from adapters.executor_protocol import SessionStatus  # noqa: F401  (sanity import)
+        from adapters.local_subprocess_adapter import read_local_subprocess_status
+    except Exception as exc:  # pragma: no cover
         return None, f"adapter import failed: {exc}"
+    spool_env = os.environ.get("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR")
+    spool_root = Path(spool_env) if spool_env else RUNTIME_ROOT / "jobs" / "local-subprocess-spool"
     try:
-        adapter = LocalSubprocessAdapter(repo="local-probe")
-        status = adapter.status(SessionRef(executor="local_subprocess", session_id=session_id))
+        status = read_local_subprocess_status(spool_root, session_id)
     except Exception as exc:
         return None, f"adapter probe failed: {exc}"
     return status.state, status.error

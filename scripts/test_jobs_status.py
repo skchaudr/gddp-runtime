@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -189,6 +191,57 @@ class JobsStatusTests(unittest.TestCase):
                 jobs_status.main(["show", "job-1"])
             out = buf.getvalue()
         self.assertIn("executor attempt: (none on record)", out)
+
+    def test_show_reads_local_subprocess_status_with_no_dispatch_env(self):
+        """A normal operator shell (no GDDP_* dispatch env) can still see
+        the durable adapter state for a terminal local_subprocess session."""
+        import contextlib
+        import io
+
+        # Build a real terminal spool: exit.json with rc=1 and a stderr line.
+        spool_root = Path(self.tempdir.name) / "spool"
+        session_id = "job-1-node-1-attempt-0-noenv"
+        attempt_dir = spool_root / session_id
+        attempt_dir.mkdir(parents=True)
+        (attempt_dir / "exit.json").write_text(
+            json.dumps({"returncode": 1, "cancelled": False})
+        )
+        (attempt_dir / "stderr").write_text("Codex error: Unsupported parameter: session_id\n")
+
+        # Record an executor_session pointing at the spool. DB row says
+        # 'dispatched' so a divergence is visible.
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            """
+            INSERT INTO executor_sessions
+                (session_db_id, job_id, executor, session_id, state, error,
+                 created_at, updated_at, execution_attempt_id, attempt_index)
+            VALUES
+                ('ses-noenv', 'job-1', 'local_subprocess', ?, 'dispatched', NULL,
+                 '2026-07-26T06:00:00+00:00', '2026-07-26T06:00:00+00:00',
+                 'job-1:attempt:0', 0)
+            """,
+            (session_id,),
+        )
+        con.commit()
+        con.close()
+
+        # Run show with no dispatch env, and SPOOL env pointing at our temp dir.
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("GDDP_LOCAL_SUBPROCESS_")}
+        env["GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"] = str(spool_root)
+        buf = io.StringIO()
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+             patch.dict(os.environ, env, clear=True), \
+             contextlib.redirect_stdout(buf):
+            jobs_status.main(["show", "job-1"])
+        out = buf.getvalue()
+
+        self.assertIn("db_state=dispatched", out)
+        self.assertIn("adapter:    failed  (DIVERGENT)", out)
+        self.assertIn("Codex error: Unsupported parameter: session_id", out)
+        # The legacy probe-failure message must NOT appear anymore.
+        self.assertNotIn("GDDP_LOCAL_SUBPROCESS_ARGV", out)
 
 
 if __name__ == "__main__":
