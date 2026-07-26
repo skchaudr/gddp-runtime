@@ -100,6 +100,31 @@ def _is_merged_pr_event(event) -> bool:
         return False
 
 
+def _configured_job_capacity(execution_policy: dict) -> int | None:
+    """Return the configured positive job cap, or no cap when omitted."""
+    value = execution_policy.get("max_concurrent_jobs")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("execution_policy.max_concurrent_jobs must be a positive integer")
+    return value
+
+
+def _active_job_count(con: sqlite3.Connection, repo: str) -> int:
+    """Count reserved or running jobs that consume executor capacity."""
+    row = con.execute(
+        """SELECT COUNT(*)
+             FROM jobs
+            WHERE repo = ?
+              AND (
+                  status IN ('ready', 'running')
+                  OR queue_state IN ('ready', 'running')
+              )""",
+        (repo,),
+    ).fetchone()
+    return int(row[0])
+
+
 def run_heartbeat(
     project_id: str,
     repo: str,
@@ -116,6 +141,9 @@ def run_heartbeat(
             derived = Path(repos_root) / repo.split("/")[-1]
             if derived.exists():
                 repo_path = str(derived)
+
+    project = reader.load_project(project_id)
+    max_concurrent_jobs = _configured_job_capacity(project.execution_policy)
 
     # Load ready nodes from the graph (replaces hardcoded PHASE3_NODE)
     ready_nodes = reader.get_ready_nodes(project_id)
@@ -139,6 +167,7 @@ def run_heartbeat(
             repo,
             ready_nodes,
             reader,
+            max_concurrent_jobs=max_concurrent_jobs,
             repo_path=repo_path,
         )
 
@@ -162,6 +191,7 @@ def _plan_dispatches(
     reader: GraphReader,
     *,
     expected_base_commit_sha: str | None = None,
+    max_concurrent_jobs: int | None = None,
     repo_path: str | None = None,
 ) -> list[PlannedDispatch]:
     """
@@ -182,6 +212,7 @@ def _plan_dispatches(
          WHERE (project_id = ? OR (project_id IS NULL AND repo = ?))
            AND (status = 'received'
                 OR (status = 'claimed' AND claimed_at < ?))
+         ORDER BY received_at, event_id
         """,
         (project_id, repo, stale_cutoff),
     )
@@ -231,6 +262,7 @@ def _plan_dispatches(
             except Exception as exc:
                 print(f"  → return router ERROR: {exc}")
                 mark_event_ignored(con, event_id)
+            con.commit()
             print()
             continue
 
@@ -238,6 +270,7 @@ def _plan_dispatches(
         classification = classify(event, ready_nodes)
         if classification is None:
             mark_event_ignored(con, event_id)
+            con.commit()
             print(f"  → ignored (no node mapping)\n")
             continue
 
@@ -245,22 +278,47 @@ def _plan_dispatches(
         node = next((n for n in ready_nodes if n.node_id == node_id), None)
         if node is None:
             mark_event_ignored(con, event_id)
+            con.commit()
             print(f"  → ignored (matched node {node_id} not in ready list)\n")
             continue
 
+        if not base_commit_resolved:
+            expected_base_commit_sha = _get_head_sha(repo_path)
+            base_commit_resolved = True
+
+        # Serialize the capacity check with reservation writes. This prevents
+        # overlapping heartbeat processes from each observing the same free slot.
+        con.execute("BEGIN IMMEDIATE")
+        active_jobs = _active_job_count(con, repo)
+        if (
+            max_concurrent_jobs is not None
+            and active_jobs >= max_concurrent_jobs
+        ):
+            con.execute(
+                """UPDATE events
+                      SET status = 'received', claimed_at = NULL
+                    WHERE event_id = ? AND status = 'claimed'""",
+                (event_id,),
+            )
+            con.commit()
+            print(
+                f"  → deferred (executor capacity "
+                f"{active_jobs}/{max_concurrent_jobs})\n"
+            )
+            break
+
         mark_event_classified(con, event_id, classification)
 
-        # Scope checks continue to use the single main-thread SQLite connection.
+        # Re-check scope while holding the reservation lock so two heartbeat
+        # processes cannot reserve the same node concurrently.
         scope = check_scope(node, project_id, con, reader)
         if not scope:
             mark_event_scope_blocked(con, event_id, scope.reason)
+            con.commit()
             print(f"  → scope blocked: {scope.reason}\n")
             continue
 
         # Reserve the job before dispatch so other heartbeats see it immediately.
-        if not base_commit_resolved:
-            expected_base_commit_sha = _get_head_sha(repo_path)
-            base_commit_resolved = True
         job = build_job(
             node,
             event,
@@ -293,6 +351,7 @@ def _plan_dispatches(
                 session_db_id=session_db_id,
             )
         )
+        con.commit()
         print(f"  → job created: {job_id}")
         print()
 

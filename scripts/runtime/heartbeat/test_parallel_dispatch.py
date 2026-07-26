@@ -341,6 +341,87 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(test_env, mon
     _verify_parallel_results(db_path, dispatched_nodes, dispatch_threads)
 
 
+def test_reservation_capacity_counts_existing_running_jobs(test_env, monkeypatch):
+    db_path = test_env["db_path"]
+    config_root = test_env["config_root"]
+
+    _insert_event(db_path, "evt-alpha")
+    _insert_event(db_path, "evt-beta")
+    _write_graph(config_root)
+    project_path = config_root / "graphs" / "parallel-test" / "project.yaml"
+    project_path.write_text(
+        project_path.read_text().replace(
+            "execution_policy: {}",
+            "execution_policy:\n  max_concurrent_jobs: 2",
+        )
+    )
+
+    con = sqlite3.connect(db_path)
+    con.execute(
+        """
+        INSERT INTO jobs (
+            job_id, created_at, project_id, repo, node_id, job_type,
+            executor, title, goal, status, queue_state
+        ) VALUES (
+            'job-existing', '2026-03-18T00:00:00+00:00',
+            'parallel-test', 'owner/repo', 'legacy-node', 'implementation',
+            'jules', 'Existing', 'Existing work', 'running', 'running'
+        )
+        """
+    )
+    con.commit()
+    con.close()
+
+    _mock_id_generation(monkeypatch)
+    node_map = {
+        "evt-alpha": "alpha-node",
+        "evt-beta": "beta-node",
+    }
+
+    def fake_classify(event, ready_nodes):
+        node_id = node_map[event["event_id"]]
+        return {
+            "category": "implementation_request",
+            "intent": "implement_existing_node",
+            "in_scope": True,
+            "matched_node_id": node_id,
+            "executor_recommendation": "jules",
+            "requires_code_execution": True,
+            "requires_human_review": False,
+        }
+
+    dispatched_nodes = []
+
+    def fake_dispatch(job, repo):
+        dispatched_nodes.append(job["node_id"])
+        return DispatchResult(success=True, issue_url="https://example.test/job")
+
+    monkeypatch.setattr(runner, "classify", fake_classify)
+    monkeypatch.setattr(runner, "dispatch", fake_dispatch)
+
+    runner.run_heartbeat(
+        project_id="parallel-test",
+        repo="owner/repo",
+        config_path=str(config_root),
+    )
+
+    con = sqlite3.connect(db_path)
+    events = dict(
+        con.execute("SELECT event_id, status FROM events ORDER BY event_id")
+    )
+    new_jobs = con.execute(
+        "SELECT node_id FROM jobs WHERE job_id <> 'job-existing'"
+    ).fetchall()
+    con.close()
+
+    assert dispatched_nodes == ["alpha-node"]
+    assert new_jobs == [("alpha-node",)]
+    assert events == {
+        "evt-alpha": "mapped",
+        "evt-beta": "received",
+    }
+
+
 def test_cross_project_event_filtering(test_env, monkeypatch):
     db_path = test_env["db_path"]
     config_root = test_env["config_root"]

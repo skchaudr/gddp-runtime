@@ -1538,6 +1538,7 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
 
     # No real graph/config needed: ready nodes are empty so planning is a no-op.
     mock_reader = MagicMock()
+    mock_reader.load_project.return_value.execution_policy = {}
     mock_reader.get_ready_nodes.return_value = []
     monkeypatch.setattr(runner, "GraphReader", lambda **kw: mock_reader)
 
