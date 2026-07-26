@@ -39,7 +39,7 @@
   <key>RunAtLoad</key>
   <false/>
   <key>KeepAlive</key>
-  <false/>
+  <true/>
 
   <key>StandardOutPath</key>
   <string>__HOME__/Library/Logs/gddp-intake.log</string>
