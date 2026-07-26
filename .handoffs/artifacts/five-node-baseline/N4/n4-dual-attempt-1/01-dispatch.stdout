@@ -1,0 +1,20 @@
+Ready nodes: ['verdict-confidence-split', 'pi-evaluator-harness', 'pi-evaluator-guard', 'canary-retry-proof', 'job-state-consistency', 'heartbeat-crash-recovery']
+Found 2 pending event(s).
+
+Processing: evt_n4_dual_jules_1 (issue.opened)
+  → job created: job_20260726T1059546235f910ffd05c
+
+Processing: evt_n4_dual_local_1 (issue.opened)
+  → job created: job_20260726T1059546275a44bb7bbd0
+
+Dispatching 2 job(s) in parallel.
+
+Recording: evt_n4_dual_jules_1 (heartbeat-crash-recovery)
+  → dispatched to jules_api
+  → executor session: jules_api/16828659161506833111
+
+Recording: evt_n4_dual_local_1 (pi-evaluator-harness)
+  → dispatched to local_subprocess
+  → executor session: local_subprocess/job_20260726T1059546275a44bb7bbd0-pi-evaluator-harness-attempt-0-bd3bfa477ee840fd9adc2f4c8607945c
+
+Heartbeat complete.

@@ -1,0 +1,10 @@
+Ready nodes: ['verdict-confidence-split', 'pi-evaluator-harness', 'pi-evaluator-guard', 'canary-retry-proof', 'job-state-consistency', 'heartbeat-crash-recovery']
+Found 2 pending event(s).
+
+Processing: evt_n4_dual_jules_0 (issue.opened)
+  → ignored (no node mapping)
+
+Processing: evt_n4_dual_local_0 (issue.opened)
+  → ignored (no node mapping)
+
+Heartbeat complete.

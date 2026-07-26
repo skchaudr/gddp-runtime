@@ -1,0 +1,9 @@
+Ready nodes: ['verdict-confidence-split', 'pi-evaluator-harness', 'pi-evaluator-guard', 'canary-retry-proof', 'job-state-consistency', 'heartbeat-crash-recovery']
+[reconcile] 2 active executor session(s) to poll.
+[reconcile] ses_20260726T105954626bb4519069b0 (jules_api/16828659161506833111): running
+[reconcile] ses_20260726T1059546257b5310d03ce (local_subprocess/job_20260726T1059546275a44bb7bbd0-pi-evaluator-harness-attempt-0-bd3bfa477ee840fd9adc2f4c8607945c): completed
+  → evaluation: ok
+  → verdict: fail
+[reconcile] ses_20260726T1059546257b5310d03ce: result commit 21ced0c2f119 (commit-ref), job job_20260726T1059546275a44bb7bbd0 → awaiting_review
+No pending events.
+Heartbeat complete.

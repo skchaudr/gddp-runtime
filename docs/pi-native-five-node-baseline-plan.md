@@ -65,13 +65,15 @@ Only the active slice is rewritten when evidence changes. Charted later nodes re
 | Factory | Mission ended; ignore stale wrapper-validator loops |
 | Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
 | Capability Nodes 2–5 | **pending** until Sab accepts |
-| Ready work subject for N2 proof | `job-state-consistency` (`ready` in graph) |
-| Config delta | `local_subprocess` is first in `job-state-consistency.allowed_execution_modes`; committed and pushed in `gddp-config` (`4657c86`). |
+| N2 work subject | `job-state-consistency` job `job_20260726T081330259c7d2af87dc3` is `awaiting_review`; graph remains `ready`. |
+| Current executor routing | Project default `jules_api`; `heartbeat-crash-recovery` selects `jules_api`; `pi-evaluator-harness` selects `local_subprocess` (`gddp-config` `d34535a`, handoff `030`). |
 | N2 attempt 0 (`n2-live-attempt-0/`) | **failed at the worker layer**: `pi` v0.82.1 emitted `session_id` to the Codex-compatible backend and got `Unsupported parameter: session_id`; transport produced a valid empty commit + ref but no work. Event `evt_n2_live_attempt_0_8c2f1a` preserved, job `job_20260726T04502048326609c51da5` marked `failed`, evidence intact. |
 | N2 attempt 1 (`n2-live-attempt-1/`) | **success**: event `evt_n2_live_attempt_1_3f7b2e` → job `job_20260726T081330259c7d2af87dc3` → `awaiting_review`; result `pass` (criteria pass, integrity pass @ 0.95, intent + graph integrity preserved); result commit `6c0a4b2d…b5ff` (parent `665465e…`), ref `gddp/attempt-job_20260726T081330259c7d2af87dc3-attempt-0`. Live argv **identical to smoke argv**: `pi` + `clinepass/cline-pass/minimax-m3` (the proven model+provider). |
 | Pinned worker for N2 | `pi` (Homebrew) + `clinepass/cline-pass/minimax-m3` (matching smoke); Codex-compatible backends (openai, openai-codex) are **out** until `pi` stops sending `session_id`. |
 | Forbidden for real N2 | `GDDP_EXECUTOR_OVERRIDE` |
-| Service state | `com.gddp.heartbeat` and `com.gddp.intake` both loaded; no eligible events; no active executor_sessions for `skchaudr/gddp-runtime`. |
+| N3 mapping | N3-1 mapped all criteria/constraints to existing evidence; N3-2 recorded no-change in `da89b69`; Sab decision remains pending. |
+| N4 heterogeneous attempt | Attempt 1 dispatched Jules API + local Pi concurrently. Both reached `awaiting_review`; both evaluator verdicts are `fail`, integrity `pass`. Parallel dispatch and per-node failure isolation are proven; simultaneous evaluator/evaluator execution and acceptance-unblocks-downstream are not. |
+| Service state | `com.gddp.heartbeat` and `com.gddp.intake` loaded; no pending events or active executor sessions for `skchaudr/gddp-runtime`. |
 
 Re-verify live before dispatch; this table is a pointer, not a substitute for a fresh check.
 
@@ -80,8 +82,8 @@ Re-verify live before dispatch; this table is a pointer, not a substitute for a 
 | Layer | Meaning |
 |-------|---------|
 | **Baseline** | All five capability nodes + closeout |
-| **Active workstream** | **Node 2** real local round-trip |
-| **Charted next** | Node 3 → 4 → 5 → close (not in flight until their gates open) |
+| **Active workstream** | Node 4 evidence review + the still-human-owned N2/N3 dispositions |
+| **Charted next** | Finish only the missing N4 proofs or amend the node; then Node 5 |
 
 For Nodes 3–5, the stated outcome and human entry/exit gates are durable intent. Their numbered tasks are the best current decomposition, not advance authorization to execute or a promise that the decomposition survives new evidence.
 
@@ -95,7 +97,7 @@ No criterion map, adapter audit, or implementation list. Deferred does **not** b
 
 ---
 
-## Node 2 — real local executor round-trip (active)
+## Node 2 — real local executor round-trip
 
 **Capability intent:** prove a real ready node through local subprocess / worktree transport to human review, without override.
 
@@ -138,10 +140,10 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 | # | Task | Notes |
 |---|------|--------|
-| N3-1 | Map N3 criteria to the **existing N2 receipt** + evaluator code | Read-only |
-| N3-2 | Fix only a demonstrated gap **or** record no-change | Isolated writer if code changes |
-| N3-3 | Reuse N2 proof; rerun evaluation only for a **named** missing criterion | No full re-prove by default |
-| N3-4 | Archive + **Sab** decision | |
+| N3-1 | **CLOSED — Map criteria to N2 receipt + evaluator code** | Archive in `.handoffs/artifacts/five-node-baseline/N3/` |
+| N3-2 | **CLOSED — No demonstrated gap; no-change** | No evaluator code changed |
+| N3-3 | **NOT NEEDED by default** | Rerun only for a Sab-named missing criterion |
+| N3-4 | **Archive complete; Sab decision pending** | Handoff `056` |
 
 **Parallel:** N3-1 can start as soon as N2 archive exists; N3-2 only if N3-1 finds a real gap.
 
@@ -149,16 +151,17 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 ## Node 4 — concurrent node flow
 
-**Opens after:** Node 2 and Node 3 Sab decisions (or waivers).
+**Opened by Sab’s explicit sequencing waiver for the heterogeneous live run.**
+N2/N3 graph dispositions remain pending and graph truth is unchanged.
 
 | # | Task | Notes |
 |---|------|--------|
-| N4-1 | Implement capacity at **reservation/planning** (not post-hoc dispatch-only) | Path ownership: runner/reservation surface |
-| N4-2 | Implement evaluation **claim** isolation | **Parallel with N4-1** — separate worktrees/paths |
-| N4-3 | Integrate + pre-run gate for two real nodes | Parent integration |
-| N4-4 | Live two-node run (+ read-only observer); prove overlap | One control-plane actor |
-| N4-5 | If criterion still requires it: acceptance that unblocks downstream **while peer work continues** | Sab-gated |
-| N4-6 | Archive + **Sab** decision | |
+| N4-1 | **CLOSED — enforce capacity at reservation/planning** | `max_concurrent_jobs` now gates atomic reservations (`35059f4`; 398 tests). |
+| N4-2 | **OPEN — simultaneous evaluator claim/isolation proof** | Attempt 1 proved evaluation can finish while an independent executor continues, not two evaluators running simultaneously. |
+| N4-3 | **CLOSED — route two independent real nodes** | Jules API + local subprocess; key and both launchd resolver paths persisted. |
+| N4-4 | **CLOSED for dispatch/failure isolation** | Both adapters reported `running` concurrently. Local then failed evaluation and reached review while Jules continued; Jules later reached review independently. |
+| N4-5 | **OPEN — acceptance-unblocks-downstream** | Sab-gated; do not manufacture acceptance merely to satisfy the criterion. |
+| N4-6 | **Archive assembled; Sab decisions pending** | `.handoffs/artifacts/five-node-baseline/N4/n4-dual-attempt-1/`; both result commits and receipts preserved. |
 
 ---
 
