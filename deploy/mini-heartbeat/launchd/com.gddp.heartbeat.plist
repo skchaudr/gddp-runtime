@@ -43,6 +43,10 @@
     <string>__GDDP_DEEPSEEK_KEY_CMD__</string>
     <key>GDDP_JULES_KEY_CMD</key>
     <string>__GDDP_JULES_KEY_CMD__</string>
+    <key>GDDP_LOCAL_SUBPROCESS_ARGV</key>
+    <string>__GDDP_LOCAL_SUBPROCESS_ARGV__</string>
+    <key>GDDP_LOCAL_SUBPROCESS_SPOOL_DIR</key>
+    <string>__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__</string>
     <key>PYTHONPATH</key>
     <string>__GDDP_RUNTIME_ROOT__</string>
   </dict>

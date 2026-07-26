@@ -98,6 +98,21 @@ def test_render_heartbeat_plist_substitutes_jules_key_cmd():
     assert plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"] == jules
 
 
+def test_render_heartbeat_plist_substitutes_local_executor_config():
+    argv = '["/usr/bin/python3","/tmp/local_agent_executor.py","--","pi"]'
+    spool = "/tmp/gddp spool"
+    plist = _render_heartbeat_plist(
+        _base_render_env(
+            GDDP_LOCAL_SUBPROCESS_ARGV=argv,
+            GDDP_LOCAL_SUBPROCESS_SPOOL_DIR=spool,
+        )
+    )
+    env = plist["EnvironmentVariables"]
+
+    assert env["GDDP_LOCAL_SUBPROCESS_ARGV"] == argv
+    assert env["GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"] == spool
+
+
 def test_webhook_secret_cmd_with_quotes_survives_plist_render():
     webhook = 'ssh -o BatchMode=yes sab-ssd@pi-big "pass show gddp/webhook-secret"'
     deepseek = 'ssh -o BatchMode=yes sab-ssd@pi-big "pass show api/deepseek"'
