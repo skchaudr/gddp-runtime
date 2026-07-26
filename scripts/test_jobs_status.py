@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import sqlite3
@@ -242,6 +244,110 @@ class JobsStatusTests(unittest.TestCase):
         self.assertIn("Codex error: Unsupported parameter: session_id", out)
         # The legacy probe-failure message must NOT appear anymore.
         self.assertNotIn("GDDP_LOCAL_SUBPROCESS_ARGV", out)
+
+
+class JobsStatusConsistencyTests(unittest.TestCase):
+    """Status/queue_state agreement is a cross-writer invariant.
+
+    The decision-loop stale cleaner used to set status without queue_state
+    (engine.py `_clean_stale_state`). That single-write path is the origin
+    of the inconsistent canary row (status=failed, queue_state=running).
+    These tests pin down the check that catches a regression on any
+    current or future writer.
+    """
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tempdir.name) / "queue.db"
+        con = sqlite3.connect(self.db_path)
+        con.executescript(
+            """
+            CREATE TABLE jobs (
+                job_id TEXT PRIMARY KEY,
+                project_id TEXT,
+                node_id TEXT,
+                queue_state TEXT,
+                status TEXT,
+                created_at TEXT,
+                title TEXT,
+                executor TEXT,
+                job_type TEXT,
+                attempt INTEGER,
+                max_attempts INTEGER,
+                artifacts_dir TEXT
+            );
+            """
+        )
+        con.commit()
+        con.close()
+
+    def _insert(self, job_id, status, queue_state):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            "INSERT INTO jobs (job_id, project_id, node_id, queue_state, "
+            "status, created_at, title, executor, job_type, attempt, "
+            "max_attempts, artifacts_dir) VALUES (?, 'p', 'n', ?, ?, "
+            "'2026-07-26T00:00:00+00:00', 't', 'jules', 'implementation', "
+            "0, 3, '/tmp')",
+            (job_id, queue_state, status),
+        )
+        con.commit()
+        con.close()
+
+    def test_matching_rows_are_consistent(self):
+        self._insert("ok-1", "running", "running")
+        self._insert("ok-2", "awaiting_review", "awaiting_review")
+        self._insert("ok-3", "expired", "expired")
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        try:
+            self.assertEqual(jobs_status.find_inconsistent_jobs(con), [])
+        finally:
+            con.close()
+
+    def test_divergent_row_is_flagged(self):
+        self._insert("bad-1", "failed", "running")
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        try:
+            bad = jobs_status.find_inconsistent_jobs(con)
+        finally:
+            con.close()
+        self.assertEqual(len(bad), 1)
+        self.assertEqual(bad[0]["job_id"], "bad-1")
+        self.assertEqual(bad[0]["status"], "failed")
+        self.assertEqual(bad[0]["queue_state"], "running")
+
+    def test_rollback_pair_is_intentional_not_a_bug(self):
+        # status='failed', queue_state='cancelled' is the rollback.py path.
+        # It must NOT be flagged: the split is documented and audited.
+        self._insert("rollback-1", "failed", "cancelled")
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        try:
+            self.assertEqual(jobs_status.find_inconsistent_jobs(con), [])
+        finally:
+            con.close()
+
+    def test_check_subcommand_exits_nonzero_on_mismatch(self):
+        self._insert("ok-1", "running", "running")
+        self._insert("bad-1", "failed", "running")
+        buf = io.StringIO()
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+             contextlib.redirect_stdout(buf):
+            rc = jobs_status.main(["check"])
+        self.assertEqual(rc, 1)
+        self.assertIn("bad-1", buf.getvalue())
+        self.assertIn("status=failed", buf.getvalue())
+
+    def test_check_subcommand_exits_zero_when_clean(self):
+        self._insert("ok-1", "running", "running")
+        buf = io.StringIO()
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+             contextlib.redirect_stdout(buf):
+            rc = jobs_status.main(["check"])
+        self.assertEqual(rc, 0)
+        self.assertIn("on every row", buf.getvalue())
 
 
 if __name__ == "__main__":

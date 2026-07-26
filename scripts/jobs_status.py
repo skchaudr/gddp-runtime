@@ -40,7 +40,12 @@ QUEUE_STATES = (
     "failed",
     "deferred",
     "cancelled",
+    "expired",
 )
+# status mirrors queue_state by design — see baseline probe in baseline.sh
+# (status_queue_consistency) and the consistency test in test_jobs_status.py.
+# `expired` is reachable by the decision-loop stale-cleaner and by manual
+# operator action; keep it in both sets.
 JOB_STATUSES = {
     "ready",
     "running",
@@ -48,7 +53,22 @@ JOB_STATUSES = {
     "awaiting_review",
     "complete",
     "failed",
+    "expired",
 }
+
+# Pairs that are intentionally allowed to diverge from the strict
+# status == queue_state rule. Each entry is (status, queue_state) with a
+# documented reason. The consistency check (see jobs_status_consistency)
+# only fails on a row whose pair is NOT in this table AND whose status
+# doesn't equal its queue_state.
+#
+# - (failed, cancelled): rollback.py rewinds an in-flight job to terminal
+#   `failed` for the operator while leaving queue_state `cancelled` so the
+#   dispatcher will not re-pick it. This is an explicit, audited
+#   operator-driven split, not a write-path bug.
+INTENTIONAL_DIVERGENT_PAIRS = frozenset({
+    ("failed", "cancelled"),
+})
 
 
 def now():
@@ -310,6 +330,62 @@ def cmd_results(args):
           f"{len(projects)} project(s).  (--all for every row)")
 
 
+def find_inconsistent_jobs(con=None) -> list[dict]:
+    """Return jobs whose (status, queue_state) pair is not a valid match.
+
+    A row is consistent when status == queue_state, OR when the pair is
+    in INTENTIONAL_DIVERGENT_PAIRS (currently only the rollback path:
+    status='failed', queue_state='cancelled').
+
+    Pass an open connection for the unit test; a new one is opened otherwise.
+    The function never mutates the database.
+    """
+    close = False
+    if con is None:
+        con = connect()
+        close = True
+    try:
+        rows = con.execute(
+            "SELECT job_id, status, queue_state FROM jobs"
+        ).fetchall()
+        bad: list[dict] = []
+        for r in rows:
+            if r["status"] == r["queue_state"]:
+                continue
+            if (r["status"], r["queue_state"]) in INTENTIONAL_DIVERGENT_PAIRS:
+                continue
+            bad.append({
+                "job_id": r["job_id"],
+                "status": r["status"],
+                "queue_state": r["queue_state"],
+            })
+        return bad
+    finally:
+        if close:
+            con.close()
+
+
+def cmd_check(args):
+    """Probe jobs.status vs jobs.queue_state. Exit 0 if consistent.
+
+    Designed to be called from the production baseline.sh probe. Human-
+    readable output goes to stdout; the exit code is the contract:
+
+      0  all rows consistent (or no rows)
+      1  at least one row is mismatched and not in INTENTIONAL_DIVERGENT_PAIRS
+
+    This command is read-only — it never mutates the DB.
+    """
+    bad = find_inconsistent_jobs()
+    if not bad:
+        print("jobs.status == jobs.queue_state on every row.")
+        return 0
+    print(f"FOUND {len(bad)} inconsistent job row(s):")
+    for row in bad:
+        print(f"  {row['job_id']}  status={row['status']}  queue_state={row['queue_state']}")
+    return 1
+
+
 def _apply_resolved_state_change(con, job, state: str, reason: str) -> int:
     old = job["queue_state"]
     if old == state:
@@ -419,9 +495,19 @@ def main(argv=None):
     p_set.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     p_set.set_defaults(fn=cmd_set)
 
+    p_check = sub.add_parser(
+        "check",
+        help="verify jobs.status matches jobs.queue_state on every row "
+             "(read-only, non-zero exit on mismatch)",
+    )
+    p_check.set_defaults(fn=cmd_check)
+
     args = p.parse_args(argv)
-    args.fn(args)
+    return args.fn(args)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    rc = main()
+    if rc:
+        sys.exit(rc)

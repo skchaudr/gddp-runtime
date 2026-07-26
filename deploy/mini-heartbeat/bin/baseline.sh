@@ -119,6 +119,20 @@ if [[ -f "$DB" ]]; then
   fi
   info "jobs by state: $(sqlite3 "$DB" "SELECT queue_state || '=' || COUNT(*) FROM jobs GROUP BY queue_state;" | tr '\n' ' ')"
   info "last event received: $(sqlite3 "$DB" "SELECT COALESCE(MAX(received_at),'never') FROM events;")"
+  # --- 5a. status vs queue_state consistency probe ------------------------
+  # Every operator-facing count reads one of the two columns; if they
+  # diverge, the dashboard lies. Caught the 2026-07-11 canary row
+  # (status=failed, queue_state=running) at incident time. Read-only
+  # check via jobs_status.py: no mutation, exit 1 on any mismatch.
+  if (
+    cd "$GDDP_RUNTIME_ROOT"
+    export PYTHONPATH="$GDDP_RUNTIME_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+    python3 -m scripts.jobs_status check >/dev/null 2>&1
+  ); then
+    ok "jobs.status matches jobs.queue_state on every row"
+  else
+    crit "jobs.status and jobs.queue_state diverge on at least one job — see 'python3 -m scripts.jobs_status check'"
+  fi
 else
   crit "queue.db missing: $DB"
 fi

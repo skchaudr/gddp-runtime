@@ -50,13 +50,22 @@ def _connect() -> sqlite3.Connection:
 
 
 def _clean_stale_state(con: sqlite3.Connection) -> int:
-    """Mark stale jobs and events as expired. Returns count of rows cleaned."""
+    """Mark stale jobs and events as expired. Returns count of rows cleaned.
+
+    Both `status` and `queue_state` are kept in lockstep on every job write
+    path. Expiry is no exception: an expired job must show as `expired` on
+    every operator-facing count. The 2026-07-11 canary job
+    (job_20260711T16542651) sat at status=failed/queue_state=running because
+    an older version of this function only wrote `status` and never touched
+    `queue_state`; the engine then re-dispatched the row and the heartbeat
+    overwrote `status` to `failed` while `queue_state` stayed `running`.
+    """
     cur = con.cursor()
     cleaned = 0
 
-    # Expire stale jobs
+    # Expire stale jobs. status and queue_state move together.
     cur.execute("""
-        UPDATE jobs SET status = 'expired'
+        UPDATE jobs SET status = 'expired', queue_state = 'expired'
         WHERE status IN ('dispatched', 'running')
         AND created_at < datetime('now', '-6 hours')
     """)

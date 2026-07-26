@@ -61,7 +61,12 @@ def rollback(job_id: str):
         con.close()
         return
 
-    # Revert job and queue record
+    # Revert job and queue record. NOTE: status='failed' and
+    # queue_state='cancelled' are an INTENTIONAL divergent pair — see
+    # jobs_status.INTENTIONAL_DIVERGENT_PAIRS. The operator-facing
+    # terminal status is `failed` (matches the user-visible outcome);
+    # queue_state is `cancelled` so the dispatcher will not re-pick the
+    # row. This is audited and only ever written by the rollback path.
     con.execute(
         "UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?",
         (job_id,)

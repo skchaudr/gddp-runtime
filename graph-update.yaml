@@ -1,0 +1,53 @@
+# Graph update proposal — node `job-state-consistency`
+
+This proposal is evidence for human review, not a graph mutation.
+Per the canonical node workflow, only the human accepts a node and
+moves it to `complete`. Do not apply this update directly.
+
+proposal:
+  node_id: job-state-consistency
+  attempt: 0
+  attempted_base_commit_sha: 665465e54b3b60951c9e2931852d36295f1fdfad
+  result: evidence_ready_for_human_review
+  receipt:
+    artifacts:
+      - decision.md
+      - result-summary.md
+      - patch.diff
+    evidence_summary: |
+      Writer-side invariant restored in scripts/runtime/decision_loop/
+      engine.py. Consistency check added (Python + shell). Six new
+      tests. Suite green: 390 passed (was 384). Production DB still
+      has the divergent canary row; reconciliation SQL is recorded in
+      decision.md and intentionally NOT applied here.
+  recommended_action: |
+    1. Read decision.md; confirm the root cause matches your read of
+       the 2026-07-11 incident.
+    2. Run `python3 -m scripts.jobs_status check` against the
+       production DB; confirm it flags exactly the canary row.
+    3. Run the reconciliation SQL in decision.md against the
+       production DB (audit row + UPDATE + post-flight SELECT). This
+       is reversible — the audit row records who and why, and the
+       prior state can be restored with a single UPDATE.
+    4. After reconciliation passes, accept this node.
+  known_remaining_work:
+    - description: "Reconcile the inconsistent row in the production DB."
+      blocking: false
+      reason: |
+        Requires explicit operator authorization. The reconciliation
+        SQL is recorded in decision.md; running it is the only step
+        that mutates runtime state, and graph truth is human-owned.
+    - description: "A prior commit (f01d5ba, 'Harmonize jobs.status
+                    and queue_state across all write paths') appears
+                    in `git log --all` but is not reachable from the
+                    base commit 665465e. This node's fix is
+                    independent of that path; if the operator wants
+                    to land both, the divergent histories will need
+                    to be reconciled by the operator before this
+                    work is merged."
+      blocking: false
+  constraints_honored:
+    - "receipt semantics unchanged"
+    - "human review gate untouched"
+    - "no queue.db schema changes; only writer-side invariant"
+    - "no graph truth mutated; runtime DB untouched"

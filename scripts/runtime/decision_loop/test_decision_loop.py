@@ -199,6 +199,7 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
             project_id TEXT,
             node_id TEXT,
             status TEXT,
+            queue_state TEXT,
             created_at TEXT
         )
     """)
@@ -219,6 +220,68 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
     _write_decision_result(result, "test-project")
 
     con.close()
+
+
+def test_clean_stale_state_writes_both_status_and_queue_state(tmp_path):
+    """Regression: engine.py used to UPDATE only `status`, leaving
+    `queue_state` untouched and producing mismatched rows on disk.
+    Every job write path must move both columns together.
+    """
+    from .engine import _clean_stale_state
+
+    db_path = tmp_path / "queue.db"
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    con.execute("""
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            project_id TEXT,
+            node_id TEXT,
+            status TEXT,
+            queue_state TEXT,
+            created_at TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE events (
+            event_id TEXT PRIMARY KEY,
+            project_id TEXT,
+            event_type TEXT,
+            status TEXT,
+            received_at TEXT
+        )
+    """)
+    # Two stale running jobs and one fresh job (must NOT be touched).
+    con.execute(
+        "INSERT INTO jobs VALUES (?, 'p', 'n-a', 'running', 'running', "
+        "datetime('now', '-7 hours'))",
+        ("job-stale-1",),
+    )
+    con.execute(
+        "INSERT INTO jobs VALUES (?, 'p', 'n-b', 'dispatched', 'dispatched', "
+        "datetime('now', '-8 hours'))",
+        ("job-stale-2",),
+    )
+    con.execute(
+        "INSERT INTO jobs VALUES (?, 'p', 'n-c', 'running', 'running', "
+        "datetime('now', '-1 hours'))",
+        ("job-fresh",),
+    )
+    con.commit()
+
+    cleaned = _clean_stale_state(con)
+    assert cleaned == 2  # only the two stale rows
+
+    con.row_factory = sqlite3.Row
+    rows = {
+        r["job_id"]: (r["status"], r["queue_state"])
+        for r in con.execute(
+            "SELECT job_id, status, queue_state FROM jobs"
+        ).fetchall()
+    }
+    assert rows["job-stale-1"] == ("expired", "expired")
+    assert rows["job-stale-2"] == ("expired", "expired")
+    assert rows["job-fresh"] == ("running", "running")
 
 
 # --- Test Pydantic schema enforcement ---
