@@ -112,19 +112,31 @@ Two separate human calls. (1) does not imply (2).
 - N2-6 reconcile evidence (`n2-6-00.preconditions.txt`,
   `n2-6-01.reconcile.stdout`, `n2-6-02.verdict.txt`)
 - The full evaluator JSON receipt (`evaluator-receipt.json`)
+- The four required result artifacts extracted from commit `6c0a4b2d…`
+  (`result-artifacts/decision.md`, `result-artifacts/result-summary.md`,
+  `result-artifacts/patch.diff`, `result-artifacts/graph-update.yaml`),
+  each with its git blob SHA verified against the commit
+  (decision `d55a5209…`, result-summary `267aa1dc…`, patch `8a54df0e…`,
+  graph-update `38c3f249…`)
 - This summary (`n2-7-summary.md`)
 
 ## What this archive does NOT do
 
-- does not merge the result commit
+- does not push or merge the result commit
 - does not touch graph truth (`gddp-config` HEAD unchanged at `4657c86`)
 - does not write node status (the capability node stays `pending` until
   Sab's decision #2)
-- does not retry, does not change the runbook, does not push to remote
+- does not retry, does not change the runbook
+
+(Note: initial N2-7 archive was published as `6238452`; this
+corrective archive commit is also pushed to `origin/main`. Pushing the
+*archive* is not the same as pushing or merging the *result commit* on
+the runtime repo.)
 
 ## Cross-references
 
 - Attempt 0 (failed Codex path) — preserved at `../n2-live-attempt-0/`
 - Smoke (N2-3 transport proof) — ref `gddp/attempt-n2-smoke-0a7051c01ea3-attempt-0` at commit `b785375…` in the main repo
-- Plan — `docs/pi-native-five-node-baseline-plan.md` (now reflects N2-3/4/5/6 closed, N2-7 next)
-- Handoff — `.handoffs/055-*.md` (created in this same change)
+- Result commit (attempt-1) — `6c0a4b2ddc41ba6e796310c919749b8cb13bb5ff` (parent `665465e…`); required artifacts extracted into `result-artifacts/` next to this summary
+- Plan — `docs/pi-native-five-node-baseline-plan.md` (v3.5: N2-3/4/5/6 closed, N2-7 archive complete with two Sab decisions pending)
+- Handoff — `.handoffs/055-n2-7-archive-sab-decisions.md` (published in `6238452`)

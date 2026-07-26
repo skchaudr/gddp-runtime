@@ -4,7 +4,7 @@
 
 Date: 2026-07-26
 Worktree: /Users/sab-mini/repos/gddp-runtime
-Branch: main @ 665465e (post N2-6, pre N2-7 decision)
+Branch: main (N2-7 archive published in `6238452`; the current HEAD also includes this corrective commit — exact SHA discoverable via `git log -1` on `origin/main`)
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
@@ -35,29 +35,34 @@ left for Sab to take Node 2 to its exit gate.
   rebase against it.
 - gddp-config repo untouched: no commits, no graph node status write,
   no `gddp node …` invocation.
-- Both N2 attempt artifacts preserved exactly: `n2-live-attempt-0/`
-  (failed Codex path) and `n2-live-attempt-1/` (success) are both
-  byte-equivalent to what the runbooks produced.
+- N2 attempt artifacts preserved as captured by the runbooks; the N2-7
+  archive added new files to the attempt-1 directory (evaluator
+  receipt, n2-7 summary, N2-6 captures, and the result-artifacts/
+  extraction) — attempt-0 evidence is unchanged.
 - Secret scan: no API keys, no gpg armored blocks, no `.gpg` files in
   the new archive; the gpg secret was piped to `>/dev/null` and never
   on disk.
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-main is at `665465e` (post `fix(jobs_status): probe local_subprocess
-without dispatch argv or env`); the plan edit and the two N2 archive
-directories plus the new handoff are staged for commit but **not yet
-committed or pushed** (N2-7 commit and push are part of this same
-session, not yet executed). Service state: `com.gddp.heartbeat` and
-`com.gddp.intake` both loaded; no eligible events; no active
-executor_sessions for `skchaudr/gddp-runtime`. Result commit
-`6c0a4b2d…b5ff` is reachable from `665465e` via the create-only ref
+main is at the most recent commit; N2-7 was published in `6238452`
+(push `665465e..6238452 main -> main`), and the current HEAD on
+`origin/main` also includes this corrective archive commit (exact SHA
+discoverable via `git rev-parse origin/main`). The corrective commit
+adds the `result-artifacts/` extraction (the four required artifacts
+pulled from result commit `6c0a4b2d…` with verified blob SHAs) and
+corrects wording in this handoff, the plan, and the n2-7 summary. Service
+state: `com.gddp.heartbeat` and `com.gddp.intake` both loaded; no
+eligible events; no active executor_sessions for `skchaudr/gddp-runtime`.
+Result commit `6c0a4b2d…b5ff` is reachable from the dispatch base
+`665465e…` via the create-only ref
 `gddp/attempt-job_20260726T081330259c7d2af87dc3-attempt-0`.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/evaluator-receipt.json  - Full gddp-config verifier JSON receipt for attempt 1 (sha256 e4da456c…)
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/n2-7-summary.md  - N2-7 summary: IDs, ref+SHA, worker model, runner/reconcile outcomes, two pending Sab decisions
+- .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/result-artifacts/{decision.md,result-summary.md,patch.diff,graph-update.yaml}  - Four required artifacts extracted from result commit 6c0a4b2d…; each git blob SHA verified against the commit (decision d55a5209…, result-summary 267aa1dc…, patch 8a54df0e…, graph-update 38c3f249…)
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/05.dispatch-report.json  - N2-5 dispatch report (event/job/session/packet/argv match)
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/n2-6-02.verdict.txt  - N2-6 post-reconcile verdict summary
 - docs/pi-native-five-node-baseline-plan.md  - v3.5: current truth reflects attempt 0 fail + attempt 1 success; N2-7 is NEXT

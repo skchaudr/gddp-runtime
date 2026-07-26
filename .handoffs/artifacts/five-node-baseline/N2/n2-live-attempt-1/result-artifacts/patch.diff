@@ -1,0 +1,403 @@
+diff --git a/deploy/mini-heartbeat/bin/baseline.sh b/deploy/mini-heartbeat/bin/baseline.sh
+index b2e6ffc..505c0fe 100755
+--- a/deploy/mini-heartbeat/bin/baseline.sh
++++ b/deploy/mini-heartbeat/bin/baseline.sh
+@@ -119,6 +119,20 @@ if [[ -f "$DB" ]]; then
+   fi
+   info "jobs by state: $(sqlite3 "$DB" "SELECT queue_state || '=' || COUNT(*) FROM jobs GROUP BY queue_state;" | tr '\n' ' ')"
+   info "last event received: $(sqlite3 "$DB" "SELECT COALESCE(MAX(received_at),'never') FROM events;")"
++  # --- 5a. status vs queue_state consistency probe ------------------------
++  # Every operator-facing count reads one of the two columns; if they
++  # diverge, the dashboard lies. Caught the 2026-07-11 canary row
++  # (status=failed, queue_state=running) at incident time. Read-only
++  # check via jobs_status.py: no mutation, exit 1 on any mismatch.
++  if (
++    cd "$GDDP_RUNTIME_ROOT"
++    export PYTHONPATH="$GDDP_RUNTIME_ROOT${PYTHONPATH:+:$PYTHONPATH}"
++    python3 -m scripts.jobs_status check >/dev/null 2>&1
++  ); then
++    ok "jobs.status matches jobs.queue_state on every row"
++  else
++    crit "jobs.status and jobs.queue_state diverge on at least one job — see 'python3 -m scripts.jobs_status check'"
++  fi
+ else
+   crit "queue.db missing: $DB"
+ fi
+diff --git a/scripts/jobs_status.py b/scripts/jobs_status.py
+index f99306a..255755d 100644
+--- a/scripts/jobs_status.py
++++ b/scripts/jobs_status.py
+@@ -40,7 +40,12 @@ QUEUE_STATES = (
+     "failed",
+     "deferred",
+     "cancelled",
++    "expired",
+ )
++# status mirrors queue_state by design — see baseline probe in baseline.sh
++# (status_queue_consistency) and the consistency test in test_jobs_status.py.
++# `expired` is reachable by the decision-loop stale-cleaner and by manual
++# operator action; keep it in both sets.
+ JOB_STATUSES = {
+     "ready",
+     "running",
+@@ -48,8 +53,23 @@ JOB_STATUSES = {
+     "awaiting_review",
+     "complete",
+     "failed",
++    "expired",
+ }
+ 
++# Pairs that are intentionally allowed to diverge from the strict
++# status == queue_state rule. Each entry is (status, queue_state) with a
++# documented reason. The consistency check (see jobs_status_consistency)
++# only fails on a row whose pair is NOT in this table AND whose status
++# doesn't equal its queue_state.
++#
++# - (failed, cancelled): rollback.py rewinds an in-flight job to terminal
++#   `failed` for the operator while leaving queue_state `cancelled` so the
++#   dispatcher will not re-pick it. This is an explicit, audited
++#   operator-driven split, not a write-path bug.
++INTENTIONAL_DIVERGENT_PAIRS = frozenset({
++    ("failed", "cancelled"),
++})
++
+ 
+ def now():
+     return datetime.now(timezone.utc).isoformat()
+@@ -310,6 +330,62 @@ def cmd_results(args):
+           f"{len(projects)} project(s).  (--all for every row)")
+ 
+ 
++def find_inconsistent_jobs(con=None) -> list[dict]:
++    """Return jobs whose (status, queue_state) pair is not a valid match.
++
++    A row is consistent when status == queue_state, OR when the pair is
++    in INTENTIONAL_DIVERGENT_PAIRS (currently only the rollback path:
++    status='failed', queue_state='cancelled').
++
++    Pass an open connection for the unit test; a new one is opened otherwise.
++    The function never mutates the database.
++    """
++    close = False
++    if con is None:
++        con = connect()
++        close = True
++    try:
++        rows = con.execute(
++            "SELECT job_id, status, queue_state FROM jobs"
++        ).fetchall()
++        bad: list[dict] = []
++        for r in rows:
++            if r["status"] == r["queue_state"]:
++                continue
++            if (r["status"], r["queue_state"]) in INTENTIONAL_DIVERGENT_PAIRS:
++                continue
++            bad.append({
++                "job_id": r["job_id"],
++                "status": r["status"],
++                "queue_state": r["queue_state"],
++            })
++        return bad
++    finally:
++        if close:
++            con.close()
++
++
++def cmd_check(args):
++    """Probe jobs.status vs jobs.queue_state. Exit 0 if consistent.
++
++    Designed to be called from the production baseline.sh probe. Human-
++    readable output goes to stdout; the exit code is the contract:
++
++      0  all rows consistent (or no rows)
++      1  at least one row is mismatched and not in INTENTIONAL_DIVERGENT_PAIRS
++
++    This command is read-only — it never mutates the DB.
++    """
++    bad = find_inconsistent_jobs()
++    if not bad:
++        print("jobs.status == jobs.queue_state on every row.")
++        return 0
++    print(f"FOUND {len(bad)} inconsistent job row(s):")
++    for row in bad:
++        print(f"  {row['job_id']}  status={row['status']}  queue_state={row['queue_state']}")
++    return 1
++
++
+ def _apply_resolved_state_change(con, job, state: str, reason: str) -> int:
+     old = job["queue_state"]
+     if old == state:
+@@ -419,9 +495,19 @@ def main(argv=None):
+     p_set.add_argument("--yes", action="store_true", help="skip confirmation prompt")
+     p_set.set_defaults(fn=cmd_set)
+ 
++    p_check = sub.add_parser(
++        "check",
++        help="verify jobs.status matches jobs.queue_state on every row "
++             "(read-only, non-zero exit on mismatch)",
++    )
++    p_check.set_defaults(fn=cmd_check)
++
+     args = p.parse_args(argv)
+-    args.fn(args)
++    return args.fn(args)
+ 
+ 
+ if __name__ == "__main__":
+-    main()
++    import sys
++    rc = main()
++    if rc:
++        sys.exit(rc)
+diff --git a/scripts/rollback.py b/scripts/rollback.py
+index 54af0bd..623fb14 100644
+--- a/scripts/rollback.py
++++ b/scripts/rollback.py
+@@ -61,7 +61,12 @@ def rollback(job_id: str):
+         con.close()
+         return
+ 
+-    # Revert job and queue record
++    # Revert job and queue record. NOTE: status='failed' and
++    # queue_state='cancelled' are an INTENTIONAL divergent pair — see
++    # jobs_status.INTENTIONAL_DIVERGENT_PAIRS. The operator-facing
++    # terminal status is `failed` (matches the user-visible outcome);
++    # queue_state is `cancelled` so the dispatcher will not re-pick the
++    # row. This is audited and only ever written by the rollback path.
+     con.execute(
+         "UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?",
+         (job_id,)
+diff --git a/scripts/runtime/decision_loop/engine.py b/scripts/runtime/decision_loop/engine.py
+index e7d6381..4ebdc64 100644
+--- a/scripts/runtime/decision_loop/engine.py
++++ b/scripts/runtime/decision_loop/engine.py
+@@ -50,13 +50,22 @@ def _connect() -> sqlite3.Connection:
+ 
+ 
+ def _clean_stale_state(con: sqlite3.Connection) -> int:
+-    """Mark stale jobs and events as expired. Returns count of rows cleaned."""
++    """Mark stale jobs and events as expired. Returns count of rows cleaned.
++
++    Both `status` and `queue_state` are kept in lockstep on every job write
++    path. Expiry is no exception: an expired job must show as `expired` on
++    every operator-facing count. The 2026-07-11 canary job
++    (job_20260711T16542651) sat at status=failed/queue_state=running because
++    an older version of this function only wrote `status` and never touched
++    `queue_state`; the engine then re-dispatched the row and the heartbeat
++    overwrote `status` to `failed` while `queue_state` stayed `running`.
++    """
+     cur = con.cursor()
+     cleaned = 0
+ 
+-    # Expire stale jobs
++    # Expire stale jobs. status and queue_state move together.
+     cur.execute("""
+-        UPDATE jobs SET status = 'expired'
++        UPDATE jobs SET status = 'expired', queue_state = 'expired'
+         WHERE status IN ('dispatched', 'running')
+         AND created_at < datetime('now', '-6 hours')
+     """)
+diff --git a/scripts/runtime/decision_loop/test_decision_loop.py b/scripts/runtime/decision_loop/test_decision_loop.py
+index c0bfee5..184e9f0 100644
+--- a/scripts/runtime/decision_loop/test_decision_loop.py
++++ b/scripts/runtime/decision_loop/test_decision_loop.py
+@@ -199,6 +199,7 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
+             project_id TEXT,
+             node_id TEXT,
+             status TEXT,
++            queue_state TEXT,
+             created_at TEXT
+         )
+     """)
+@@ -221,6 +222,68 @@ def test_clean_stale_state_releases_lock_before_writing_decision_result(tmp_path
+     con.close()
+ 
+ 
++def test_clean_stale_state_writes_both_status_and_queue_state(tmp_path):
++    """Regression: engine.py used to UPDATE only `status`, leaving
++    `queue_state` untouched and producing mismatched rows on disk.
++    Every job write path must move both columns together.
++    """
++    from .engine import _clean_stale_state
++
++    db_path = tmp_path / "queue.db"
++    con = sqlite3.connect(db_path)
++    con.row_factory = sqlite3.Row
++    con.execute("""
++        CREATE TABLE jobs (
++            job_id TEXT PRIMARY KEY,
++            project_id TEXT,
++            node_id TEXT,
++            status TEXT,
++            queue_state TEXT,
++            created_at TEXT
++        )
++    """)
++    con.execute("""
++        CREATE TABLE events (
++            event_id TEXT PRIMARY KEY,
++            project_id TEXT,
++            event_type TEXT,
++            status TEXT,
++            received_at TEXT
++        )
++    """)
++    # Two stale running jobs and one fresh job (must NOT be touched).
++    con.execute(
++        "INSERT INTO jobs VALUES (?, 'p', 'n-a', 'running', 'running', "
++        "datetime('now', '-7 hours'))",
++        ("job-stale-1",),
++    )
++    con.execute(
++        "INSERT INTO jobs VALUES (?, 'p', 'n-b', 'dispatched', 'dispatched', "
++        "datetime('now', '-8 hours'))",
++        ("job-stale-2",),
++    )
++    con.execute(
++        "INSERT INTO jobs VALUES (?, 'p', 'n-c', 'running', 'running', "
++        "datetime('now', '-1 hours'))",
++        ("job-fresh",),
++    )
++    con.commit()
++
++    cleaned = _clean_stale_state(con)
++    assert cleaned == 2  # only the two stale rows
++
++    con.row_factory = sqlite3.Row
++    rows = {
++        r["job_id"]: (r["status"], r["queue_state"])
++        for r in con.execute(
++            "SELECT job_id, status, queue_state FROM jobs"
++        ).fetchall()
++    }
++    assert rows["job-stale-1"] == ("expired", "expired")
++    assert rows["job-stale-2"] == ("expired", "expired")
++    assert rows["job-fresh"] == ("running", "running")
++
++
+ # --- Test Pydantic schema enforcement ---
+ 
+ def test_dispatch_result_rejects_bad_data():
+diff --git a/scripts/test_jobs_status.py b/scripts/test_jobs_status.py
+index 7ef20b9..efcb1f2 100644
+--- a/scripts/test_jobs_status.py
++++ b/scripts/test_jobs_status.py
+@@ -2,6 +2,8 @@
+ 
+ from __future__ import annotations
+ 
++import contextlib
++import io
+ import json
+ import os
+ import sqlite3
+@@ -244,5 +246,109 @@ class JobsStatusTests(unittest.TestCase):
+         self.assertNotIn("GDDP_LOCAL_SUBPROCESS_ARGV", out)
+ 
+ 
++class JobsStatusConsistencyTests(unittest.TestCase):
++    """Status/queue_state agreement is a cross-writer invariant.
++
++    The decision-loop stale cleaner used to set status without queue_state
++    (engine.py `_clean_stale_state`). That single-write path is the origin
++    of the inconsistent canary row (status=failed, queue_state=running).
++    These tests pin down the check that catches a regression on any
++    current or future writer.
++    """
++
++    def setUp(self):
++        self.tempdir = tempfile.TemporaryDirectory()
++        self.db_path = Path(self.tempdir.name) / "queue.db"
++        con = sqlite3.connect(self.db_path)
++        con.executescript(
++            """
++            CREATE TABLE jobs (
++                job_id TEXT PRIMARY KEY,
++                project_id TEXT,
++                node_id TEXT,
++                queue_state TEXT,
++                status TEXT,
++                created_at TEXT,
++                title TEXT,
++                executor TEXT,
++                job_type TEXT,
++                attempt INTEGER,
++                max_attempts INTEGER,
++                artifacts_dir TEXT
++            );
++            """
++        )
++        con.commit()
++        con.close()
++
++    def _insert(self, job_id, status, queue_state):
++        con = sqlite3.connect(self.db_path)
++        con.execute(
++            "INSERT INTO jobs (job_id, project_id, node_id, queue_state, "
++            "status, created_at, title, executor, job_type, attempt, "
++            "max_attempts, artifacts_dir) VALUES (?, 'p', 'n', ?, ?, "
++            "'2026-07-26T00:00:00+00:00', 't', 'jules', 'implementation', "
++            "0, 3, '/tmp')",
++            (job_id, queue_state, status),
++        )
++        con.commit()
++        con.close()
++
++    def test_matching_rows_are_consistent(self):
++        self._insert("ok-1", "running", "running")
++        self._insert("ok-2", "awaiting_review", "awaiting_review")
++        self._insert("ok-3", "expired", "expired")
++        con = sqlite3.connect(self.db_path)
++        con.row_factory = sqlite3.Row
++        try:
++            self.assertEqual(jobs_status.find_inconsistent_jobs(con), [])
++        finally:
++            con.close()
++
++    def test_divergent_row_is_flagged(self):
++        self._insert("bad-1", "failed", "running")
++        con = sqlite3.connect(self.db_path)
++        con.row_factory = sqlite3.Row
++        try:
++            bad = jobs_status.find_inconsistent_jobs(con)
++        finally:
++            con.close()
++        self.assertEqual(len(bad), 1)
++        self.assertEqual(bad[0]["job_id"], "bad-1")
++        self.assertEqual(bad[0]["status"], "failed")
++        self.assertEqual(bad[0]["queue_state"], "running")
++
++    def test_rollback_pair_is_intentional_not_a_bug(self):
++        # status='failed', queue_state='cancelled' is the rollback.py path.
++        # It must NOT be flagged: the split is documented and audited.
++        self._insert("rollback-1", "failed", "cancelled")
++        con = sqlite3.connect(self.db_path)
++        con.row_factory = sqlite3.Row
++        try:
++            self.assertEqual(jobs_status.find_inconsistent_jobs(con), [])
++        finally:
++            con.close()
++
++    def test_check_subcommand_exits_nonzero_on_mismatch(self):
++        self._insert("ok-1", "running", "running")
++        self._insert("bad-1", "failed", "running")
++        buf = io.StringIO()
++        with patch.object(jobs_status, "DB_PATH", self.db_path), \
++             contextlib.redirect_stdout(buf):
++            rc = jobs_status.main(["check"])
++        self.assertEqual(rc, 1)
++        self.assertIn("bad-1", buf.getvalue())
++        self.assertIn("status=failed", buf.getvalue())
++
++    def test_check_subcommand_exits_zero_when_clean(self):
++        self._insert("ok-1", "running", "running")
++        buf = io.StringIO()
++        with patch.object(jobs_status, "DB_PATH", self.db_path), \
++             contextlib.redirect_stdout(buf):
++            rc = jobs_status.main(["check"])
++        self.assertEqual(rc, 0)
++        self.assertIn("on every row", buf.getvalue())
++
++
+ if __name__ == "__main__":
+     unittest.main()
