@@ -20,7 +20,7 @@ left for Sab to take Node 2 to its exit gate.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 
-- + docs/pi-native-five-node-baseline-plan.md  (v3.5: current truth + N2-3/4/5/6 CLOSED, N2-7 NEXT; resume block; removed stale "Exact resume" framing)
+- + docs/pi-native-five-node-baseline-plan.md  (v3.5: current truth + N2-3/4/5/6 CLOSED, N2-7 archive complete / two Sab decisions pending; resume block; removed stale "Exact resume" framing)
 - + .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/evaluator-receipt.json  (copy of the gddp-config verifier JSON receipt for this attempt)
 - + .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/n2-7-summary.md  (event/job/session/result IDs, ref+SHA, model, runner/reconcile outcomes, service state, two pending decisions)
 - + .handoffs/055-n2-7-archive-sab-decisions.md  (this file)
@@ -65,7 +65,7 @@ Result commit `6c0a4b2d…b5ff` is reachable from the dispatch base
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/result-artifacts/{decision.md,result-summary.md,patch.diff,graph-update.yaml}  - Four required artifacts extracted from result commit 6c0a4b2d…; each git blob SHA verified against the commit (decision d55a5209…, result-summary 267aa1dc…, patch 8a54df0e…, graph-update 38c3f249…)
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/05.dispatch-report.json  - N2-5 dispatch report (event/job/session/packet/argv match)
 - .handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/n2-6-02.verdict.txt  - N2-6 post-reconcile verdict summary
-- docs/pi-native-five-node-baseline-plan.md  - v3.5: current truth reflects attempt 0 fail + attempt 1 success; N2-7 is NEXT
+- docs/pi-native-five-node-baseline-plan.md  - v3.5: current truth reflects attempt 0 fail + attempt 1 success; N2-7 archive complete / two Sab decisions pending
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 

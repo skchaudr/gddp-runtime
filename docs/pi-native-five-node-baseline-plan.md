@@ -7,7 +7,7 @@
 **v3.2:** N2-7 = two Sab decisions; N2-1 uses **jobs** path (`gddp jobs set` when landed), never graph node write.  
 **v3.3:** N2-0 ref consumed directly (descends-from check, no reconstruction worktree); N2-1 landed argv (`jobs_status.py set --reason`).  
 **v3.4:** N2-0/N2-1/N2-2 closed from live evidence; **N2-3 is next**.  
-**v3.5:** N2-3/4/5/6 closed from live evidence (attempt 0 failed on Codex `session_id`; attempt 1 used the exact proven MiniMax smoke argv and reached `awaiting_review`); **N2-7 is next** — archive + two Sab decisions on `.handoffs/.../n2-live-attempt-1/`.
+**v3.5:** N2-3/4/5/6 closed from live evidence (attempt 0 failed on Codex `session_id`; attempt 1 used the exact proven MiniMax smoke argv and reached `awaiting_review`); **N2-7 archive complete; two Sab decisions pending** on `.handoffs/.../n2-live-attempt-1/`.
 **Runtime:** `/Users/sab-mini/repos/gddp-runtime`  
 **Graph:** `/Users/sab-mini/repos/gddp-config/graphs/gddp-runtime`
 
@@ -61,7 +61,7 @@ Only the active slice is rewritten when evidence changes. Charted later nodes re
 
 | Fact | State |
 |------|--------|
-| Runtime | `main` HEAD `6238452` (post N2-7 archive push); **dispatch base** for attempt 1 was `665465e` (the HEAD N2-5 dispatched from); N2-0 commit/ref handoff landed in `f4c3b11`, `8fa4bd5`, `b28125d`; suite green at `665465e`. |
+| Runtime | `main` (current main contains the published N2-7 archive `6238452` and the corrective archive commit with the result-artifacts extraction); **dispatch base** for attempt 1 was `665465e` (the HEAD N2-5 dispatched from); N2-0 commit/ref handoff landed in `f4c3b11`, `8fa4bd5`, `b28125d`; suite green at `665465e`. Exact current HEAD discoverable via `git rev-parse origin/main`. |
 | Factory | Mission ended; ignore stale wrapper-validator loops |
 | Capability Node 1 `neutral-executor-contract` | **deferred** — status toggle only |
 | Capability Nodes 2–5 | **pending** until Sab accepts |
@@ -124,7 +124,7 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 | N2-4 | **CLOSED — Inject one tagged work event** | Event `evt_n2_live_attempt_1_3f7b2e` injected (in-tx, commit-only-on-validation); classified as `implementation_request` → node `job-state-consistency`; executor recommendation `local_subprocess`. No second event; no other eligible events; no active sessions touched. |
 | N2-5 | **CLOSED — One controlled dispatch tick** | Runner rc=0; invariant `OK: N2-5 dispatch boundary holds`; blast-radius `OK: no unrelated rows changed`; one job, one `executor_session` (state `dispatched`), zero `results` rows. Selected executor `local_subprocess`; no `GDDP_EXECUTOR_OVERRIDE`. Receipt at `jobs/local-subprocess-spool/<session_id>/`. |
 | N2-6 | **CLOSED — Collect → evaluate → `awaiting_review`** | Reconcile stdout: `1 active executor session(s) to poll … completed → evaluation: ok → verdict: pass → result commit 6c0a4b2d… → job → awaiting_review`. Verdict: criteria pass, integrity pass @ 0.95, intent preserved, graph integrity preserved. `evaluated_commit_sha` = `merge_commit_sha` = `6c0a4b2d…b5ff` (direct local, not a PR). Receipt at `verification-runtime-live/gddp-runtime/job-state-consistency/job_20260726T081330259c7d2af87dc3-attempt0.json`. |
-| N2-7 | **Archive complete; two Sab decisions pending** | Archive at `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/` (N2-5 dispatch, N2-6 reconcile, evaluator JSON receipt, four result-artifacts extracted from commit `6c0a4b2d…` with verified blob SHAs, n2-7-summary). Committed and pushed as `6238452`. **PENDING Sab decisions:** (1) Job/receipt — is attempt 1 valid real-round-trip evidence (accept / retry / revise)? (2) Capability node — accept / retry / revise / defer / abandon `direct-executor-round-trip` in the graph. (1) does not imply (2). |
+| N2-7 | **Archive complete; two Sab decisions pending** | Archive at `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/` (N2-5 dispatch, N2-6 reconcile, evaluator JSON receipt, four result-artifacts extracted from commit `6c0a4b2d…` with verified blob SHAs, n2-7-summary). Initial archive published in `6238452`; portable correction (result-artifacts + wording fixes) in `415e869`; current HEAD on `origin/main` discoverable via `git rev-parse origin/main`. **PENDING Sab decisions:** (1) Job/receipt — is attempt 1 valid real-round-trip evidence (accept / retry / revise)? (2) Capability node — accept / retry / revise / defer / abandon `direct-executor-round-trip` in the graph. (1) does not imply (2). |
 
 **Parallel inside N2 (optional, isolation-safe):** N2-0 can proceed while N2-1 is prepared (code vs queue isolation). Once N2-0/N2-2/N2-3 checkpoint, prepare archive structure and run a read-only observer while the parent owns live ticks. No second control-plane actor or default audit swarm.
 
@@ -206,7 +206,7 @@ Before the first mutation, record runtime HEAD/status, target node/config hash a
 
 ## Exact resume (now)
 
-1. **N2-7 — archive complete; two Sab decisions pending** on `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/` (committed and pushed in `6238452`):
+1. **N2-7 — archive complete; two Sab decisions pending** on `.handoffs/artifacts/five-node-baseline/N2/n2-live-attempt-1/` (initial archive `6238452`; portable correction `415e869` adds result-artifacts and wording fixes):
    (1) accept/retry/revise this attempt as real-round-trip evidence;
    (2) accept/retry/revise/defer/abandon `direct-executor-round-trip` in the graph.
 2. Node 3 opens only after the N2 capability-node decision (or an explicit waiver).
