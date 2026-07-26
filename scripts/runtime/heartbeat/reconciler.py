@@ -3,7 +3,7 @@ reconciler.py — Executor session reconciliation.
 
 Runs every heartbeat tick BEFORE planning new events. Polls active executor
 sessions, collects completed work, applies patches to isolated worktrees,
-commits, and triggers evaluation.
+commits, and queues evaluation.
 
 This phase must run even when there are no new intake events, because CLI-based
 executors (Jules CLI, Droid, etc.) complete asynchronously without webhooks.
@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -38,6 +40,104 @@ from .state_recorder import (
     update_executor_session_state,
 )
 
+DEFAULT_MAX_CONCURRENT_EVALUATIONS = 2
+
+
+@dataclass(frozen=True)
+class PendingEvaluation:
+    """Plain-data evaluator input safe to pass to a worker thread."""
+
+    session_db_id: str
+    session_id: str
+    executor: str
+    project_id: str
+    node_id: str
+    job_id: str
+    attempt: int
+    result_commit_sha: str
+
+
+class EvaluationBatch:
+    """Bounded verifier work with coordinator-owned result persistence.
+
+    Worker threads only run ``verify_job_return``. The heartbeat coordinator
+    later drains the futures and performs every SQLite write serially.
+    Sessions remain ``collected`` until finalization, so a process crash leaves
+    the durable result SHA/ref available for the existing resume path.
+    """
+
+    def __init__(self, max_workers: int = DEFAULT_MAX_CONCURRENT_EVALUATIONS):
+        if isinstance(max_workers, bool) or max_workers < 1:
+            raise ValueError("evaluation worker capacity must be a positive integer")
+        self._max_workers = max_workers
+        self._pending: list[PendingEvaluation] = []
+        self._executor: ThreadPoolExecutor | None = None
+        self._futures: dict[Future, PendingEvaluation] = {}
+        self._started = False
+        self._finalized = False
+
+    def add(self, session, job, result_commit_sha: str) -> None:
+        if self._started:
+            raise RuntimeError("cannot add evaluations after the batch starts")
+        self._pending.append(
+            PendingEvaluation(
+                session_db_id=str(session["session_db_id"]),
+                session_id=str(session["session_id"]),
+                executor=str(session["executor"]),
+                project_id=str(job["project_id"] or ""),
+                node_id=str(job["node_id"]),
+                job_id=str(job["job_id"]),
+                attempt=int(job["attempt"] or 0),
+                result_commit_sha=result_commit_sha,
+            )
+        )
+
+    def start(self) -> None:
+        """Start all queued verifiers without waiting for them."""
+        if self._started:
+            return
+        self._started = True
+        if not self._pending:
+            return
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._max_workers,
+            thread_name_prefix="gddp-evaluator",
+        )
+        self._futures = {
+            self._executor.submit(_run_evaluation, pending): pending
+            for pending in self._pending
+        }
+
+    def finalize(self, con) -> None:
+        """Drain verifiers and serialize their DB/result finalization."""
+        if self._finalized:
+            return
+        self.start()
+        try:
+            for future in as_completed(self._futures):
+                pending = self._futures[future]
+                try:
+                    verification = future.result()
+                except Exception as exc:
+                    verification = {
+                        "verification_status": "error",
+                        "error": f"evaluator worker failed: {exc}",
+                    }
+                try:
+                    _finalize_evaluation(con, pending, verification)
+                except Exception as exc:
+                    # Leave this session collected so the next heartbeat can
+                    # retry evaluation from its already-durable result commit.
+                    con.rollback()
+                    print(
+                        f"[reconcile] {pending.session_db_id}: "
+                        f"evaluation finalization ERROR: {exc}"
+                    )
+        finally:
+            if self._executor is not None:
+                self._executor.shutdown(wait=True)
+            self._finalized = True
+
 
 def reconcile_sessions(
     con,
@@ -47,6 +147,8 @@ def reconcile_sessions(
     current_time: datetime | None = None,
     dispatching_stale_after: timedelta = timedelta(minutes=30),
     missing_stale_after: timedelta = timedelta(minutes=30),
+    evaluation_batch: EvaluationBatch | None = None,
+    max_concurrent_evaluations: int = DEFAULT_MAX_CONCURRENT_EVALUATIONS,
 ) -> None:
     """Main entry point for the reconcile phase.
 
@@ -58,8 +160,16 @@ def reconcile_sessions(
     belongs to that repo are polled — cross-repo safety for multi-project
     heartbeats sharing a single DB.
 
-    A failure reconciling one session does not stop others.
+    A failure reconciling one session does not stop others. When the caller
+    supplies ``evaluation_batch``, verifier work starts here but the caller
+    owns finalization; ``run_heartbeat`` uses that window to plan and dispatch.
+    Legacy callers that omit the batch still receive fully finalized results
+    before this function returns.
     """
+    owns_evaluation_batch = evaluation_batch is None
+    batch = evaluation_batch or EvaluationBatch(
+        max_workers=max_concurrent_evaluations
+    )
     current_time = current_time or datetime.now(timezone.utc)
     recovered = recover_stale_dispatching_sessions(
         con,
@@ -95,6 +205,7 @@ def reconcile_sessions(
                 repo_path,
                 current_time=current_time,
                 missing_stale_after=missing_stale_after,
+                evaluation_batch=batch,
             )
         except Exception as exc:
             # A failed reconcile for one session must not stop others.
@@ -104,6 +215,9 @@ def reconcile_sessions(
             con.commit()
 
     con.commit()
+    batch.start()
+    if owns_evaluation_batch:
+        batch.finalize(con)
 
 
 def cancel_executor_session(con, session_db_id: str) -> str:
@@ -197,6 +311,7 @@ def _reconcile_one(
     *,
     current_time: datetime,
     missing_stale_after: timedelta,
+    evaluation_batch: EvaluationBatch,
 ) -> None:
     """Reconcile a single executor session."""
     session_db_id = session["session_db_id"]
@@ -241,7 +356,7 @@ def _reconcile_one(
             con.commit()
             return
         print(f"[reconcile] {session_db_id}: resuming evaluation (collected)")
-        _trigger_evaluation(con, session, job_row, result_sha)
+        evaluation_batch.add(session, job_row, result_sha)
         return
 
     adapter = adapter_cls(repo=job_row["repo"] or "")
@@ -264,7 +379,15 @@ def _reconcile_one(
     )
 
     if status.state == "completed":
-        _handle_completed(con, adapter, session_ref, session, repo_path, job_row)
+        _handle_completed(
+            con,
+            adapter,
+            session_ref,
+            session,
+            repo_path,
+            job_row,
+            evaluation_batch,
+        )
     elif status.state == "failed":
         _handle_failed(con, session, job_row, status.error, repo_path)
     elif status.state == "missing":
@@ -295,7 +418,13 @@ def _reconcile_one(
 
 
 def _handle_completed(
-    con, adapter, session_ref, session, repo_path: Path, job_row
+    con,
+    adapter,
+    session_ref,
+    session,
+    repo_path: Path,
+    job_row,
+    evaluation_batch: EvaluationBatch,
 ) -> None:
     """Collect result, record commit SHA, trigger evaluation.
 
@@ -356,10 +485,10 @@ def _handle_completed(
             _ensure_result_ref(
                 repo_path, job_id, session_id, result_sha
             )
-            _trigger_evaluation(con, session, job_row, result_sha)
+            evaluation_batch.add(session, job_row, result_sha)
             print(
                 f"[reconcile] {session_db_id}: result commit {result_sha[:12]} "
-                f"(commit-ref), job {job_id} → awaiting_review"
+                f"(commit-ref), job {job_id} queued for evaluation"
             )
             return
 
@@ -395,13 +524,13 @@ def _handle_completed(
             #    collected after the worktree is removed.
             _ensure_result_ref(repo_path, job_id, session_id, result_sha)
 
-            # 6. Trigger evaluation: run the evaluator, then mark job
-            #    awaiting_review and session evaluated.
-            _trigger_evaluation(con, session, job_row, result_sha)
+            # 6. Queue evaluation. Worker threads run only the verifier; the
+            #    heartbeat coordinator later serializes all state writes.
+            evaluation_batch.add(session, job_row, result_sha)
 
             print(
                 f"[reconcile] {session_db_id}: result commit {result_sha[:12]}, "
-                f"job {job_id} → awaiting_review"
+                f"job {job_id} queued for evaluation"
             )
         finally:
             # 7. Cleanup: the result commit is now durable via the ref above.
@@ -539,45 +668,47 @@ def _handle_needs_operator(
     )
 
 
-def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
-    """Run the evaluator on the result commit and record the receipt.
-
-    Calls ``verify_job_return`` (the same verification CLI a human would run)
-    and prints the verdict.  The evaluator verdict is evidence for the human
-    reviewer; it never advances graph truth.  The evaluator may fail (e.g., if
-    the node YAML or project YAML cannot be found) — that is non-fatal; the job
-    still goes to awaiting_review with whatever evidence was captured.  The
-    human is the final gate.
-    """
-    project_id = job["project_id"]
-    node_id = job["node_id"]
-    job_id = job["job_id"]
-    attempt = job["attempt"] if job["attempt"] is not None else 0
-
+def _run_evaluation(pending: PendingEvaluation) -> dict:
+    """Run one verifier without touching the runtime database."""
     try:
         verification = verify_job_return(
-            project_id=project_id,
-            node_id=node_id,
-            merge_commit_sha=result_commit_sha,
+            project_id=pending.project_id,
+            node_id=pending.node_id,
+            merge_commit_sha=pending.result_commit_sha,
             pr_ref=None,  # no PR for CLI path
-            job_id=job_id,
-            attempt=attempt,
+            job_id=pending.job_id,
+            attempt=pending.attempt,
         )
-        print(
-            f"  → evaluation: {verification.get('verification_status', 'unknown')}"
-        )
-        if verification.get("verdict"):
-            print(f"  → verdict: {verification['verdict']}")
     except Exception as exc:
-        print(f"  → evaluation ERROR (non-fatal): {exc}")
-        verification = {"verification_status": "error", "error": str(exc)}
+        return {"verification_status": "error", "error": str(exc)}
+    return verification
+
+
+def _finalize_evaluation(
+    con,
+    pending: PendingEvaluation,
+    verification: dict,
+) -> None:
+    """Persist one evaluator outcome on the coordinator thread.
+
+    Evaluator evidence never advances graph truth. A verifier error is still
+    routed to awaiting review so the human sees the explicit failure record.
+    """
+    status = verification.get("verification_status", "unknown")
+    print(f"  → evaluation: {status}")
+    if verification.get("verdict"):
+        print(f"  → verdict: {verification['verdict']}")
+    elif status == "error":
+        print(f"  → evaluation ERROR (non-fatal): {verification.get('error', '')}")
 
     # Write a results row so jobs_status.py can display the evaluator output
     # for human review. The verification dict from verify_job_return carries
     # verdict/criteria/risks evidence; fields the dict does not provide get
     # safe defaults. The important invariant is that a results row exists.
-    result_id = f"res_{session['session_id'][:16]}"
-    v_status = verification.get("verification_status", "unknown")
+    # session_db_id is the full primary key for this attempt. Truncating the
+    # executor's session_id caused distinct local sessions to share a result.
+    result_id = f"res_{pending.session_db_id}"
+    v_status = status
     # outcome reflects the evaluator's verdict; status reflects the job's
     # routing state. A verification error is still routed to awaiting_review
     # — the human is the final gate.
@@ -585,8 +716,8 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
     try:
         write_result(
             result_id=result_id,
-            job_id=job_id,
-            executor=session["executor"],
+            job_id=pending.job_id,
+            executor=pending.executor,
             outcome=outcome,
             status="awaiting_review",
             changed_files=verification.get("changed_files", []),
@@ -607,15 +738,19 @@ def _trigger_evaluation(con, session, job, result_commit_sha) -> None:
         print(f"  → write_result ERROR (non-fatal): {exc}")
 
     # Update session to evaluated.
-    update_executor_session_state(con, session["session_db_id"], state="evaluated")
+    update_executor_session_state(
+        con,
+        pending.session_db_id,
+        state="evaluated",
+    )
     # Mark job as awaiting_review (human decides graph truth).
     con.execute(
         "UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review' WHERE job_id = ?",
-        (job_id,),
+        (pending.job_id,),
     )
     con.execute(
         "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
-        (job_id,),
+        (pending.job_id,),
     )
     con.commit()
 

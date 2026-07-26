@@ -16,6 +16,8 @@ import json
 import sqlite3
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -531,6 +533,252 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
         "SELECT queue FROM queue_records WHERE job_id = ?", ("job_done",)
     ).fetchone()
     assert qr["queue"] == "awaiting_review"
+
+
+def _insert_collected_evaluation(con, index, *, session_id):
+    job_id = f"job_eval_{index}"
+    _insert_job(
+        con,
+        job_id=job_id,
+        executor="local_subprocess",
+        status="running",
+        node_id=f"node-{index}",
+    )
+    session_db_id = insert_executor_session(
+        con,
+        job_id,
+        "local_subprocess",
+        session_id,
+        expected_base_commit_sha="a" * 40,
+    )
+    update_executor_session_state(
+        con,
+        session_db_id,
+        state="collected",
+        result_commit_sha=f"{index + 1:040x}",
+    )
+    con.commit()
+    return job_id, session_db_id
+
+
+def test_evaluators_overlap_with_bounded_capacity_and_distinct_results(
+    con, tmp_path, monkeypatch
+):
+    session_prefix = "same-session-id-"  # 16 characters: old IDs collided.
+    sessions = [
+        _insert_collected_evaluation(
+            con,
+            index,
+            session_id=f"{session_prefix}{index}",
+        )
+        for index in range(3)
+    ]
+    monkeypatch.setattr(
+        reconciler,
+        "ADAPTERS",
+        {"local_subprocess": object},
+    )
+
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def fake_verify(**kwargs):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.1)
+        with lock:
+            active -= 1
+        return {"verification_status": "ok", "verdict": "pass"}
+
+    writes = []
+    coordinator_thread = threading.get_ident()
+    monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
+    monkeypatch.setattr(
+        reconciler,
+        "write_result",
+        lambda **kwargs: writes.append(
+            (kwargs, threading.get_ident())
+        ),
+    )
+
+    reconciler.reconcile_sessions(
+        con,
+        tmp_path,
+        max_concurrent_evaluations=2,
+    )
+
+    assert peak == 2
+    assert len(writes) == 3
+    assert len({item[0]["result_id"] for item in writes}) == 3
+    assert {item[0]["job_id"] for item in writes} == {
+        job_id for job_id, _ in sessions
+    }
+    assert {thread_id for _, thread_id in writes} == {coordinator_thread}
+    for job_id, session_db_id in sessions:
+        assert get_executor_session_by_id(con, session_db_id)["state"] == "evaluated"
+        job = con.execute(
+            "SELECT status FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        assert job["status"] == "awaiting_review"
+
+
+def test_evaluator_failure_isolated_from_peer(con, tmp_path, monkeypatch):
+    successful = _insert_collected_evaluation(
+        con,
+        10,
+        session_id="success-session",
+    )
+    failing = _insert_collected_evaluation(
+        con,
+        11,
+        session_id="failure-session",
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "ADAPTERS",
+        {"local_subprocess": object},
+    )
+
+    def fake_verify(**kwargs):
+        if kwargs["job_id"] == failing[0]:
+            raise RuntimeError("intentional evaluator failure")
+        return {"verification_status": "ok", "verdict": "pass"}
+
+    writes = []
+    monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
+    monkeypatch.setattr(
+        reconciler,
+        "write_result",
+        lambda **kwargs: writes.append(kwargs),
+    )
+
+    reconciler.reconcile_sessions(
+        con,
+        tmp_path,
+        max_concurrent_evaluations=2,
+    )
+
+    outcomes = {item["job_id"]: item["outcome"] for item in writes}
+    assert outcomes == {
+        successful[0]: "pass",
+        failing[0]: "error",
+    }
+    for job_id, session_db_id in (successful, failing):
+        assert get_executor_session_by_id(con, session_db_id)["state"] == "evaluated"
+        status = con.execute(
+            "SELECT status FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()["status"]
+        assert status == "awaiting_review"
+
+
+def test_evaluator_finalization_failure_leaves_only_that_session_collected(
+    con, tmp_path, monkeypatch
+):
+    successful = _insert_collected_evaluation(
+        con,
+        12,
+        session_id="finalize-success",
+    )
+    failing = _insert_collected_evaluation(
+        con,
+        13,
+        session_id="finalize-failure",
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "ADAPTERS",
+        {"local_subprocess": object},
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "verify_job_return",
+        lambda **kwargs: {"verification_status": "ok", "verdict": "pass"},
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    real_finalize = reconciler._finalize_evaluation
+
+    def fail_one_finalize(connection, pending, verification):
+        if pending.job_id == failing[0]:
+            raise sqlite3.OperationalError("intentional finalization failure")
+        real_finalize(connection, pending, verification)
+
+    monkeypatch.setattr(
+        reconciler,
+        "_finalize_evaluation",
+        fail_one_finalize,
+    )
+
+    reconciler.reconcile_sessions(
+        con,
+        tmp_path,
+        max_concurrent_evaluations=2,
+    )
+
+    assert get_executor_session_by_id(con, successful[1])["state"] == "evaluated"
+    assert get_executor_session_by_id(con, failing[1])["state"] == "collected"
+    statuses = dict(
+        con.execute(
+            "SELECT job_id, status FROM jobs WHERE job_id IN (?, ?)",
+            (successful[0], failing[0]),
+        ).fetchall()
+    )
+    assert statuses == {
+        successful[0]: "awaiting_review",
+        failing[0]: "running",
+    }
+
+
+def test_external_evaluation_batch_defers_finalization(
+    con, tmp_path, monkeypatch
+):
+    job_id, session_db_id = _insert_collected_evaluation(
+        con,
+        20,
+        session_id="deferred-session",
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "ADAPTERS",
+        {"local_subprocess": object},
+    )
+    release = threading.Event()
+    started = threading.Event()
+
+    def fake_verify(**kwargs):
+        started.set()
+        assert release.wait(timeout=2)
+        return {"verification_status": "ok", "verdict": "pass"}
+
+    monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+
+    batch = reconciler.EvaluationBatch(max_workers=1)
+    reconciler.reconcile_sessions(
+        con,
+        tmp_path,
+        evaluation_batch=batch,
+    )
+
+    assert started.wait(timeout=1)
+    assert get_executor_session_by_id(con, session_db_id)["state"] == "collected"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()["status"] == "running"
+
+    release.set()
+    batch.finalize(con)
+
+    assert get_executor_session_by_id(con, session_db_id)["state"] == "evaluated"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()["status"] == "awaiting_review"
 
 
 def test_reconcile_rejects_remote_patch_from_wrong_base(
@@ -1542,12 +1790,27 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
     mock_reader.get_ready_nodes.return_value = []
     monkeypatch.setattr(runner, "GraphReader", lambda **kw: mock_reader)
 
-    called = {"reconcile": False}
+    order = []
 
-    def fake_reconcile(c, repo_path, repo=None):
-        called["reconcile"] = True
+    class FakeEvaluationBatch:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
 
+        def finalize(self, c):
+            order.append("finalize")
+
+    def fake_reconcile(c, repo_path, repo=None, evaluation_batch=None):
+        assert isinstance(evaluation_batch, FakeEvaluationBatch)
+        assert evaluation_batch.max_workers == 2
+        order.append("reconcile")
+
+    monkeypatch.setattr(runner, "EvaluationBatch", FakeEvaluationBatch)
     monkeypatch.setattr(runner, "reconcile_sessions", fake_reconcile)
+    monkeypatch.setattr(
+        runner,
+        "_plan_dispatches",
+        lambda *args, **kwargs: order.append("plan") or [],
+    )
 
     # Empty events table — previously this would skip reconcile entirely.
     runner.run_heartbeat(
@@ -1556,7 +1819,7 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
         config_path=str(tmp_path / "no-config"),
     )
 
-    assert called["reconcile"] is True
+    assert order == ["reconcile", "plan", "finalize"]
 
 
 def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):

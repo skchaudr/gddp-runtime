@@ -32,7 +32,11 @@ from .classifier import classify
 from .dispatcher import cancel_remote_session, dispatch
 from .graph_reader import GraphReader
 from .job_factory import build_job
-from .reconciler import reconcile_sessions
+from .reconciler import (
+    DEFAULT_MAX_CONCURRENT_EVALUATIONS,
+    EvaluationBatch,
+    reconcile_sessions,
+)
 from .scope_checker import check_scope
 from .state_recorder import (
     finalize_executor_session_dispatch,
@@ -144,6 +148,11 @@ def run_heartbeat(
 
     project = reader.load_project(project_id)
     max_concurrent_jobs = _configured_job_capacity(project.execution_policy)
+    evaluation_capacity = (
+        max_concurrent_jobs
+        if max_concurrent_jobs is not None
+        else DEFAULT_MAX_CONCURRENT_EVALUATIONS
+    )
 
     # Load ready nodes from the graph (replaces hardcoded PHASE3_NODE)
     ready_nodes = reader.get_ready_nodes(project_id)
@@ -154,31 +163,41 @@ def run_heartbeat(
 
     con = connect()
     try:
-        # Phase 0: Reconcile active executor sessions (runs every tick).
-        # CLI-based executors complete asynchronously without webhooks, so
-        # every tick must poll for completion even when there are no new
-        # intake events.
-        reconcile_sessions(con, Path(repo_path) if repo_path else None, repo=repo)
+        evaluation_batch = EvaluationBatch(max_workers=evaluation_capacity)
+        try:
+            # Phase 0: Poll/collect every active session, then start all
+            # evaluation-ready verifier subprocesses without waiting. This
+            # lets planning and dispatch continue while evaluators run.
+            reconcile_sessions(
+                con,
+                Path(repo_path) if repo_path else None,
+                repo=repo,
+                evaluation_batch=evaluation_batch,
+            )
 
-        # Phase A-C: Plan and dispatch new events.
-        planned_dispatches = _plan_dispatches(
-            con,
-            project_id,
-            repo,
-            ready_nodes,
-            reader,
-            max_concurrent_jobs=max_concurrent_jobs,
-            repo_path=repo_path,
-        )
+            # Phase A-C: Plan and dispatch new events.
+            planned_dispatches = _plan_dispatches(
+                con,
+                project_id,
+                repo,
+                ready_nodes,
+                reader,
+                max_concurrent_jobs=max_concurrent_jobs,
+                repo_path=repo_path,
+            )
 
-        if not planned_dispatches:
+            if not planned_dispatches:
+                print("Heartbeat complete.")
+                return
+
+            outcomes_by_job_id = _execute_dispatches(planned_dispatches, repo)
+            _record_outcomes(con, planned_dispatches, outcomes_by_job_id, repo_path)
+
             print("Heartbeat complete.")
-            return
-
-        outcomes_by_job_id = _execute_dispatches(planned_dispatches, repo)
-        _record_outcomes(con, planned_dispatches, outcomes_by_job_id, repo_path)
-
-        print("Heartbeat complete.")
+        finally:
+            # Worker threads never receive ``con``. The coordinator serializes
+            # all result/session/job writes before closing the heartbeat DB.
+            evaluation_batch.finalize(con)
     finally:
         con.close()
 
