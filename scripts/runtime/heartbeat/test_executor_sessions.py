@@ -189,6 +189,7 @@ def _make_fake_adapter(
     cancel_result=False,
     result_commit_sha=None,
     result_ref=None,
+    base_commit_sha=None,
 ):
     """Build a configurable fake adapter class.
 
@@ -237,6 +238,7 @@ def _make_fake_adapter(
                 success=True,
                 patch_text=patch_text,
                 patch_path=str(dest_path),
+                base_commit_sha=base_commit_sha,
             )
 
         def cancel(self, session_ref):
@@ -529,6 +531,48 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
         "SELECT queue FROM queue_records WHERE job_id = ?", ("job_done",)
     ).fetchone()
     assert qr["queue"] == "awaiting_review"
+
+
+def test_reconcile_rejects_remote_patch_from_wrong_base(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_wrong_base",
+        executor="jules_api",
+        repo="owner/repo",
+        status="running",
+    )
+    ses_id = insert_executor_session(
+        con,
+        "job_wrong_base",
+        "jules_api",
+        "session-wrong-base",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="completed",
+        base_commit_sha="f" * 40,
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_api": FakeAdapter})
+    monkeypatch.setattr(
+        reconciler,
+        "verify_job_return",
+        lambda **kw: pytest.fail("evaluation must not run on base mismatch"),
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "failed"
+    assert "does not match expected base" in (row["error"] or "")
+    job = con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?",
+        ("job_wrong_base",),
+    ).fetchone()
+    assert job["status"] == "failed"
 
 
 def test_reconcile_local_commit_ref_skips_apply_worktree(con, tmp_path, monkeypatch):

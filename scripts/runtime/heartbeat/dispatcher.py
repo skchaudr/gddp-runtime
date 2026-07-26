@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
 from adapters.jules_action_adapter import JulesActionAdapter
+from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from adapters.local_subprocess_adapter import LocalSubprocessAdapter
 
@@ -22,6 +23,7 @@ from adapters.local_subprocess_adapter import LocalSubprocessAdapter
 
 
 ADAPTERS = {
+    "jules_api": JulesApiAdapter,
     "jules_cli": JulesCliAdapter,
     "local_subprocess": LocalSubprocessAdapter,
 }

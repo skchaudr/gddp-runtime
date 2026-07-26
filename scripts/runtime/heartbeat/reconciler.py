@@ -363,6 +363,13 @@ def _handle_completed(
             )
             return
 
+        patch_base = getattr(patch_result, "base_commit_sha", None)
+        if patch_base and patch_base != base_commit:
+            raise RuntimeError(
+                f"executor patch base {patch_base} does not match "
+                f"expected base {base_commit}"
+            )
+
         # 2. Patch path (Jules/remote): create worktree at expected base.
         worktree = _create_exec_worktree(repo_path, job_id, base_commit)
         if worktree is None:

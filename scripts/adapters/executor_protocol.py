@@ -148,6 +148,7 @@ class PatchResult:
     success: bool
     patch_text: str | None = None       # unified diff text
     patch_path: str | None = None       # path to saved patch file
+    base_commit_sha: str | None = None  # remote patch's declared base
     result_commit_sha: str | None = None  # commit-ref transport (local)
     result_ref: str | None = None         # durable per-attempt ref name
     worktree_path: str | None = None      # kept on persist failure

@@ -24,6 +24,7 @@ from adapters.executor_protocol import (
     SessionRef,
 )
 from adapters.jules_action_adapter import JulesActionAdapter
+from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
 from adapters.local_subprocess_adapter import LocalSubprocessAdapter
 from adapters import local_subprocess_adapter
@@ -137,6 +138,7 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
 
 
 def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
+    api = JulesApiAdapter("owner/repo", api_key="test-key")
     cli = JulesCliAdapter("owner/repo")
     local = LocalSubprocessAdapter(
         repo="owner/repo",
@@ -145,14 +147,118 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
     )
     action = JulesActionAdapter("owner/repo")
 
+    assert isinstance(api, ExecutorAdapter)
     assert isinstance(cli, ExecutorAdapter)
     assert isinstance(local, ExecutorAdapter)
     assert not isinstance(action, ExecutorAdapter)
     assert dispatcher.ADAPTERS == {
+        "jules_api": JulesApiAdapter,
         "jules_cli": JulesCliAdapter,
         "local_subprocess": LocalSubprocessAdapter,
     }
     assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
+
+
+def test_jules_api_dispatch_poll_and_collect(monkeypatch, tmp_path):
+    adapter = JulesApiAdapter("owner/repo", api_key="test-key")
+    calls = []
+
+    def request_json(method, path, payload=None):
+        calls.append((method, path, payload))
+        if path.startswith("/sources?"):
+            return {
+                "sources": [
+                    {
+                        "name": "sources/github-owner-repo",
+                        "githubRepo": {"owner": "owner", "repo": "repo"},
+                    }
+                ]
+            }
+        if method == "POST" and path == "/sessions":
+            return {"id": "session-123", "state": "QUEUED"}
+        if path == "/sessions/session-123":
+            return {"id": "session-123", "state": "COMPLETED"}
+        if path.startswith("/sessions/session-123/activities?"):
+            return {
+                "activities": [
+                    {
+                        "artifacts": [
+                            {
+                                "changeSet": {
+                                    "source": "sources/github-owner-repo",
+                                    "gitPatch": {
+                                        "baseCommitId": "abc123",
+                                        "unidiffPatch": "diff --git a/a b/a\n",
+                                    },
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(adapter, "_request_json", request_json)
+
+    dispatched = adapter.dispatch(_packet())
+
+    assert dispatched.success is True
+    assert dispatched.session_ref == SessionRef("jules_api", "session-123")
+    create_payload = calls[1][2]
+    assert create_payload["sourceContext"] == {
+        "source": "sources/github-owner-repo",
+        "githubRepoContext": {"startingBranch": "main"},
+    }
+    assert "execution_attempt_id: job-123:attempt:2" in create_payload["prompt"]
+    assert adapter.status(dispatched.session_ref).state == "completed"
+
+    destination = tmp_path / "jules-api.patch"
+    collected = adapter.collect(dispatched.session_ref, destination)
+
+    assert collected.success is True
+    assert collected.patch_text == "diff --git a/a b/a\n"
+    assert collected.patch_path == str(destination)
+    assert collected.base_commit_sha == "abc123"
+    assert destination.read_text() == collected.patch_text
+
+
+@pytest.mark.parametrize(
+    ("api_state", "expected_state"),
+    (
+        ("QUEUED", "dispatched"),
+        ("PLANNING", "running"),
+        ("IN_PROGRESS", "running"),
+        ("AWAITING_PLAN_APPROVAL", "needs_operator"),
+        ("AWAITING_USER_FEEDBACK", "needs_operator"),
+        ("PAUSED", "needs_operator"),
+        ("COMPLETED", "completed"),
+        ("FAILED", "failed"),
+        ("NEW_UNKNOWN_STATE", "poll_error"),
+    ),
+)
+def test_jules_api_status_mapping(monkeypatch, api_state, expected_state):
+    adapter = JulesApiAdapter("owner/repo", api_key="test-key")
+    monkeypatch.setattr(
+        adapter,
+        "_request_json",
+        lambda *args, **kwargs: {"state": api_state},
+    )
+
+    status = adapter.status(SessionRef("jules_api", "session-123"))
+
+    assert status.state == expected_state
+
+
+def test_jules_api_dispatch_fails_without_configured_key(monkeypatch):
+    monkeypatch.delenv("JULES_API_KEY", raising=False)
+    monkeypatch.delenv("GDDP_JULES_KEY_CMD", raising=False)
+    adapter = JulesApiAdapter("owner/repo")
+
+    result = adapter.dispatch(_packet())
+
+    assert result.success is False
+    assert "JULES_API_KEY" in (result.error or "")
+
 
 def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
     spool_root = tmp_path / "spool"
@@ -173,6 +279,7 @@ def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
     ("executor", "adapter_cls", "issue_url"),
     (
         ("jules", JulesActionAdapter, "https://github.com/owner/repo/issues/42"),
+        ("jules_api", JulesApiAdapter, None),
         ("jules_cli", JulesCliAdapter, None),
         ("local_subprocess", LocalSubprocessAdapter, None),
     ),
