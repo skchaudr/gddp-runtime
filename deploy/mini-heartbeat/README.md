@@ -16,7 +16,7 @@ Cutover steps: **`CUTOVER.md`**. This kit does not replace pi-big until armed.
 | `bin/disarm-source.sh` | Stop big-ssd intake + comment heartbeat cron (run on big-ssd) |
 | `bin/smoke.sh` | DeepSeek via pass, intake process, one dry heartbeat |
 | `launchd/*.plist` | macOS services; default `RunAtLoad=false` |
-| `env/gddp.env.example` | Paths + `GDDP_DEEPSEEK_KEY_CMD` — no secrets |
+| `env/gddp.env.example` | Paths + secret resolver commands — no secrets |
 
 **Not in git:** `pass` store, GPG keys, live `db/queue.db`, webhook secrets.
 
@@ -67,6 +67,7 @@ Refresh at arm time if you care about queue continuity.
 ## Secrets on mini
 
 - `pass show api/deepseek` (bridge default) or export `DEEPSEEK_API_KEY`
+- `pass show api/jules` (Jules API adapter default) or export `JULES_API_KEY`
 - `pass show gddp/webhook-secret` (or `GDDP_WEBHOOK_SECRET_CMD`)
 - `gh auth login` for Jules dispatch (`GITHUB_TOKEN` / `GH_TOKEN`)
 - Import the headless GPG key used for `pass` on big-ssd if you sync the store

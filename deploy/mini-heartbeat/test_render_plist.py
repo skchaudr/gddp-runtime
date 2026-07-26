@@ -77,14 +77,25 @@ def test_render_plist_substitutes_runtime_paths():
 def test_render_heartbeat_plist_default_project_args():
     plist = _render_heartbeat_plist(_base_render_env())
     args = plist["ProgramArguments"]
+    env = plist["EnvironmentVariables"]
 
     assert args[0] == "/usr/bin/python3"
     assert args[1:3] == ["-m", "scripts.runtime.heartbeat.runner"]
     assert args[3:6] == ["--project", "gddp-runtime", "--repo"]
     assert args[6] == "skchaudr/gddp-runtime"
     assert args[7:9] == ["--config-path", "/tmp/gddp-config"]
-    assert plist["EnvironmentVariables"]["GDDP_REPO_ROOT"] == "/tmp/repos"
+    assert env["GDDP_REPO_ROOT"] == "/tmp/repos"
+    assert env["GDDP_JULES_KEY_CMD"] == "pass show api/jules"
     assert plist["StartInterval"] == 300
+
+
+def test_render_heartbeat_plist_substitutes_jules_key_cmd():
+    jules = '/opt/homebrew/bin/gpg --decrypt "/tmp/jules & api.gpg"'
+    plist = _render_heartbeat_plist(
+        _base_render_env(GDDP_JULES_KEY_CMD=jules)
+    )
+
+    assert plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"] == jules
 
 
 def test_webhook_secret_cmd_with_quotes_survives_plist_render():
