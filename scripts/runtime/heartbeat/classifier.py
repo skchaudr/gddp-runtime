@@ -69,12 +69,26 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
     if target is None:
         return None  # no explicit tag for a ready node → ignored, auditable
 
+    recommendation = _pick_executor(target)
+    routing_raw = event["routing"] if "routing" in event.keys() else None
+    if routing_raw:
+        try:
+            selected = (json.loads(routing_raw) or {}).get("selected_executor")
+        except ValueError:
+            selected = None
+        if selected:
+            # Operator preselection (gddp dispatch). Never fall back silently:
+            # an executor the node does not allow ignores the event auditably.
+            if selected not in target.allowed_execution_modes:
+                return None
+            recommendation = selected
+
     return {
         "category":                "implementation_request",
         "intent":                  "implement_existing_node",
         "in_scope":                True,
         "matched_node_id":         target.node_id,
-        "executor_recommendation": _pick_executor(target),
+        "executor_recommendation": recommendation,
         "requires_code_execution": True,
         "requires_human_review":   False,
     }
