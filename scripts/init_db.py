@@ -9,10 +9,13 @@ Tables mirror the YAML schemas in gddp-config/schemas/v1/:
   artifact_verifications → artifact_verification.yaml
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "db" / "queue.db"
+_default_root = Path(__file__).parent.parent
+RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCLAW_ROOT", _default_root))
+DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 
 def _ensure_column(
@@ -29,6 +32,8 @@ def _ensure_column(
 
 
 def init_db():
+    # A fresh rig checkout has no db/ yet; sqlite3.connect will not create it.
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
 
