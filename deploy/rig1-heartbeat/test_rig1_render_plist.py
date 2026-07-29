@@ -41,8 +41,9 @@ def _base_render_env(**overrides: str) -> dict[str, str]:
         "GDDP_PYTHON": "/usr/bin/python3",
         "HOME": "/Users/sab-air",
         "USER": "saboor",
-        # override default so tests are deterministic without Keychain
-        "GDDP_JULES_KEY_CMD": "security find-generic-password -w -s jules-api-key -a saboor",
+        # pin so host shell exports cannot leak into assertions
+        "GDDP_JULES_KEY_CMD": "cat /Users/sab-air/.config/gddp/jules-api-key",
+        "GDDP_DEEPSEEK_KEY_CMD": "cat /Users/sab-air/.config/gddp/deepseek-api-key",
     }
     env.update(overrides)
     return env
@@ -72,20 +73,23 @@ def test_render_heartbeat_log_paths_are_rig1_specific():
 
 
 def test_render_heartbeat_default_jules_key_cmd():
-    # Drop override so common.sh default expands USER
+    # Drop override so common.sh default expands HOME
     env = _base_render_env()
     del env["GDDP_JULES_KEY_CMD"]
+    del env["GDDP_DEEPSEEK_KEY_CMD"]
     plist = _render_heartbeat_plist(env)
+    jules = plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"]
+    deepseek = plist["EnvironmentVariables"]["GDDP_DEEPSEEK_KEY_CMD"]
 
-    assert (
-        plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"]
-        == "security find-generic-password -w -s jules-api-key -a saboor"
-    )
-    assert "$USER" not in plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"]
+    assert jules == "cat /Users/sab-air/.config/gddp/jules-api-key"
+    assert deepseek == "cat /Users/sab-air/.config/gddp/deepseek-api-key"
+    assert "$HOME" not in jules
+    assert "security find-generic-password" not in jules
+    assert "pass show" not in deepseek
 
 
 def test_render_heartbeat_substitutes_jules_key_cmd_with_special_chars():
-    jules = 'security find-generic-password -w -s "jules & key" -a saboor'
+    jules = 'cat /tmp/gddp "jules & key".txt'
     plist = _render_heartbeat_plist(_base_render_env(GDDP_JULES_KEY_CMD=jules))
 
     assert plist["EnvironmentVariables"]["GDDP_JULES_KEY_CMD"] == jules

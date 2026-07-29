@@ -27,11 +27,13 @@ if [[ -z "${GDDP_PYTHON:-}" ]]; then
   fi
 fi
 
-# Rig 1 default: Keychain (not pass). Expand $USER at render/source time —
-# GDDP_JULES_KEY_CMD is executed via shlex.split, not a shell, so bare $USER
-# in the plist would not expand under launchd.
-GDDP_JULES_KEY_CMD="${GDDP_JULES_KEY_CMD:-security find-generic-password -w -s jules-api-key -a ${USER}}"
-GDDP_DEEPSEEK_KEY_CMD="${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}"
+# Rig 1 default: 0600 files under ~/.config/gddp/. Expand $HOME at
+# render/source time — KEY_CMD is executed via shlex.split (no shell), so
+# bare $HOME/$USER in the plist would not expand under launchd.
+# Why not keychain/pass: login keychain locks and unattended launchd gets
+# errSecInteractionNotAllowed (rc=36); pass needs an unlocked store too.
+GDDP_JULES_KEY_CMD="${GDDP_JULES_KEY_CMD:-cat ${HOME}/.config/gddp/jules-api-key}"
+GDDP_DEEPSEEK_KEY_CMD="${GDDP_DEEPSEEK_KEY_CMD:-cat ${HOME}/.config/gddp/deepseek-api-key}"
 
 LAUNCH_AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 # Distinct from mini's com.gddp.heartbeat — additive third lane, not a cutover.
@@ -65,7 +67,7 @@ render_plist() {
   local src="$1"
   local dest="$2"
   local deepseek_cmd jules_cmd local_argv local_spool
-  deepseek_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")")"
+  deepseek_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD}")")"
   jules_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_JULES_KEY_CMD}")")"
   local_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_ARGV:-}")")"
   local_spool="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$GDDP_RUNTIME_ROOT/jobs/local-subprocess-spool}")")"
