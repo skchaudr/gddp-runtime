@@ -260,6 +260,18 @@ def test_jules_api_dispatch_fails_without_configured_key(monkeypatch):
     assert "JULES_API_KEY" in (result.error or "")
 
 
+def test_local_subprocess_preflight_rejects_missing_argv(monkeypatch, tmp_path):
+    monkeypatch.delenv("GDDP_LOCAL_SUBPROCESS_ARGV", raising=False)
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path))
+
+    error = dispatcher.executor_preflight_error(
+        "local_subprocess", "owner/repo"
+    )
+
+    assert error is not None
+    assert "GDDP_LOCAL_SUBPROCESS_ARGV" in error
+
+
 def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
     spool_root = tmp_path / "spool"
     spool_root.mkdir()

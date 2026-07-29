@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .classifier import classify
-from .dispatcher import cancel_remote_session, dispatch
+from .dispatcher import cancel_remote_session, dispatch, executor_preflight_error
 from .graph_reader import GraphReader
 from .job_factory import build_job
 from .reconciler import (
@@ -202,6 +202,66 @@ def run_heartbeat(
         con.close()
 
 
+def _active_projects(reader: GraphReader) -> list:
+    """Find graph projects with pending intake or unfinished runtime work."""
+    con = connect()
+    try:
+        project_ids = {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT DISTINCT project_id
+                  FROM events
+                 WHERE project_id IS NOT NULL
+                   AND status IN ('received', 'claimed')
+                UNION
+                SELECT DISTINCT project_id
+                  FROM jobs
+                 WHERE project_id IS NOT NULL
+                   AND (
+                       status IN ('ready', 'running', 'awaiting_result')
+                       OR queue_state IN ('ready', 'running', 'awaiting_result')
+                   )
+                """
+            )
+        }
+        repos = {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT DISTINCT repo
+                  FROM events
+                 WHERE project_id IS NULL
+                   AND repo IS NOT NULL
+                   AND status IN ('received', 'claimed')
+                """
+            )
+        }
+    finally:
+        con.close()
+    return [
+        project
+        for project in reader.list_projects()
+        if project.project_id in project_ids or project.repo in repos
+    ]
+
+
+def run_active_projects(config_path: str | None = None) -> None:
+    """Run one heartbeat tick for every project with actionable runtime state."""
+    reader = GraphReader(config_path=config_path)
+    projects = _active_projects(reader)
+    if not projects:
+        print("No active projects.")
+        return
+    print(f"Active projects: {[project.project_id for project in projects]}")
+    for project in projects:
+        run_heartbeat(
+            project_id=project.project_id,
+            repo=project.repo,
+            config_path=config_path,
+        )
+
+
 def _plan_dispatches(
     con: sqlite3.Connection,
     project_id: str,
@@ -299,6 +359,20 @@ def _plan_dispatches(
             mark_event_ignored(con, event_id)
             con.commit()
             print(f"  → ignored (matched node {node_id} not in ready list)\n")
+            continue
+
+        preflight_error = executor_preflight_error(
+            classification["executor_recommendation"], repo
+        )
+        if preflight_error:
+            con.execute(
+                """UPDATE events
+                      SET status = 'received', claimed_at = NULL
+                    WHERE event_id = ? AND status = 'claimed'""",
+                (event_id,),
+            )
+            con.commit()
+            print(f"  → deferred (executor preflight: {preflight_error})\n")
             continue
 
         if not base_commit_resolved:
@@ -495,8 +569,12 @@ def _record_outcomes(
                 )
                 print()
                 continue
+            mark_event_mapped(con, event_id)
             mark_job_failed(con, job_id)
             print(f"  → DISPATCH FAILED: {outcome.error}")
+            print(
+                "  → retry after repair: dispatch this node again through gddp"
+            )
         print()
 
     con.commit()
@@ -524,12 +602,24 @@ def _get_head_sha(repo_path: str | None) -> str | None:
 
 def main():
     parser = argparse.ArgumentParser(description="GDDP Heartbeat vNext")
-    parser.add_argument("--project",     required=True, help="Project ID (e.g. vault-doctor)")
-    parser.add_argument("--repo",        required=True, help="GitHub repo (owner/name)")
+    parser.add_argument("--project", help="Project ID (e.g. vault-doctor)")
+    parser.add_argument("--repo", help="GitHub repo (owner/name)")
+    parser.add_argument(
+        "--all-active",
+        action="store_true",
+        help="tick every project with pending events or active jobs",
+    )
     parser.add_argument("--config-path", default=None,  help="Path to gddp-config checkout")
     parser.add_argument("--repo-path",   default=None,  help="Local filesystem path to the repo checkout (enables reconcile)")
     args = parser.parse_args()
 
+    if args.all_active:
+        if args.project or args.repo or args.repo_path:
+            parser.error("--all-active cannot be combined with project arguments")
+        run_active_projects(config_path=args.config_path)
+        return
+    if not args.project or not args.repo:
+        parser.error("--project and --repo are required without --all-active")
     run_heartbeat(
         project_id=args.project,
         repo=args.repo,

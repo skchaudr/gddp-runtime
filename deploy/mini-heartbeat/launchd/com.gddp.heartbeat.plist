@@ -17,10 +17,7 @@
     <string>__GDDP_PYTHON__</string>
     <string>-m</string>
     <string>scripts.runtime.heartbeat.runner</string>
-    <string>--project</string>
-    <string>__GDDP_PROJECT_ID__</string>
-    <string>--repo</string>
-    <string>__GDDP_PROJECT_REPO__</string>
+    <string>--all-active</string>
     <string>--config-path</string>
     <string>__GDDP_CONFIG_PATH__</string>
   </array>

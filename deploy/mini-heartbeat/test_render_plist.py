@@ -81,9 +81,7 @@ def test_render_heartbeat_plist_default_project_args():
 
     assert args[0] == "/usr/bin/python3"
     assert args[1:3] == ["-m", "scripts.runtime.heartbeat.runner"]
-    assert args[3:6] == ["--project", "gddp-runtime", "--repo"]
-    assert args[6] == "skchaudr/gddp-runtime"
-    assert args[7:9] == ["--config-path", "/tmp/gddp-config"]
+    assert args[3:] == ["--all-active", "--config-path", "/tmp/gddp-config"]
     assert env["GDDP_REPO_ROOT"] == "/tmp/repos"
     assert env["GDDP_JULES_KEY_CMD"] == "pass show api/jules"
     assert plist["StartInterval"] == 300

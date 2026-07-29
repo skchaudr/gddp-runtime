@@ -9,6 +9,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -219,3 +220,113 @@ class TestEventRouting:
         # No jobs planned (classify returned None → event ignored)
         assert planned == []
         con.close()
+
+    def test_executor_preflight_failure_creates_no_job(
+        self, test_db, monkeypatch
+    ):
+        con = sqlite3.connect(test_db)
+        con.row_factory = sqlite3.Row
+        con.execute(
+            "INSERT INTO events (event_id, received_at, source, event_type, "
+            "repo, project_id, status) "
+            "VALUES (?, ?, 'manual', 'issue.opened', 'owner/repo', "
+            "'test-project', 'received')",
+            ("evt_preflight", "2026-07-29T09:00:00Z"),
+        )
+        con.commit()
+        node = SimpleNamespace(node_id="node-1")
+        monkeypatch.setattr(
+            runner,
+            "classify",
+            lambda event, nodes: {
+                "matched_node_id": "node-1",
+                "executor_recommendation": "local_subprocess",
+            },
+        )
+        monkeypatch.setattr(
+            runner,
+            "executor_preflight_error",
+            lambda executor, repo: "missing argv",
+        )
+
+        planned = runner._plan_dispatches(
+            con,
+            "test-project",
+            "owner/repo",
+            [node],
+            MagicMock(),
+        )
+
+        assert planned == []
+        event = con.execute(
+            "SELECT status, claimed_at FROM events "
+            "WHERE event_id = 'evt_preflight'"
+        ).fetchone()
+        assert tuple(event) == ("received", None)
+        assert con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+        con.close()
+
+
+def test_active_projects_include_pending_events_and_running_jobs(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "queue.db"
+    _init_db(db_path)
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "INSERT INTO events (event_id, received_at, source, event_type, "
+        "repo, project_id, status) VALUES "
+        "('evt_a', '2026-07-29T09:00:00Z', 'manual', 'issue.opened', "
+        "'owner/a', 'proj-a', 'received')"
+    )
+    con.execute(
+        "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
+        "job_type, executor, title, goal, status, queue_state) VALUES "
+        "('job_b', '2026-07-29T09:00:00Z', 'proj-b', 'owner/b', "
+        "'node-b', 'implementation', 'jules_api', 'B', 'Run B', "
+        "'running', 'running')"
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setattr(runner, "DB_PATH", db_path)
+    projects = [
+        SimpleNamespace(project_id="proj-a", repo="owner/a"),
+        SimpleNamespace(project_id="proj-b", repo="owner/b"),
+        SimpleNamespace(project_id="proj-c", repo="owner/c"),
+    ]
+    reader = SimpleNamespace(list_projects=lambda: projects)
+
+    active = runner._active_projects(reader)
+
+    assert [project.project_id for project in active] == ["proj-a", "proj-b"]
+
+
+def test_run_active_projects_ticks_each_selected_project(monkeypatch):
+    projects = [
+        SimpleNamespace(project_id="proj-a", repo="owner/a"),
+        SimpleNamespace(project_id="proj-b", repo="owner/b"),
+    ]
+    reader = SimpleNamespace()
+    monkeypatch.setattr(runner, "GraphReader", lambda **kwargs: reader)
+    monkeypatch.setattr(runner, "_active_projects", lambda value: projects)
+    ticks = []
+    monkeypatch.setattr(
+        runner,
+        "run_heartbeat",
+        lambda **kwargs: ticks.append(kwargs),
+    )
+
+    runner.run_active_projects("/config")
+
+    assert ticks == [
+        {
+            "project_id": "proj-a",
+            "repo": "owner/a",
+            "config_path": "/config",
+        },
+        {
+            "project_id": "proj-b",
+            "repo": "owner/b",
+            "config_path": "/config",
+        },
+    ]

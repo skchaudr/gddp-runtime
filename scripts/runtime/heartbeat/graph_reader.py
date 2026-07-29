@@ -82,6 +82,16 @@ class GraphReader:
         self._project_cache[project_id] = graph
         return graph
 
+    def list_projects(self) -> list[ProjectGraph]:
+        """Return every valid project graph in stable project-id order."""
+        graphs_dir = self.config_path / "graphs"
+        projects = []
+        for project_file in sorted(graphs_dir.glob("*/project.yaml")):
+            if project_file.parent.name.startswith("_"):
+                continue
+            projects.append(self.load_project(project_file.parent.name))
+        return projects
+
     def load_node(self, project_id: str, node_id: str) -> NodeData:
         cache_key = (project_id, node_id)
         if cache_key in self._node_cache:

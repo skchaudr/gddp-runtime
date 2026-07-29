@@ -250,7 +250,7 @@ def _verify_parallel_results(db_path, dispatched_nodes, dispatch_threads):
     con.close()
 
     assert events["evt-alpha"]["status"] == "mapped"
-    assert events["evt-beta"]["status"] == "classified"
+    assert events["evt-beta"]["status"] == "mapped"
     assert events["evt-blocked"]["status"] == "scope_blocked"
     assert "prerequisite-node" in events["evt-blocked"]["classification"]
 

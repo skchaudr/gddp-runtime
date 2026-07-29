@@ -33,6 +33,20 @@ MEDIATED_ADAPTERS = {
 }
 
 
+def executor_preflight_error(executor: str, repo: str) -> str | None:
+    """Return a configuration error before the runner reserves a job."""
+    override = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "")
+    selected = override or executor
+    adapter_cls = ADAPTERS.get(selected) or MEDIATED_ADAPTERS.get(selected)
+    if adapter_cls is None:
+        return f"Unknown executor: {selected}"
+    try:
+        adapter_cls(repo=repo)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return f"Invalid executor configuration: {exc}"
+    return None
+
+
 def dispatch(job: dict, repo: str) -> DispatchResult:
     executor = job.get("executor")
     if not executor:

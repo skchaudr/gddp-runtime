@@ -1710,6 +1710,52 @@ def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
     assert "cancellation accepted" not in output
 
 
+def test_dispatch_failure_closes_event_and_preserves_failed_job(con, capsys):
+    con.execute(
+        "INSERT INTO events "
+        "(event_id, received_at, source, event_type, repo, project_id, status) "
+        "VALUES ('evt_dispatch_failure', '2026-07-29T09:00:00Z', 'manual', "
+        "'issue.opened', 'owner/repo', 'proj-1', 'classified')"
+    )
+    _insert_job(con, job_id="job_dispatch_failure", status="ready")
+    session_db_id = insert_executor_session(
+        con,
+        "job_dispatch_failure",
+        "local_subprocess",
+        "job_dispatch_failure:attempt:0",
+        state="dispatching",
+    )
+    planned = runner.PlannedDispatch(
+        event_id="evt_dispatch_failure",
+        classification={"executor_recommendation": "local_subprocess"},
+        job={
+            "job_id": "job_dispatch_failure",
+            "node_id": "node-1",
+            "repo": "owner/repo",
+        },
+        session_db_id=session_db_id,
+    )
+    outcome = runner.DispatchOutcome(
+        planned=planned,
+        success=False,
+        error="worker launch failed",
+    )
+
+    runner._record_outcomes(
+        con,
+        [planned],
+        {"job_dispatch_failure": outcome},
+    )
+
+    assert con.execute(
+        "SELECT status FROM events WHERE event_id = 'evt_dispatch_failure'"
+    ).fetchone()[0] == "mapped"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = 'job_dispatch_failure'"
+    ).fetchone()[0] == "failed"
+    assert "dispatch this node again through gddp" in capsys.readouterr().out
+
+
 def test_finalize_executor_session_dispatch_is_compare_and_swap(con):
     _insert_job(con, job_id="job_finalize_cas", status="cancelled")
     session_db_id = insert_executor_session(
