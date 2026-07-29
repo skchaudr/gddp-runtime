@@ -63,6 +63,72 @@ a judgment.** Admission control decides what gets *merged*, never what gets
 
 ---
 
+## Foundation being replaced: blocking review → provisional continuation
+
+This is the deepest one. Everything else in this document is downstream of it.
+
+### The original intent
+
+If valid work passes locally in a meaningful way, and there is downtime with
+nothing being done for hours, the agent should move to the next node and keep
+building. Dependencies exist to **sequence agents**, not to force operator
+downtime. Sab retains final authority to accept, reject, or unwind graph truth at
+any point.
+
+That was the point of GDDP from day one.
+
+### What was built instead
+
+Two different questions were collapsed into one:
+
+1. **May the next agent start work?** — execution sequencing
+2. **Is this node done?** — graph truth, human-owned
+
+"Human owns graph truth" was read as "a human must approve every transition
+before any further work happens." That converts every dependency edge into an
+operator wait state.
+
+Verified mechanism, 2026-07-29:
+
+- `reconciler.py:746` — after evaluation, the job is set to `awaiting_review`
+  unconditionally. There is no branch on the verdict. A passing evaluation and a
+  failing one produce identical state.
+- `scope_checker.py:59` — a dependent node is blocked unless its dependency is
+  `complete` in graph YAML, and `complete` is only ever written by a human
+  editing that YAML by hand.
+
+Net: **passing work cannot unblock anything.** There is no autonomous
+continuation path. The system was built to stop.
+
+### What replaces it
+
+Separate the two questions that were merged.
+
+A strong evaluator pass advances execution **provisionally** — dependents become
+dispatchable, agents keep moving, the queue keeps draining. Graph truth stays
+exactly where it is: `awaiting_review`, awaiting human acceptance, with full
+authority to reject or unwind anything that was built on a provisional pass.
+
+`scope_checker` gates on *execution eligibility*, not on graph status. Graph
+status remains the human's record of what is actually accepted.
+
+This is not auto-acceptance. Nothing writes to gddp-config. The human's authority
+is unchanged — what changes is that exercising it is no longer a precondition for
+the next agent to start.
+
+### Why this was hard to see
+
+The blocking behavior was recorded, in agent memory and in prior handoffs, as a
+deliberate **frozen invariant** — "no automatic graph writeback or node
+advancement may be reintroduced." Every subsequent agent inherited that as
+doctrine and defended it, including during this session.
+
+A distortion that gets written down as a principle is much more durable than a
+bug. This is the strongest argument for the standing rule at the bottom of this
+document.
+
+---
+
 ## Foundation being replaced: patch return → PR return
 
 ### What exists now
@@ -127,13 +193,25 @@ it has failed.
 
 ## Sequencing
 
-1. **Get a verdict out of the current stuck work.** Bypass admission, feed a
-   completed `changeSet` to the evaluator, read what it says. This is the
-   outstanding debt from the overnight run and it does not depend on any rebuild.
-2. **Answer the retry question.** `retry_budget: 3`, zero retries fired.
-3. **Then** the PR-return replacement, with deletions in the same change as the
+1. **Stop admission from blocking evaluation.** `reconciler.py:496` raises on
+   base mismatch before the worktree is even created. Build at the patch's own
+   base instead, record the mismatch as a finding on the receipt, evaluate, and
+   mark the job non-integratable. Only an unretrievable or unidentifiable result
+   should prevent evaluation. Delete the preflight guard from `6e86f17` in the
+   same change — it prevents dispatch in a situation that would now produce a
+   readable verdict.
+2. **Provisional continuation.** Branch on the verdict at `reconciler.py:746`;
+   gate `scope_checker` on execution eligibility rather than graph status. This
+   is the one that restores the original intent.
+3. **Answer the retry question.** `retry_budget: 3`, zero retries fired.
+4. **Then** the PR-return replacement, with deletions in the same change as the
    config flip — never the flip alone, or the old machinery becomes dead weight
    nobody dares remove.
+
+Note what is *not* on this list: hand-feeding a `changeSet` to the evaluator to
+get a verdict out of last night's stuck work. It would produce a verdict, but it
+would be unearned — it proves nothing about whether the pathway delivers verdicts
+on its own, which is the entire thesis of the rig.
 
 Renames and doc gaps are tracked in `Current-GDDP-Tasks.md` and are not part of
 this rebuild.
