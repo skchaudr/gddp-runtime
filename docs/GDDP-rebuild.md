@@ -193,13 +193,18 @@ it has failed.
 
 ## Sequencing
 
-1. **Stop admission from blocking evaluation.** `reconciler.py:496` raises on
-   base mismatch before the worktree is even created. Build at the patch's own
-   base instead, record the mismatch as a finding on the receipt, evaluate, and
-   mark the job non-integratable. Only an unretrievable or unidentifiable result
-   should prevent evaluation. Delete the preflight guard from `6e86f17` in the
-   same change — it prevents dispatch in a situation that would now produce a
-   readable verdict.
+1. ~~**Stop admission from blocking evaluation.**~~ **Done, `56db172`.** The
+   base-equality comparison is removed rather than softened. The worktree now
+   builds at the base the executor actually used. The preflight guard from
+   `6e86f17` went with it, along with the test that asserted "evaluation must
+   not run on base mismatch."
+
+   Still open: a base difference is no longer fatal but is not recorded
+   anywhere either. It belongs on the receipt so the human can weigh it.
+
+   Deliberately kept for now: the ancestry check at `reconciler.py:470` on the
+   `local_subprocess` lane. Same shape, but its failure case is not understood
+   well enough to remove cleanly. Revisit with evidence, not by analogy.
 2. **Provisional continuation.** Branch on the verdict at `reconciler.py:746`;
    gate `scope_checker` on execution eligibility rather than graph status. This
    is the one that restores the original intent.

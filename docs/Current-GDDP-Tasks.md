@@ -25,8 +25,14 @@ Two live sessions have completed work sitting in them right now:
 | heartbeat-crash-recovery | 7631176305667133873 | COMPLETED, changeSet present |
 | verdict-confidence-split | 16018024730217648008 | COMPLETED, changeSet present |
 
-Path of least resistance: feed one of these changeSets to the evaluator directly,
-bypassing base-SHA admission. The point is to read the verdict, not to merge code.
+**As of `56db172` the blocker is removed** — the base-commit comparison that
+discarded three nodes unread is gone, so a re-dispatch now reaches evaluation
+whether or not the base matches.
+
+Not doing: hand-feeding a `changeSet` to the evaluator to force a verdict out of
+last night's stuck work. It would produce a verdict but prove nothing about
+whether the pathway delivers verdicts on its own, which is the thesis. The
+earned path is a clean re-dispatch through the live loop.
 
 ---
 
