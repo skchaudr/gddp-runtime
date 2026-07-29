@@ -7,7 +7,6 @@ truth from executor choice.
 
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -34,35 +33,15 @@ MEDIATED_ADAPTERS = {
 }
 
 
-# Executors that clone the repo themselves and branch from a fixed remote
-# branch. Work returns based on that branch's tip, while the runner binds each
-# job to local HEAD — so a checkout sitting on any other branch produces
-# patches that fail base-SHA integrity at reconcile, hours after dispatch.
-_REMOTE_BRANCHING_EXECUTORS = ("jules_api", "jules_cli", "jules")
-
-
-def _head_branch(repo_path: str | None) -> str | None:
-    """Current branch of the local checkout, or None if it cannot be read."""
-    if not repo_path:
-        return None
-    try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return proc.stdout.strip() if proc.returncode == 0 else None
-
-
 def executor_preflight_error(
     executor: str, repo: str, repo_path: str | None = None
 ) -> str | None:
-    """Return a configuration error before the runner reserves a job."""
+    """Return a configuration error before the runner reserves a job.
+
+    Configuration only. This must never refuse dispatch on the basis of what a
+    result might later look like — the executor's output is judged by the
+    evaluator, not gated here.
+    """
     override = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "")
     selected = override or executor
     adapter_cls = ADAPTERS.get(selected) or MEDIATED_ADAPTERS.get(selected)
@@ -72,15 +51,6 @@ def executor_preflight_error(
         adapter_cls(repo=repo)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return f"Invalid executor configuration: {exc}"
-
-    if selected in _REMOTE_BRANCHING_EXECUTORS:
-        starting = os.environ.get("GDDP_JULES_STARTING_BRANCH") or "main"
-        head = _head_branch(repo_path)
-        if head is not None and head != starting:
-            return (
-                f"local checkout is on '{head}' but {selected} branches from "
-                f"'{starting}'; returned patches would fail base-SHA integrity"
-            )
     return None
 
 

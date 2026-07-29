@@ -781,46 +781,53 @@ def test_external_evaluation_batch_defers_finalization(
     ).fetchone()["status"] == "awaiting_review"
 
 
-def test_reconcile_rejects_remote_patch_from_wrong_base(
+def test_reconcile_evaluates_remote_patch_built_on_another_base(
     con, tmp_path, monkeypatch
 ):
+    """A base difference must never stop the evaluator from rendering a verdict.
+
+    This previously asserted the opposite — that evaluation "must not run on
+    base mismatch." That behavior discarded three nodes of real returned work
+    unread on 2026-07-29, on a commit-hash comparison, before a single
+    acceptance criterion was read. Refusing to evaluate returned work is
+    evidence suppression. Base differences are an integration concern; only an
+    unretrievable result may prevent evaluation.
+    """
     repo, base_sha = _make_git_repo(tmp_path)
     _insert_job(
         con,
-        job_id="job_wrong_base",
+        job_id="job_other_base",
         executor="jules_api",
         repo="owner/repo",
         status="running",
     )
     ses_id = insert_executor_session(
         con,
-        "job_wrong_base",
+        "job_other_base",
         "jules_api",
-        "session-wrong-base",
-        expected_base_commit_sha=base_sha,
+        "session-other-base",
+        expected_base_commit_sha="f" * 40,
     )
     FakeAdapter = _make_fake_adapter(
         status_state="completed",
-        base_commit_sha="f" * 40,
+        base_commit_sha=base_sha,
     )
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_api": FakeAdapter})
-    monkeypatch.setattr(
-        reconciler,
-        "verify_job_return",
-        lambda **kw: pytest.fail("evaluation must not run on base mismatch"),
-    )
+
+    evaluated = []
+
+    def fake_verify(**kwargs):
+        evaluated.append(kwargs)
+        return {"verification_status": "ok", "verdict": "pass"}
+
+    monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
     monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
 
     reconciler.reconcile_sessions(con, repo)
 
+    assert evaluated, "evaluator must run even when the base differs"
     row = get_executor_session_by_id(con, ses_id)
-    assert row["state"] == "failed"
-    assert "does not match expected base" in (row["error"] or "")
-    job = con.execute(
-        "SELECT status FROM jobs WHERE job_id = ?",
-        ("job_wrong_base",),
-    ).fetchone()
-    assert job["status"] == "failed"
+    assert row["state"] != "failed"
 
 
 def test_reconcile_local_commit_ref_skips_apply_worktree(con, tmp_path, monkeypatch):

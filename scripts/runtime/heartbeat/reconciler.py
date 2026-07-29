@@ -492,17 +492,21 @@ def _handle_completed(
             )
             return
 
+        # 2. Patch path (Jules/remote): create the worktree at the base the
+        #    executor actually built on. A patch is only meaningful against its
+        #    own base, and the executor's base is the retrievable fact — the
+        #    locally-recorded expectation is not.
+        #
+        #    This deliberately does NOT compare the two. A base difference is
+        #    an integration concern, never a reason to discard work unread.
+        #    Refusing to evaluate returned work is evidence suppression, and it
+        #    destroyed three nodes' worth of real output on 2026-07-29.
         patch_base = getattr(patch_result, "base_commit_sha", None)
-        if patch_base and patch_base != base_commit:
-            raise RuntimeError(
-                f"executor patch base {patch_base} does not match "
-                f"expected base {base_commit}"
-            )
+        worktree_base = patch_base or base_commit
 
-        # 2. Patch path (Jules/remote): create worktree at expected base.
-        worktree = _create_exec_worktree(repo_path, job_id, base_commit)
+        worktree = _create_exec_worktree(repo_path, job_id, worktree_base)
         if worktree is None:
-            raise RuntimeError(f"could not create worktree at {base_commit}")
+            raise RuntimeError(f"could not create worktree at {worktree_base}")
 
         try:
             # 3. Apply the patch and commit in the worktree.
