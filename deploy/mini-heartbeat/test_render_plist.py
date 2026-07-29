@@ -45,6 +45,10 @@ def _base_render_env(**overrides: str) -> dict[str, str]:
         "GDDP_REPOS_ROOT": "/tmp/repos",
         "GDDP_PYTHON": "/usr/bin/python3",
         "HOME": "/Users/sab-mini",
+        # Pin secret cmds so host shell exports (e.g. Rig 1 Keychain) cannot leak.
+        "GDDP_JULES_KEY_CMD": "pass show api/jules",
+        "GDDP_DEEPSEEK_KEY_CMD": "pass show api/deepseek",
+        "GDDP_WEBHOOK_SECRET_CMD": "pass show gddp/webhook-secret",
     }
     env.update(overrides)
     return env
