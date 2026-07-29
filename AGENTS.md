@@ -6,6 +6,13 @@ Evaluator produces evidence + guards intent/integrity; only a human moves a node
 writes route through `scripts/jobs_status.py`; that backend may update runtime
 job/queue state but must never update graph/node status.
 
+**Heartbeat entrypoint (agents):** never invoke
+`python -m scripts.runtime.heartbeat.runner` (or the runner module) directly.
+Use the mini-heartbeat kit only — `deploy/mini-heartbeat/bin/` (`arm.sh`,
+`smoke.sh`, launchd) which sources `deploy/mini-heartbeat/env/gddp.env` via
+`common.sh`. Raw runner calls skip `GDDP_LOCAL_SUBPROCESS_ARGV` / spool and
+create failed jobs before any executor launches.
+
 The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to drift from user intent or project integrity. 
 
 Not spec-driven-development; the mission here is create a agentic harness that oversees the execution of a graph of project nodes. It's entire purpose is to detect drift, both of intent or project integrity. 
@@ -121,6 +128,7 @@ appearing done.
 - Update `.gitignore` as soon as a tool creates repeatable local noise
   (`node_modules/`, `dist/`, caches, local logs, generated media, temp exports),
   but do not hide meaningful source artifacts just to get a clean status.
+- Co-author ALL Git commits with `<agent-name> + <model>` this is so crucial and must happen, failure of this weakens traceability 
 - Make small commits at coherent checkpoints. A repo with hours of uncommitted
   agent work is an unsafe handoff state.
 - Prefer existing project commands from this file. If a command is missing or
@@ -181,3 +189,6 @@ Do not report completion if any of these are true:
 
 The standard is: the next agent can clone/pull, read this file, run the listed
 commands, and continue without first becoming a repository janitor.
+
+Co-author ALL Git commits with `<agent-name> + <model>` this is so crucial and must happen, failure of this weakens traceability 
+
