@@ -362,7 +362,7 @@ def _plan_dispatches(
             continue
 
         preflight_error = executor_preflight_error(
-            classification["executor_recommendation"], repo
+            classification["executor_recommendation"], repo, repo_path
         )
         if preflight_error:
             con.execute(

@@ -246,7 +246,7 @@ class TestEventRouting:
         monkeypatch.setattr(
             runner,
             "executor_preflight_error",
-            lambda executor, repo: "missing argv",
+            lambda executor, repo, repo_path=None: "missing argv",
         )
 
         planned = runner._plan_dispatches(
