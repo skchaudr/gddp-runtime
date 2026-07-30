@@ -71,12 +71,12 @@ Touches: `scripts/runtime/heartbeat/reconciler.py`, runner import and call sites
 
 ### 5. Land `fix/script-guards` (#2)
 
-`scripts/heartbeat.py` is a legacy Phase 3 demo with a hardcoded
-`PHASE3_NODE = scan-vault-core` that opens real GitHub issues (it opened #109
-during bring-up). `scripts/dry_run.py` ignores `--help` and writes to the live DB.
+`scripts/heartbeat.py` and `scripts/dry_run.py` were legacy entrypoints in
+`/scripts` and have been removed. They were named like real control-plane entry
+points and could be mistaken for active operations.
 
-Both are named like the real entrypoints and sit where someone bringing up a new
-rig will find them first. Branch was requested from Grok; current state unconfirmed.
+Replacement flow now uses `python3 -m runtime.heartbeat.runner` and verifier
+`test_dry_run_e2e.py` coverage for synthetic path checks.
 
 ### 6. Machine-agnostic rig bring-up doc (#7)
 

@@ -86,7 +86,10 @@ Understand the filesystem and DB shape without involving a real repo or executor
 ```bash
 cd ~/repos/gddp-runtime
 python3 scripts/init_db.py
-python3 scripts/dry_run.py
+
+# scripts/dry_run.py was removed (797ce86)
+# Use verifier dry-run E2E tests as the synthetic receipt check.
+python3 -m pytest -q scripts/runtime/verification/test_dry_run_e2e.py
 ```
 
 ### Inspect
@@ -97,16 +100,14 @@ cd ~/repos/gddp-runtime
 sqlite3 db/queue.db "select event_id,status from events;"
 sqlite3 db/queue.db "select job_id,node_id,status,queue_state from jobs;"
 sqlite3 db/queue.db "select result_id,job_id,status,outcome from results;"
-find jobs/job_dry_001 -maxdepth 2 -type f | sort
+find jobs -maxdepth 2 -type f | sort
 ```
 
 ### Checkpoints
 
-- Find the synthetic event.
-- Find the created job.
-- Find the result receipt row.
-- Confirm the job ends in `awaiting_review`.
-- Confirm no graph truth changed automatically.
+- Confirm the verifier dry-run E2E test passes and prints no repo-write assertions.
+- Confirm the synthetic flow returns a valid receipt object in the test assertions.
+- Confirm no graph truth changed automatically (`gddp-config` untouched).
 
 ### Write Down
 
