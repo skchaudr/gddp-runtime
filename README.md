@@ -128,7 +128,6 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 - Deployed as a systemd service on the live control plane.
 
 **Operational tooling**:
-- `scripts/dry_run.py`: Local dry-run flow for practicing the runtime loop.
 - `scripts/rollback.py`: Job rollback utility.
 - `python3 -m runtime.replay`: Replay utilities for reprocessing or retracing state from recorded history.
 
@@ -147,7 +146,6 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 | `scripts/runtime/results_store.py` | Receipt persistence into the canonical `results` table |
 | `scripts/init_db.py` | SQLite schema initialization |
 | `scripts/intake_server.py` | Webhook intake and event normalization |
-| `scripts/dry_run.py` | Local dry-run flow for practicing the runtime loop |
 | `scripts/rollback.py` | Job rollback utility |
 | `scripts/adapters/` | Executor adapters |
 | `deploy/` | Deployment scripts and operator runbooks |
@@ -166,12 +164,6 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 
 ```bash
 python3 scripts/init_db.py
-```
-
-### Run the dry run
-
-```bash
-python3 scripts/dry_run.py
 ```
 
 ### Run the heartbeat

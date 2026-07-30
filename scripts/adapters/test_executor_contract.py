@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-import heartbeat as legacy_heartbeat
 from adapters.executor_protocol import (
     DispatchResult,
     ExecutorAdapter,
@@ -316,73 +315,6 @@ def test_dispatch_returns_common_receipt_and_passes_same_node_packet(
     assert isinstance(dispatched_packet, NodePacket)
     assert dispatched_packet.to_json_value() == _packet().to_json_value()
 
-
-def test_legacy_heartbeat_dispatches_the_central_node_packet(monkeypatch, tmp_path):
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    connection.executescript(
-        """
-        CREATE TABLE events (
-            event_id TEXT PRIMARY KEY,
-            event_type TEXT NOT NULL,
-            status TEXT NOT NULL,
-            classification TEXT,
-            scope_status TEXT
-        );
-        CREATE TABLE jobs (
-            job_id TEXT PRIMARY KEY,
-            created_at TEXT NOT NULL,
-            event_id TEXT,
-            project_id TEXT,
-            repo TEXT,
-            node_id TEXT NOT NULL,
-            job_type TEXT NOT NULL,
-            executor TEXT NOT NULL,
-            queue_state TEXT,
-            title TEXT NOT NULL,
-            goal TEXT NOT NULL,
-            why TEXT,
-            constraints TEXT,
-            acceptance_criteria TEXT,
-            priority TEXT,
-            status TEXT,
-            attempt INTEGER,
-            max_attempts INTEGER,
-            artifacts_dir TEXT
-        );
-        CREATE TABLE queue_records (
-            queue_item_id TEXT PRIMARY KEY,
-            job_id TEXT NOT NULL,
-            queue TEXT NOT NULL,
-            available_at TEXT NOT NULL
-        );
-        INSERT INTO events (event_id, event_type, status)
-        VALUES ('event-1', 'issue.opened', 'received');
-        """
-    )
-    dispatched = MagicMock(
-        return_value=DispatchResult(
-            success=True,
-            issue_url="https://github.com/owner/repo/issues/42",
-        )
-    )
-    identifiers = iter(("job-id", "queue-id"))
-    monkeypatch.setattr(legacy_heartbeat, "connect", lambda: connection)
-    monkeypatch.setattr(legacy_heartbeat, "job_dir", lambda job_id: tmp_path / job_id)
-    monkeypatch.setattr(legacy_heartbeat, "ts_id", lambda: next(identifiers))
-    monkeypatch.setattr(JulesActionAdapter, "dispatch", dispatched)
-    monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
-
-    legacy_heartbeat.run_heartbeat("owner/repo")
-
-    packet = dispatched.call_args.args[0]
-    assert isinstance(packet, NodePacket)
-    assert packet.job_id == "job_job-id"
-    assert packet.node_id == legacy_heartbeat.PHASE3_NODE["node_id"]
-    assert packet.attempt_index == 0
-    assert packet.required_artifacts == tuple(
-        legacy_heartbeat.PHASE3_NODE["required_artifacts"]
-    )
 
 def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation(tmp_path):
     # Lifecycle fixture: emit a valid gddp.local_result.v1 handoff on stdout.

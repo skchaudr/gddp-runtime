@@ -89,11 +89,10 @@ node approval or authorization to implement, commit, or publish them.
 
 - **Language:** Python 3.11+ (stdlib + Flask)
 - **Install:** `pip install flask` (see `deploy/setup.sh` for full pi-big setup)
-- **Test:** `python3 -m pytest -q` (suite); `python3 scripts/dry_run.py` for an
-  end-to-end fake flow (SQLite only)
+- **Test:** `python3 -m pytest -q` (suite)
 - **Lint:** none configured
 - **Heavy dirs excluded from git:** `db/`, `jobs/`, `events/` (runtime state, never committed)
-- **Key files:** `scripts/intake_server.py`, `scripts/dry_run.py`, `scripts/runtime/`
+- **Key files:** `scripts/intake_server.py`, `scripts/runtime/`
 
 ## Agent-driven development workflow
 

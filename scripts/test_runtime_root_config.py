@@ -15,8 +15,6 @@ def test_legacy_scripts_prefer_gddp_runtime_root(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "flask", MagicMock())
 
     for module_name in (
-        "scripts.dry_run",
-        "scripts.heartbeat",
         "scripts.init_db",
         "scripts.intake_server",
         "scripts.rollback",
@@ -33,8 +31,6 @@ def test_legacy_scripts_keep_opclaw_root_fallback(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "flask", MagicMock())
 
     for module_name in (
-        "scripts.dry_run",
-        "scripts.heartbeat",
         "scripts.init_db",
         "scripts.intake_server",
         "scripts.rollback",
