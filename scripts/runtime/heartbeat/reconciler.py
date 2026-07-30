@@ -29,6 +29,7 @@ from adapters.executor_protocol import SessionRef
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
+from .provisional_gate import maybe_mark_provisional
 from .state_recorder import (
     allocate_retry_attempt,
     finalize_executor_session_dispatch,
@@ -759,6 +760,17 @@ def _finalize_evaluation(
         (pending.job_id,),
     )
     con.commit()
+
+    # Provisional flow (mode 1 default): a qualifying verdict marks the node
+    # provisional so dependents unblock without waiting on the operator.
+    # complete remains human-only; this never writes it. human_gate nodes
+    # (mode 2) are skipped inside. Non-fatal by design.
+    maybe_mark_provisional(
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        verification=verification,
+        evidence_ref=result_id,
+    )
 
 
 def _get_head_sha(repo_path: Path) -> str | None:

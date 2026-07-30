@@ -22,6 +22,12 @@ class ScopeCheckResult:
         return self.safe
 
 
+# Dependency satisfaction: complete (human-accepted) and provisional
+# (evaluator-passed, awaiting operator review) both satisfy. See
+# docs/GDDP-rebuild.md "Provisional flow — two review modes".
+SATISFIED_DEP_STATUSES = frozenset({"complete", "provisional"})
+
+
 def check_scope(
     node: NodeData,
     project_id: str,
@@ -47,7 +53,8 @@ def check_scope(
             reason=f"Active job already exists for {node.node_id}: {active['job_id']}",
         )
 
-    # 2. Dependency check — all depends_on must be complete in the graph
+    # 2. Dependency check — all depends_on must be satisfied in the graph.
+    #    A rejected provisional returns to ready and re-blocks here.
     if node.depends_on:
         try:
             project = graph_reader.load_project(project_id)
@@ -57,10 +64,10 @@ def check_scope(
         node_status = {n["id"]: n.get("status", "pending") for n in project.nodes}
         for dep_id in node.depends_on:
             dep_status = node_status.get(dep_id, "unknown")
-            if dep_status != "complete":
+            if dep_status not in SATISFIED_DEP_STATUSES:
                 return ScopeCheckResult(
                     safe=False,
-                    reason=f"Dependency '{dep_id}' is not complete (status: {dep_status})",
+                    reason=f"Dependency '{dep_id}' is not satisfied (status: {dep_status})",
                 )
 
     return ScopeCheckResult(safe=True)

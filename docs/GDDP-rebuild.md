@@ -229,3 +229,110 @@ Before adding a layer, establish what it is compensating for and whether that
 thing should exist. If the answer is "an earlier layer," remove instead.
 
 Prefer deleting a mechanism to guarding it.
+
+---
+
+## Provisional flow — two review modes
+
+Decided 2026-07-29 (operator, tonight). This records the design as chosen, not a
+proposal. It supersedes the earlier provisional-continuation sketch above where
+the two conflict: the system *does* write a graph-adjacent status, and dependency
+gates *do* widen. Human ownership of `complete` is unchanged.
+
+### The problem being fixed
+
+`complete` was made to carry two jobs at once:
+
+1. **Graph truth** — human-owned acceptance of a node.
+2. **Dependency gate** — the scheduler's only signal that dependents may move.
+
+The intended shape was provisional open: strong evaluator evidence advances the
+frontier while the operator is away; human review happens afterward. What was
+built required human acceptance before any dependent could move. The frontier
+froze whenever the operator slept.
+
+Verified gates:
+
+- `scripts/runtime/heartbeat/scope_checker.py` — `dep_status != "complete"` →
+  blocked
+- `gddp-config` `scripts/frontier.py` — `SATISFIED_DEP_STATUSES = {"complete"}`
+
+Net: a passing verdict could not unblock anything. Execution sequencing and
+graph truth shared one status value, so operator absence became a hard stop.
+
+### Design
+
+**1. New graph status: `provisional`**
+
+Work finished, evaluator passed it, verdict receipt attached, operator has **not**
+accepted. System-writable. Human-reversible:
+
+- accept → `complete`
+- reject → `ready` (retry)
+- or deferred
+
+**2. Provisional writer lives in heartbeat reconcile**
+
+Condition for writing `provisional`:
+
+- verdict pass
+- `intent_preserved`
+- `graph_integrity_preserved`
+- node is **not** flagged `human_gate`
+
+It writes node status `provisional` with `receipt_ref`, via the existing
+status-history mechanism. The evaluator stays evidence-only — it never writes
+graph state. The reconcile-phase writer is the first system writer of
+graph-adjacent state.
+
+**3. Dependency gates widen**
+
+Both `scope_checker.py` and `frontier.py` accept
+`{"complete", "provisional"}` as satisfied dependency statuses. Rejection
+automatically re-blocks dependents: frontier computes dependency satisfaction
+live, so a provisional node that returns to `ready` freezes its downstream
+frontier without a separate cascade mechanism.
+
+**4. Review becomes asynchronous**
+
+`gddp node` lists provisional nodes with receipts and `evaluator_note` (the
+evaluator's reasoning), sorted weakest-confidence-first. The operator reviews
+when present; the queue does not wait for that review to drain.
+
+### Two review modes
+
+Operator's explicit decision — two modes, one default, one opt-in.
+
+**Mode 1 (DEFAULT): provisional flow**
+
+Every node flows through `provisional` on a pass verdict. No confidence floor
+gates flow. No chain-depth limit. The operator explicitly accepts compounding
+risk: a chain of provisional nodes can open while the operator sleeps.
+
+The only brake is rejection re-freezing downstream. That is enough because the
+operator chose it as the only brake.
+
+**Mode 2 (explicit opt-in): human-gated**
+
+Node YAML carries `human_gate: true`. The provisional writer skips that node
+regardless of verdict. It parks in review and blocks dependents until the
+operator accepts.
+
+Absent flag = mode 1. The flag is visible in `gddp node` dispatch preview.
+Nothing is gated by default or by accident. The gate is a declared property of
+the node's importance, set by the operator at authoring or review time.
+
+### Division of labor
+
+| Signal | Role |
+|---|---|
+| **Verdict** | Evidence; gates flow into `provisional` |
+| **Confidence** | Self-assessment on the receipt — treat it like a handoff: informed testimony from the worker that did the work; useful, weighed, never worshipped. Guides operator attention and review order only. |
+| **`human_gate`** | Operator sovereignty declared in advance |
+
+### What does not change
+
+- `complete` remains human-only. Only human-accepted node status is graph truth.
+- The evaluator remains the second-to-last gate, never the last.
+- The DAG remains a DAG.
+- Retry semantics are unchanged.
