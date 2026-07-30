@@ -590,7 +590,9 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
     con.commit()
 
     try:
-        dispatch_result = dispatch(retry_job, retry_job["repo"])
+        dispatch_result = dispatch(
+            retry_job, retry_job["repo"], str(repo_path)
+        )
     except Exception as exc:
         dispatch_result = None
         dispatch_error = f"retry dispatch raised exception: {exc}"

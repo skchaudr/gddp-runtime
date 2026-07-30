@@ -48,13 +48,15 @@ def executor_preflight_error(
     if adapter_cls is None:
         return f"Unknown executor: {selected}"
     try:
-        adapter_cls(repo=repo)
+        _build_adapter(adapter_cls, selected, repo, repo_path)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return f"Invalid executor configuration: {exc}"
     return None
 
 
-def dispatch(job: dict, repo: str) -> DispatchResult:
+def dispatch(
+    job: dict, repo: str, repo_path: str | None = None
+) -> DispatchResult:
     executor = job.get("executor")
     if not executor:
         return DispatchResult(success=False, error="Job is missing executor")
@@ -73,10 +75,17 @@ def dispatch(job: dict, repo: str) -> DispatchResult:
 
     try:
         packet = _build_node_packet(job)
-        adapter = adapter_cls(repo=repo)
+        adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
     return adapter.dispatch(packet)
+
+
+def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):
+    """Give only local transports the checkout they execute inside."""
+    if executor == "local_subprocess" and repo_path:
+        return adapter_cls(repo=repo, cwd=repo_path)
+    return adapter_cls(repo=repo)
 
 
 def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str]:

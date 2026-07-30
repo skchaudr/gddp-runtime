@@ -239,7 +239,9 @@ def run(
     """Run the selected agent and emit a commit-ref handoff on stdout."""
     if not agent_argv:
         raise ValueError("agent CLI argv is required")
-    repo = repo or Path(__file__).resolve().parent.parent
+    # The launcher selects the target checkout by setting this process's cwd.
+    # Using this script's own repo silently redirected every cross-project job.
+    repo = repo or Path.cwd()
     packet = load_packet(packet_raw)
 
     worktree: Path | None = None

@@ -37,7 +37,7 @@ from adapters.executor_protocol import (
 )
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
-from scripts.runtime.heartbeat import reconciler, runner
+from scripts.runtime.heartbeat import dispatcher, reconciler, runner
 from scripts.runtime.heartbeat.dispatcher import dispatch
 from scripts.runtime.heartbeat.state_recorder import (
     allocate_retry_attempt,
@@ -1059,7 +1059,8 @@ def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
     dispatched_jobs = []
 
-    def retry_dispatch(job, repo_name):
+    def retry_dispatch(job, repo_name, repo_path=None):
+        assert repo_path == str(repo)
         dispatched_jobs.append(dict(job))
         return ProtocolDispatchResult(
             success=True,
@@ -1120,7 +1121,8 @@ def test_retry_dispatch_failure_is_visible_and_idempotent(
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
     dispatch_calls = []
 
-    def failed_dispatch(job, repo_name):
+    def failed_dispatch(job, repo_name, repo_path=None):
+        assert repo_path == str(repo)
         dispatch_calls.append(job["attempt"])
         return ProtocolDispatchResult(success=False, error="retry transport failed")
 
@@ -2013,6 +2015,41 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
     assert result.issue_url == "https://github.com/owner/repo/issues/1"
     # Action adapter path produces no durable session_ref.
     assert result.session_ref is None
+
+
+def test_dispatcher_runs_local_executor_in_target_checkout(monkeypatch, tmp_path):
+    target_repo = tmp_path / "MyAPI"
+    target_repo.mkdir()
+    observed = {}
+
+    class RecordingLocalAdapter:
+        def __init__(self, repo, *, cwd=None):
+            observed["repo"] = repo
+            observed["cwd"] = cwd
+
+        def dispatch(self, packet):
+            return ProtocolDispatchResult(
+                success=True,
+                session_ref=SessionRef(
+                    executor="local_subprocess", session_id="local-session"
+                ),
+            )
+
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS, "local_subprocess", RecordingLocalAdapter
+    )
+
+    result = dispatcher.dispatch(
+        _sample_job(executor="local_subprocess"),
+        "owner/MyAPI",
+        repo_path=str(target_repo),
+    )
+
+    assert result.success is True
+    assert observed == {
+        "repo": "owner/MyAPI",
+        "cwd": str(target_repo),
+    }
 
 
 # =========================================================================== #

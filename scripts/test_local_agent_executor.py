@@ -145,6 +145,32 @@ def test_run_pipes_raw_packet_in_expected_detached_worktree(tmp_path, capsys):
     assert not (repo / "agent-change.txt").exists()
 
 
+def test_run_defaults_to_the_checkout_that_launched_it(tmp_path, capsys, monkeypatch):
+    target_repo = tmp_path / "MyAPI"
+    base_sha = _init_repo(target_repo)
+    monkeypatch.chdir(target_repo)
+
+    def fake_agent(argv, raw, worktree):
+        (worktree / "agent-change.txt").write_text("target checkout\n")
+        return 0
+
+    assert lae.run(
+        _packet(base_sha),
+        ["chosen-agent"],
+        run_agent_fn=fake_agent,
+    ) == 0
+
+    handoff = _parse_handoff(capsys.readouterr().out)
+    resolved = subprocess.run(
+        ["git", "rev-parse", handoff["result_ref"]],
+        cwd=target_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert resolved == handoff["result_commit_sha"]
+
+
 def test_persist_result_creates_ref_before_cleanup(tmp_path, capsys):
     repo = tmp_path / "repo"
     base_sha = _init_repo(repo)

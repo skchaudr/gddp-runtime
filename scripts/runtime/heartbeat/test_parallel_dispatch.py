@@ -18,6 +18,36 @@ from scripts.runtime.heartbeat import job_factory, runner, state_recorder
 from scripts.runtime.heartbeat.dispatcher import DispatchResult
 
 
+def test_execute_dispatches_passes_target_checkout(monkeypatch, tmp_path):
+    target_repo = tmp_path / "MyAPI"
+    target_repo.mkdir()
+    observed = {}
+
+    def fake_dispatch(job, repo, repo_path=None):
+        observed.update(job=job, repo=repo, repo_path=repo_path)
+        return DispatchResult(success=True, issue_url="https://example.test/job")
+
+    monkeypatch.setattr(runner, "dispatch", fake_dispatch)
+    job = {"job_id": "job-cross-project", "node_id": "real-project-node"}
+    planned = runner.PlannedDispatch(
+        event_id="evt-cross-project",
+        classification={},
+        job=job,
+        session_db_id="session-cross-project",
+    )
+
+    outcomes = runner._execute_dispatches(
+        [planned], "owner/MyAPI", str(target_repo)
+    )
+
+    assert outcomes["job-cross-project"].success is True
+    assert observed == {
+        "job": job,
+        "repo": "owner/MyAPI",
+        "repo_path": str(target_repo),
+    }
+
+
 def _init_db(db_path: Path) -> None:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
@@ -298,7 +328,8 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(test_env, mon
     dispatched_nodes = []
     dispatch_threads = set()
 
-    def fake_dispatch(job, repo):
+    def fake_dispatch(job, repo, repo_path=None):
+        assert repo_path is None
         assert repo == "owner/repo"
         assert job["node_id"] in {"alpha-node", "beta-node"}
 
@@ -392,7 +423,8 @@ def test_reservation_capacity_counts_existing_running_jobs(test_env, monkeypatch
 
     dispatched_nodes = []
 
-    def fake_dispatch(job, repo):
+    def fake_dispatch(job, repo, repo_path=None):
+        assert repo_path is None
         dispatched_nodes.append(job["node_id"])
         return DispatchResult(success=True, issue_url="https://example.test/job")
 

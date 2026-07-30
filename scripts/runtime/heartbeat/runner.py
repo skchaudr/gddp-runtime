@@ -190,7 +190,9 @@ def run_heartbeat(
                 print("Heartbeat complete.")
                 return
 
-            outcomes_by_job_id = _execute_dispatches(planned_dispatches, repo)
+            outcomes_by_job_id = _execute_dispatches(
+                planned_dispatches, repo, repo_path
+            )
             _record_outcomes(con, planned_dispatches, outcomes_by_job_id, repo_path)
 
             print("Heartbeat complete.")
@@ -456,9 +458,10 @@ def _plan_dispatches(
 def _execute_dispatches(
     planned_dispatches: list[PlannedDispatch],
     repo: str,
+    repo_path: str | None = None,
 ) -> dict[str, DispatchOutcome]:
     """
-    Phase B: Worker threads execute dispatch(job, repo) in parallel.
+    Phase B: Worker threads execute dispatch in the target checkout.
     """
     print(f"Dispatching {len(planned_dispatches)} job(s) in parallel.\n")
 
@@ -466,7 +469,7 @@ def _execute_dispatches(
     max_workers = min(32, max(1, len(planned_dispatches)))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_plan = {
-            executor.submit(dispatch, planned.job, repo): planned
+            executor.submit(dispatch, planned.job, repo, repo_path): planned
             for planned in planned_dispatches
         }
         for future in as_completed(future_to_plan):
