@@ -72,7 +72,10 @@ class JulesApiAdapter:
                             "startingBranch": self.starting_branch,
                         },
                     },
-                    "requirePlanApproval": False,
+                    # Without automationMode Jules has no way to land work, so
+                    # it stops and asks whether to commit. AUTO_CREATE_PR gives
+                    # the session a terminal action and yields a real PR.
+                    "automationMode": "AUTO_CREATE_PR",
                 },
             )
         except RuntimeError as exc:
@@ -107,11 +110,11 @@ class JulesApiAdapter:
             return SessionStatus(state="dispatched")
         if state in {"PLANNING", "IN_PROGRESS"}:
             return SessionStatus(state="running")
-        if state in {
-            "AWAITING_PLAN_APPROVAL",
-            "AWAITING_USER_FEEDBACK",
-            "PAUSED",
-        }:
+        # A question is answerable over sendMessage; a paused or plan-gated
+        # session is not. Collapsing them is what made needs_operator terminal.
+        if state == "AWAITING_USER_FEEDBACK":
+            return SessionStatus(state="awaiting_reply")
+        if state in {"AWAITING_PLAN_APPROVAL", "PAUSED"}:
             return SessionStatus(state="needs_operator")
         if state == "COMPLETED":
             return SessionStatus(state="completed")
@@ -196,6 +199,18 @@ class JulesApiAdapter:
             patch_path=str(destination),
             base_commit_sha=base_commit_sha,
         )
+
+    def reply(self, session_ref: SessionRef, message: str) -> bool:
+        """Answer a session parked in AWAITING_USER_FEEDBACK."""
+        try:
+            self._request_json(
+                "POST",
+                f"/sessions/{self._quoted_session_id(session_ref)}:sendMessage",
+                {"prompt": message},
+            )
+        except RuntimeError:
+            return False
+        return True
 
     def cancel(self, session_ref: SessionRef) -> bool:
         """The documented API has no non-destructive cancel operation."""

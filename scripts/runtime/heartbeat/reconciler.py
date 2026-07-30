@@ -409,6 +409,10 @@ def _reconcile_one(
             f"[reconcile] {session_db_id}: poll error (transient, will retry "
             f"next tick): {status.error or 'executor unavailable'}"
         )
+    elif status.state == "awaiting_reply":
+        _handle_awaiting_reply(
+            con, adapter, session_ref, session_db_id, job_id, current_state
+        )
     elif status.state == "needs_operator":
         _handle_needs_operator(con, session_db_id, job_id, status.error)
     elif status.state == "running":
@@ -659,6 +663,51 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
             f"[reconcile] {replacement_id}: late retry dispatch failure ignored; "
             "reservation is no longer dispatching"
         )
+
+
+"""Standing answer to an executor that finished and asked for permission.
+
+Every parked question observed so far was already answered by the node packet
+the executor was given, so restate that authority instead of waking a human.
+"""
+_PROCEED_REPLY = (
+    "Proceed as specified in the node packet you were given; it carries full "
+    "authority and no further approval is required. Do not ask whether to "
+    "finalize, commit, or open a PR — commit your work and open the PR. "
+    "If the packet describes an expected or intentional failure, produce that "
+    "failure rather than fixing it. If the work already exists on the base "
+    "branch, say so in the PR body and change nothing. If you cannot proceed "
+    "because information is genuinely missing from the packet, state exactly "
+    "which field is missing and stop."
+)
+
+
+def _handle_awaiting_reply(
+    con, adapter, session_ref, session_db_id: str, job_id: str, current_state: str
+) -> None:
+    """Answer a question once; escalate only if the answer did not unstick it."""
+    if current_state == "awaiting_reply" or not hasattr(adapter, "reply"):
+        _handle_needs_operator(
+            con,
+            session_db_id,
+            job_id,
+            "executor still asking after standing reply"
+            if current_state == "awaiting_reply"
+            else "executor asked a question but adapter cannot reply",
+        )
+        return
+
+    if not adapter.reply(session_ref, _PROCEED_REPLY):
+        print(
+            f"[reconcile] {session_db_id}: reply failed; will retry next tick"
+        )
+        return
+
+    update_executor_session_state(con, session_db_id, state="awaiting_reply")
+    con.commit()
+    print(
+        f"[reconcile] {session_db_id}: answered executor question (job {job_id})"
+    )
 
 
 def _handle_needs_operator(

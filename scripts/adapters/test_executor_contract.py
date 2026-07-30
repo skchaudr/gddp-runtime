@@ -228,7 +228,7 @@ def test_jules_api_dispatch_poll_and_collect(monkeypatch, tmp_path):
         ("PLANNING", "running"),
         ("IN_PROGRESS", "running"),
         ("AWAITING_PLAN_APPROVAL", "needs_operator"),
-        ("AWAITING_USER_FEEDBACK", "needs_operator"),
+        ("AWAITING_USER_FEEDBACK", "awaiting_reply"),
         ("PAUSED", "needs_operator"),
         ("COMPLETED", "completed"),
         ("FAILED", "failed"),

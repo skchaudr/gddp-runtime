@@ -362,14 +362,16 @@ def get_active_executor_sessions(
         return con.execute(
             """SELECT es.* FROM executor_sessions es
                JOIN jobs j ON es.job_id = j.job_id
-               WHERE es.state IN ('dispatched', 'running', 'needs_operator', 'collected')
+               WHERE es.state IN ('dispatched', 'running', 'awaiting_reply',
+                                  'needs_operator', 'collected')
                  AND j.repo = ?
                ORDER BY es.created_at""",
             (repo,),
         ).fetchall()
     return con.execute(
         """SELECT * FROM executor_sessions
-            WHERE state IN ('dispatched', 'running', 'needs_operator', 'collected')
+            WHERE state IN ('dispatched', 'running', 'awaiting_reply',
+                            'needs_operator', 'collected')
             ORDER BY created_at"""
     ).fetchall()
 

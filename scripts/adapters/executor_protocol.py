@@ -128,6 +128,9 @@ class SessionStatus:
     state: Literal[
         "dispatched",
         "running",
+        # Executor asked a question and is waiting on an answer. Distinct from
+        # needs_operator: this one is answerable by machine via adapter.reply().
+        "awaiting_reply",
         "needs_operator",
         "completed",
         "failed",
@@ -188,3 +191,10 @@ class ExecutorAdapter(Protocol):
     def cancel(self, session_ref: SessionRef) -> bool:
         """Best-effort cancellation. Not all executors support this."""
         ...
+
+    # Optional capability, probed with hasattr rather than declared above:
+    # adding it to this Protocol would break runtime_checkable isinstance
+    # checks for adapters that cannot hold a conversation at all.
+    #
+    #   def reply(self, session_ref: SessionRef, message: str) -> bool:
+    #       """Answer a session parked in awaiting_reply."""
