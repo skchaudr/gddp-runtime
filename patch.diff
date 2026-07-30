@@ -1,81 +1,94 @@
-diff --git a/decision.md b/decision.md
-index 58698d7..a309693 100644
---- a/decision.md
-+++ b/decision.md
-@@ -1,9 +1,11 @@
- # Implementation Decision
+diff --git a/scripts/runtime/verification/decision_engine.py b/scripts/runtime/verification/decision_engine.py
+index 10ad453..b451319 100644
+--- a/scripts/runtime/verification/decision_engine.py
++++ b/scripts/runtime/verification/decision_engine.py
+@@ -102,11 +102,23 @@ def _mean(values) -> float:
+         return 0.0
+     return sum(items) / len(items)
  
- ## Decision
--Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`.
-+Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`. Additionally, created documentation in `docs/echo-usage.md`.
  
- ## Rationale
- - `echo(msg)`: The requirement specifies returning the message string unchanged. It simply returns the input string.
- - `echo_loud(msg)`: The requirement specifies returning the message uppercased with '!' appended. This can be easily achieved using string manipulation `f"{msg.upper()}!"` for simplicity and readability.
-+- `docs/echo-usage.md`: Provides usage examples for both functions to meet the documentation requirement.
-+- **Testing**: Embedded tests were added to `scripts/echo.py` under the `if __name__ == "__main__":` block to satisfy the requirement for tests while adhering to the strict file modification constraints.
- - The use of type hints (`str`) helps with potential static type checking and provides clearer documentation of expected argument types.
-diff --git a/docs/echo-usage.md b/docs/echo-usage.md
-new file mode 100644
-index 0000000..c0e7f72
---- /dev/null
-+++ b/docs/echo-usage.md
-@@ -0,0 +1,29 @@
-+# Echo Utility Usage
+-def _confidence_blocked(_ctx: _DecisionContext) -> float:
+-    return DEPS_CONFIDENCE
++def _signals_blocked(_ctx: _DecisionContext) -> VerificationSignals:
++    return VerificationSignals(
++        criteria_confidence=DEPS_CONFIDENCE,
++        completeness=0.5,
++        graph_readiness=0.0,
++    )
+
+
+-def _confidence_constraint_violation(ctx: _DecisionContext) -> float:
+-    return _mean(c.confidence for c in ctx.violated_constraints)
++def _signals_constraint_violation(ctx: _DecisionContext) -> VerificationSignals:
++    conf = _mean(c.confidence for c in ctx.violated_constraints)
++    return VerificationSignals(
++        criteria_confidence=conf,
++        completeness=1.0,
++        graph_readiness=0.0,
++    )
+
+
+-def _confidence_fail_criteria(ctx: _DecisionContext) -> float:
+-    return _mean(c.confidence for c in ctx.fail_criteria)
++def _signals_fail_criteria(ctx: _DecisionContext) -> VerificationSignals:
++    conf = _mean(c.confidence for c in ctx.fail_criteria)
++    return VerificationSignals(
++        criteria_confidence=conf,
++        completeness=1.0,
++        graph_readiness=0.0,
++    )
+
+
+-def _confidence_all_criteria(ctx: _DecisionContext) -> float:
+-    return _mean(c.confidence for c in ctx.deterministic.criteria)
++def _signals_all_criteria(ctx: _DecisionContext) -> VerificationSignals:
++    conf = _mean(c.confidence for c in ctx.deterministic.criteria)
++    completeness = 1.0 if ctx.artifacts_present else 0.5
++    return VerificationSignals(
++        criteria_confidence=conf,
++        completeness=completeness,
++        graph_readiness=conf if completeness > 0.9 else 0.0,
++    )
+
+
+-def _confidence_semantic_blend(
++def _signals_semantic_blend(
+     ctx: _DecisionContext,
+     judgments: list[CriterionJudgment],
+     *,
+     cap_at_half: bool = False,
+-) -> float:
++) -> VerificationSignals:
+     floor = ctx.deterministic_floor_confidence()
+     if not judgments:
+-        blended = floor
++        criteria_conf = floor
+     else:
+-        # Use the semantic signal when present; do not let an indeterminate
+-        # floor pull it down.
+-        blended = _semantic_criteria_confidence(judgments)
++        semantic = _semantic_criteria_confidence(judgments)
++        # Fix calibration: when the floor is indeterminate-dominated (why we ran
++        # semantic in the first place), defer to semantic instead of min()-ing.
++        if ctx.indeterminate_criteria:
++            criteria_conf = semantic
++        else:
++            criteria_conf = min(floor, semantic)
+
+     if cap_at_half:
+-        return min(blended, 0.5)
+-    return blended
++        criteria_conf = min(criteria_conf, 0.5)
 +
-+This document provides examples of how to use the echo functions provided in `scripts/echo.py`.
++    completeness = 1.0 if ctx.artifacts_present else 0.5
++    if ctx.budget_exhausted:
++        completeness = min(completeness, 0.5)
 +
-+## Functions
++    # Graph readiness requires both high criteria signal AND artifact completeness.
++    readiness = criteria_conf if (completeness > 0.9 and criteria_conf > 0.5) else 0.0
 +
-+### `echo(msg: str) -> str`
-+Returns the message string unchanged.
-+
-+**Usage example:**
-+```python
-+from scripts.echo import echo
-+
-+result = echo("Hello World")
-+print(result)
-+# Output: Hello World
-+```
-+
-+### `echo_loud(msg: str) -> str`
-+Returns the message uppercased with '!' appended.
-+
-+**Usage example:**
-+```python
-+from scripts.echo import echo_loud
-+
-+result = echo_loud("hello")
-+print(result)
-+# Output: HELLO!
-+```
-diff --git a/result-summary.md b/result-summary.md
-index d25dd1b..b1ccae3 100644
---- a/result-summary.md
-+++ b/result-summary.md
-@@ -1,6 +1,7 @@
- # Result Summary
- 
--- Created `scripts/echo.py` which contains `echo` and `echo_loud` string manipulation functions.
-+- Updated `scripts/echo.py` with `echo` and `echo_loud` functions and embedded tests.
-+- Created `docs/echo-usage.md` containing usage examples for both functions.
- - Wrote `decision.md` to document the decision-making process for the implementation.
- - Generated `patch.diff` recording the total patch of all changes made.
- - Created `result-summary.md` (this file) briefly summarising the actions taken.
-diff --git a/scripts/echo.py b/scripts/echo.py
-index 9734e6d..42fa179 100644
---- a/scripts/echo.py
-+++ b/scripts/echo.py
-@@ -5,3 +5,11 @@ def echo(msg: str) -> str:
- def echo_loud(msg: str) -> str:
-     """Returns the message uppercased with '!' appended."""
-     return f"{msg.upper()}!"
-+
-+if __name__ == "__main__":
-+    # Basic tests
-+    assert echo("test") == "test"
-+    assert echo("") == ""
-+    assert echo_loud("test") == "TEST!"
-+    assert echo_loud("") == "!"
-+    print("All tests passed!")
++    return VerificationSignals(
++        criteria_confidence=criteria_conf,
++        completeness=completeness,
++        graph_readiness=readiness,
++    )

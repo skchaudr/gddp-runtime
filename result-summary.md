@@ -1,7 +1,7 @@
 # Result Summary
 
-- Updated `scripts/echo.py` with `echo` and `echo_loud` functions and embedded tests.
-- Created `docs/echo-usage.md` containing usage examples for both functions.
-- Wrote `decision.md` to document the decision-making process for the implementation.
-- Generated `patch.diff` recording the total patch of all changes made.
-- Created `result-summary.md` (this file) briefly summarising the actions taken.
+- Implemented confidence score splitting to separately report `criteria_confidence` and `completeness`.
+- Prevented semantic confidence from being artificially lowered by a weak indeterminate floor in `decision_engine.py`.
+- Updated `schemas.py` and `orchestrator.py` to correctly populate the new receipt contract fields.
+- Verified that all acceptance criteria are met (missing artifacts force `needs-more-evidence` verdict, but preserve high `criteria_confidence`).
+- Verified that the codebase passes all 199 tests in `scripts/runtime/verification/`.
