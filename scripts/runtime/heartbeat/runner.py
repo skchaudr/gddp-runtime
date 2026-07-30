@@ -381,6 +381,28 @@ def _plan_dispatches(
             expected_base_commit_sha = _get_head_sha(repo_path)
             base_commit_resolved = True
 
+        # Provisional base-chaining: a node whose dependency is provisional
+        # (evaluator-passed, awaiting operator review) must build on that
+        # dependency's result commit — its work is not in HEAD yet.
+        node_base, chain_reason = _chained_base(
+            con, node, project_id, reader, expected_base_commit_sha
+        )
+        if chain_reason is not None:
+            con.execute(
+                """UPDATE events
+                      SET status = 'received', claimed_at = NULL
+                    WHERE event_id = ? AND status = 'claimed'""",
+                (event_id,),
+            )
+            con.commit()
+            print(f"  → deferred ({chain_reason})\n")
+            continue
+        if node_base != expected_base_commit_sha:
+            print(
+                f"  → base-chained: {node_id} builds on provisional dep "
+                f"result {node_base[:12]}"
+            )
+
         # Serialize the capacity check with reservation writes. This prevents
         # overlapping heartbeat processes from each observing the same free slot.
         con.execute("BEGIN IMMEDIATE")
@@ -422,7 +444,7 @@ def _plan_dispatches(
             RUNTIME_ROOT,
             classification["executor_recommendation"],
         )
-        job["expected_base_commit_sha"] = expected_base_commit_sha
+        job["expected_base_commit_sha"] = node_base
         job_id = job["job_id"]
 
         insert_job(con, job)
@@ -434,7 +456,7 @@ def _plan_dispatches(
             job_id,
             job["executor"],
             attempt_id,
-            expected_base_commit_sha=expected_base_commit_sha,
+            expected_base_commit_sha=node_base,
             attempt_index=attempt_index,
             state="dispatching",
         )
@@ -581,6 +603,62 @@ def _record_outcomes(
         print()
 
     con.commit()
+
+
+def _chained_base(
+    con: sqlite3.Connection,
+    node,
+    project_id: str,
+    reader: GraphReader,
+    head_sha: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve a node's dispatch base, chaining to a provisional dependency's
+    result commit when that dependency's work is not yet in HEAD.
+
+    Provisional flow (docs/GDDP-rebuild.md): a provisional node is
+    evaluator-passed but not human-accepted, so its result lives on a
+    gddp/attempt ref, not on the base branch. Dependents unblocked by the
+    provisional gate must build on that result commit or they execute
+    against a checkout that lacks their dependency's output.
+
+    Returns (base_sha, None) or (None, defer_reason). One provisional dep
+    chains to its latest recorded result commit. Multiple provisional deps
+    refuse: there is no merge machinery to combine them — the operator
+    merges/accepts first. Complete deps are in HEAD by contract.
+    """
+    deps = list(getattr(node, "depends_on", None) or [])
+    if not deps:
+        return head_sha, None
+    try:
+        project = reader.load_project(project_id)
+    except FileNotFoundError:
+        return head_sha, None  # scope check reports the missing graph properly
+    statuses = {n["id"]: n.get("status", "pending") for n in project.nodes}
+    provisional = [d for d in deps if statuses.get(d) == "provisional"]
+    if not provisional:
+        return head_sha, None
+    if len(provisional) > 1:
+        return None, (
+            f"base-chaining refused: {len(provisional)} provisional deps "
+            f"({', '.join(provisional)}); operator merge/accept required first"
+        )
+    dep = provisional[0]
+    row = con.execute(
+        """SELECT es.result_commit_sha
+             FROM executor_sessions es
+             JOIN jobs j ON j.job_id = es.job_id
+            WHERE j.node_id = ? AND es.result_commit_sha IS NOT NULL
+            ORDER BY es.updated_at DESC, es.session_db_id DESC
+            LIMIT 1""",
+        (dep,),
+    ).fetchone()
+    result_sha = row["result_commit_sha"] if row else None
+    if not result_sha:
+        return None, (
+            f"base-chaining deferred: provisional dep '{dep}' has no "
+            "recorded result commit yet"
+        )
+    return result_sha, None
 
 
 def _get_head_sha(repo_path: str | None) -> str | None:
