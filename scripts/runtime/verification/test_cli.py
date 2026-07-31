@@ -41,37 +41,9 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
         encoding="utf-8",
     )
 
-    # The built-in SemanticAgent fallback was removed; the CLI's default
-    # "runner" harness path leaves semantic_harness=None. Wire a mock harness
-    # that returns a canned SemanticOutput so the receipt contract holds.
-    _mock_semantic = SemanticOutput(
-        judgments=[
-            {
-                "criterion_id": "contract-doc-exists",
-                "judgment": "indeterminate",
-                "confidence": 0.2,
-                "evidence": [],
-                "reasoning": "Offline mock could not resolve the criterion.",
-            }
-        ],
-        overall_reasoning="Mock semantic for CLI contract test.",
-        risks=None,
-        followup_candidates=None,
-        budget_exhausted=False,
-    )
-
-    def _mock_semantic_harness(**kwargs):
-        return _mock_semantic
-
-    _orig_verify = cli.verify
-
-    def _wrapped_verify(**kwargs):
-        if kwargs.get("semantic_harness") is None:
-            kwargs["semantic_harness"] = _mock_semantic_harness
-        return _orig_verify(**kwargs)
-
-    monkeypatch.setattr(cli, "verify", _wrapped_verify)
-
+    # Offline (default) mode wires _offline_semantic_skip: the semantic lane
+    # is intentionally not run and decide() sees no semantic input. No mock
+    # harness is needed — the stub is the production offline behavior.
     assert cli.main(
         [
             "--node-yaml",
@@ -93,9 +65,9 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
     assert receipt.completeness_status == output["completeness_status"]
     assert receipt.required_next_action == output["required_next_action"]
     assert output["context_coverage"] == {
-        "criteria": "none", "integrity": "none", "overall": "none",
+        "criteria": "not_run", "integrity": "none", "overall": "none",
     }
-    assert output["lane_status"] == {"criteria": "completed", "integrity": "not_run"}
+    assert output["lane_status"] == {"criteria": "not_run", "integrity": "not_run"}
     assert output["harness_error"] == {"criteria": None, "integrity": None}
 
 
