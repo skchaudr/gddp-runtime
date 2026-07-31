@@ -240,6 +240,17 @@ def _select_live_provider(requested: str) -> str:
     raise RuntimeError(f"--semantic-mode live requires one of these env vars: {required}")
 
 
+def _offline_semantic_skip(**_kwargs):
+    """Offline-mode semantic stub: the lane is intentionally not run.
+
+    The orchestrator demands a harness whenever deterministic criteria come
+    back indeterminate. Offline (deterministic-only) verification answers
+    None so decide() sees no semantic input — without constructing any
+    agent infrastructure (PiHarnessRunner, provider keys, PI_CODING_AGENT_DIR).
+    """
+    return None
+
+
 def _resolve_harness(args) -> str:
     if args.semantic_harness == "pi":
         return "pi"
@@ -286,7 +297,10 @@ def main(argv: list[str] | None = None) -> int:
         semantic_max_tokens = 96_000 if args.semantic_mode == "live" else 24_000
 
     semantic_harness = None
-    if harness_choice == "pi":
+    if args.semantic_mode == "offline":
+        # Deterministic floor only — never construct agent infrastructure.
+        semantic_harness = _offline_semantic_skip
+    elif harness_choice == "pi":
         pi_runner = PiHarnessRunner(
             provider=_pi_provider(args),
             model=args.semantic_pi_model or None,
