@@ -224,6 +224,15 @@ def _active_projects(reader: GraphReader) -> list:
                        status IN ('ready', 'running', 'awaiting_result')
                        OR queue_state IN ('ready', 'running', 'awaiting_result')
                    )
+                UNION
+                -- Active executor sessions keep a project alive even when the
+                -- job row sits in a non-active state (e.g. awaiting_review
+                -- with a session reset to collected for re-evaluation).
+                SELECT DISTINCT j.project_id
+                  FROM executor_sessions s
+                  JOIN jobs j ON j.job_id = s.job_id
+                 WHERE j.project_id IS NOT NULL
+                   AND s.state IN ('dispatched', 'running', 'needs_operator', 'collected')
                 """
             )
         }

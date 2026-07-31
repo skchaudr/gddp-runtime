@@ -96,6 +96,19 @@ def _init_db(db_path: Path) -> None:
             last_error       TEXT,
             FOREIGN KEY(job_id) REFERENCES jobs(job_id)
         );
+
+        CREATE TABLE executor_sessions (
+            session_db_id            TEXT PRIMARY KEY,
+            job_id                   TEXT NOT NULL,
+            executor                 TEXT NOT NULL,
+            session_id               TEXT,
+            state                    TEXT NOT NULL,
+            expected_base_commit_sha TEXT,
+            result_commit_sha        TEXT,
+            created_at               TEXT,
+            updated_at               TEXT,
+            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+        );
         """
     )
     con.commit()
@@ -299,6 +312,40 @@ def test_active_projects_include_pending_events_and_running_jobs(
     active = runner._active_projects(reader)
 
     assert [project.project_id for project in active] == ["proj-a", "proj-b"]
+
+
+def test_active_projects_include_active_executor_sessions(tmp_path, monkeypatch):
+    """A project whose only live work is an active executor session (e.g. an
+    awaiting_review job with a session reset to collected for re-evaluation)
+    must stay heartbeat-visible."""
+    db_path = tmp_path / "queue.db"
+    _init_db(db_path)
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
+        "job_type, executor, title, goal, status, queue_state) VALUES "
+        "('job_c', '2026-07-29T09:00:00Z', 'proj-c', 'owner/c', "
+        "'node-c', 'implementation', 'local_subprocess', 'C', 'Run C', "
+        "'awaiting_review', 'awaiting_review')"
+    )
+    con.execute(
+        "INSERT INTO executor_sessions (session_db_id, job_id, executor, "
+        "state, created_at, updated_at) VALUES "
+        "('ses_c', 'job_c', 'local_subprocess', 'collected', "
+        "'2026-07-29T09:00:00Z', '2026-07-29T09:00:00Z')"
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setattr(runner, "DB_PATH", db_path)
+    projects = [
+        SimpleNamespace(project_id="proj-c", repo="owner/c"),
+        SimpleNamespace(project_id="proj-d", repo="owner/d"),
+    ]
+    reader = SimpleNamespace(list_projects=lambda: projects)
+
+    active = runner._active_projects(reader)
+
+    assert [project.project_id for project in active] == ["proj-c"]
 
 
 def test_run_active_projects_ticks_each_selected_project(monkeypatch):
