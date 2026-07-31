@@ -15,6 +15,12 @@ from .schemas import (
 
 DEPS_CONFIDENCE = 1.0
 
+# Dep statuses that satisfy a dependency edge for evaluation purposes.
+# Matches frontier.py / scope_checker.py: provisional (evaluator-passed,
+# awaiting operator review) satisfies the edge; only the human moves a
+# node to complete.
+SATISFIED_DEP_STATUSES = frozenset({"complete", "provisional"})
+
 
 @dataclass(frozen=True)
 class _DecisionContext:
@@ -23,7 +29,10 @@ class _DecisionContext:
 
     @property
     def deps_incomplete(self) -> bool:
-        return any(status != "complete" for status in self.deterministic.deps_status.values())
+        return any(
+            status not in SATISFIED_DEP_STATUSES
+            for status in self.deterministic.deps_status.values()
+        )
 
     @property
     def constraint_violated(self) -> bool:

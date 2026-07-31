@@ -102,6 +102,27 @@ def test_matrix_row_1_blocked_on_incomplete_deps():
     assert signals.criteria_confidence == 1.0
 
 
+def test_provisional_dep_satisfies_dependency_edge():
+    """Provisional (evaluator-passed, awaiting operator review) satisfies the
+    dependency edge like complete — only pending/ready/etc. block."""
+    det = _deterministic(
+        criteria=[_criterion("a", "pass")],
+        deps_status={"dep-a": "provisional"},
+    )
+    verdict, _, _ = decide(det, None)
+    assert verdict != Verdict.BLOCKED
+
+
+def test_provisional_dep_deterministic_clean_passes():
+    det = _deterministic(
+        criteria=[_criterion("a", "pass", 0.9)],
+        artifacts_present={"receipt.json": True},
+        deps_status={"dep-a": "provisional"},
+    )
+    verdict, _, _ = decide(det, None)
+    assert verdict == Verdict.PASS
+
+
 def test_matrix_row_2_out_of_scope_on_constraint_violation():
     det = _deterministic(
         criteria=[_criterion("a", "pass")],

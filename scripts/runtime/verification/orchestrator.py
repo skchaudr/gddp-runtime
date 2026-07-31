@@ -157,7 +157,10 @@ def _capture_commit_sha(repo: Path) -> str | None:
 
 def _should_run_semantic(det) -> bool:
     has_indeterminate = any(criterion.status == "indeterminate" for criterion in det.criteria)
-    deps_incomplete = any(status != "complete" for status in det.deps_status.values())
+    deps_incomplete = any(
+        status not in decision_engine.SATISFIED_DEP_STATUSES
+        for status in det.deps_status.values()
+    )
     constraint_violated = any(constraint.status == "violated" for constraint in det.constraints)
     criterion_failed = any(criterion.status == "fail" for criterion in det.criteria)
     return has_indeterminate and not deps_incomplete and not constraint_violated and not criterion_failed
