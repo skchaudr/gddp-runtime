@@ -1,5 +1,17 @@
 # AGENTS.md — gddp-runtime
 
+MAJOR WARNING 7/30/2026 
+
+This project is rife with an incredibly unfortunate failure pattern and that failure pattern goes exactly like this. 
+1. An agent assumes that a certain behavior exists. 
+2. That agent designs around that assumption without verifying. 
+3. The system fails because the assumption was false.
+4. More machinery was proposed to fix the failure and that invented workaround becomes architecture.
+
+This is the current predicament of this project right now that I am in. And it means that none of the architecture or implementation is considered sacred or unchallengeable. And every agent needs to know that.
+
+---- 
+
 Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
 
 `gddp` is the single operator-facing control plane. Runtime job reads and
