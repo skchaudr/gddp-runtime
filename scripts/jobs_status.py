@@ -299,7 +299,9 @@ def cmd_results(args):
               f"latest: {latest_verdict} {p['latest']['node_id']} "
               f"({p['latest']['received_at'][:10]})")
         proj_dir = live_root / project_id
-        receipts = sorted(proj_dir.glob("*.json")) if proj_dir.exists() else []
+        # Receipts live in per-node subdirs (<project>/<node>/*.json); a
+        # top-level glob undercounts and falsely reports zero.
+        receipts = sorted(proj_dir.rglob("*.json")) if proj_dir.exists() else []
         print(f"{'':17}receipts: {len(receipts)} in {proj_dir}")
         evals = proj_dir / "evaluations.yaml"
         if evals.exists():
