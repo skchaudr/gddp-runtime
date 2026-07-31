@@ -469,11 +469,80 @@ def slug_keywords(criterion_text: str) -> list[str]:
 
 
 def mentioned_paths_from_text(text: str) -> list[str]:
-    """Return repo-looking paths mentioned in criterion text."""
+    """Return repo-looking paths mentioned in criterion text.
+
+    Two shapes: slash-containing relative paths with any extension
+    (``gate-smoke/a.txt``, ``docs/guide.rst``), and bare filenames with a
+    known source/config extension (``echo.py``). The extension allowlist
+    alone was a blind spot — criteria about .txt/.csv/.sql artifacts were
+    never recognized as path-bearing at all.
+    """
     paths: list[str] = []
+    # Slash-containing relative paths, any extension.
+    for raw in re.findall(r"[\w.-]+(?:/[\w.-]+)+\.\w+", text):
+        paths.append(raw.strip("`'\".,);:"))
+    # Bare filenames with known extensions.
     for raw in re.findall(r"[\w./-]+\.(?:py|ts|tsx|js|json|toml|yaml|yml|zsh|md)", text):
         paths.append(raw.strip("`'\".,);:"))
     return sorted(set(paths))
+
+
+def _decode_escaped(text: str) -> str:
+    """Interpret common escape sequences in a criterion's quoted literal
+    (``\\n``, ``\\t``, ``\\r``) so it can be compared against file bytes.
+    Conservative manual replacement — not unicode_escape, which mangles
+    non-ASCII text."""
+    return text.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
+
+
+def _path_content_check(cid: str, text: str, repo: Path,
+                        existing: list[str]) -> CriterionCheck | None:
+    """Deterministic content proof for criteria that name exactly one
+    existing path and quote exactly one expected literal.
+
+    "exactly" in the criterion → full-content equality; otherwise substring
+    containment. Returns None when the shape does not fit (caller falls
+    through to the keyword probe).
+    """
+    if len(existing) != 1:
+        return None
+    quoted = re.findall(r'"([^"\n]+)"', text)
+    if len(quoted) != 1:
+        return None
+    rel = existing[0]
+    expected = _decode_escaped(quoted[0])
+    content = read_repo_file(repo, rel)
+    if content is None:
+        return None
+    exact = "exactly" in text.lower()
+    matched = (content == expected) if exact else (expected in content)
+    how = "exact-content" if exact else "substring"
+    if matched:
+        return CriterionCheck(
+            id=cid, criterion=text, status="pass",
+            confidence=0.9, method="path_content_check",
+            evidence=[f"{rel} matches quoted literal ({how})"],
+            reasoning=(f"Read {rel} and verified it "
+                       f"{'equals' if exact else 'contains'} the criterion's "
+                       f"quoted literal ({how} check)."),
+            mismatch_kind="", mismatch_detail="",
+            needs_evidence=False, human_question="",
+        )
+    return CriterionCheck(
+        id=cid, criterion=text, status="fail",
+        confidence=0.85, method="path_content_check",
+        evidence=[
+            f"{rel} content does not match quoted literal ({how})",
+            f"expected: {expected!r}"[:200],
+            f"actual:   {content!r}"[:200],
+        ],
+        reasoning=(f"Read {rel}; its content does not "
+                   f"{'equal' if exact else 'contain'} the criterion's "
+                   f"quoted literal."),
+        mismatch_kind="content", mismatch_detail=rel,
+        needs_evidence=False,
+        human_question="Is the expected content stale, or is the file wrong?",
+    )
 
 
 def existing_paths_from_text(repo: Path, text: str) -> list[str]:
@@ -646,6 +715,9 @@ def evaluate_criterion(
                 human_question=("Is the criterion path stale, or has the "
                                 "implementation not landed yet?"),
             )
+        content_check = _path_content_check(cid, text, repo, existing_paths)
+        if content_check is not None:
+            return content_check
         if not kws:
             return CriterionCheck(
                 id=cid, criterion=text, status="indeterminate",

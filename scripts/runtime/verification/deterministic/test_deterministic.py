@@ -179,6 +179,75 @@ def test_probe_keyword_scan_source_keeps_zsh_layout(tmp_path: Path):
     assert result.method == "keyword_scan_source"
 
 
+def test_mentioned_paths_recognizes_txt_and_unknown_extensions():
+    from .probes import mentioned_paths_from_text
+    paths = mentioned_paths_from_text(
+        'gate-smoke/a.txt exists and out/data.csv is written'
+    )
+    assert "gate-smoke/a.txt" in paths
+    assert "out/data.csv" in paths
+
+
+def test_path_content_check_exact_pass(tmp_path: Path):
+    smoke = tmp_path / "gate-smoke"
+    smoke.mkdir()
+    (smoke / "a.txt").write_text("A passed\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "marker-a-exact",
+            "criterion": 'gate-smoke/a.txt exists and contains exactly "A passed\\n"',
+        },
+    )
+    assert result.status == "pass"
+    assert result.method == "path_content_check"
+
+
+def test_path_content_check_exact_fail_on_mismatch(tmp_path: Path):
+    smoke = tmp_path / "gate-smoke"
+    smoke.mkdir()
+    (smoke / "a.txt").write_text("wrong content\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "marker-a-exact",
+            "criterion": 'gate-smoke/a.txt exists and contains exactly "A passed\\n"',
+        },
+    )
+    assert result.status == "fail"
+    assert result.method == "path_content_check"
+
+
+def test_path_content_check_substring_when_not_exact(tmp_path: Path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "usage.md").write_text("# Usage\n\nRun echo hello world to test.\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "docs-mention",
+            "criterion": 'docs/usage.md documents "echo hello world"',
+        },
+    )
+    assert result.status == "pass"
+    assert result.method == "path_content_check"
+
+
+def test_path_without_quoted_literal_falls_through(tmp_path: Path):
+    smoke = tmp_path / "gate-smoke"
+    smoke.mkdir()
+    (smoke / "a.txt").write_text("A passed\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "bounded-change",
+            "criterion": "The attempt changes only gate-smoke/a.txt",
+        },
+    )
+    assert result.status == "indeterminate"  # no quoted literal → keyword scan
+    assert result.method == "keyword_scan_source"
+
+
 def test_probe_missing_named_path_does_not_scan_elsewhere(tmp_path: Path):
     src = tmp_path / "src"
     src.mkdir()
