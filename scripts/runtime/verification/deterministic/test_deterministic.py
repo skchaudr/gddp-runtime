@@ -248,6 +248,49 @@ def test_path_without_quoted_literal_falls_through(tmp_path: Path):
     assert result.method == "keyword_scan_source"
 
 
+def test_path_content_check_ignores_literal_in_sibling_file(tmp_path: Path):
+    """The literal is verified only in the criterion-named path. A sibling
+    file containing the phrase must not produce a pass."""
+    smoke = tmp_path / "gate-smoke"
+    smoke.mkdir()
+    (smoke / "a.txt").write_text("something else\n")
+    (smoke / "b.txt").write_text("A passed\n")  # literal only in sibling
+    result = _eval(
+        tmp_path,
+        {
+            "id": "marker-a-exact",
+            "criterion": 'gate-smoke/a.txt exists and contains exactly "A passed\\n"',
+        },
+    )
+    assert result.status == "fail"
+    assert result.method == "path_content_check"
+
+
+def test_path_content_check_real_smoke_criteria(tmp_path: Path):
+    """Regression against the actual run-1 fixture criteria (result tree
+    0deaab2: a.txt inherited unchanged, b.txt added)."""
+    smoke = tmp_path / "gate-smoke"
+    smoke.mkdir()
+    (smoke / "a.txt").write_text("A passed\n")
+    (smoke / "b.txt").write_text("B passed\n")
+    r1 = _eval(
+        tmp_path,
+        {
+            "id": "marker-a-inherited",
+            "criterion": 'gate-smoke/a.txt exists unchanged and contains exactly "A passed\\n"',
+        },
+    )
+    r2 = _eval(
+        tmp_path,
+        {
+            "id": "marker-b-exact",
+            "criterion": 'gate-smoke/b.txt exists and contains exactly "B passed\\n"',
+        },
+    )
+    assert (r1.status, r1.method) == ("pass", "path_content_check")
+    assert (r2.status, r2.method) == ("pass", "path_content_check")
+
+
 def test_probe_missing_named_path_does_not_scan_elsewhere(tmp_path: Path):
     src = tmp_path / "src"
     src.mkdir()
