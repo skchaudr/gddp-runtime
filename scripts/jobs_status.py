@@ -290,7 +290,7 @@ def cmd_results(args):
         p["nodes"].add(r["node_id"])
         p["latest"] = r  # rows are ordered by received_at
 
-    live_root = config_root() / "verification-runtime-live"
+    live_root = config_root() / "verification"
     for project_id in sorted(projects):
         p = projects[project_id]
         latest_check = parse_check(p["latest"])

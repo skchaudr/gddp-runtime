@@ -184,7 +184,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
         },
     )
 
-    # Live wire: refresh verification-runtime-live/<project>/evaluations.yaml so
+    # Live wire: refresh verification/<project>/evaluations.yaml so
     # every reading surface (jobs_status.py, graph viewer) sees this result
     # without a manual export. Best-effort — a broken export never blocks routing.
     _refresh_evaluations_export()

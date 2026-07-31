@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export evaluator outputs to verification-runtime-live/<project>/evaluations.yaml.
+"""Export evaluator outputs to verification/<project>/evaluations.yaml.
 
 Runtime wins: values are copied verbatim from the results table (pass/fail,
 booleans, runtime field names). No translation into viewer vocabulary — the
@@ -129,7 +129,7 @@ def main() -> int:
             "evaluations": evaluations,
         }
         text = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
-        out_path = args.config / "verification-runtime-live" / project_id / "evaluations.yaml"
+        out_path = args.config / "verification" / project_id / "evaluations.yaml"
         if args.dry_run:
             print(f"--- would write {out_path} ---")
             print(text)

@@ -89,7 +89,7 @@ def _verify_once(
     node_yaml = config_root / "graphs" / project_id / "nodes" / f"{node_id}.yaml"
     project_yaml = config_root / "graphs" / project_id / "project.yaml"
     repo = _repos_root() / project_id
-    receipt_dir = config_root / "verification-runtime-live"
+    receipt_dir = config_root / "verification"
 
     for path, label in ((node_yaml, "node yaml"), (project_yaml, "project yaml"), (repo, "repo")):
         if not path.exists():
