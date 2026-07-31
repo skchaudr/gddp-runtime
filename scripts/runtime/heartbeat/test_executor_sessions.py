@@ -2185,3 +2185,119 @@ def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
     action_dispatch.assert_called_once()
     cli_dispatch.assert_not_called()
     assert result.success is True
+
+
+class _ScriptedReplyAdapter:
+    """Fake adapter with a scripted status sequence and a recording reply().
+
+    The reconciler instantiates ``adapter_cls(repo=...)`` per tick, so the
+    script and counters live at class level.
+    """
+
+    script = []
+    reply_calls = 0
+    reply_messages = []
+
+    def __init__(self, repo=""):
+        self.repo = repo
+
+    def status(self, session_ref):
+        state = type(self).script.pop(0) if type(self).script else "running"
+        return SessionStatus(state=state)
+
+    def reply(self, session_ref, message):
+        type(self).reply_calls += 1
+        type(self).reply_messages.append(message)
+        return True
+
+
+def _reset_scripted_adapter(script):
+    _ScriptedReplyAdapter.script = list(script)
+    _ScriptedReplyAdapter.reply_calls = 0
+    _ScriptedReplyAdapter.reply_messages = []
+    return _ScriptedReplyAdapter
+
+
+def test_awaiting_reply_answered_once_then_escalates(con, tmp_path, monkeypatch):
+    """Parked session gets one standing reply; still parked next tick -> human."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_park", executor="jules_cli",
+                repo="owner/repo", status="running")
+    ses_id = insert_executor_session(
+        con, "job_park", "jules_cli", "sess-park",
+        expected_base_commit_sha=base_sha,
+    )
+    update_executor_session_state(con, ses_id, state="running")
+    con.commit()
+    FakeAdapter = _reset_scripted_adapter(["awaiting_reply", "awaiting_reply"])
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+
+    reconciler.reconcile_sessions(con, repo)  # tick 1: answer
+    row = get_executor_session_by_id(con, ses_id)
+    assert FakeAdapter.reply_calls == 1
+    assert "full authority" in FakeAdapter.reply_messages[0]
+    assert row["state"] == "awaiting_reply"
+
+    reconciler.reconcile_sessions(con, repo)  # tick 2: still parked -> escalate
+    row = get_executor_session_by_id(con, ses_id)
+    assert FakeAdapter.reply_calls == 1  # no second reply
+    assert row["state"] == "needs_operator"
+    assert "still asking" in (row["error"] or "")
+
+
+def test_awaiting_reply_latch_resets_when_session_unparks(con, tmp_path, monkeypatch):
+    """A session that unparks and re-parks is answered again, not escalated."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_repark", executor="jules_cli",
+                repo="owner/repo", status="running")
+    ses_id = insert_executor_session(
+        con, "job_repark", "jules_cli", "sess-repark",
+        expected_base_commit_sha=base_sha,
+    )
+    update_executor_session_state(con, ses_id, state="running")
+    con.commit()
+    FakeAdapter = _reset_scripted_adapter(
+        ["awaiting_reply", "running", "awaiting_reply"]
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+
+    reconciler.reconcile_sessions(con, repo)  # parked -> reply #1
+    reconciler.reconcile_sessions(con, repo)  # unparked -> latch resets
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "running"
+
+    reconciler.reconcile_sessions(con, repo)  # re-parked -> reply #2
+    row = get_executor_session_by_id(con, ses_id)
+    assert FakeAdapter.reply_calls == 2
+    assert row["state"] == "awaiting_reply"
+
+
+class _MuteAdapter:
+    """Adapter that reports awaiting_reply but cannot converse."""
+
+    def __init__(self, repo=""):
+        self.repo = repo
+
+    def status(self, session_ref):
+        return SessionStatus(state="awaiting_reply")
+
+
+def test_awaiting_reply_without_reply_capability_goes_to_operator(
+    con, tmp_path, monkeypatch
+):
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_mute", executor="jules_cli",
+                repo="owner/repo", status="running")
+    ses_id = insert_executor_session(
+        con, "job_mute", "jules_cli", "sess-mute",
+        expected_base_commit_sha=base_sha,
+    )
+    update_executor_session_state(con, ses_id, state="running")
+    con.commit()
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": _MuteAdapter})
+
+    reconciler.reconcile_sessions(con, repo)
+
+    row = get_executor_session_by_id(con, ses_id)
+    assert row["state"] == "needs_operator"
+    assert "cannot reply" in (row["error"] or "")
