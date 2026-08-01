@@ -56,6 +56,7 @@ class PendingEvaluation:
     job_id: str
     attempt: int
     result_commit_sha: str
+    expected_base_commit_sha: str | None = None
 
 
 class EvaluationBatch:
@@ -90,6 +91,7 @@ class EvaluationBatch:
                 job_id=str(job["job_id"]),
                 attempt=int(job["attempt"] or 0),
                 result_commit_sha=result_commit_sha,
+                expected_base_commit_sha=session["expected_base_commit_sha"],
             )
         )
 
@@ -731,6 +733,7 @@ def _run_evaluation(pending: PendingEvaluation) -> dict:
             project_id=pending.project_id,
             node_id=pending.node_id,
             merge_commit_sha=pending.result_commit_sha,
+            expected_base_commit_sha=pending.expected_base_commit_sha,
             pr_ref=None,  # no PR for CLI path
             job_id=pending.job_id,
             attempt=pending.attempt,

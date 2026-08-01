@@ -2301,3 +2301,25 @@ def test_awaiting_reply_without_reply_capability_goes_to_operator(
     row = get_executor_session_by_id(con, ses_id)
     assert row["state"] == "needs_operator"
     assert "cannot reply" in (row["error"] or "")
+
+
+def test_evaluation_batch_carries_expected_base(con, tmp_path):
+    """PendingEvaluation must carry the dispatch-recorded base alongside the tip."""
+    from scripts.runtime.heartbeat.reconciler import EvaluationBatch
+
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_base", executor="jules_cli",
+                repo="owner/repo", status="running")
+    ses_id = insert_executor_session(
+        con, "job_base", "jules_cli", "sess-base",
+        expected_base_commit_sha=base_sha,
+    )
+    session = get_executor_session_by_id(con, ses_id)
+    job = con.execute("SELECT * FROM jobs WHERE job_id = ?", ("job_base",)).fetchone()
+
+    batch = EvaluationBatch(max_workers=1)
+    batch.add(session, job, result_commit_sha="c" * 40)
+
+    pending = batch._pending[0]
+    assert pending.expected_base_commit_sha == base_sha
+    assert pending.result_commit_sha == "c" * 40

@@ -27,6 +27,7 @@ def verify(
     integrity_harness: IntegrityHarness | None = None,
     # Phase 1 provenance: the exact change being judged.
     merge_commit_sha: str | None = None,
+    expected_base_commit_sha: str | None = None,
     pr_ref: str | None = None,
     job_id: str | None = None,
     now: Callable[[], str] = lambda: __import__("datetime")
@@ -38,6 +39,7 @@ def verify(
         project_yaml=project_yaml,
         repo=repo,
         config_root=config_root,
+        expected_base_commit_sha=expected_base_commit_sha,
     )
     semantic = None
     if _should_run_semantic(det):
@@ -100,6 +102,7 @@ def verify(
         evaluated_tree_sha=_capture_tree_sha(repo),
         evaluated_commit_sha=_capture_commit_sha(repo),
         merge_commit_sha=merge_commit_sha,
+        expected_base_commit_sha=expected_base_commit_sha,
         pr_ref=pr_ref,
         job_id=job_id,
         canonical_context=canonical,

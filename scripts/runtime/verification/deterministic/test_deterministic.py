@@ -619,3 +619,80 @@ def test_assemble_returns_deterministic_result(tmp_path: Path):
     assert result.constraints[0].status == "clear"
     assert result.deps_status == {"dep-a": "complete"}
     assert result.artifacts_present == {"decision.md": True}
+
+
+def _git(repo, *args):
+    import subprocess
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+def _diff_repo(tmp_path):
+    import subprocess
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "a.txt").write_text("one\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "a.txt").write_text("two\n")
+    (repo / "b.txt").write_text("new\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "subject")
+    return repo, base
+
+
+def test_subject_diff_reports_touched_files(tmp_path):
+    from scripts.runtime.verification.deterministic import _subject_diff
+
+    repo, base = _diff_repo(tmp_path)
+    diff = _subject_diff(repo, base)
+    assert diff["status"] == "ok"
+    assert diff["base"] == base
+    assert diff["tip"] == _git(repo, "rev-parse", "HEAD")
+    assert diff["file_count"] == 2
+    assert diff["truncated"] is False
+    assert {f["path"] for f in diff["files"]} == {"a.txt", "b.txt"}
+    assert "add -A" in diff["note"]
+
+
+def test_subject_diff_unavailable_for_unknown_base(tmp_path):
+    from scripts.runtime.verification.deterministic import _subject_diff
+
+    repo, _ = _diff_repo(tmp_path)
+    diff = _subject_diff(repo, "0" * 40)
+    assert diff["status"] == "unavailable"
+    assert diff["error"]
+
+
+def test_assemble_attaches_subject_diff(tmp_path):
+    from scripts.runtime.verification import deterministic
+
+    repo, base = _diff_repo(tmp_path)
+    result = deterministic.assemble(
+        node_yaml={"node_id": "n", "acceptance_criteria": [], "constraints": []},
+        project_yaml={"project_id": "p", "nodes": []},
+        repo=repo,
+        expected_base_commit_sha=base,
+    )
+    assert result.subject_diff is not None
+    assert result.subject_diff["status"] == "ok"
+
+
+def test_assemble_without_base_has_no_subject_diff(tmp_path):
+    from scripts.runtime.verification import deterministic
+
+    repo, _ = _diff_repo(tmp_path)
+    result = deterministic.assemble(
+        node_yaml={"node_id": "n", "acceptance_criteria": [], "constraints": []},
+        project_yaml={"project_id": "p", "nodes": []},
+        repo=repo,
+    )
+    assert result.subject_diff is None

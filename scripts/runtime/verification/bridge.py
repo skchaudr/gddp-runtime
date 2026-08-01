@@ -45,6 +45,7 @@ def verify_job_return(
     project_id: str,
     node_id: str,
     merge_commit_sha: str | None = None,
+    expected_base_commit_sha: str | None = None,
     pr_ref: str | None = None,
     job_id: str | None = None,
     attempt: int | None = None,
@@ -59,11 +60,11 @@ def verify_job_return(
     Transient failures (timeout, crash, garbled output) get exactly one retry;
     missing config/repo paths do not — those need a human, not a rerun.
     """
-    first = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id, attempt)
+    first = _verify_once(project_id, node_id, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt)
     if first["verification_status"] == "ok" or first.get("retryable") is False:
         first.pop("retryable", None)
         return first
-    second = _verify_once(project_id, node_id, merge_commit_sha, pr_ref, job_id, attempt)
+    second = _verify_once(project_id, node_id, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt)
     second.pop("retryable", None)
     if second["verification_status"] == "error":
         second["error"] = f"(after 1 retry) {second['error']}; first attempt: {first['error']}"
@@ -74,6 +75,7 @@ def _verify_once(
     project_id: str,
     node_id: str,
     merge_commit_sha: str | None = None,
+    expected_base_commit_sha: str | None = None,
     pr_ref: str | None = None,
     job_id: str | None = None,
     attempt: int | None = None,
@@ -118,7 +120,7 @@ def _verify_once(
     try:
         return _run_cli(
             worktree_path, node_yaml, project_yaml, config_root, receipt_dir,
-            merge_commit_sha, pr_ref, job_id, attempt,
+            merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt,
         )
     finally:
         _remove_worktree(repo, worktree_path)
@@ -191,7 +193,7 @@ def _remove_worktree(repo: Path, path: Path) -> None:
         pass
 
 
-def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, pr_ref, job_id, attempt) -> dict:
+def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt) -> dict:
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
     )
@@ -210,6 +212,8 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
     # Phase 1 provenance: pass merge commit SHA, PR ref, and job_id to the CLI.
     if merge_commit_sha:
         cmd += ["--merge-commit-sha", merge_commit_sha]
+    if expected_base_commit_sha:
+        cmd += ["--base", expected_base_commit_sha]
     if pr_ref:
         cmd += ["--pr-ref", pr_ref]
     if job_id:

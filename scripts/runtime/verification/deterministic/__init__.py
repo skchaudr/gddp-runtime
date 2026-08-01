@@ -16,12 +16,57 @@ from .deps import dependency_status
 from .probes import evaluate_criterion
 
 
+_SUBJECT_DIFF_CAP = 50
+
+
+def _subject_diff(repo: Path, base: str) -> dict:
+    """Neutral files-touched evidence for base..HEAD. Valence-free by design:
+    scope drift between authoring and completion is normal — the lane
+    measures, it never accuses. Interpretation belongs to the semantic lane
+    and the human gate."""
+    import subprocess
+
+    def _git(args: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+
+    tip = _git(["rev-parse", "HEAD"])
+    proc = _git(["diff", "--name-status", f"{base}..HEAD"])
+    if tip.returncode != 0 or proc.returncode != 0:
+        return {
+            "status": "unavailable",
+            "base": base,
+            "error": (proc.stderr or tip.stderr or "git diff failed").strip()[:200],
+        }
+    files = []
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            continue
+        status, _, path = line.partition("\t")
+        files.append({"status": status, "path": path})
+    return {
+        "status": "ok",
+        "base": base,
+        "tip": tip.stdout.strip(),
+        "files": files[: _SUBJECT_DIFF_CAP],
+        "truncated": len(files) > _SUBJECT_DIFF_CAP,
+        "file_count": len(files),
+        "note": (
+            "Includes anything untracked the executor left behind (wrapper "
+            "commits with git add -A) — junk is deliberately visible here."
+        ),
+    }
+
+
 def assemble(
     *,
     node_yaml: dict,
     project_yaml: dict,
     repo: Path,
     config_root: Path | None = None,
+    expected_base_commit_sha: str | None = None,
 ) -> DeterministicResult:
     """Run all deterministic checks and return a DeterministicResult."""
     node_id = node_yaml.get("node_id", "")
@@ -72,6 +117,11 @@ def assemble(
         criteria_mismatches=criteria_mismatches,
         missing_evidence=missing_evidence,
         human_review_questions=human_review_questions,
+        subject_diff=(
+            _subject_diff(repo, expected_base_commit_sha)
+            if expected_base_commit_sha
+            else None
+        ),
     )
 
 

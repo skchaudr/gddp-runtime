@@ -78,6 +78,9 @@ class DeterministicResult:
     criteria_mismatches: list[CriterionMismatch]
     missing_evidence: list[MissingEvidence]
     human_review_questions: list[HumanReviewQuestion]
+    # Neutral narration of what base..HEAD touched (valence-free; measured,
+    # never accused). None when no base was supplied.
+    subject_diff: dict | None = None
 
 
 class CriterionJudgment(BaseModel):
@@ -180,6 +183,9 @@ class VerdictReceipt(BaseModel):
     evaluated_tree_sha: str | None = None
     evaluated_commit_sha: str | None = None
     merge_commit_sha: str | None = None
+    # Recorded at dispatch, ancestry-verified at collection: the base the
+    # subject commit was built on. Enables diff-based evidence downstream.
+    expected_base_commit_sha: str | None = None
     pr_ref: str | None = None
     job_id: str | None = None
     # Phase 2: canonical context offered + per-lane coverage signal.

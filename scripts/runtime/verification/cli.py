@@ -178,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # Phase 1 provenance: pin the exact change being judged.
     parser.add_argument("--merge-commit-sha", default=None, help="Merge commit SHA from the webhook payload.")
+    parser.add_argument("--base", dest="expected_base_commit_sha", default=None, help="Dispatch-recorded base commit the subject was built on; enables subject-diff evidence.")
     parser.add_argument("--pr-ref", default=None, help="PR number or URL.")
     parser.add_argument("--job-id", default=None, help="SQLite job_id for per-attempt receipt path.")
     parser.add_argument("--attempt", type=int, default=None, help="Persisted zero-based jobs.attempt value.")
@@ -339,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         semantic_harness=semantic_harness,
         integrity_harness=integrity_harness,
         merge_commit_sha=args.merge_commit_sha,
+        expected_base_commit_sha=args.expected_base_commit_sha,
         pr_ref=args.pr_ref,
         job_id=args.job_id,
     )

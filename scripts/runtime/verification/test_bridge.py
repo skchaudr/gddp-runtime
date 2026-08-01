@@ -398,3 +398,56 @@ class TestWorktreeLifecycle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBasePassthrough(unittest.TestCase):
+    """expected_base_commit_sha flows from the session row to the CLI as --base."""
+
+    def test_base_forwarded_to_cli(self):
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli_proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge._create_worktree",
+            return_value=Path("/tmp/fake-wt"),
+        ), patch(
+            "scripts.runtime.verification.bridge._remove_worktree"
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run",
+            return_value=cli_proc,
+        ) as mock_run:
+            res = bridge.verify_job_return(
+                "vault-doctor", "auth-node",
+                merge_commit_sha="abc123",
+                expected_base_commit_sha="b" * 40,
+                job_id="job_001",
+                attempt=0,
+            )
+        self.assertEqual(res["verification_status"], "ok")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--base", cmd)
+        self.assertEqual(cmd[cmd.index("--base") + 1], "b" * 40)
+
+    def test_no_base_omits_flag(self):
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli_proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge._create_worktree",
+            return_value=Path("/tmp/fake-wt"),
+        ), patch(
+            "scripts.runtime.verification.bridge._remove_worktree"
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run",
+            return_value=cli_proc,
+        ) as mock_run:
+            bridge.verify_job_return(
+                "vault-doctor", "auth-node",
+                merge_commit_sha="abc123",
+                job_id="job_001",
+                attempt=0,
+            )
+        cmd = mock_run.call_args[0][0]
+        self.assertNotIn("--base", cmd)
