@@ -696,3 +696,36 @@ def test_assemble_without_base_has_no_subject_diff(tmp_path):
         repo=repo,
     )
     assert result.subject_diff is None
+
+
+def test_subject_diff_timeout_is_unavailable_not_crash(tmp_path, monkeypatch):
+    import subprocess as sp
+
+    from scripts.runtime.verification import deterministic
+
+    repo, base = _diff_repo(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise sp.TimeoutExpired(cmd="git", timeout=60)
+
+    monkeypatch.setattr(sp, "run", boom)
+    diff = deterministic._subject_diff(repo, base)
+    assert diff["status"] == "unavailable"
+    assert diff["base"] == base
+    assert "timed out" in diff["error"]
+
+
+def test_subject_diff_oserror_is_unavailable_not_crash(tmp_path, monkeypatch):
+    import subprocess as sp
+
+    from scripts.runtime.verification import deterministic
+
+    repo, base = _diff_repo(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise OSError("git binary missing")
+
+    monkeypatch.setattr(sp, "run", boom)
+    diff = deterministic._subject_diff(repo, base)
+    assert diff["status"] == "unavailable"
+    assert "git binary missing" in diff["error"]

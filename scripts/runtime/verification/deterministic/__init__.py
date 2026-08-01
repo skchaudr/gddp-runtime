@@ -26,14 +26,23 @@ def _subject_diff(repo: Path, base: str) -> dict:
     and the human gate."""
     import subprocess
 
-    def _git(args: list[str]) -> subprocess.CompletedProcess:
+    def _git(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, timeout=30, check=False,
+            capture_output=True, text=True, timeout=timeout, check=False,
         )
 
-    tip = _git(["rev-parse", "HEAD"])
-    proc = _git(["diff", "--name-status", f"{base}..HEAD"])
+    try:
+        tip = _git(["rev-parse", "HEAD"])
+        # Huge trees can make name-status slow; give it headroom, but a slow
+        # diff must degrade the evidence — never crash the evaluation.
+        proc = _git(["diff", "--name-status", f"{base}..HEAD"], timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "status": "unavailable",
+            "base": base,
+            "error": f"git diff unavailable: {exc}",
+        }
     if tip.returncode != 0 or proc.returncode != 0:
         return {
             "status": "unavailable",
