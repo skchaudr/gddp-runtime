@@ -1105,6 +1105,82 @@ def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
     assert packet.previous_findings["findings"][0]["severity"] == "high"
 
 
+def test_auth_blocked_failure_parks_without_consuming_retry_budget(
+    con, tmp_path, monkeypatch
+):
+    """A revoked-credential failure parks the session needs_operator, keeps
+    the job running (scope still blocks duplicates), and allocates no retry
+    — unattended, the node waits instead of exhausting against a dead wall."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(con, job_id="job_auth", executor="jules_cli", status="running")
+    session_db_id = insert_executor_session(
+        con,
+        "job_auth",
+        "jules_cli",
+        "sess-auth",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="failed",
+        status_error=(
+            "local subprocess exited with code 1: xAI token refresh failed: "
+            '400 {"error":"invalid_grant","error_description":"Refresh token '
+            'has been revoked"}'
+        ),
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+
+    def forbidden_dispatch(job, repo_name, repo_path=None):
+        raise AssertionError("auth-blocked failure must not redispatch")
+
+    monkeypatch.setattr(reconciler, "dispatch", forbidden_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    parked = get_executor_session_by_id(con, session_db_id)
+    assert parked["state"] == "needs_operator"
+    assert "invalid_grant" in parked["error"]
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_auth",)
+    ).fetchone()
+    assert job["status"] == "running"
+    assert job["attempt"] == 0
+    rows = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ?", ("job_auth",)
+    ).fetchall()
+    assert len(rows) == 1  # no replacement session allocated
+
+    # Second tick: the adapter still reports the dead session failed, but the
+    # parked session stays put — quiet, idempotent, no retry burn.
+    reconciler.reconcile_sessions(con, repo)
+    parked = get_executor_session_by_id(con, session_db_id)
+    assert parked["state"] == "needs_operator"
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_auth",)
+    ).fetchone()
+    assert job["status"] == "running"
+    assert job["attempt"] == 0
+
+
+def test_classify_executor_failure_patterns():
+    assert (
+        reconciler.classify_executor_failure("xAI token refresh failed: 400 "
+                                             "invalid_grant")
+        == "auth_blocked"
+    )
+    assert (
+        reconciler.classify_executor_failure("Please run /login and select Grok CLI")
+        == "auth_blocked"
+    )
+    assert reconciler.classify_executor_failure("boom") == "retryable"
+    assert reconciler.classify_executor_failure(None) == "retryable"
+    assert (
+        reconciler.classify_executor_failure("git apply failed: corrupt patch")
+        == "retryable"
+    )
+
+
 def test_retry_dispatch_failure_is_visible_and_idempotent(
     con, tmp_path, monkeypatch
 ):

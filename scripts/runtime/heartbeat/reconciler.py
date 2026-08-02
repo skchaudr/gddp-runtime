@@ -558,10 +558,56 @@ def _handle_completed(
         con.commit()
 
 
+"""Executor-credential failure signals. When auth is dead, every retry fails
+identically — burning attempts against a wall that cannot move (node-07
+exhausted three attempts in 15 minutes on a revoked xAI token, 2026-08-02).
+Auth-blocked failures park for the operator instead of retrying."""
+_AUTH_BLOCK_PATTERNS = (
+    "invalid_grant",
+    "refresh token has been revoked",
+    "run /login",
+    "account migration",
+    "authentication failed",
+    "invalid api key",
+    "401 unauthorized",
+    "403 forbidden",
+)
+
+
+def classify_executor_failure(error: str | None) -> str:
+    """'auth_blocked' when executor credentials/login are the failure (retry
+    cannot succeed and must not consume budget); 'retryable' otherwise."""
+    text = (error or "").lower()
+    if any(pattern in text for pattern in _AUTH_BLOCK_PATTERNS):
+        return "auth_blocked"
+    return "retryable"
+
+
 def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> None:
-    """Persist one authoritative failure, then allocate at most one retry."""
+    """Persist one authoritative failure, then allocate at most one retry.
+
+    Auth-blocked failures park instead: session -> needs_operator, job stays
+    running (scope still blocks duplicate dispatch, capacity stays held), no
+    attempt is consumed. The operator restores credentials and releases the
+    job; unattended, the node waits rather than exhausting."""
     session_db_id = session["session_db_id"]
     job_id = session["job_id"]
+
+    if classify_executor_failure(error) == "auth_blocked":
+        if session["state"] == "needs_operator":
+            return  # already parked; stay quiet between ticks
+        update_executor_session_state(
+            con, session_db_id, state="needs_operator", error=error
+        )
+        con.commit()
+        print(
+            f"[reconcile] {session_db_id}: AUTH BLOCKED (job {job_id}); "
+            "parked without consuming retry budget. Restore executor auth, "
+            f"then: gddp jobs set {job_id} failed --reason 'auth restored' "
+            "--yes, and re-dispatch the node."
+        )
+        return
+
     update_executor_session_state(
         con, session_db_id, state="failed", error=error
     )
