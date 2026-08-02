@@ -30,6 +30,7 @@ from pathlib import Path
 
 from .classifier import classify
 from .dispatcher import cancel_remote_session, dispatch, executor_preflight_error
+from .frontier import advance_frontier
 from .graph_reader import GraphReader
 from .job_factory import build_job
 from .reconciler import (
@@ -185,6 +186,14 @@ def run_heartbeat(
                 repo=repo,
                 evaluation_batch=evaluation_batch,
             )
+
+            # Frontier: projects opted into auto-advance transition pending
+            # nodes whose deps are provisionally/fully satisfied to ready and
+            # inject dispatch events, so dependents flow on the next planning
+            # pass without operator re-triggering. Reload ready nodes so this
+            # tick's planning sees the new frontier.
+            if advance_frontier(con, reader, project_id):
+                ready_nodes = reader.get_ready_nodes(project_id)
 
             # Phase A-C: Plan and dispatch new events.
             planned_dispatches = _plan_dispatches(

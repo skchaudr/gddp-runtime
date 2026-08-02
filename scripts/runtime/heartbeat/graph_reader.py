@@ -82,6 +82,16 @@ class GraphReader:
         self._project_cache[project_id] = graph
         return graph
 
+    def invalidate(self, project_id: str) -> None:
+        """Drop cached project/node state after external graph-file writes.
+
+        System writers (provisional_gate, frontier) rewrite node/project
+        YAML on disk; the runner must see fresh state within the same tick.
+        """
+        self._project_cache.pop(project_id, None)
+        for key in [k for k in self._node_cache if k[0] == project_id]:
+            self._node_cache.pop(key, None)
+
     def list_projects(self) -> list[ProjectGraph]:
         """Return every valid project graph in stable project-id order."""
         graphs_dir = self.config_path / "graphs"
