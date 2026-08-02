@@ -149,6 +149,13 @@ for label in "$HEARTBEAT_LABEL" "$INTAKE_LABEL"; do
     echo "  [warn] $label plist not installed (run install-dormant / arm)"
     continue
   fi
+  # Drift is only comparable when this smoke env describes the same plane
+  # the plist is armed for — a synthetic/scratch env would always "drift".
+  installed_root="$(plutil -extract EnvironmentVariables.GDDP_RUNTIME_ROOT raw -o - "$installed" 2>/dev/null || true)"
+  if [[ -n "$installed_root" && "$installed_root" != "$GDDP_RUNTIME_ROOT" ]]; then
+    echo "  [warn] $label armed for different runtime root ($installed_root); skipping env drift check"
+    continue
+  fi
   if drift_keys="$(_plist_drift_keys "$template" "$installed")"; then
     echo "  [ok] $label plist env matches gddp.env"
   else
