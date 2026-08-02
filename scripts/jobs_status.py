@@ -110,20 +110,35 @@ def print_evaluation(check, full=False):
         print("          (no evaluator output on this result)")
         return
     integrity = check.get("integrity") or {}
-    print(f"         verdict: {check.get('verdict')}  "
-          f"(criteria: {check.get('criteria_verdict')} @ {check.get('criteria_confidence')}, "
-          f"integrity: {integrity.get('verdict')} @ {integrity.get('confidence')})")
+    print(f"  verdict: {check.get('verdict')}")
+    reasoning = integrity.get("reasoning") or check.get("reasoning")
+    if reasoning:
+        print("  why:")
+        for line in str(reasoning).splitlines():
+            print(f"    {line}")
+    else:
+        print("  why: (no overall evaluator reasoning recorded)")
+    if check.get("required_next_action"):
+        print(
+            f"  next action: {check['required_next_action']}  "
+            "(evaluator recommendation, not a decision)"
+        )
     for f in check.get("criteria_findings") or []:
-        print(f"       criterion: {f.get('criterion_id')}  ->  {f.get('judgment')}")
+        print(f"  criterion: {f.get('criterion_id')}  ->  {f.get('judgment')}")
+        if full and f.get("reasoning"):
+            print(f"    reasoning: {f['reasoning']}")
         for ev in f.get("evidence") or []:
-            print(f"                  evidence: {ev}")
+            print(f"    evidence: {ev}")
     for f in integrity.get("findings") or []:
-        print(f"       integrity: [{f.get('severity')}] {f.get('summary')}")
+        print(f"  integrity: [{f.get('severity')}] {f.get('summary')}")
     # Phase 3: graph observations (forward-looking, do not affect verdict)
     for o in integrity.get("graph_observations") or []:
-        print(f"       graph obs: [{o.get('severity')}] {o.get('summary')}")
-    if check.get("required_next_action"):
-        print(f"     next action: {check['required_next_action']}  (evaluator template, not a decision)")
+        print(f"  graph observation: [{o.get('severity')}] {o.get('summary')}")
+    print(
+        f"  evaluator signals: criteria={check.get('criteria_verdict')} "
+        f"@ {check.get('criteria_confidence')}  "
+        f"integrity={integrity.get('verdict')} @ {integrity.get('confidence')}"
+    )
     # Phase 1 provenance: show the exact tree the evaluator judged.
     tree_sha = check.get("evaluated_tree_sha")
     commit_sha = check.get("evaluated_commit_sha")
@@ -131,29 +146,27 @@ def print_evaluation(check, full=False):
     if commit_sha or tree_sha or merge_sha:
         if commit_sha:
             match = "  (match)" if merge_sha and commit_sha == merge_sha else "  (mismatch)" if merge_sha else ""
-            print(f"      provenance: commit={commit_sha}  merge={merge_sha or 'n/a'}{match}")
+            print(f"  provenance: commit={commit_sha}  merge={merge_sha or 'n/a'}{match}")
         else:
-            print(f"      provenance: tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}  (different SHA types; not compared)")
+            print(f"  provenance: tree={tree_sha or 'n/a'}  merge={merge_sha or 'n/a'}  (different SHA types; not compared)")
     if check.get("pr_ref"):
-        print(f"            PR: {check['pr_ref']}")
+        print(f"  PR: {check['pr_ref']}")
     # Phase 2 coverage: quick signal for the operator
     cov = check.get("context_coverage")
     if cov:
         crit_raw = cov.get("criteria", "n/a")
         crit = crit_raw.get("rating", "n/a") if isinstance(crit_raw, dict) else crit_raw
         integ = cov.get("integrity", {}).get("rating", "n/a") if isinstance(cov.get("integrity"), dict) else "n/a"
-        print(f"       coverage: criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}")
+        print(f"  coverage: criteria={crit}  integrity={integ}  overall={cov.get('overall', 'n/a')}")
     lane_status = check.get("lane_status") or {}
     harness_error = check.get("harness_error") or {}
     if lane_status:
-        print(f"    lane status: criteria={lane_status.get('criteria', 'n/a')}  integrity={lane_status.get('integrity', 'n/a')}")
+        print(f"  lane status: criteria={lane_status.get('criteria', 'n/a')}  integrity={lane_status.get('integrity', 'n/a')}")
     for lane in ("criteria", "integrity"):
         if harness_error.get(lane):
             print(f"  harness error: {lane}={harness_error[lane]}")
     if check.get("receipt_path"):
-        print(f"         receipt: {check['receipt_path']}")
-    if full and integrity.get("reasoning"):
-        print(f"       reasoning: {integrity['reasoning']}")
+        print(f"  receipt: {check['receipt_path']}")
 
 
 def _read_local_subprocess_status(session_id: str) -> tuple[str | None, str | None]:
@@ -234,24 +247,35 @@ def _print_executor_attempts(con, job_id: str) -> None:
 def cmd_show(args):
     con = connect()
     job = resolve_job(con, args.ref)
-    for key in ("job_id", "node_id", "title", "queue_state", "status", "executor",
-                "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
-        print(f"{key:>16}: {job[key]}")
-    _print_executor_attempts(con, job["job_id"])
     results = con.execute(
         "SELECT received_at, outcome, status, acceptance_check "
-        "FROM results WHERE job_id = ? ORDER BY received_at",
+        "FROM results WHERE job_id = ? ORDER BY received_at DESC",
         (job["job_id"],),
     ).fetchall()
-    for r in results:
-        print(f"          result: {r['received_at']}  {r['outcome']}/{r['status']}")
+    print("EVALUATOR RESULT")
+    if not results:
+        print("  MISSING — evaluator has not returned a result for this job.")
+    for index, r in enumerate(results):
+        if index:
+            print("\nEARLIER EVALUATOR RESULT")
         print_evaluation(parse_check(r), full=args.full)
+        print(f"  result record: {r['received_at']}  {r['outcome']}/{r['status']}")
+
     decisions = con.execute(
         "SELECT created_at, action, reason FROM decision_results WHERE node_id = ? ORDER BY created_at",
         (job["node_id"],),
     ).fetchall()
-    for d in decisions:
-        print(f"        decision: {d['created_at']}  {d['action']}  {d['reason'] or ''}")
+    if decisions:
+        print("\nHUMAN DECISIONS")
+        for d in decisions:
+            print(f"  {d['created_at']}  {d['action']}  {d['reason'] or ''}")
+
+    print("\nJOB RECORD")
+    for key in ("title", "node_id", "job_id", "queue_state", "status", "executor",
+                "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
+        print(f"  {key}: {job[key]}")
+    print("\nEXECUTOR RECORD")
+    _print_executor_attempts(con, job["job_id"])
 
 
 def config_root():
@@ -407,7 +431,9 @@ def main(argv=None):
 
     p_show = sub.add_parser("show", help="show one job (accepts job_id or node_id)")
     p_show.add_argument("ref")
-    p_show.add_argument("--full", action="store_true", help="include full integrity reasoning")
+    p_show.add_argument(
+        "--full", action="store_true", help="include criterion-level reasoning"
+    )
     p_show.set_defaults(fn=cmd_show)
 
     p_results = sub.add_parser("results", help="evaluator output summary: counts + paths per project")
