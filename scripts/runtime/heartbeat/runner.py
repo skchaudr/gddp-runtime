@@ -51,6 +51,7 @@ from .state_recorder import (
     mark_job_running,
 )
 
+from ..repo_resolver import resolution_candidates, resolve_repo_checkout
 from ..return_router import handle_merged_pr
 
 # GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
@@ -140,11 +141,21 @@ def run_heartbeat(
     # Derive the local checkout path if the caller did not provide one.
     # The reconcile phase needs a filesystem path (not the GitHub owner/name).
     if repo_path is None:
-        repos_root = os.environ.get("GDDP_REPOS_ROOT")
-        if repos_root:
-            derived = Path(repos_root) / repo.split("/")[-1]
-            if derived.exists():
-                repo_path = str(derived)
+        resolved = resolve_repo_checkout(repo, config_root=reader.config_path)
+        if resolved is not None:
+            repo_path = str(resolved)
+        else:
+            # Loud, not silent: an unresolved checkout skips the reconcile
+            # and dispatch phases below, and a quiet None here is how a seam
+            # stays invisible (previous behavior).
+            tried = ", ".join(
+                str(p)
+                for p in resolution_candidates(repo, config_root=reader.config_path)
+            )
+            print(
+                f"[heartbeat] WARNING: no local checkout for repo {repo!r}; "
+                f"tried: {tried}"
+            )
 
     project = reader.load_project(project_id)
     max_concurrent_jobs = _configured_job_capacity(project.execution_policy)

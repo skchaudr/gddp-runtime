@@ -21,47 +21,6 @@ def _write_graph(config_root: Path, project_id: str, node_id: str) -> None:
     )
 
 
-def test_resolve_repo_uses_existing_absolute_path(tmp_path: Path, monkeypatch) -> None:
-    repo = tmp_path / "absolute-repo"
-    repo.mkdir()
-    config_root = tmp_path / "config"
-
-    monkeypatch.delenv("GDDP_REPO_ROOT", raising=False)
-
-    assert engine._resolve_repo(str(repo), config_root) == repo
-
-
-def test_resolve_repo_uses_gddp_repo_root_basename(tmp_path: Path, monkeypatch) -> None:
-    repo_root = tmp_path / "repo-root"
-    repo = repo_root / "source-repo"
-    repo.mkdir(parents=True)
-    config_root = tmp_path / "config"
-
-    monkeypatch.setenv("GDDP_REPO_ROOT", str(repo_root))
-
-    assert engine._resolve_repo("owner/source-repo", config_root) == repo
-
-
-def test_resolve_repo_uses_config_sibling_basename(tmp_path: Path, monkeypatch) -> None:
-    config_root = tmp_path / "gddp-config"
-    repo = tmp_path / "source-repo"
-    config_root.mkdir()
-    repo.mkdir()
-
-    monkeypatch.delenv("GDDP_REPO_ROOT", raising=False)
-
-    assert engine._resolve_repo("owner/source-repo", config_root).resolve() == repo
-
-
-def test_resolve_repo_returns_none_when_checkout_is_unresolved(tmp_path: Path, monkeypatch) -> None:
-    config_root = tmp_path / "gddp-config"
-    config_root.mkdir()
-
-    monkeypatch.delenv("GDDP_REPO_ROOT", raising=False)
-
-    assert engine._resolve_repo("owner/source-repo", config_root) is None
-
-
 def test_run_verification_unresolved_repo_writes_escalation_receipt_without_verify_or_repo_writes(
     tmp_path: Path,
     monkeypatch,
@@ -78,6 +37,7 @@ def test_run_verification_unresolved_repo_writes_escalation_receipt_without_veri
     receipts = []
 
     monkeypatch.delenv("GDDP_REPO_ROOT", raising=False)
+    monkeypatch.delenv("GDDP_REPOS_ROOT", raising=False)
     monkeypatch.setattr(engine.verification_orchestrator, "verify", verify)
     monkeypatch.setattr(engine, "_build_toolbox", build_toolbox)
     monkeypatch.setattr(engine, "write_receipt", lambda receipt, project_id: receipts.append(receipt))

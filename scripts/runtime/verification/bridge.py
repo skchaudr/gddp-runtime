@@ -19,6 +19,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.runtime.repo_resolver import (
+    project_resolution_candidates,
+    resolve_project_repo_checkout,
+)
 from scripts.runtime.verification.semantic.timeouts import bridge_timeout_seconds
 
 # Same semantic settings proven in live runs; override via env for reruns.
@@ -90,16 +94,32 @@ def _verify_once(
     config_root = _config_root()
     node_yaml = config_root / "graphs" / project_id / "nodes" / f"{node_id}.yaml"
     project_yaml = config_root / "graphs" / project_id / "project.yaml"
-    repo = _repos_root() / project_id
     receipt_dir = config_root / "verification"
 
-    for path, label in ((node_yaml, "node yaml"), (project_yaml, "project yaml"), (repo, "repo")):
+    for path, label in ((node_yaml, "node yaml"), (project_yaml, "project yaml")):
         if not path.exists():
             return {
                 "verification_status": "error",
                 "retryable": False,
                 "error": f"{label} not found: {path}",
             }
+
+    # Resolve through the graph's declared `repo:` field via the shared
+    # resolver — never repos_root/project_id, which silently assumed the
+    # graph id equals the checkout directory name and broke background
+    # evaluation the first time they differed (skc-portfolio-migration,
+    # 2026-08-02).
+    repo = resolve_project_repo_checkout(project_id, config_root=config_root)
+    if repo is None:
+        tried = ", ".join(
+            str(p)
+            for p in project_resolution_candidates(project_id, config_root=config_root)
+        )
+        return {
+            "verification_status": "error",
+            "retryable": False,
+            "error": f"repo checkout not found for project {project_id!r}; tried: {tried}",
+        }
 
     # A receipt without a pinned merge SHA could judge mutable repository state
     # and appear valid for code that was never evaluated.
