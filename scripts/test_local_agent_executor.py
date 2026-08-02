@@ -242,6 +242,53 @@ def test_persist_result_refuses_to_overwrite_a_reused_attempt_ref(tmp_path):
     lae.remove_worktree(repo, second_wt)
 
 
+def test_persist_result_tolerates_agent_created_attempt_branch(tmp_path, capsys):
+    """Agents following pi's commit-and-push norm may create the attempt
+    branch themselves (glm-5.2 does, named from execution_attempt_id,
+    2026-08-02). A pre-existing ref on the same attempt's chain must not
+    fail the handoff — the ref moves to the wrapper's result commit, which
+    descends from the agent's tip."""
+    repo = tmp_path / "repo"
+    base_sha = _init_repo(repo)
+    packet = json.loads(_packet(base_sha))
+    ref_name = lae.attempt_ref_name(packet)
+
+    def diligent_agent(argv, raw, worktree):
+        (worktree / "agent-change.txt").write_text("agent work\n")
+        subprocess.run(["git", "add", "-A"], cwd=worktree, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "user.name=a", "-c", "user.email=a@localhost",
+             "commit", "-m", "agent commit"],
+            cwd=worktree, check=True, capture_output=True,
+        )
+        agent_tip = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=worktree, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        # The agent creates (and would push) the attempt branch itself.
+        subprocess.run(
+            ["git", "update-ref", f"refs/heads/{ref_name}", agent_tip],
+            cwd=worktree, check=True, capture_output=True,
+        )
+        return 0
+
+    assert lae.run(
+        json.dumps(packet),
+        ["chosen-agent"],
+        repo=repo,
+        run_agent_fn=diligent_agent,
+    ) == 0
+
+    handoff = _parse_handoff(capsys.readouterr().out)
+    assert handoff["result_commit_sha"]
+    assert handoff["result_ref"] == ref_name
+    resolved = subprocess.run(
+        ["git", "rev-parse", ref_name],
+        cwd=repo, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert resolved == handoff["result_commit_sha"]
+
+
 def test_persist_failure_keeps_worktree_and_records_path(tmp_path, capsys, monkeypatch):
     repo = tmp_path / "repo"
     base_sha = _init_repo(repo)

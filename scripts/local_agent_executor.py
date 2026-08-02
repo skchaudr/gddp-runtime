@@ -180,12 +180,36 @@ def persist_result(worktree: Path, packet: dict[str, Any]) -> dict[str, Any]:
             )
 
         # Shared object store with main repo; ref must land before worktree removal.
-        # Create-only: a colliding attempt ref means the attempt ID was
-        # reused; never silently overwrite prior evidence.
-        update_ref = _run_git(
-            ["git", "update-ref", f"refs/heads/{ref_name}", result_sha, ""],
+        # Agents following pi's commit-and-push norm may themselves create the
+        # attempt branch (glm-5.2 does, 2026-08-02: named from the packet's
+        # execution_attempt_id). Tolerate a pre-existing ref only when it is an
+        # ancestor of our result — the same attempt's chain. A ref pointing
+        # anywhere else means the attempt ID was genuinely reused; never
+        # silently overwrite prior evidence.
+        existing = _run_git(
+            ["git", "rev-parse", "--verify", f"refs/heads/{ref_name}^{{commit}}"],
             cwd=worktree,
         )
+        if existing.returncode == 0:
+            prior = existing.stdout.strip()
+            chain = _run_git(
+                ["git", "merge-base", "--is-ancestor", prior, result_sha],
+                cwd=worktree,
+            )
+            if prior != result_sha and chain.returncode != 0:
+                raise RuntimeError(
+                    f"attempt ref {ref_name} already points at unrelated "
+                    f"{prior[:12]}; refusing to overwrite prior evidence"
+                )
+            update_ref = _run_git(
+                ["git", "update-ref", f"refs/heads/{ref_name}", result_sha],
+                cwd=worktree,
+            )
+        else:
+            update_ref = _run_git(
+                ["git", "update-ref", f"refs/heads/{ref_name}", result_sha, ""],
+                cwd=worktree,
+            )
         if update_ref.returncode != 0:
             raise RuntimeError(
                 f"git update-ref {ref_name} failed: {update_ref.stderr.strip()}"
