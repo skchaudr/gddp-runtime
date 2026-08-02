@@ -112,6 +112,33 @@ class JobsStatusTests(unittest.TestCase):
         with patch.object(jobs_status, "DB_PATH", self.db_path):
             jobs_status.main(["show", "node-1"])
 
+    def test_list_highlights_queue_state_on_tty(self):
+        import io
+        from contextlib import redirect_stdout
+
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+                patch.object(jobs_status, "_stdout_is_tty", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                jobs_status.main(["list"])
+            out = buf.getvalue()
+        self.assertIn("\033[1;35m", out)  # running → bold magenta
+        self.assertIn("running", out)
+        self.assertIn("job-1", out)
+
+    def test_list_plain_when_not_tty(self):
+        import io
+        from contextlib import redirect_stdout
+
+        with patch.object(jobs_status, "DB_PATH", self.db_path), \
+                patch.object(jobs_status, "_stdout_is_tty", return_value=False):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                jobs_status.main(["list"])
+            out = buf.getvalue()
+        self.assertNotIn("\033[", out)
+        self.assertIn("running", out)
+
     def test_show_prints_executor_attempt_evidence_for_local_subprocess(self):
         con = sqlite3.connect(self.db_path)
         con.execute(

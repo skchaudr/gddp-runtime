@@ -80,6 +80,44 @@ def resolve_job(con, ref: str):
     return rows[0]
 
 
+def _stdout_is_tty() -> bool:
+    return sys.stdout.isatty()
+
+
+def _state_ansi(state: str) -> str:
+    """TTY emphasis for queue/job states operators scan first."""
+    if not _stdout_is_tty():
+        return ""
+    key = (state or "").lower().replace(" ", "_")
+    styles = {
+        "awaiting_review": "\033[1;33m",  # bold yellow — human queue
+        "awaiting_result": "\033[1;36m",  # bold cyan
+        "ready": "\033[1;36m",
+        "running": "\033[1;35m",          # bold magenta
+        "complete": "\033[1;32m",         # bold green
+        "failed": "\033[1;31m",           # bold red
+        "blocked": "\033[33m",
+        "deferred": "\033[35m",
+        "cancelled": "\033[2m",
+        "intake": "\033[2m",
+        "classified": "\033[2m",
+        "pass": "\033[1;32m",
+        "fail": "\033[1;31m",
+    }
+    return styles.get(key, "\033[1m")
+
+
+def _paint(value: str, style_key: str | None = None, *, width: int | None = None) -> str:
+    """Color one field; pad before color so ANSI codes don't skew columns."""
+    text = str(value)
+    if width is not None:
+        text = f"{text:<{width}}"
+    color = _state_ansi(style_key if style_key is not None else value)
+    if not color:
+        return text
+    return f"{color}{text}\033[0m"
+
+
 def cmd_list(args):
     con = connect()
     q = "SELECT job_id, node_id, queue_state, attempt, max_attempts, created_at FROM jobs"
@@ -93,8 +131,11 @@ def cmd_list(args):
         print("No jobs." + (f" (state={args.state})" if args.state else ""))
         return
     for r in rows:
-        print(f"{r['job_id']}  {r['queue_state']:<16} {r['node_id']:<26} "
-              f"attempt {r['attempt']}/{r['max_attempts']}  {r['created_at'][:10]}")
+        state = r["queue_state"] or "?"
+        print(
+            f"{r['job_id']}  {_paint(state, width=16)} {r['node_id']:<26} "
+            f"attempt {r['attempt']}/{r['max_attempts']}  {r['created_at'][:10]}"
+        )
 
 
 def parse_check(row):
@@ -110,7 +151,8 @@ def print_evaluation(check, full=False):
         print("          (no evaluator output on this result)")
         return
     integrity = check.get("integrity") or {}
-    print(f"  verdict: {check.get('verdict')}")
+    verdict = check.get("verdict") or "-"
+    print(f"  verdict: {_paint(verdict)}")
     reasoning = integrity.get("reasoning") or check.get("reasoning")
     if reasoning:
         print("  why:")
@@ -273,7 +315,10 @@ def cmd_show(args):
     print("\nJOB RECORD")
     for key in ("title", "node_id", "job_id", "queue_state", "status", "executor",
                 "job_type", "attempt", "max_attempts", "created_at", "artifacts_dir"):
-        print(f"  {key}: {job[key]}")
+        value = job[key]
+        if key in ("queue_state", "status"):
+            value = _paint(value or "?")
+        print(f"  {key}: {value}")
     print("\nEXECUTOR RECORD")
     _print_executor_attempts(con, job["job_id"])
 
@@ -298,8 +343,11 @@ def cmd_results(args):
             check = parse_check(r)
             verdict = check.get("verdict") or "-"
             nodes.add((r["project_id"], r["node_id"]))
-            print(f"{r['received_at'][:19]}  {verdict:<5} {r['project_id'] or '-':<14} "
-                  f"{r['node_id'] or '-':<26} {r['job_id']}")
+            print(
+                f"{r['received_at'][:19]}  {_paint(verdict, width=5)} "
+                f"{r['project_id'] or '-':<14} "
+                f"{r['node_id'] or '-':<26} {r['job_id']}"
+            )
             if check.get("receipt_path"):
                 print(f"{'':21}receipt: {check['receipt_path']}")
         print(f"\n{len(rows)} result row(s) across {len(nodes)} node(s).")
