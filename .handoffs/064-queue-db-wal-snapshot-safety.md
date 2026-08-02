@@ -23,7 +23,7 @@ Production cutover/rollback instructions — corrected because copying active WA
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Implementation is commit `1cd1d70` on main; this handoff is the only follow-up task file. `node_status_history/` and `scripts/node_status_history.py` are active work from the concurrent auto-dispatch session and were left intact and excluded from this task.
+Implementation is commit `1cd1d70` on main; this handoff is the only follow-up task file. `node_status_history/` and `scripts/node_status_history.py` are unclassified inherited work with no established owner; both were left intact and excluded from this task.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
