@@ -39,7 +39,7 @@ bash deploy/mini-heartbeat/bin/install-dormant.sh
 # When you want mini live
 # 1) On big-ssd:
 bash deploy/mini-heartbeat/bin/disarm-source.sh
-# 2) Optional: rsync fresh db/jobs/events from big-ssd
+# 2) Optional: transfer the SQLite-native state snapshot described below
 # 3) On sab-mini:
 MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh
 bash deploy/mini-heartbeat/bin/smoke.sh
@@ -52,15 +52,31 @@ bash deploy/mini-heartbeat/bin/disarm.sh
 
 ## State snapshots
 
-Runtime state stays out of git (`db/`, `jobs/`, `events/`). If you want a
-frozen copy for later arm:
+Runtime state stays out of git (`db/`, `jobs/`, `events/`). `queue.db` uses
+SQLite WAL mode: the main file's mtime advances at checkpoint rather than every
+commit, so monitor freshness with application timestamps queried from SQLite.
+Copying the main file alone can also omit uncheckpointed WAL data.
+
+Use SQLite's online backup command for a consistent queue snapshot, including
+committed WAL content. Archive `jobs/` and `events/` separately:
 
 ```bash
-# on big-ssd
-tar czf /tmp/gddp-runtime-state-$(date +%Y%m%d).tar.gz \
-  -C ~/repos/gddp-runtime db jobs events
-# copy to mini; extract under runtime root before arm
+# on the active plane
+repo="$HOME/repos/gddp-runtime"
+stamp="$(date +%Y%m%d-%H%M%S)"
+queue_snapshot="/tmp/queue-$stamp.db"
+sqlite3 "$repo/db/queue.db" ".backup '$queue_snapshot'"
+sqlite3 "$queue_snapshot" 'PRAGMA journal_mode=DELETE;' >/dev/null
+test "$(sqlite3 "$queue_snapshot" 'PRAGMA integrity_check;')" = ok
+tar czf "/tmp/gddp-runtime-files-$stamp.tar.gz" -C "$repo" jobs events
+# copy both artifacts; restore the queue snapshot as db/queue.db before arm
 ```
+
+The queue backup and the `jobs/`/`events/` archive complete at different times;
+together they are not one application-consistent snapshot while writers are
+active. When cross-store consistency matters (including control-plane cutover),
+disarm intake and heartbeat writers first and run both captures while they stay
+quiesced; follow `CUTOVER.md` for the canonical order.
 
 Refresh at arm time if you care about queue continuity.
 

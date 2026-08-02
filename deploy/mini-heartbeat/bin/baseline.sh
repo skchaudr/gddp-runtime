@@ -109,6 +109,8 @@ else
 fi
 
 # --- 5. queue.db: intact and writable ----------------------------------------
+# WAL commits may not advance queue.db's mtime until checkpoint; use SQL
+# application timestamps (as below), never the main file mtime, for freshness.
 if [[ -f "$DB" ]]; then
   integ="$(sqlite3 "$DB" "PRAGMA integrity_check;" 2>/dev/null || echo error)"
   [[ "$integ" == "ok" ]] && ok "queue.db integrity ok" || crit "queue.db integrity: $integ"

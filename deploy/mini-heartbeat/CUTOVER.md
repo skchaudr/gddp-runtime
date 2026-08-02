@@ -80,33 +80,84 @@ curl -s http://127.0.0.1:5050/health
 # expect {"status":"ok"} when secret resolved
 ```
 
-## Phase 3 — Optional queue continuity
+## Phase 3 — Disarm pi-big
 
-If mini should inherit pi-big queue rows:
-
-```bash
-# on pi-big
-tar czf /tmp/gddp-runtime-state-$(date +%Y%m%d).tar.gz \
-  -C ~/repos/gddp-runtime db jobs events
-
-# copy to mini, then on mini (intake/heartbeat STOPPED):
-cd ~/repos/gddp-runtime
-tar xzf /tmp/gddp-runtime-state-*.tar.gz
-```
-
-Skip if mini starts fresh (recommended for first cutover unless jobs are
-in-flight).
-
-## Phase 4 — Disarm pi-big
-
-On **pi-big** only:
+Quiesce production writers before capturing or moving runtime state. On
+**pi-big** only:
 
 ```bash
 cd ~/repos/gddp-runtime
 bash deploy/mini-heartbeat/bin/disarm-source.sh
+sudo systemctl is-active gddp-intake   # expect: inactive
+crontab -l | grep 'scripts.runtime.heartbeat.runner'  # expect only commented lines, or no match
 ```
 
-Confirm: `gddp-intake` stopped+disabled; heartbeat crontab line commented.
+`disarm-source.sh` prevents future intake/cron starts; an already-running
+heartbeat and its detached local executor can outlive it. Drain them without
+terminating them, using the actual runner command and the local-subprocess PID
+files written under its configured spool:
+
+```bash
+repo="$HOME/repos/gddp-runtime"
+spool="${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$repo/jobs/local-subprocess-spool}"
+active_writers() {
+  pgrep -af '[s]cripts\.runtime\.heartbeat\.runner|[a]dapters\.local_subprocess_adapter --run-attempt' || true
+  for pid_file in "$spool"/*/supervisor.pid "$spool"/*/pid; do
+    test -f "$pid_file" || continue
+    attempt_dir="${pid_file%/*}"
+    test -f "$attempt_dir/exit.json" && continue
+    pid="$(cat "$pid_file")"
+    kill -0 "$pid" 2>/dev/null && printf 'active local executor pid=%s (%s)\n' "$pid" "$pid_file"
+  done
+}
+
+deadline=$((SECONDS + 120))
+while test -n "$(active_writers)" && test "$SECONDS" -lt "$deadline"; do
+  active_writers
+  sleep 2
+done
+if test -n "$(active_writers)"; then
+  active_writers
+  echo 'HARD STOP: runtime writers did not drain; do not snapshot or arm mini.' >&2
+  false
+fi
+```
+
+The empty final check is the snapshot gate. If the configured executor uses a
+non-default spool, set `GDDP_LOCAL_SUBPROCESS_SPOOL_DIR` to that live path first.
+Hard stop if any manual/unrecognized GDDP writer remains or the process check
+cannot account for the configured executor. Keep pi-big disarmed whether Phase
+4 is used or skipped.
+
+## Phase 4 — Optional queue continuity
+
+If mini should inherit pi-big runtime state, capture it only after the Phase 3
+no-writer gate passes. SQLite's online backup command includes committed WAL
+content without copying the live database files individually:
+
+```bash
+# on pi-big, after Phase 3
+repo="$HOME/repos/gddp-runtime"
+stamp="$(date +%Y%m%d-%H%M%S)"
+snapshot_dir="/tmp/gddp-runtime-state-$stamp"
+archive="$snapshot_dir.tar.gz"
+mkdir -p "$snapshot_dir/db"
+sqlite3 "$repo/db/queue.db" ".backup '$snapshot_dir/db/queue.db'"
+sqlite3 "$snapshot_dir/db/queue.db" 'PRAGMA journal_mode=DELETE;' >/dev/null
+test "$(sqlite3 "$snapshot_dir/db/queue.db" 'PRAGMA integrity_check;')" = ok
+tar czf "$archive" -C "$snapshot_dir" db/queue.db -C "$repo" jobs events
+printf 'copy this archive to stopped mini: %s\n' "$archive"
+
+# after copying the archive to mini, on mini (intake/heartbeat STOPPED):
+cd "$HOME/repos/gddp-runtime"
+tar xzf /tmp/gddp-runtime-state-YYYYMMDD-HHMMSS.tar.gz
+sqlite3 db/queue.db 'PRAGMA integrity_check;'  # expect: ok
+```
+
+Retain the source archive as recovery evidence until the supervised live proof
+passes. It supports direct rollback only while mini has accepted no new runtime
+activity. Skip this phase if mini starts fresh (recommended for first cutover
+unless jobs are in-flight).
 
 ## Phase 5 — Arm sab-mini
 
@@ -151,6 +202,9 @@ GDDP in the table.
 
 ## Rollback
 
+Directly reactivating pi-big is safe only when mini has accepted **zero new
+runtime activity** since the snapshot/cutover. In that case:
+
 ```bash
 # mini
 bash deploy/mini-heartbeat/bin/disarm.sh
@@ -161,6 +215,11 @@ sudo systemctl enable --now gddp-intake
 
 # GitHub: PATCH hooks back to pi-big funnel URL
 ```
+
+If mini accepted any event, dispatch, result, or other runtime write, disarm
+both planes and preserve both runtime-state copies. Hard stop before reactivation
+until their divergent state is reconciled; do not replace either database with
+the pre-cutover snapshot.
 
 ## Never again
 
