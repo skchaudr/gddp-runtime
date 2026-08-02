@@ -110,6 +110,56 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   fi
 fi
 
+# Plist env drift: the installed launchd plist freezes its EnvironmentVariables
+# at arm time. Editing gddp.env never reaches the heartbeat until re-arm —
+# on 2026-08-02 the plist still pinned executor model grok-cli/grok-4.5 after
+# gddp.env moved to zai/glm-5.2, and every launchd-dispatched executor died on
+# revoked xAI OAuth while shell-run pi worked. Compare the env the current env
+# file would render against the env launchd actually has loaded.
+_plist_drift_keys() {
+  local template="$1" installed="$2" rendered
+  rendered="$(mktemp -t gddp-plist-render)"
+  render_plist "$template" "$rendered"
+  "$GDDP_PYTHON" - "$rendered" "$installed" <<'PY'
+import json, subprocess, sys
+
+def env_of(path):
+    out = subprocess.run(
+        ["plutil", "-extract", "EnvironmentVariables", "json", "-o", "-", path],
+        capture_output=True, text=True,
+    )
+    return json.loads(out.stdout) if out.returncode == 0 else {}
+
+current, installed = env_of(sys.argv[1]), env_of(sys.argv[2])
+diffs = [k for k in sorted(set(current) | set(installed))
+         if current.get(k) != installed.get(k)]
+if diffs:
+    print("\n".join(diffs))
+    sys.exit(1)
+PY
+  local rc=$?
+  rm -f "$rendered"
+  return $rc
+}
+
+for label in "$HEARTBEAT_LABEL" "$INTAKE_LABEL"; do
+  template="$KIT_ROOT/launchd/${label}.plist"
+  installed="$LAUNCH_AGENTS_DIR/${label}.plist"
+  if [[ ! -f "$installed" ]]; then
+    echo "  [warn] $label plist not installed (run install-dormant / arm)"
+    continue
+  fi
+  if drift_keys="$(_plist_drift_keys "$template" "$installed")"; then
+    echo "  [ok] $label plist env matches gddp.env"
+  else
+    echo "  [FAIL] $label plist env is stale — re-run bin/arm.sh. Drifted keys:"
+    while IFS= read -r key; do
+      echo "         - $key"
+    done <<< "$drift_keys"
+    fail=1
+  fi
+done
+
 # One dry heartbeat if runtime present (does not require arm)
 if [[ -d "$GDDP_RUNTIME_ROOT/scripts" ]]; then
   echo "  running one heartbeat tick (observe logs)..."
