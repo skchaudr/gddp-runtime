@@ -59,8 +59,9 @@ _sed_replacement_escape() {
 render_plist() {
   local src="$1"
   local dest="$2"
-  local deepseek_cmd jules_cmd local_argv local_spool webhook_cmd
+  local deepseek_cmd droid_argv jules_cmd local_argv local_spool webhook_cmd
   deepseek_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")")"
+  droid_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DROID_SUBPROCESS_ARGV:-}")")"
   jules_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_JULES_KEY_CMD:-pass show api/jules}")")"
   local_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_ARGV:-}")")"
   local_spool="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$GDDP_RUNTIME_ROOT/jobs/local-subprocess-spool}")")"
@@ -74,6 +75,7 @@ render_plist() {
     -e "s|__GDDP_PROJECT_REPO__|${GDDP_PROJECT_REPO}|g" \
     -e "s|__GDDP_PYTHON__|${GDDP_PYTHON}|g" \
     -e "s|__GDDP_DEEPSEEK_KEY_CMD__|${deepseek_cmd}|g" \
+    -e "s|__GDDP_DROID_SUBPROCESS_ARGV__|${droid_argv}|g" \
     -e "s|__GDDP_JULES_KEY_CMD__|${jules_cmd}|g" \
     -e "s|__GDDP_LOCAL_SUBPROCESS_ARGV__|${local_argv}|g" \
     -e "s|__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__|${local_spool}|g" \

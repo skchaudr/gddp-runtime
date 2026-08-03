@@ -17,7 +17,10 @@ from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
-from adapters.local_subprocess_adapter import LocalSubprocessAdapter
+from adapters.local_subprocess_adapter import (
+    DroidSubprocessAdapter,
+    LocalSubprocessAdapter,
+)
 
 
 
@@ -26,7 +29,13 @@ ADAPTERS = {
     "jules_api": JulesApiAdapter,
     "jules_cli": JulesCliAdapter,
     "local_subprocess": LocalSubprocessAdapter,
+    "droid": DroidSubprocessAdapter,
 }
+
+# Executors that run inside a local checkout and therefore receive repo_path
+# as their cwd. Name-keyed (not class-keyed) so tests can substitute
+# duck-typed adapter doubles into ADAPTERS.
+_LOCAL_TRANSPORT_EXECUTORS = frozenset({"local_subprocess", "droid"})
 
 MEDIATED_ADAPTERS = {
     "jules": JulesActionAdapter,
@@ -83,7 +92,7 @@ def dispatch(
 
 def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):
     """Give only local transports the checkout they execute inside."""
-    if executor == "local_subprocess" and repo_path:
+    if executor in _LOCAL_TRANSPORT_EXECUTORS and repo_path:
         return adapter_cls(repo=repo, cwd=repo_path)
     return adapter_cls(repo=repo)
 

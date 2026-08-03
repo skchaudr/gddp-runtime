@@ -25,7 +25,10 @@ from adapters.executor_protocol import (
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
-from adapters.local_subprocess_adapter import LocalSubprocessAdapter
+from adapters.local_subprocess_adapter import (
+    DroidSubprocessAdapter,
+    LocalSubprocessAdapter,
+)
 from adapters import local_subprocess_adapter
 from runtime.heartbeat import dispatcher
 
@@ -145,15 +148,22 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
         spool_root=tmp_path,
     )
     action = JulesActionAdapter("owner/repo")
+    droid = DroidSubprocessAdapter(
+        repo="owner/repo",
+        argv=(sys.executable, "-c", "pass"),
+        spool_root=tmp_path,
+    )
 
     assert isinstance(api, ExecutorAdapter)
     assert isinstance(cli, ExecutorAdapter)
     assert isinstance(local, ExecutorAdapter)
+    assert isinstance(droid, ExecutorAdapter)
     assert not isinstance(action, ExecutorAdapter)
     assert dispatcher.ADAPTERS == {
         "jules_api": JulesApiAdapter,
         "jules_cli": JulesCliAdapter,
         "local_subprocess": LocalSubprocessAdapter,
+        "droid": DroidSubprocessAdapter,
     }
     assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
 
@@ -271,6 +281,44 @@ def test_local_subprocess_preflight_rejects_missing_argv(monkeypatch, tmp_path):
     assert "GDDP_LOCAL_SUBPROCESS_ARGV" in error
 
 
+def test_droid_adapter_defaults_to_droid_exec_argv(monkeypatch, tmp_path):
+    """No env, no explicit argv: droid exec through the shared wrapper."""
+    monkeypatch.delenv("GDDP_DROID_SUBPROCESS_ARGV", raising=False)
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path))
+
+    adapter = DroidSubprocessAdapter(repo="owner/repo")
+
+    argv = list(adapter.argv)
+    assert "droid" in argv and "exec" in argv
+    assert argv[argv.index("--auto") + 1] == "high"
+    assert "--append-system-prompt" in argv
+    wrapper = Path(argv[argv.index("--") - 1])
+    assert wrapper.name == "local_agent_executor.py" and wrapper.exists()
+    # Preflight passes with zero host config — the default is self-contained.
+    assert dispatcher.executor_preflight_error("droid", "owner/repo") is None
+
+
+def test_droid_adapter_honors_env_override(monkeypatch, tmp_path):
+    """Host config (model, autonomy) rides GDDP_DROID_SUBPROCESS_ARGV."""
+    custom = ["/usr/bin/python3", "wrapper.py", "--", "droid", "exec", "-m", "x"]
+    monkeypatch.setenv("GDDP_DROID_SUBPROCESS_ARGV", json.dumps(custom))
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path))
+
+    adapter = DroidSubprocessAdapter(repo="owner/repo")
+
+    assert list(adapter.argv) == custom
+
+
+def test_droid_adapter_rejects_malformed_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("GDDP_DROID_SUBPROCESS_ARGV", "{not json")
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path))
+
+    error = dispatcher.executor_preflight_error("droid", "owner/repo")
+
+    assert error is not None
+    assert "GDDP_DROID_SUBPROCESS_ARGV" in error
+
+
 def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
     spool_root = tmp_path / "spool"
     spool_root.mkdir()
@@ -293,6 +341,7 @@ def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
         ("jules_api", JulesApiAdapter, None),
         ("jules_cli", JulesCliAdapter, None),
         ("local_subprocess", LocalSubprocessAdapter, None),
+        ("droid", DroidSubprocessAdapter, None),
     ),
 )
 def test_dispatch_returns_common_receipt_and_passes_same_node_packet(

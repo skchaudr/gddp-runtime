@@ -266,22 +266,87 @@ def read_local_subprocess_status(
     )
 
 
-def _configured_argv(argv: Sequence[str] | None) -> tuple[str, ...]:
+def _configured_argv(
+    argv: Sequence[str] | None,
+    *,
+    env_var: str = _ARGV_ENV,
+    default: Sequence[str] = (),
+) -> tuple[str, ...]:
     if argv is None:
-        raw = os.environ.get(_ARGV_ENV)
+        raw = os.environ.get(env_var)
         if not raw:
-            raise ValueError(f"local subprocess argv is required ({_ARGV_ENV})")
-        try:
-            decoded = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{_ARGV_ENV} must be a JSON argv array") from exc
-        if not isinstance(decoded, list):
-            raise ValueError(f"{_ARGV_ENV} must be a JSON argv array")
-        argv = decoded
+            if not default:
+                raise ValueError(f"local subprocess argv is required ({env_var})")
+            argv = list(default)
+        else:
+            try:
+                decoded = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{env_var} must be a JSON argv array") from exc
+            if not isinstance(decoded, list):
+                raise ValueError(f"{env_var} must be a JSON argv array")
+            argv = decoded
     configured = tuple(str(item) for item in argv)
     if not configured:
         raise ValueError("local subprocess argv cannot be empty")
     return configured
+
+
+_DROID_ARGV_ENV = "GDDP_DROID_SUBPROCESS_ARGV"
+
+# Same contract preamble pi executors carry as their positional prompt; for
+# droid exec it rides the system-prompt channel because stdin is the packet.
+_DROID_PACKET_PREAMBLE = (
+    "Treat piped JSON as the authoritative GDDP NodePacket. Work only in the "
+    "current worktree. Implement its goal within its constraints, create its "
+    "required artifacts, run relevant checks, then stop. Never modify graph "
+    "truth or runtime databases."
+)
+
+
+def _default_droid_argv() -> tuple[str, ...]:
+    """`droid exec` through the same worktree/commit-ref wrapper as pi.
+
+    The model is host config (GDDP_DROID_SUBPROCESS_ARGV), not code: the
+    default uses droid's own configured default model. --auto high matches
+    the pi --approve executor profile (nodes instruct agents to commit and
+    push; medium would block the push).
+    """
+    wrapper = Path(__file__).resolve().parents[1] / "local_agent_executor.py"
+    return (
+        "/usr/bin/python3",
+        str(wrapper),
+        "--",
+        "droid",
+        "exec",
+        "--auto",
+        "high",
+        "--append-system-prompt",
+        _DROID_PACKET_PREAMBLE,
+    )
+
+
+class DroidSubprocessAdapter(LocalSubprocessAdapter):
+    """Factory Droid (droid exec) over the same local subprocess transport.
+
+    Identical packet/spool/commit-ref contract to local_subprocess; only the
+    default argv and its env override differ, so a node selects droid via
+    allowed_execution_modes: [droid] with no per-project argv coupling.
+    """
+
+    def __init__(
+        self,
+        repo: str,
+        *,
+        argv: Sequence[str] | None = None,
+        spool_root: str | Path | None = None,
+        cwd: str | Path | None = None,
+    ) -> None:
+        if argv is None:
+            argv = _configured_argv(
+                None, env_var=_DROID_ARGV_ENV, default=_default_droid_argv()
+            )
+        super().__init__(repo, argv=argv, spool_root=spool_root, cwd=cwd)
 
 
 def _configured_spool_root(spool_root: str | Path | None) -> Path:
