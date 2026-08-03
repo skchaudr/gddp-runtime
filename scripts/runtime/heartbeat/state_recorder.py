@@ -126,6 +126,50 @@ def mark_job_cancelled(con: sqlite3.Connection, job_id: str) -> None:
     )
 
 
+# Terminal graph statuses and the job state they reconcile to. Rejection is
+# deliberately absent: graph 'ready' cannot distinguish a rejected provisional
+# from a not-yet-reviewed node, so rejected jobs stay manual (jobs set).
+TERMINAL_GRAPH_TO_JOB_STATUS = {"complete": "accepted", "deferred": "deferred"}
+
+
+def reconcile_reviewed_jobs(
+    con: sqlite3.Connection,
+    project_id: str,
+    status_by_id: dict[str, str | None],
+) -> list[tuple[str, str, str]]:
+    """Drain the review queue for jobs whose node reached terminal graph truth.
+
+    The human's acceptance path (node_cli / node browse) writes graph files
+    only, so without this pass an accepted node's job sat in awaiting_review
+    forever — the review queue never drained, the scope/frontier guards kept
+    treating it as in-flight, and the UI showed 'complete' next to 'awaiting
+    review' (Sab, node-02, 2026-08-02). Returns (job_id, node_id, new_state)
+    for each reconciled job. Never touches graph truth.
+    """
+    rows = con.execute(
+        "SELECT job_id, node_id FROM jobs WHERE project_id = ? AND status = 'awaiting_review'",
+        (project_id,),
+    ).fetchall()
+    reconciled: list[tuple[str, str, str]] = []
+    for row in rows:
+        new_state = TERMINAL_GRAPH_TO_JOB_STATUS.get(
+            status_by_id.get(row["node_id"]) or ""
+        )
+        if new_state is None:
+            continue
+        con.execute(
+            "UPDATE jobs SET status = ?, queue_state = ? "
+            "WHERE job_id = ? AND status = 'awaiting_review'",
+            (new_state, new_state, row["job_id"]),
+        )
+        con.execute(
+            "UPDATE queue_records SET queue = ? WHERE job_id = ?",
+            (new_state, row["job_id"]),
+        )
+        reconciled.append((row["job_id"], row["node_id"], new_state))
+    return reconciled
+
+
 def execution_attempt_id(job_id: str, attempt_index: int) -> str:
     return f"{job_id}:attempt:{attempt_index}"
 

@@ -1181,6 +1181,51 @@ def test_classify_executor_failure_patterns():
     )
 
 
+def test_reconcile_reviewed_jobs_drains_only_terminal_graph_states(con):
+    """Accepted/deferred nodes leave the review queue; everything else stays.
+    Graph 'ready' is not reconciled — it cannot distinguish a rejected
+    provisional from a node the human simply has not reviewed yet."""
+    from scripts.runtime.heartbeat.state_recorder import reconcile_reviewed_jobs
+
+    _insert_job(con, job_id="job_acc", node_id="node-a", status="awaiting_review")
+    _insert_job(con, job_id="job_def", node_id="node-b", status="awaiting_review")
+    _insert_job(con, job_id="job_wait", node_id="node-c", status="awaiting_review")
+    _insert_job(con, job_id="job_run", node_id="node-d", status="running")
+
+    reconciled = reconcile_reviewed_jobs(
+        con,
+        "proj-1",
+        {
+            "node-a": "complete",
+            "node-b": "deferred",
+            "node-c": "ready",
+            "node-d": "complete",
+        },
+    )
+
+    assert sorted(reconciled) == [
+        ("job_acc", "node-a", "accepted"),
+        ("job_def", "node-b", "deferred"),
+    ]
+    states = {
+        row["job_id"]: (row["status"], row["queue_state"])
+        for row in con.execute("SELECT job_id, status, queue_state FROM jobs")
+    }
+    assert states["job_acc"] == ("accepted", "accepted")
+    assert states["job_def"] == ("deferred", "deferred")
+    assert states["job_wait"] == ("awaiting_review", "awaiting_review")
+    assert states["job_run"] == ("running", "running")
+    queues = {
+        row["job_id"]: row["queue"]
+        for row in con.execute("SELECT job_id, queue FROM queue_records")
+    }
+    assert queues["job_acc"] == "accepted"
+    assert queues["job_wait"] == "awaiting_review"
+
+    # Idempotent: a second pass finds nothing left to drain.
+    assert reconcile_reviewed_jobs(con, "proj-1", {"node-a": "complete"}) == []
+
+
 def test_retry_dispatch_failure_is_visible_and_idempotent(
     con, tmp_path, monkeypatch
 ):

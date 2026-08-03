@@ -50,6 +50,7 @@ from .state_recorder import (
     mark_event_scope_blocked,
     mark_job_failed,
     mark_job_running,
+    reconcile_reviewed_jobs,
 )
 
 from ..repo_resolver import resolution_candidates, resolve_repo_checkout
@@ -194,6 +195,19 @@ def run_heartbeat(
             # tick's planning sees the new frontier.
             if advance_frontier(con, reader, project_id):
                 ready_nodes = reader.get_ready_nodes(project_id)
+
+            # Review drain: the human's acceptance writes graph files only;
+            # reconcile jobs whose node reached terminal graph truth so the
+            # review queue drains and the guards stop treating them active.
+            for job_id, node_id, new_state in reconcile_reviewed_jobs(
+                con,
+                project_id,
+                {n["id"]: n.get("status") for n in project.nodes},
+            ):
+                print(
+                    f"  → review reconciled: {node_id} reached terminal graph "
+                    f"status; job {job_id} → {new_state}"
+                )
 
             # Phase A-C: Plan and dispatch new events.
             planned_dispatches = _plan_dispatches(
