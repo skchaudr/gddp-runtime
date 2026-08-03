@@ -80,8 +80,15 @@ node approval or authorization to implement, commit, or publish them.
   follow-up, or corrective node when the discovery creates bounded work.
 - Treat real project work as the source of discovered capability, integration,
   corrective, and retry work.
-- Preserve the distinction between a retry attempt against an existing node and
-  a newly authored retry node until the graph design explicitly chooses one.
+- Retry attempts re-attempt the same node unchanged (failure findings are
+  injected as the fix-list); they never change what is attempted. Work
+  discovered beyond the node's scope becomes a continuation proposal — a
+  fully-formed node yaml in a proposals ledger, frontier-invisible, that
+  only the human materializes into the graph. Agents never author nodes.
+- Evaluator-triggered retries require cited, concrete evidence: a repo path
+  (optionally :line), a graph node id, or a project canonical document.
+  Findings without evidence route to human review, never to work — the
+  executor needs something concrete to fix.
 - Keep infrastructure subordinate to the operating loop. It must improve node
   turnaround, concurrency, durable return, recovery, observability, or
   integrity.
