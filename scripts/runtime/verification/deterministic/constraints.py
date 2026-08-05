@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from ..schemas import ConstraintCheck
@@ -33,13 +34,28 @@ def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
                 files.add(probe["file"])
         else:
             criterion = item.get("criterion", "")
+            if not isinstance(criterion, str):
+                print(
+                    f"[constraints] non-string criterion in node {node_id!r} "
+                    f"(id={item.get('id')!r}); skipped — quote YAML scalars containing ':'",
+                    file=sys.stderr,
+                )
+                continue
             mentioned = mentioned_paths_from_text(criterion)
             existing = [p for p in mentioned if (repo / p).is_file()]
             if mentioned:
                 files.update(existing)
             else:
                 files.update(fallback_scan_files(repo, criterion))
-    for text in node_yaml.get("constraints", []):
+    for item in node_yaml.get("constraints", []):
+        text = item.get("constraint", "") if isinstance(item, dict) else item
+        if not isinstance(text, str) or (isinstance(item, dict) and not text):
+            print(
+                f"[constraints] non-string constraint in node {node_id!r}; "
+                f"skipped — quote YAML scalars containing ':'",
+                file=sys.stderr,
+            )
+            continue
         files.update(existing_paths_from_text(repo, text))
     return sorted(files)
 
