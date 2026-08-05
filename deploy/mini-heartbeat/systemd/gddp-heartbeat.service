@@ -1,0 +1,17 @@
+# GDDP heartbeat tick (Linux port of the launchd mini-heartbeat service).
+# One tick per timer fire: collect sessions, evaluate, advance frontier,
+# dispatch. Mirrors launchd StartInterval=300 via gddp-heartbeat.timer.
+#
+# KillMode=process is REQUIRED: the tick spawns executor supervisors
+# (local_agent_executor -> pi/droid) that outlive the tick. The default
+# control-group mode reaps the whole cgroup when the oneshot exits, killing
+# freshly-dispatched executors ("exited without durable exit state").
+# Learned live on khoj-38, 2026-08-05.
+[Unit]
+Description=GDDP heartbeat tick (mini-heartbeat Linux port)
+
+[Service]
+Type=oneshot
+KillMode=process
+WorkingDirectory=%h/gddp-runtime
+ExecStart=/usr/bin/bash -lc "source %h/gddp-runtime/deploy/mini-heartbeat/env/gddp.env && exec /usr/bin/python3 -m scripts.runtime.heartbeat.runner --all-active --config-path %h/gddp-config"

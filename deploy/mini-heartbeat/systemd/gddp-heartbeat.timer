@@ -1,0 +1,16 @@
+# Fires gddp-heartbeat.service every 5 minutes (mirrors the launchd kit's
+# StartInterval 300). Install:
+#   cp gddp-heartbeat.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   loginctl enable-linger "$USER"        # headless persistence
+#   systemctl --user enable --now gddp-heartbeat.timer
+[Unit]
+Description=GDDP heartbeat timer (mirrors launchd StartInterval 300)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=300
+AccuracySec=30
+
+[Install]
+WantedBy=timers.target
