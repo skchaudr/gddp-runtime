@@ -61,6 +61,23 @@ class GraphReader:
         self._project_cache: dict[str, ProjectGraph] = {}
         self._node_cache: dict[tuple[str, str], NodeData] = {}
 
+    def invalidate(self, project_id: str | None = None) -> None:
+        """Drop cached graph data so re-reads see freshly-written files.
+
+        Evaluation finalize can write node status (e.g. provisional) after a
+        reader has already cached the project; frontier re-checks in the same
+        tick must not read the stale snapshot."""
+        if project_id is None:
+            self._project_cache.clear()
+            self._node_cache.clear()
+            return
+        self._project_cache.pop(project_id, None)
+        self._node_cache = {
+            key: value
+            for key, value in self._node_cache.items()
+            if key[0] != project_id
+        }
+
     def load_project(self, project_id: str) -> ProjectGraph:
         if project_id in self._project_cache:
             return self._project_cache[project_id]

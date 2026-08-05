@@ -243,6 +243,7 @@ def run_heartbeat(
             # _active_projects). advance_frontier dedupes pending events, so
             # this is a no-op when nothing new became ready.
             try:
+                reader.invalidate(project_id)
                 if advance_frontier(con, reader, project_id):
                     print("  → frontier advanced after evaluation finalize")
             except Exception as exc:  # never mask tick results
