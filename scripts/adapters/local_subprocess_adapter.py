@@ -28,6 +28,11 @@ _EXECUTOR = "local_subprocess"
 class LocalSubprocessAdapter:
     """Run one packet per process and retain lifecycle state in a spool."""
 
+    # Routing identity recorded on SessionRef. Subclasses (e.g. droid) must
+    # override so retries redispatch through the same executor, not the pi
+    # default — the reconciler re-dispatches from the session's executor label.
+    executor_name = _EXECUTOR
+
     def __init__(
         self,
         repo: str,
@@ -106,7 +111,7 @@ class LocalSubprocessAdapter:
 
         return DispatchResult(
             success=True,
-            session_ref=SessionRef(executor=_EXECUTOR, session_id=session_id),
+            session_ref=SessionRef(executor=self.executor_name, session_id=session_id),
         )
 
     def status(self, session_ref: SessionRef) -> SessionStatus:
@@ -189,7 +194,7 @@ class LocalSubprocessAdapter:
         return True
 
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
-        if session_ref.executor != _EXECUTOR:
+        if session_ref.executor != self.executor_name:
             return None
         session_id = session_ref.session_id
         if (
@@ -333,6 +338,8 @@ class DroidSubprocessAdapter(LocalSubprocessAdapter):
     default argv and its env override differ, so a node selects droid via
     allowed_execution_modes: [droid] with no per-project argv coupling.
     """
+
+    executor_name = "droid"
 
     def __init__(
         self,
