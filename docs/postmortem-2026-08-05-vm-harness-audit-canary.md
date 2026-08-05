@@ -142,3 +142,5 @@ each fix is listed with its verification record below.
 | 6 | Collaboration packet: target host, repro, scope, evidence requirements, return artifact; returned claims stay hypotheses until tied to durable refs | run lead (runbook) | one run using the packet, claims traceable | proposed runbook experiment |
 | 7 | Per-node `executor_model` field (e.g. synthesis → Codex Sol) | operator decision first | proposal only — contract change | proposed, not approved |
 | 8 | Run-2 candidate: same graph under `droid exec --mission` (orchestrator/worker/validator) | operator decision | packet-stdin semantics pre-check first | proposed, not approved |
+| 9 | Rotate `DEEPSEEK_API_KEY` (appeared in transcripts during setup) | operator | new key issued, old revoked, VM env updated | open |
+| 10 | Per-node/executor wall-clock timeout — nothing bounds a hung executor today | runtime maintainer (operator approves schema) | timeout field + executor-enforced kill + regression test | proposed, not approved |
