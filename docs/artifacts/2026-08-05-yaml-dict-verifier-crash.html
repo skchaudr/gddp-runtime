@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Postmortem — YAML mapping crashed the deterministic verifier (2026-08-05)</title>
+    <style>
+      :root {
+        --bg:        #0b0f17;
+        --bg-2:      #0e1420;
+        --surface:   #131b29;
+        --surface-2: #18222f;
+        --line:      #232f42;
+        --line-2:    #2d3b50;
+        --text:      #e6ebf3;
+        --muted:     #8b96a8;
+        --dim:       #5d6677;
+        --green:     #3fb950;
+        --green-bg:  rgba(63,185,80,.12);
+        --amber:     #d29922;
+        --amber-bg:  rgba(210,153,34,.13);
+        --red:       #f85149;
+        --red-bg:    rgba(248,81,73,.12);
+        --blue:      #58a6ff;
+        --blue-bg:   rgba(88,166,255,.12);
+        --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background:
+          radial-gradient(1100px 560px at 82% -8%, rgba(88,166,255,.07), transparent 60%),
+          radial-gradient(900px 520px at 6% 0%, rgba(248,81,73,.06), transparent 55%),
+          var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 15.5px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 28px 96px; }
+
+      /* ---- header ---- */
+      .eyebrow {
+        font-size: 11.5px; letter-spacing: .22em; text-transform: uppercase;
+        color: var(--amber); font-weight: 600;
+      }
+      h1 { font-size: 30px; line-height: 1.22; margin: 10px 0 6px; letter-spacing: -.01em; font-weight: 700; }
+      .subtitle { color: var(--muted); font-size: 16px; max-width: 760px; }
+      .meta {
+        display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 20px;
+        font-family: var(--mono); font-size: 12.5px;
+      }
+      .meta span {
+        border: 1px solid var(--line-2); background: var(--surface);
+        padding: 5px 10px; border-radius: 6px; color: var(--muted);
+      }
+      .meta b { color: var(--text); font-weight: 600; }
+      .meta .sev { border-color: rgba(248,81,73,.45); color: var(--red); background: var(--red-bg); }
+
+      hr.rule { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+
+      /* ---- legend ---- */
+      .legend {
+        display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+        font-size: 12.5px; color: var(--muted); font-family: var(--mono);
+      }
+      .legend .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; margin-right: 7px; vertical-align: -1px; }
+      .d-green { background: var(--green); } .d-amber { background: var(--amber); }
+      .d-red { background: var(--red); } .d-blue { background: var(--blue); }
+      .d-dim  { background: var(--dim); }
+
+      /* ---- section scaffolding ---- */
+      section { margin-top: 40px; }
+      .sec-num { font-family: var(--mono); color: var(--dim); font-size: 12px; }
+      h2 { font-size: 19px; margin: 4px 0 4px; letter-spacing: -.005em; font-weight: 700; }
+      .sec-lede { color: var(--muted); margin: 0 0 18px; max-width: 820px; }
+
+      /* ---- pipeline diagram ---- */
+      .pipe {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+        border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden;
+        background: var(--bg-2);
+      }
+      .stage { padding: 18px 16px 16px; position: relative; border-right: 1px solid var(--line); }
+      .stage:last-child { border-right: 0; }
+      .stage .tag {
+        font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+        text-transform: uppercase; color: var(--dim);
+      }
+      .stage .name { font-size: 16px; font-weight: 700; margin: 6px 0 8px; }
+      .stage .state {
+        font-family: var(--mono); font-size: 11.5px; padding: 3px 8px; border-radius: 5px;
+        display: inline-block; margin-bottom: 9px;
+      }
+      .stage .desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+      .stage .file { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 9px; word-break: break-word; }
+
+      .stage.ok   { box-shadow: inset 3px 0 0 var(--green); }
+      .stage.warn { box-shadow: inset 3px 0 0 var(--amber); }
+      .stage.crit { box-shadow: inset 3px 0 0 var(--red); }
+      .stage.pass { box-shadow: inset 3px 0 0 var(--blue); }
+
+      .ok   .state { background: var(--green-bg); color: var(--green); }
+      .warn .state { background: var(--amber-bg); color: var(--amber); }
+      .crit .state { background: var(--red-bg);   color: var(--red); }
+      .pass .state { background: var(--blue-bg);  color: var(--blue); }
+
+      /* the error token that sails through */
+      .errflow {
+        display: flex; align-items: center; gap: 8px;
+        margin-top: 14px; padding: 9px 12px;
+        background: var(--surface); border: 1px dashed var(--line-2); border-radius: 8px;
+        font-family: var(--mono); font-size: 12.5px; flex-wrap: wrap;
+      }
+      .errflow .pill {
+        padding: 2px 8px; border-radius: 4px; font-size: 11px;
+        background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,81,73,.35);
+      }
+      .errflow .arrow { color: var(--dim); }
+      .errflow code { color: var(--text); }
+
+      /* ---- yaml parse illustration ---- */
+      .yaml-card {
+        border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface);
+        overflow: hidden;
+      }
+      .yaml-bar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 11px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+      }
+      .yaml-bar .fname { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+      .steps { display: flex; gap: 8px; }
+      .step-btn {
+        font-family: var(--mono); font-size: 11px; color: var(--muted);
+        border: 1px solid var(--line-2); background: transparent; border-radius: 5px;
+        padding: 4px 9px; cursor: pointer; transition: all .14s;
+      }
+      .step-btn:hover { color: var(--text); border-color: var(--blue); }
+      .step-btn.on { background: var(--blue-bg); color: var(--blue); border-color: rgba(88,166,255,.5); }
+
+      .parse-stage {
+        padding: 22px 20px; min-height: 188px; display: flex; flex-direction: column; gap: 16px;
+      }
+      .parse-block { display: none; }
+      .parse-block.show { display: block; animation: fade .25s ease; }
+      @keyframes fade { from { opacity: 0; transform: translateY(4px);} to {opacity:1; transform:none;} }
+
+      .raw-yaml {
+        font-family: var(--mono); font-size: 13.5px; line-height: 1.85;
+        background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+        white-space: pre; overflow-x: auto; color: var(--text);
+      }
+      .raw-yaml .key { color: var(--amber); }
+      .raw-yaml .val { color: var(--text); }
+      .raw-yaml .cmt { color: var(--dim); }
+
+      .intent-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .intent-box { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; background: var(--bg); }
+      .intent-box .h { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
+      .intent-box .h.intend { color: var(--green); }
+      .intent-box .h.got    { color: var(--red); }
+
+      .py-obj { font-family: var(--mono); font-size: 13px; line-height: 1.7; word-break: break-word; }
+      .py-obj .ty { color: var(--blue); }
+      .py-obj .str { color: var(--green); }
+      .py-obj .br { color: var(--muted); }
+      .py-obj .warn-inline { color: var(--red); }
+      .note { font-size: 12.5px; color: var(--muted); margin-top: 10px; line-height: 1.55; }
+
+      /* ---- code diff ---- */
+      .diff { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .code-card { border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; background: var(--surface); }
+      .code-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 9px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px;
+      }
+      .code-head .lbl.bad  { color: var(--red); }
+      .code-head .lbl.good { color: var(--green); }
+      .code-head .sha { color: var(--dim); }
+      pre.code {
+        margin: 0; padding: 14px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.72;
+        overflow-x: auto; background: var(--bg);
+      }
+      pre.code .kw { color: var(--blue); }
+      pre.code .fn { color: var(--amber); }
+      pre.code .str { color: var(--green); }
+      pre.code .cmt { color: var(--dim); font-style: italic; }
+      pre.code .err { color: var(--red); }
+      pre.code .add { background: rgba(63,185,80,.10); display: block; margin: 0 -16px; padding: 0 16px; }
+      pre.code .del { background: rgba(248,81,73,.10); display: block; margin: 0 -16px; padding: 0 16px; }
+      pre.code .ln  { color: var(--dim); user-select: none; display: inline-block; width: 22px; }
+
+      /* ---- timeline ---- */
+      .tl {
+        position: relative; border: 1px solid var(--line-2); border-radius: 12px;
+        background: var(--surface); padding: 30px 24px 22px;
+      }
+      .tl-rail { position: relative; height: 2px; background: var(--line-2); margin: 70px 24px 70px; border-radius: 2px; }
+      .tl-pt {
+        position: absolute; top: -6px; width: 14px; height: 14px; border-radius: 50%;
+        transform: translateX(-50%); border: 2px solid var(--bg);
+      }
+      .tl-pt .lbl {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+        font-family: var(--mono); font-size: 12px; white-space: nowrap; color: var(--text);
+      }
+      .tl-pt .sub {
+        position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+        font-family: var(--mono); font-size: 10.5px; white-space: nowrap; color: var(--muted);
+      }
+      .tl-pt.crit { background: var(--red); }   .tl-pt.crit .lbl { color: var(--red); }
+      .tl-pt.warn { background: var(--amber); } .tl-pt.warn .lbl { color: var(--amber); }
+      .tl-pt.ok   { background: var(--green); } .tl-pt.ok   .lbl { color: var(--green); }
+      .tl-pt.blue { background: var(--blue); }  .tl-pt.blue .lbl { color: var(--blue); }
+      .tl-pt.dim  { background: var(--dim); }   .tl-pt.dim  .lbl { color: var(--muted); }
+      .tl-window {
+        position: absolute; top: -4px; height: 10px; background: var(--red-bg);
+        border: 1px solid rgba(248,81,73,.3); border-radius: 5px;
+      }
+      .tl-window .wlab {
+        position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+        font-family: var(--mono); font-size: 10.5px; color: var(--red); white-space: nowrap;
+      }
+
+      /* ---- cost ladder ---- */
+      .ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
+      .rung { border: 1px solid var(--line-2); border-radius: 8px 8px 0 0; padding: 14px 14px 16px; position: relative; }
+      .rung .layer { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+      .rung .cost  { font-size: 22px; font-weight: 700; margin: 6px 0 4px; }
+      .rung .unit  { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+      .rung .what  { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+      .rung.l1 { height: 78px;  background: rgba(63,185,80,.07);  border-color: rgba(63,185,80,.3);  } .rung.l1 .cost { color: var(--green); }
+      .rung.l2 { height: 112px; background: var(--amber-bg);      border-color: rgba(210,153,34,.3); } .rung.l2 .cost { color: var(--amber); }
+      .rung.l3 { height: 150px; background: rgba(248,81,73,.06);  border-color: rgba(248,81,73,.25); } .rung.l3 .cost { color: var(--blue); }
+      .rung.l4 { height: 196px; background: var(--red-bg);        border-color: rgba(248,81,73,.4);  } .rung.l4 .cost { color: var(--red); }
+      .ladder-cap { color: var(--muted); font-size: 13px; margin-top: 14px; }
+      .ladder-cap b { color: var(--text); }
+
+      /* ---- callouts ---- */
+      .callout {
+        border-left: 3px solid var(--blue); background: var(--blue-bg);
+        padding: 13px 16px; border-radius: 0 8px 8px 0; margin-top: 16px; font-size: 14px;
+      }
+      .callout.amber { border-color: var(--amber); background: var(--amber-bg); }
+      .callout.red   { border-color: var(--red);   background: var(--red-bg); }
+      .callout .t { font-weight: 700; display: block; margin-bottom: 3px; }
+      .callout code { font-family: var(--mono); font-size: 12.5px; background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 3px; }
+
+      /* ---- followups ---- */
+      .fu { list-style: none; padding: 0; margin: 0; }
+      .fu li {
+        padding: 12px 14px 12px 18px; border: 1px solid var(--line); border-radius: 8px;
+        margin-bottom: 10px; display: flex; gap: 14px; align-items: flex-start; background: var(--surface);
+      }
+      .fu .badge { font-family: var(--mono); font-size: 10.5px; padding: 3px 8px; border-radius: 4px; white-space: nowrap; height: fit-content; }
+      .fu .done { background: var(--green-bg); color: var(--green); }
+      .fu .open { background: var(--amber-bg); color: var(--amber); }
+      .fu .body { font-size: 14px; }
+      .fu .body b { color: var(--text); }
+      .fu .body .ref { display: block; font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 4px; }
+
+      /* ---- methodology / corrections ---- */
+      .meth { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); padding: 18px 20px; }
+      .meth h3 { margin: 0 0 10px; font-size: 14px; }
+      .meth ol { margin: 0; padding-left: 20px; }
+      .meth li { margin-bottom: 9px; font-size: 13px; line-height: 1.55; }
+      .meth li code { font-family: var(--mono); font-size: 12px; color: var(--blue); }
+      .meth .src { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+
+      footer.foot { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12.5px; font-family: var(--mono); }
+      footer.foot a { color: var(--blue); text-decoration: none; }
+
+      @media (max-width: 820px) {
+        .pipe, .diff, .ladder, .intent-row { grid-template-columns: 1fr; }
+        .stage { border-right: 0; border-bottom: 1px solid var(--line); }
+        h1 { font-size: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <!-- ============ HEADER ============ -->
+      <div class="eyebrow">Postmortem · Production Incident</div>
+      <h1>Unquoted YAML scalar parsed as a dict and crashed the deterministic verifier</h1>
+      <p class="subtitle">
+        A constraint written as <code style="font-family:var(--mono);color:var(--amber)">- Read-only: inspect and report only&hellip;</code>
+        was parsed by YAML as a single-key mapping, not a string. The authoring validator flagged
+        it only as a non-blocking warning; the value sailed through to the runtime, where it crashed
+        the first evaluation tick of an autonomous loop.
+      </p>
+
+      <div class="meta">
+        <span class="sev"><b>Severity</b> · high</span>
+        <span><b>Date</b> · 2026-08-05</span>
+        <span><b>Window</b> · 00:45 → 01:13 UTC</span>
+        <span><b>Loss</b> · ~25 min, one stalled heartbeat tick</span>
+        <span><b>Graph</b> · vm-harness-audit</span>
+      </div>
+
+      <div class="legend" style="margin-top:22px;">
+        <span><span class="dot d-green"></span>clean / accepted</span>
+        <span><span class="dot d-amber"></span>warning, non-blocking</span>
+        <span><span class="dot d-red"></span>crash / error</span>
+        <span><span class="dot d-blue"></span>recovered</span>
+        <span><span class="dot d-dim"></span>pass-through</span>
+      </div>
+
+      <!-- ============ 1. PIPELINE ============ -->
+      <section>
+        <div class="sec-num">01 / Where it sailed and where it exploded</div>
+        <h2>The same defect crossed four layers before costing anything</h2>
+        <p class="sec-lede">
+          The error was born in authoring, signalled but not blocked at validation, transparent at
+          deploy, and only became expensive at evaluation — the layer with no human watching.
+        </p>
+
+        <div class="pipe">
+          <div class="stage crit">
+            <div class="tag">Layer 1</div>
+            <div class="name">Author</div>
+            <span class="state">defect born</span>
+            <div class="desc">A leading <code style="font-family:var(--mono)">Word:</code> in an unquoted list item turns a string scalar into a single-key mapping.</div>
+            <div class="file">node-03-subagents-chains-audit.yaml</div>
+          </div>
+          <div class="stage warn">
+            <div class="tag">Layer 2</div>
+            <div class="name">Validate</div>
+            <span class="state">warning · exit 0</span>
+            <div class="desc">The validator <em>did</em> detect this pattern but emitted a non-blocking warning (<code style="font-family:var(--mono)">implicit_mapping_in_list</code>); without <code style="font-family:var(--mono)">--strict</code> it passed.</div>
+            <div class="file">scripts/validate.py</div>
+          </div>
+          <div class="stage pass">
+            <div class="tag">Layer 3</div>
+            <div class="name">Deploy / Sync</div>
+            <span class="state">uninspected</span>
+            <div class="desc">The YAML is opaque to the sync path — it carries whatever the loader produced, mapping included, into the runtime.</div>
+            <div class="file">graph → VM</div>
+          </div>
+          <div class="stage crit">
+            <div class="tag">Layer 4</div>
+            <div class="name">Evaluate</div>
+            <span class="state">TypeError · crash</span>
+            <div class="desc">The deterministic lane called <code style="font-family:var(--mono)">mentioned_paths_from_text()</code> on the dict value and raised <code style="font-family:var(--mono)">TypeError</code>. The tick died instead of producing a verdict.</div>
+            <div class="file">deterministic/constraints.py</div>
+          </div>
+        </div>
+
+        <div class="errflow">
+          <span class="pill">dict</span>
+          <code>{'Read-only': 'inspect and report only&hellip;'}</code>
+          <span class="arrow">→</span>
+          <span style="color:var(--muted)">warned, not rejected</span>
+          <span class="arrow">→</span>
+          <span style="color:var(--muted)">carried through</span>
+          <span class="arrow">→</span>
+          <span style="color:var(--red)">crash</span>
+        </div>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 2. YAML PARSE ============ -->
+      <section>
+        <div class="sec-num">02 / What the author intended vs what YAML produced</div>
+        <h2>A colon in a list item is not a string — it is a mapping</h2>
+        <p class="sec-lede">
+          Step through the parse. The author meant one string. YAML's inline
+          <code style="font-family:var(--mono)">Key: value</code> rule produces a one-key dict. The
+          downstream code assumed every list item was a string.
+        </p>
+
+        <div class="yaml-card">
+          <div class="yaml-bar">
+            <span class="fname">graphs/vm-harness-audit/nodes/node-03-subagents-chains-audit.yaml</span>
+            <div class="steps">
+              <button class="step-btn on" data-step="0">1 · source</button>
+              <button class="step-btn" data-step="1">2 · intended</button>
+              <button class="step-btn" data-step="2">3 · actual</button>
+            </div>
+          </div>
+
+          <div class="parse-stage">
+            <div class="parse-block show" data-step="0">
+              <div class="raw-yaml"><span class="cmt"># the broken line — unquoted, leading "Read-only:"</span>
+constraints:
+<span class="cmt">  # broken ↓</span>
+  - <span class="key">Read-only:</span> <span class="val">inspect and report only; do not modify chain configs</span>
+<span class="cmt">  # fixed (after e68ed45) ↓</span>
+  - <span class="str">"Read-only: inspect and report only; do not modify chain configs"</span></div>
+              <div class="note">
+                Quoting the scalar makes YAML treat the whole line as one string. Without quotes,
+                the <code style="font-family:var(--mono)">Key:</code> prefix triggers a block mapping.
+                Four constraints across four nodes had this shape before commit <code style="font-family:var(--mono)">e68ed45</code>.
+              </div>
+            </div>
+
+            <div class="parse-block" data-step="1">
+              <div class="intent-box">
+                <div class="h intend">What the author intended — a string</div>
+                <div class="py-obj">
+                  <span class="ty">str</span> <span class="br">=</span> <span class="str">"Read-only: inspect and report only; do not modify chain configs"</span>
+                </div>
+                <div class="note">A single list element of type <code style="font-family:var(--mono)">str</code>. Every downstream consumer — path extraction, dedupe, pattern scan — is written for this type.</div>
+              </div>
+            </div>
+
+            <div class="parse-block" data-step="2">
+              <div class="intent-box">
+                <div class="h got">What YAML produced — a dict</div>
+                <div class="py-obj">
+                  <span class="ty">dict</span> <span class="br">=</span> <span class="br">{</span><span class="str">'Read-only'</span><span class="br">:</span> <span class="str">'inspect and report only; do not modify chain configs'</span><span class="br">}</span>
+                </div>
+                <div class="note">
+                  A one-key mapping. <span class="warn-inline">Not hashable-compatible with the string APIs below it.</span>
+                  The value reaches <code style="font-family:var(--mono)">mentioned_paths_from_text()</code>, which calls
+                  <code style="font-family:var(--mono)">re.findall(pattern, text)</code> on a <code style="font-family:var(--mono)">dict</code> and raises
+                  <code style="font-family:var(--mono);color:var(--red)">TypeError: expected string or bytes-like object</code>.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout amber">
+          <span class="t">Why this is easy to miss</span>
+          The line reads as perfectly natural English. The defect is invisible to the eye and only
+          surfaces to the YAML loader — and to whatever code first assumes the item is a string.
+        </div>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 3. BEFORE / AFTER ============ -->
+      <section>
+        <div class="sec-num">03 / The detonation point and the tolerance fix</div>
+        <h2>The crash was an unguarded string operation, not a dedupe</h2>
+        <p class="sec-lede">
+          The list of constraint strings was iterated directly into path-extraction. The fix did not
+          convert dicts to strings — it guarded the type, warned loudly, and skipped.
+        </p>
+
+        <div class="diff">
+          <div class="code-card">
+            <div class="code-head">
+              <span class="lbl bad">before · crashing</span>
+              <span class="sha">@ 185e6fe^</span>
+            </div>
+<pre class="code"><span class="ln"> </span><span class="kw">for</span> text <span class="kw">in</span> node_yaml.get(<span class="str">"constraints"</span>, []):
+<span class="ln"> </span>    <span class="cmt"># text may be a dict, not a str</span>
+<span class="ln"> </span>    files.update(           <span class="cmt"># no type guard</span>
+<span class="ln"> </span>        existing_paths_from_text(repo, text)
+<span class="ln"> </span>    )
+<span class="ln"> </span>
+<span class="ln"> </span><span class="cmt"># existing_paths_from_text → mentioned_paths_from_text</span>
+<span class="ln"> </span><span class="cmt">#   re.findall(pattern, text)</span>
+<span class="ln"> </span><span class="cmt">#   text is a dict  →  TypeError</span>
+<span class="ln"> </span><span class="err">>>> TypeError: expected string or</span>
+<span class="ln"> </span><span class="err">    bytes-like object, got 'dict'</span></pre>
+          </div>
+
+          <div class="code-card">
+            <div class="code-head">
+              <span class="lbl good">after · tolerant</span>
+              <span class="sha">@ 185e6fe</span>
+            </div>
+<pre class="code"><span class="ln"> </span><span class="kw">for</span> item <span class="kw">in</span> node_yaml.get(<span class="str">"constraints"</span>, []):   <span class="cmt"># renamed text → item</span>
+<span class="add"></span><span class="ln">+</span>    text = item.get(<span class="str">"constraint"</span>, <span class="str">""</span>) <span class="kw">if</span> <span class="kw">isinstance</span>(item, <span class="kw">dict</span>) <span class="kw">else</span> item
+<span class="add"></span><span class="ln">+</span>    <span class="kw">if not</span> <span class="kw">isinstance</span>(text, <span class="kw">str</span>) <span class="kw">or</span> (<span class="kw">isinstance</span>(item, <span class="kw">dict</span>) <span class="kw">and not</span> text):
+<span class="add"></span><span class="ln">+</span>        print(<span class="str">f"[constraints] non-string constraint "</span>
+<span class="add"></span><span class="ln">+</span>              <span class="str">f"in node {node_id!r}; skipped — "</span>
+<span class="add"></span><span class="ln">+</span>              <span class="str">"quote YAML scalars containing ':'"</span>, file=sys.stderr)
+<span class="add"></span><span class="ln">+</span>        <span class="kw">continue</span>
+<span class="ln"> </span>    files.update(
+<span class="ln"> </span>        existing_paths_from_text(repo, text)
+<span class="ln"> </span>    )
+<span class="ln"> </span><span class="cmt"># warn + skip, never crash the tick</span></pre>
+          </div>
+        </div>
+
+        <div class="callout">
+          <span class="t">The same guard was applied to criteria</span>
+          An identical <code>isinstance(criterion, str)</code> guard protects the
+          <code>acceptance_criteria</code> path in the same function, so a mapping-shaped criterion
+          is skipped with the same author-facing message rather than reaching
+          <code>mentioned_paths_from_text()</code>.
+        </div>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 4. TIMELINE ============ -->
+      <section>
+        <div class="sec-num">04 / Timeline</div>
+        <h2>~25 minutes from crash to clean tick</h2>
+        <p class="sec-lede">
+          An autonomous heartbeat tick dispatched node-01's evaluation, which crashed on the dict
+          constraint. The graph YAML was re-quoted and re-synced; the next tick passed.
+        </p>
+
+        <div class="tl">
+          <div class="tl-rail">
+            <div class="tl-window" style="left:12%; right:8%;">
+              <span class="wlab">stalled window · ~25 min</span>
+            </div>
+
+            <div class="tl-pt ok" style="left:4%;">
+              <span class="sub">00:41 UTC</span>
+              <span class="lbl">dispatch</span>
+            </div>
+            <div class="tl-pt crit" style="left:28%;">
+              <span class="sub">00:45 UTC</span>
+              <span class="lbl">crash</span>
+            </div>
+            <div class="tl-pt warn" style="left:52%;">
+              <span class="sub">00:52 UTC</span>
+              <span class="lbl">fix committed</span>
+            </div>
+            <div class="tl-pt dim" style="left:72%;">
+              <span class="sub">~01:0x</span>
+              <span class="lbl">re-sync</span>
+            </div>
+            <div class="tl-pt blue" style="left:92%;">
+              <span class="sub">01:13 UTC</span>
+              <span class="lbl">pass</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout">
+          <span class="t">Git-anchored midpoint</span>
+          Both fix commits — runtime <code>185e6fe</code> and config <code>e68ed45</code> — are
+          timestamped <b>2026-08-05 00:52 UTC</b>, sitting inside the 00:45 → 01:13 window. The
+          crash and pass timestamps are incident-report figures; the commit time is the verifiable
+          anchor between them.
+        </div>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 5. COST LADDER / LESSON ============ -->
+      <section>
+        <div class="sec-num">05 / The lesson</div>
+        <h2>The same error costs more the later it is caught</h2>
+        <p class="sec-lede">
+          Detection has a price that compounds by layer. A defect caught at author time costs a
+          message; the same defect caught at run time costs a crashed tick in a loop with no human
+          watching. The fix moved detection as far left as it could.
+        </p>
+
+        <div class="ladder">
+          <div class="rung l1">
+            <div class="layer">Author</div>
+            <div class="cost">cheap</div>
+            <div class="unit">~0 s</div>
+            <div class="what">Quote the scalar. The defect never exists.</div>
+          </div>
+          <div class="rung l2">
+            <div class="layer">Validate</div>
+            <div class="cost">low</div>
+            <div class="unit">seconds</div>
+            <div class="what">A blocking error at <code style="font-family:var(--mono)">validate</code>. Fix before commit.</div>
+          </div>
+          <div class="rung l3">
+            <div class="layer">Deploy</div>
+            <div class="cost">medium</div>
+            <div class="unit">minutes</div>
+            <div class="what">Caught on sync only if a pre-flight inspects types.</div>
+          </div>
+          <div class="rung l4">
+            <div class="layer">Evaluate</div>
+            <div class="cost">expensive</div>
+            <div class="unit">~25 min</div>
+            <div class="what">A dead tick in a live autonomous loop. No verdict, no evidence, a stuck frontier.</div>
+          </div>
+        </div>
+
+        <p class="ladder-cap">
+          Commit <code style="font-family:var(--mono)">185e6fe</code> made the evaluator
+          <b>tolerant</b> so a future authoring slip can never again kill a tick. The remaining
+          move is to make the validator <b>block</b> it — turning the existing warning into a
+          rejection at the layer where the defect is cheapest to fix.
+        </p>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 6. FOLLOWUPS ============ -->
+      <section>
+        <div class="sec-num">06 / Actions</div>
+        <h2>What landed and what is still open</h2>
+        <ul class="fu">
+          <li>
+            <span class="badge done">done</span>
+            <div class="body">
+              <b>Verifier tolerates non-string items.</b> An <code style="font-family:var(--mono)">isinstance(…, str)</code>
+              guard warns and skips non-string criteria and constraints instead of crashing the
+              deterministic lane. A future slip degrades the tick, it never kills it.
+              <span class="ref">gddp-runtime · 185e6fe · scripts/runtime/verification/deterministic/constraints.py</span>
+            </div>
+          </li>
+          <li>
+            <span class="badge done">done</span>
+            <div class="body">
+              <b>Graph YAML re-quoted.</b> The five unquoted <code style="font-family:var(--mono)">Read-only:</code> /
+              <code style="font-family:var(--mono)">Tiering doctrine:</code> scalars across four nodes were quoted so they
+              parse as strings.
+              <span class="ref">gddp-config · e68ed45 · graphs/vm-harness-audit/nodes/node-0{1..4}-*.yaml</span>
+            </div>
+          </li>
+          <li>
+            <span class="badge open">open</span>
+            <div class="body">
+              <b>Promote the validator warning to a blocking rejection.</b> The check already exists
+              (<code style="font-family:var(--mono)">implicit_mapping_in_list</code>), but it is a non-blocking warning —
+              exit 0 without <code style="font-family:var(--mono)">--strict</code>. The follow-up is to make a single-key
+              mapping in a string-list an error by default, so the defect is caught at the author
+              layer instead of tolerated at the runtime layer.
+              <span class="ref">gddp-config · scripts/validate.py · lines ~185–199</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <hr class="rule" />
+
+      <!-- ============ 7. METHODOLOGY / CORRECTIONS ============ -->
+      <section>
+        <div class="sec-num">07 / Methodology</div>
+        <h2>Every claim was checked against source</h2>
+        <p class="sec-lede">
+          This postmortem corrects four inaccuracies present in the briefing. Each fix is anchored
+          to a commit or file line. Accuracy over narrative.
+        </p>
+
+        <div class="meth">
+          <h3>Corrections to the original incident brief</h3>
+          <ol>
+            <li>
+              <b>Broken scalar text.</b> Brief said <code>- Key: PRESERVE...</code>; the real broken
+              text was <code>- Read-only: inspect and report only...</code> across 4 nodes.
+              <div class="src">gddp-config · e68ed45 · node-01..04 YAML</div>
+            </li>
+            <li>
+              <b>Crash mechanism.</b> Brief described a <code>item not in seen</code> set-dedupe
+              raising <code>TypeError: unhashable type: 'dict'</code>. That code does not exist. The
+              real crash was <code>re.findall()</code> inside <code>mentioned_paths_from_text()</code>
+              receiving a dict and raising <code>TypeError: expected string or bytes-like object</code>.
+              <div class="src">gddp-runtime · 185e6fe (message) · probes.py:471 · verified by reproducing in python3</div>
+            </li>
+            <li>
+              <b>Fix behaviour.</b> Brief said the fix "stringifies dicts and keeps checking." The
+              verified fix warns and <em>skips</em> (<code>continue</code>) non-string items; it does
+              not convert them to strings. It touches <code>constraints.py</code> only.
+              <div class="src">gddp-runtime · 185e6fe · constraints.py collect_constraint_files()</div>
+            </li>
+            <li>
+              <b>Validator silence.</b> Brief said the validator "never checked" for non-string
+              items. The check already existed and flagged this exact pattern — but as a
+              <em>non-blocking warning</em> (exit 0 without <code>--strict</code>), so the file
+              passed. The open follow-up is therefore to <em>promote</em> the warning, not add one.
+              <div class="src">gddp-config · scripts/validate.py · ~L181 (criterion str check) + ~L185–199 (implicit_mapping_in_list warning), present at e68ed45</div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <footer class="foot">
+        Self-contained postmortem artifact · no external dependencies · rendered for operator review.
+        All code excerpts and commit references verified against gddp-runtime@main and gddp-config@main.
+      </footer>
+    </main>
+
+    <script>
+      // stepped YAML parse illustration — keyboard accessible, no external deps
+      (function () {
+        var btns = document.querySelectorAll(".step-btn");
+        var blocks = document.querySelectorAll(".parse-block");
+        function show(step) {
+          btns.forEach(function (b) {
+            b.classList.toggle("on", b.getAttribute("data-step") === String(step));
+          });
+          blocks.forEach(function (blk) {
+            blk.classList.toggle("show", blk.getAttribute("data-step") === String(step));
+          });
+        }
+        btns.forEach(function (b) {
+          b.addEventListener("click", function () { show(b.getAttribute("data-step")); });
+        });
+        document.addEventListener("keydown", function (e) {
+          var cur = document.querySelector(".step-btn.on");
+          var i = cur ? Number(cur.getAttribute("data-step")) : 0;
+          if (e.key === "ArrowRight" && i < 2) { show(i + 1); e.preventDefault(); }
+          if (e.key === "ArrowLeft" && i > 0)  { show(i - 1); e.preventDefault(); }
+        });
+      })();
+    </script>
+  </body>
+</html>

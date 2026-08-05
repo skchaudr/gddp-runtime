@@ -136,7 +136,7 @@ each fix is listed with its verification record below.
 |---|---|---|---|---|
 | 1 | Content-audit node-02/node-04 reports against criteria + primary sources | human reviewer (assignee TBD) | quoted claims, corroboration refs, accept/revise/defer decision | open — acceptance pending |
 | 2 | Determine why verification evidence didn't establish those claims; correct criteria/context only on reproduced gap | evaluator maintainer (operator approves contract changes) | path-cited reproduction + regression fixture | open investigation — no new reviewer role approved |
-| 3 | `gddp project validate` rejects non-string criteria/constraints | validation maintainer | failing fixture → passing test + actionable error | proposed bounded correction |
+| 3 | `gddp project validate` rejects non-string criteria/constraints | validation maintainer | failing fixture → passing test + actionable error | **done** — gddp-config `4794390`: `implicit_mapping_in_list` promoted warning→error in `validate.py` + `import_node.py`; 5 regression tests; no existing graph trips it. (Found during fix: the check already existed as a non-blocking warning.) |
 | 4 | Pin retry-budget semantics for executor-failure redispatch (`retry_budget: 2` vs observed attempt count) | runtime maintainer | written semantics + ledger-backed test | open investigation |
 | 5 | Verify droid streaming output before any spool change | executor maintainer | capability evidence, durability/redaction check | decision required — not authorized |
 | 6 | Collaboration packet: target host, repro, scope, evidence requirements, return artifact; returned claims stay hypotheses until tied to durable refs | run lead (runbook) | one run using the packet, claims traceable | proposed runbook experiment |
