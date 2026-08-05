@@ -6,11 +6,11 @@ fully autonomous droid run (vm-harness-audit, 5/5 provisional). It is the
 only verified fresh-host record GDDP has. Big Pi's artifacts predate it
 and do not work (see warning below).
 
-> ⚠️ **Do not run `deploy/setup.sh` on a fresh host.** It defaults
-> `RUNTIME_ROOT` to `$HOME/opclaw` — a tree `BIGPI_RUNBOOK.md` itself
-> declares retired. `deploy/gddp-intake.service` hardcodes
-> `User=sab-ssd` and `/home/sab-ssd/...`. All three artifacts describe a
-> dead topology. This file is the living stand-up path.
+> ⚠️ **Do not run the archived Big Pi artifacts.** `deploy/_archive/setup.sh`
+> defaults `RUNTIME_ROOT` to `$HOME/opclaw` — a tree the archived
+> `BIGPI_RUNBOOK.md` itself declares retired. `deploy/_archive/gddp-intake.service`
+> hardcodes `User=sab-ssd` and `/home/sab-ssd/...`. Those three artifacts describe a
+> dead topology (archived 2026-08-05). This file is the living stand-up path.
 
 ## Prerequisites (were already present on khoj-38)
 

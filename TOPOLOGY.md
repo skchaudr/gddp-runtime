@@ -47,6 +47,7 @@ Machines on Tailscale but not listed here are out of scope for GDDP runtime.
 - `docs/dispatch-checklist.md` — intent / planning / execution gates
 - `deploy/mini-heartbeat/README.md` — launchd kit
 - `deploy/mini-heartbeat/CUTOVER.md` — pi-big → mini migration
-- `deploy/BIGPI_RUNBOOK.md` — pi-big ops (archive)
+- `deploy/_archive/BIGPI_RUNBOOK.md` — pi-big ops (archived 2026-08-05; dead topology)
+- `deploy/mini-heartbeat/FRESH-HOST-STANDUP.md` — verified fresh-host stand-up path
 - `docs/postmortem-canary-scope-2026-07-12.md` — Jul 12 incident
 - `AGENTS.md` — agent session workflow

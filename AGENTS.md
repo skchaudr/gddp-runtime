@@ -36,7 +36,7 @@ Harness design and implementation + running nodes through the loop and creating 
 Past versions of the runtime loop: 
 GitHub webhook intake → classify → scope → queue → execute pipeline.
 Python scripts in `scripts/`, deploy configs in `deploy/`, docs in `docs/`.
-No requirements.txt — scripts use stdlib + Flask (see `deploy/setup.sh`).
+No requirements.txt — scripts use stdlib + Flask (`pip install flask`).
 
 Semi-autonomous pipeline with human-in-the-loop review and agentic evaluation is the goal. The evaluator is live: a two-lane verification pass (deterministic + semantic criteria lane, intent/integrity lane) combined worst-of into a verdict receipt. Verdicts are evidence for human review — the evaluator is the second-to-last gate, never the last.  
 
@@ -107,7 +107,7 @@ node approval or authorization to implement, commit, or publish them.
 ## Project snapshot
 
 - **Language:** Python 3.11+ (stdlib + Flask)
-- **Install:** `pip install flask` (see `deploy/setup.sh` for full pi-big setup)
+- **Install:** `pip install flask` (fresh-host stand-up: `deploy/mini-heartbeat/FRESH-HOST-STANDUP.md`)
 - **Test:** `python3 -m pytest -q` (suite)
 - **Lint:** none configured
 - **Heavy dirs excluded from git:** `db/`, `jobs/`, `events/` (runtime state, never committed)
