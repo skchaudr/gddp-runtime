@@ -23,6 +23,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -234,6 +235,18 @@ def run_heartbeat(
             # Worker threads never receive ``con``. The coordinator serializes
             # all result/session/job writes before closing the heartbeat DB.
             evaluation_batch.finalize(con)
+            # Frontier re-check AFTER evaluations land: finalize() may have
+            # written provisional statuses that satisfy dependents. Inject
+            # their dispatch events now — otherwise the frontier transition
+            # waits for a tick that may never process this project again
+            # (a project with only settled work reads dormant to
+            # _active_projects). advance_frontier dedupes pending events, so
+            # this is a no-op when nothing new became ready.
+            try:
+                if advance_frontier(con, reader, project_id):
+                    print("  → frontier advanced after evaluation finalize")
+            except Exception as exc:  # never mask tick results
+                print(f"  → frontier re-check failed: {exc}", file=sys.stderr)
     finally:
         con.close()
 
