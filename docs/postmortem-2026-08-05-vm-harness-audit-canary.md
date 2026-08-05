@@ -10,14 +10,17 @@ result into `main`.
 
 ## Executive summary
 
-The canary exercised the automated path end-to-end for the first time with a
-non-pi executor: five nodes received qualifying evaluator receipts and were
-written `provisional`, with frontier auto-advance injecting each dependent's
-dispatch. **No node was human-accepted or marked `complete`; the final
-acceptance path was not exercised.** Scheduler-driven dispatch ran
-automatically between operator interventions over ~90 minutes. The run
-exposed five defects (four runtime, one platform), all diagnosed and patched
-during the window; each fix is listed with its verification record below.
+The canary's purpose was to practice dispatch and autonomy, and the operator
+deliberately chose full autonomy: armed timer, `frontier_auto_advance`,
+provisional flow with human review trailing. That design executed as
+intended — five nodes executed by droid, evaluated, and written
+`provisional`, with the frontier injecting each dependent's dispatch and no
+automated path writing `complete`. Human acceptance is the *next* phase by
+design, not a gap in this one. Scheduler-driven dispatch ran automatically
+between operator interventions over ~90 minutes; the interventions were
+defect repairs, not autonomy corrections. The run exposed five defects
+(four runtime, one platform), all diagnosed and patched during the window;
+each fix is listed with its verification record below.
 
 ## Final state (verified 02:37 UTC)
 
@@ -106,11 +109,13 @@ during the window; each fix is listed with its verification record below.
 
 ## Evidence gaps (open)
 
-- **Node-02 and node-04 substantive claims are not independently
-  corroborated.** Receipts established provisional eligibility; this
-  postmortem identifies no evidence that the extension inventory (02) or
-  the PTY capture (04) was checked against primary sources. Those claims
-  remain open for human review (action A2).
+- **The run's real miss was mine, not the system's: during execution I
+  checked droid's reports for existence and verdicts, not substance.**
+  Node-02's extension inventory and node-04's PTY capture were not
+  corroborated against primary sources by anyone yet. That is precisely
+  what the human review gate is for, and it hasn't happened — so nothing is
+  late; but the operator's read of these two reports should treat them as
+  unverified until checked (action A2).
 - **Whether existing verification surfaces *could* have established those
   claims is undetermined.** Criteria, evaluator context, and supplied
   artifacts have not been audited for this gap (action A3).
