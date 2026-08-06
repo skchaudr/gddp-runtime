@@ -13,7 +13,7 @@ queries = [
 
 for query in queries:
     print(f"\nSearching for: {query}")
-    url = f'http://export.arxiv.org/api/query?search_query={urllib.parse.quote(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
+    url = f'https://export.arxiv.org/api/query?search_query={urllib.parse.quote(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
     try:
         response = urllib.request.urlopen(url)
         data = response.read()
