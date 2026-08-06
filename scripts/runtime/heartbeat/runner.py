@@ -365,6 +365,11 @@ def _plan_dispatches(
     planned_dispatches: list[PlannedDispatch] = []
     base_commit_resolved = expected_base_commit_sha is not None
 
+    # ⚡ Bolt: Convert ready_nodes to a dictionary keyed by node_id.
+    # This turns the node lookup inside the event loop from O(N) to O(1),
+    # changing overall complexity from O(E*N) to O(E + N).
+    ready_nodes_dict = {n.node_id: n for n in ready_nodes}
+
     for event in events:
         event_id = event["event_id"]
 
@@ -413,7 +418,7 @@ def _plan_dispatches(
             continue
 
         node_id = classification["matched_node_id"]
-        node = next((n for n in ready_nodes if n.node_id == node_id), None)
+        node = ready_nodes_dict.get(node_id)
         if node is None:
             mark_event_ignored(con, event_id)
             con.commit()
