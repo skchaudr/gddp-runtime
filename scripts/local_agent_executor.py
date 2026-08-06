@@ -10,12 +10,45 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 _WORKTREE_PREFIX = "gddp-agent-wt-"
 HANDOFF_SCHEMA = "gddp.local_result.v1"
 _REF_SAFE = re.compile(r"[^A-Za-z0-9._/-]+")
+_WORKTREE_MAP_ENV = "GDDP_WORKTREE_MAP_PATH"
+_DEFAULT_WORKTREE_MAP = (
+    Path.home() / ".local/share/droid-observability/gddp-worktree-map.ndjson"
+)
+
+
+def record_worktree_correlation(worktree: Path, packet: dict[str, Any]) -> None:
+    """Append a worktree → job mapping so telemetry can be joined back to a node.
+
+    Agent hook events and OTLP metrics carry only the worktree cwd and the
+    agent's own session id. The worktree is pruned when the attempt ends, so
+    without this line nothing survives to map a session back to a job. Writes
+    the basename too: hooks report the resolved /private/var path while
+    tempfile hands us /var, and only the basename is stable across both.
+
+    Never raises — observability must not be able to fail a dispatch.
+    """
+    try:
+        path = Path(os.environ.get(_WORKTREE_MAP_ENV) or _DEFAULT_WORKTREE_MAP)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "worktree_path": str(worktree),
+            "worktree_name": worktree.name,
+            "job_id": packet.get("job_id"),
+            "node_id": packet.get("node_id"),
+            "execution_attempt_id": packet.get("execution_attempt_id"),
+        }
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+    except Exception:  # noqa: BLE001 - never let telemetry break a run
+        pass
 
 
 def load_packet(raw: str) -> dict[str, Any]:
@@ -272,6 +305,7 @@ def run(
     keep_worktree = False
     try:
         worktree = create_worktree(repo, str(packet["expected_base_commit_sha"]))
+        record_worktree_correlation(worktree, packet)
         agent_code = run_agent_fn(agent_argv, packet_raw, worktree)
         handoff = persist_result(worktree, packet)
         # Set keep policy before stdout write so a write_handoff failure

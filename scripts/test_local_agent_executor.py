@@ -413,3 +413,30 @@ def test_main_uses_agent_cli_from_its_argv(monkeypatch):
         '{"packet":true}',
         ["codex", "exec", "-"],
     )
+
+
+def test_worktree_correlation_records_job_mapping(tmp_path, monkeypatch):
+    """Telemetry only sees the worktree; this line is what maps it to a job."""
+    map_path = tmp_path / "map.ndjson"
+    monkeypatch.setenv(lae._WORKTREE_MAP_ENV, str(map_path))
+
+    lae.record_worktree_correlation(
+        tmp_path / "gddp-agent-wt-abc123",
+        {"job_id": "job_1", "node_id": "node-01", "execution_attempt_id": "att_0"},
+    )
+
+    entry = json.loads(map_path.read_text().strip())
+    assert entry["job_id"] == "job_1"
+    assert entry["node_id"] == "node-01"
+    assert entry["execution_attempt_id"] == "att_0"
+    # Basename is the only key stable across /var vs /private/var.
+    assert entry["worktree_name"] == "gddp-agent-wt-abc123"
+
+
+def test_worktree_correlation_never_raises(tmp_path, monkeypatch):
+    """A dispatch must survive an unwritable telemetry path."""
+    unwritable = tmp_path / "file.txt"
+    unwritable.write_text("not a directory")
+    monkeypatch.setenv(lae._WORKTREE_MAP_ENV, str(unwritable / "nested" / "map.ndjson"))
+
+    lae.record_worktree_correlation(tmp_path / "gddp-agent-wt-x", {"job_id": "j"})

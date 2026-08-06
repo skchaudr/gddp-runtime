@@ -48,6 +48,24 @@
     <string>__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__</string>
     <key>PYTHONPATH</key>
     <string>__GDDP_RUNTIME_ROOT__</string>
+
+    <!--
+      Droid/executor telemetry. Droid reads OTEL_TELEMETRY_ENDPOINT first, then
+      OTEL_EXPORTER_OTLP_ENDPOINT. These must live here: droid inherits only what
+      launchd sets, so an interactive shell's exports never reach an executor.
+      Export interval is short because a `droid exec` run often finishes well
+      inside the 60s SDK default.
+    -->
+    <key>OTEL_EXPORTER_OTLP_ENDPOINT</key>
+    <string>http://127.0.0.1:4318</string>
+    <key>OTEL_EXPORTER_OTLP_PROTOCOL</key>
+    <string>http/protobuf</string>
+    <key>OTEL_SERVICE_NAME</key>
+    <string>gddp-droid</string>
+    <key>OTEL_RESOURCE_ATTRIBUTES</key>
+    <string>gddp.role=executor,deployment.environment=gddp</string>
+    <key>OTEL_METRIC_EXPORT_INTERVAL</key>
+    <string>10000</string>
   </dict>
 
   <key>StartInterval</key>
