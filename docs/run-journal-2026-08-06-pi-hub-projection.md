@@ -29,3 +29,31 @@ Overseer: Pi (kimi-k3), hands-off unless fire; watchers in /tmp/pi-hub-watch.{sh
    graph itself (liveness is an observability input).
 3. Python 3.9 (Xcode framework) runs local_agent_executor — stdlib-only
    constraint is load-bearing; keep it.
+
+## Timeline (cont.)
+
+- 11:58 — node-01 droid exit 0 (~9 min). Result 3d3ae4c1: project.py +
+  report; db host-local + gitignored (consistent with settings.json split).
+- 12:10 — verdict pass; node-01 provisional. Then: STALL — no 02/04 dispatch.
+- 12:25 — root cause: AUTHORING ERROR (mine). Dependents authored
+  `status: ready`; advance_frontier only transitions `pending` nodes, and
+  a settled project reads dormant to _active_projects, so no tick ever
+  re-scanned them. VM canary auto-advance worked because its dependents
+  were pending. Unstick used the machine's own advance_frontier (one-off
+  invocation) — transitioned 02+04, injected dispatch events.
+- 12:35 — hardening landed (gddp-config 7f9d85a): validator now ERRORS on
+  ready-with-unsatisfied-deps. It immediately caught the same latent bug
+  in the draft canonical graph (pi-evaluator-guard) + two pre-existing
+  implicit_mapping_in_list violations (gddp-runtime, myapi) — all fixed.
+- 12:40 — node-02 + node-04 RUNNING CONCURRENTLY on droid (attempt 0).
+  First in-graph auto-fanout. Watcher v2 restarted.
+
+## Lessons pinned
+
+- Authoring grammar: roots may be `ready`; any node with depends_on MUST
+  be authored `pending`. Validator enforces.
+- The dispatch planner and the frontier machine read different vocabularies
+  (planner: ready; machine: pending). Unstick path for a dormant project is
+  advance_frontier, not the planner.
+- Two watcher bugs of mine: v1 not actually killed (wrote phantom
+  ALL-TERMINAL); pattern queries must target node ids, not job-id prefixes.
