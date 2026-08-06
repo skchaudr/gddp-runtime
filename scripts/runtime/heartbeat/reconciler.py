@@ -31,6 +31,7 @@ from ..verification.bridge import verify_job_return
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .provisional_gate import maybe_mark_provisional
 from .state_recorder import (
+    allocate_plumbing_retry,
     allocate_retry_attempt,
     finalize_executor_session_dispatch,
     get_active_executor_sessions,
@@ -574,6 +575,23 @@ _AUTH_BLOCK_PATTERNS = (
 )
 
 
+"""Plumbing failure signals: the executor died before producing durable exit
+state (cgroup reap, host fault, spawn error). The work was never attempted,
+so the retry draws on the plumbing budget, not the work-attempt budget
+(policy: 3 work attempts + 3 plumbing retries, 2026-08-05)."""
+_PLUMBING_PATTERNS = (
+    "exited without durable exit state",
+    "invalid local subprocess exit state",
+)
+
+
+def classify_plumbing_failure(error: str | None) -> bool:
+    """True when the session failed before the executor could report — infra
+    noise, not evidence about the node's work."""
+    text = (error or "").lower()
+    return any(pattern in text for pattern in _PLUMBING_PATTERNS)
+
+
 def classify_executor_failure(error: str | None) -> str:
     """'auth_blocked' when executor credentials/login are the failure (retry
     cannot succeed and must not consume budget); 'retryable' otherwise."""
@@ -624,18 +642,33 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
 
     mark_job_failed(con, job_id)
     expected_base = _get_head_sha(repo_path) or session["expected_base_commit_sha"]
-    allocated = allocate_retry_attempt(
-        con,
-        job,
-        executor=session["executor"],
-        expected_base_commit_sha=expected_base,
-    )
+    plumbing = classify_plumbing_failure(error)
+    if plumbing:
+        allocated = allocate_plumbing_retry(
+            con,
+            job,
+            executor=session["executor"],
+            expected_base_commit_sha=expected_base,
+        )
+    else:
+        allocated = allocate_retry_attempt(
+            con,
+            job,
+            executor=session["executor"],
+            expected_base_commit_sha=expected_base,
+        )
     if allocated is None:
         con.commit()
-        print(
-            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
-            f"exhausted at attempt {current_attempt}"
-        )
+        if plumbing:
+            print(
+                f"[reconcile] {session_db_id}: executor died before durable "
+                f"exit state; job {job_id} plumbing budget exhausted"
+            )
+        else:
+            print(
+                f"[reconcile] {session_db_id}: executor failed; job {job_id} "
+                f"exhausted at attempt {current_attempt}"
+            )
         return
 
     retry_job, replacement_id = allocated
@@ -685,10 +718,18 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
             return
         mark_job_running(con, job_id)
         con.commit()
-        print(
-            f"[reconcile] {session_db_id}: executor failed; job {job_id} "
-            f"redispatched as attempt {retry_job['attempt']}"
-        )
+        if plumbing:
+            print(
+                f"[reconcile] {session_db_id}: executor died before durable "
+                f"exit state; job {job_id} redispatched as plumbing retry "
+                f"{retry_job['plumbing_attempt']} (attempt "
+                f"{retry_job['attempt']} unchanged)"
+            )
+        else:
+            print(
+                f"[reconcile] {session_db_id}: executor failed; job {job_id} "
+                f"redispatched as attempt {retry_job['attempt']}"
+            )
         return
 
     finalized = finalize_executor_session_dispatch(

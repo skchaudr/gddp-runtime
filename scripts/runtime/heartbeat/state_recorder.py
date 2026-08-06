@@ -217,6 +217,9 @@ def insert_executor_session(
     return session_db_id
 
 
+DEFAULT_PLUMBING_RETRY_BUDGET = 3
+
+
 def allocate_retry_attempt(
     con: sqlite3.Connection,
     job,
@@ -265,6 +268,53 @@ def allocate_retry_attempt(
         attempt_id,
         expected_base_commit_sha,
         attempt_index=next_attempt,
+        state="dispatching",
+    )
+    return persisted_job, session_db_id
+
+
+def allocate_plumbing_retry(
+    con: sqlite3.Connection,
+    job,
+    *,
+    executor: str,
+    expected_base_commit_sha: str | None = None,
+) -> tuple[dict, str] | None:
+    """Atomically increment the plumbing-retry counter and insert its record.
+
+    Plumbing retries replace a session that died before producing durable
+    exit state (reaped, host fault, spawn error). They are infra noise, not
+    evidence about the node's work, so they never consume the work-attempt
+    budget (jobs.attempt); they draw on their own bounded counter instead.
+    The replacement session keeps the current attempt_index, so the
+    superseded-attempt guard still recognizes it as the live attempt.
+    """
+    persisted_job = dict(job)
+    current = int(persisted_job.get("plumbing_attempt") or 0)
+    if current >= DEFAULT_PLUMBING_RETRY_BUDGET:
+        return None
+
+    next_plumbing = current + 1
+    updated = con.execute(
+        """UPDATE jobs
+              SET plumbing_attempt = ?
+            WHERE job_id = ? AND plumbing_attempt = ?""",
+        (next_plumbing, persisted_job["job_id"], current),
+    )
+    if updated.rowcount != 1:
+        return None
+
+    persisted_job["plumbing_attempt"] = next_plumbing
+    persisted_job["expected_base_commit_sha"] = expected_base_commit_sha
+    attempt_index = int(persisted_job.get("attempt") or 0)
+    attempt_id = execution_attempt_id(persisted_job["job_id"], attempt_index)
+    session_db_id = insert_executor_session(
+        con,
+        persisted_job["job_id"],
+        executor,
+        f"{attempt_id}:plumbing:{next_plumbing}",
+        expected_base_commit_sha,
+        attempt_index=attempt_index,
         state="dispatching",
     )
     return persisted_job, session_db_id

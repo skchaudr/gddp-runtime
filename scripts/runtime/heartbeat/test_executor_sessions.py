@@ -85,6 +85,7 @@ CREATE TABLE jobs (
     status              TEXT DEFAULT 'ready',
     attempt             INTEGER DEFAULT 0,
     max_attempts        INTEGER DEFAULT 3,
+    plumbing_attempt    INTEGER NOT NULL DEFAULT 0,
     artifacts_dir       TEXT,
     required_artifacts  TEXT NOT NULL DEFAULT '[]',
     previous_findings   TEXT
@@ -1309,6 +1310,136 @@ def test_reconcile_failed_session_at_attempt_cap_does_not_dispatch(
         ("job_exhausted",),
     ).fetchone()
     assert tuple(job) == (3, "failed", "failed")
+
+
+def test_plumbing_deaths_use_own_budget_and_never_consume_work_attempts(
+    con, tmp_path, monkeypatch
+):
+    """Policy 2026-08-05: 3 work attempts + 3 plumbing retries, independent.
+    A session that dies before durable exit state is infra noise — the job's
+    work-attempt counter must not move, and the plumbing counter caps at 3."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_plumbing",
+        status="running",
+        attempt=0,
+        max_attempts=3,
+    )
+    insert_executor_session(
+        con,
+        "job_plumbing",
+        "jules_cli",
+        "sess-p0",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="failed",
+        status_error="local subprocess exited without durable exit state",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatched = []
+
+    def ok_dispatch(job, repo_name, repo_path=None):
+        dispatched.append(dict(job))
+        return ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", f"sess-r{len(dispatched)}"),
+        )
+
+    monkeypatch.setattr(reconciler, "dispatch", ok_dispatch)
+
+    # Deaths 1-3: each redispatches on the plumbing budget; attempt stays 0.
+    for _ in range(3):
+        reconciler.reconcile_sessions(con, repo)
+        job = con.execute(
+            "SELECT attempt, plumbing_attempt, status FROM jobs"
+            " WHERE job_id = 'job_plumbing'"
+        ).fetchone()
+        assert tuple(job) == (0, job["plumbing_attempt"], "running")
+
+    assert len(dispatched) == 3
+    rows = con.execute(
+        "SELECT session_id, execution_attempt_id, attempt_index, state"
+        " FROM executor_sessions"
+        " WHERE job_id = 'job_plumbing' ORDER BY created_at"
+    ).fetchall()
+    assert len(rows) == 4  # original + 3 plumbing replacements
+    for row in rows[1:]:
+        # Plumbing replacements re-attempt the same work attempt: the
+        # execution_attempt_id is identical, the plumbing counter is the
+        # durable discrimination.
+        assert row["execution_attempt_id"] == "job_plumbing:attempt:0"
+        assert row["attempt_index"] == 0
+
+    # Death 4: plumbing budget exhausted -> terminal, no dispatch.
+    reconciler.reconcile_sessions(con, repo)
+    assert len(dispatched) == 3
+    job = con.execute(
+        "SELECT attempt, plumbing_attempt, status, queue_state FROM jobs"
+        " WHERE job_id = 'job_plumbing'"
+    ).fetchone()
+    assert tuple(job) == (0, 3, "failed", "failed")
+
+
+def test_work_failure_consumes_attempt_not_plumbing_budget(
+    con, tmp_path, monkeypatch
+):
+    """A durable nonzero exit is an executor-completed failure: it consumes
+    the work-attempt budget and leaves the plumbing counter untouched."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    _insert_job(
+        con,
+        job_id="job_workfail",
+        status="running",
+        attempt=0,
+        max_attempts=3,
+    )
+    insert_executor_session(
+        con,
+        "job_workfail",
+        "jules_cli",
+        "sess-w0",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="failed",
+        status_error="local subprocess exited with code 1: boom",
+    )
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+
+    def ok_dispatch(job, repo_name, repo_path=None):
+        return ProtocolDispatchResult(
+            success=True, session_ref=SessionRef("jules_cli", "sess-w1")
+        )
+
+    monkeypatch.setattr(reconciler, "dispatch", ok_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    job = con.execute(
+        "SELECT attempt, plumbing_attempt, status FROM jobs"
+        " WHERE job_id = 'job_workfail'"
+    ).fetchone()
+    assert tuple(job) == (1, 0, "running")
+    rows = con.execute(
+        "SELECT attempt_index FROM executor_sessions"
+        " WHERE job_id = 'job_workfail' ORDER BY created_at"
+    ).fetchall()
+    assert [r["attempt_index"] for r in rows] == [0, 1]
+
+
+def test_classify_plumbing_failure_patterns():
+    assert reconciler.classify_plumbing_failure(
+        "local subprocess exited without durable exit state"
+    )
+    assert reconciler.classify_plumbing_failure(
+        "invalid local subprocess exit state: Expecting value"
+    )
+    assert not reconciler.classify_plumbing_failure(
+        "local subprocess exited with code 1: boom"
+    )
+    assert not reconciler.classify_plumbing_failure(None)
 
 
 def test_reconcile_poll_exception_does_not_allocate_replacement(

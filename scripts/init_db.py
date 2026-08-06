@@ -215,6 +215,7 @@ def init_db():
         "TEXT NOT NULL DEFAULT '[]'",
     )
     _ensure_column(con, "jobs", "previous_findings", "TEXT")
+    _ensure_column(con, "jobs", "plumbing_attempt", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(con, "executor_sessions", "execution_attempt_id", "TEXT")
     _ensure_column(con, "executor_sessions", "attempt_index", "INTEGER")
 
