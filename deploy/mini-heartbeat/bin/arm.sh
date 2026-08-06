@@ -26,21 +26,16 @@ fi
 render_plist "$KIT_ROOT/launchd/${INTAKE_LABEL}.plist" "$INTAKE_PLIST"
 render_plist "$KIT_ROOT/launchd/${HEARTBEAT_LABEL}.plist" "$HEARTBEAT_PLIST"
 
-# Flip RunAtLoad true for intake KeepAlive-ish restart via enable+start
-# Templates stay false in git; we enable via launchctl, not by rewriting RunAtLoad.
+# Templates stay dormant in git. The installed plists become armed copies.
 
 launchctl bootout "gui/$(id -u)/${INTAKE_LABEL}" 2>/dev/null || true
 launchctl bootout "gui/$(id -u)/${HEARTBEAT_LABEL}" 2>/dev/null || true
 
-# Temporarily enable RunAtLoad for this install only
-_tmp_intake="$(mktemp)"
-_tmp_hb="$(mktemp)"
-sed 's|<key>RunAtLoad</key>[[:space:]]*<false/>|<key>RunAtLoad</key>\n  <true/>|; s|<key>KeepAlive</key>[[:space:]]*<false/>|<key>KeepAlive</key>\n  <true/>|' \
-  "$INTAKE_PLIST" >"$_tmp_intake"
-sed 's|<key>RunAtLoad</key>[[:space:]]*<false/>|<key>RunAtLoad</key>\n  <true/>|' \
-  "$HEARTBEAT_PLIST" >"$_tmp_hb"
-mv "$_tmp_intake" "$INTAKE_PLIST"
-mv "$_tmp_hb" "$HEARTBEAT_PLIST"
+# Use plistlib because XML keys and values are separate lines in the templates.
+"$GDDP_PYTHON" "$KIT_ROOT/bin/set_plist_bools.py" \
+  "$INTAKE_PLIST" RunAtLoad KeepAlive
+"$GDDP_PYTHON" "$KIT_ROOT/bin/set_plist_bools.py" \
+  "$HEARTBEAT_PLIST" RunAtLoad
 
 launchctl bootstrap "gui/$(id -u)" "$INTAKE_PLIST" 2>/dev/null || launchctl load -w "$INTAKE_PLIST"
 launchctl bootstrap "gui/$(id -u)" "$HEARTBEAT_PLIST" 2>/dev/null || launchctl load -w "$HEARTBEAT_PLIST"

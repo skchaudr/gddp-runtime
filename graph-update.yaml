@@ -1,0 +1,5 @@
+# graph-update.yaml — Heartbeat Crash Recovery Node
+# Graph truth stays human-owned; this node produces evidence only.
+node: heartbeat-crash-recovery
+job: job_20260716T102119061b92648235b8
+status_updates: []

@@ -1,81 +1,663 @@
+diff --git a/.handoffs/043-pr107-crash-recovery-review-fixes.md b/.handoffs/043-pr107-crash-recovery-review-fixes.md
+new file mode 100644
+index 0000000..10856a4
+--- /dev/null
++++ b/.handoffs/043-pr107-crash-recovery-review-fixes.md
+@@ -0,0 +1,41 @@
++# 043 - PR107 crash-recovery review fixes
++
++------------------------------------------------ Agent Section START
++
++Date: 2026-07-16
++Worktree: /private/tmp/gddp-pr107-review
++Branch: jules-4554053429485068841-1b7d1c5d
++
++## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
++
++PR107 now uses plist-aware arming and a deterministic atomic-claim race test. Automated evidence is green; `intake-restart-proven` remains pending a permitted operator launchd drill.
++
++### Scope touched (One file per line, +/- for only what was changed)
++
+++ deploy/mini-heartbeat/bin/arm.sh
+++ deploy/mini-heartbeat/bin/set_plist_bools.py
+++ deploy/mini-heartbeat/test_render_plist.py
+++ scripts/runtime/heartbeat/test_crash_recovery.py
+++ decision.md
+++ result-summary.md
+++ patch.diff
+++ .handoffs/043-pr107-crash-recovery-review-fixes.md
++
++### Constrained areas touched (none / list + justification)
++
++launchd config-of-record: fixed installed-plist booleans without running launchd, killing processes, or touching live queue state.
++
++### Current Git state (2-3 sentences max, anything more must be critically justifiable)
++
++Branch changes are committed and pushed to its existing upstream. Worktree is clean and synchronized.
++
++### Artifacts (Filepath - Description, 1 line max per artifact)
++
++decision.md - Honest acceptance status and operator drill.
++patch.diff - Complete PR diff excluding itself.
++
++### Resume point (2-3 sentences max, anything more must be critically justifiable)
++
++With explicit system-operation permission, run the documented intake kill/restart drill and capture old PID, new PID, and HTTP 200. Human then reviews evidence; do not change graph truth automatically.
++
++------------------------------------------------ Agent Section END
 diff --git a/decision.md b/decision.md
-index 58698d7..a309693 100644
+index a309693..4717559 100644
 --- a/decision.md
 +++ b/decision.md
-@@ -1,9 +1,11 @@
- # Implementation Decision
+@@ -1,11 +1,104 @@
+-# Implementation Decision
++# Implementation Decision: Heartbeat & Intake Crash Recovery Proofs
  
- ## Decision
--Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`.
-+Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`. Additionally, created documentation in `docs/echo-usage.md`.
+-## Decision
+-Implemented a simple Python module in `scripts/echo.py` with two functions: `echo` and `echo_loud`. Additionally, created documentation in `docs/echo-usage.md`.
++Date: 2026-07-16
++Node: heartbeat-crash-recovery
++PR Job ID: job_20260716T102119061b92648235b8
  
- ## Rationale
- - `echo(msg)`: The requirement specifies returning the message string unchanged. It simply returns the input string.
- - `echo_loud(msg)`: The requirement specifies returning the message uppercased with '!' appended. This can be easily achieved using string manipulation `f"{msg.upper()}!"` for simplicity and readability.
-+- `docs/echo-usage.md`: Provides usage examples for both functions to meet the documentation requirement.
-+- **Testing**: Embedded tests were added to `scripts/echo.py` under the `if __name__ == "__main__":` block to satisfy the requirement for tests while adhering to the strict file modification constraints.
- - The use of type hints (`str`) helps with potential static type checking and provides clearer documentation of expected argument types.
-diff --git a/docs/echo-usage.md b/docs/echo-usage.md
+-## Rationale
+-- `echo(msg)`: The requirement specifies returning the message string unchanged. It simply returns the input string.
+-- `echo_loud(msg)`: The requirement specifies returning the message uppercased with '!' appended. This can be easily achieved using string manipulation `f"{msg.upper()}!"` for simplicity and readability.
+-- `docs/echo-usage.md`: Provides usage examples for both functions to meet the documentation requirement.
+-- **Testing**: Embedded tests were added to `scripts/echo.py` under the `if __name__ == "__main__":` block to satisfy the requirement for tests while adhering to the strict file modification constraints.
+-- The use of type hints (`str`) helps with potential static type checking and provides clearer documentation of expected argument types.
++---
++
++## Decision & Rationale
++
++To ensure complete overnight readiness, we must prove that both the **heartbeat runner** and **webhook intake server** can survive crashes gracefully without losing events, skipping processing, or causing duplicate (double-processed) job dispatches.
++
++This is achieved via two core mechanisms:
++1. **Runner-Level Atomic & Stale Claiming:** The database `UPDATE` statement in `scripts/runtime/heartbeat/runner.py` is fully atomic. A single event is only ever claimed by one runner run (and exactly one thread/process) because of the combined `UPDATE` filter query checking for `status = 'received'`. Furthermore, if a runner crashes *after* claiming an event but *before* planning or finishing dispatch, that event will sit in the `'claimed'` status. The runner's subsequent runs automatically reclaim stale claims older than 30 minutes.
++2. **Launchd KeepAlive Supervision (macOS sab-mini):** `arm.sh` now uses Python's plist parser to set `RunAtLoad` and `KeepAlive` on the installed intake plist. A focused test verifies those booleans. The actual restart behavior still requires the operator drill below; this change does not claim that live evidence.
++
++To make these properties provable, we have:
++- Written explicit concurrency and temporal tests under `scripts/runtime/heartbeat/test_crash_recovery.py` to assert atomic claiming and stale claim recovery.
++- Replaced the broken line-oriented plist mutation with a plist-aware helper and added a focused automated test.
++- Documented the operator-owned crash drill below. No live transcript is included because no launchd or process operations were performed in this change.
++
++---
++
++## Crash Drill Runbook (id: crash-drill-runbook)
++
++This drill must be performed and verified on the active control plane host (e.g., `sab-mini` or the testing target) before any unattended overnight runs window.
++
++### Step 1: Initialize Queue & State
++Verify that the SQLite queue is initialized and clean.
++```bash
++cd ~/repos/gddp-runtime
++# Ensure database and tables exist
++.venv/bin/python scripts/init_db.py
++```
++
++### Step 2: Arm mini-heartbeat
++Arm the launchd-supervised services with the explicit arming flag.
++```bash
++MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh
++
++# Confirm the installed intake plist is armed before killing anything.
++/usr/bin/plutil -extract RunAtLoad raw ~/Library/LaunchAgents/com.gddp.intake.plist
++/usr/bin/plutil -extract KeepAlive raw ~/Library/LaunchAgents/com.gddp.intake.plist
++```
++
++### Step 3: Verify Running Services
++Confirm both services are loaded, running, and healthy.
++```bash
++# Check launchd listing
++launchctl list | grep com.gddp
++
++# Check local health endpoint
++curl -s -i http://127.0.0.1:5050/health
++```
++*Expected health output:* HTTP/1.1 200 OK with `{"status":"ok", "webhook_verification": true}`.
++
++### Step 4: Run the Intake Crash Test (Kill & Resume)
++Kill the running intake server process and verify launchd restarts it.
++```bash
++# Read the launchd-owned PID
++INTAKE_PID=$(launchctl print "gui/$(id -u)/com.gddp.intake" | awk '/pid =/{print $3; exit}')
++echo "Active Intake PID: ${INTAKE_PID}"
++
++# Force kill the process
++kill -9 "${INTAKE_PID}"
++echo "Intake process killed. Waiting for launchd KeepAlive..."
++
++# Wait 2 seconds for launchd cycle
++sleep 2
++
++# Verify a new process was spawned with a new PID
++NEW_PID=$(launchctl print "gui/$(id -u)/com.gddp.intake" | awk '/pid =/{print $3; exit}')
++echo "New Intake PID: ${NEW_PID}"
++test -n "${NEW_PID}" && test "${NEW_PID}" != "${INTAKE_PID}"
++
++# Confirm health endpoint returns 200 OK again
++curl -s -i http://127.0.0.1:5050/health
++```
++*Expected outcome:* The `/health` endpoint returns `200 OK` without any operator intervention.
++
++---
++
++## Pending Evidence: Intake Restart Proof (id: intake-restart-proven)
++
++**Status: pending operator drill.** The automated test proves that `arm.sh` writes `RunAtLoad=true` and `KeepAlive=true` into the installed intake plist. It does not prove launchd restarted a killed process. An operator must run the drill above on the active control plane and capture:
++
++1. The original launchd-owned PID.
++2. The kill command and a different replacement PID.
++3. A post-restart `/health` response with HTTP 200.
++
++Until that evidence exists, `intake-restart-proven` is not met and graph truth must not change.
++
++---
++
++## Automated Concurrency & Temporal Verification Tests
++
++To verify these safety properties programmatically and continuously, we developed `scripts/runtime/heartbeat/test_crash_recovery.py`.
++
++1. **Stale Claim Recovery Test (`test_stale_claim_recovery_processed`):**
++   - **Procedure:** Inserts an event in `'claimed'` status with `claimed_at` timestamp set to 45 minutes ago (older than the 30-minute cutoff), along with an event set to 15 minutes ago (newer than the cutoff). It then triggers the heartbeat planner `_plan_dispatches()`.
++   - **Verification:** Asserts that the stale event is successfully selected, updated, and has a corresponding job created (status is set to `'classified'`), while the fresh event is completely ignored.
++2. **Atomic Concurrency Test (`test_no_double_processing`):**
++   - **Procedure:** Inserts a single `'received'` event into a SQLite file-based queue. It then spawns two concurrent threads using independent connections. A test-only connection proxy blocks both threads immediately before the claim `UPDATE`, guaranteeing both already selected the same event before either claim executes.
++   - **Verification:** Asserts that exactly one of the threads succeeds in claiming and planning a job, while the other thread gets `rowcount = 0` on its update statement, logs a skip, and exits cleanly. The total job count in the database is verified to be exactly 1.
+diff --git a/deploy/mini-heartbeat/bin/arm.sh b/deploy/mini-heartbeat/bin/arm.sh
+index 0398f51..e36e2f6 100755
+--- a/deploy/mini-heartbeat/bin/arm.sh
++++ b/deploy/mini-heartbeat/bin/arm.sh
+@@ -26,21 +26,16 @@ fi
+ render_plist "$KIT_ROOT/launchd/${INTAKE_LABEL}.plist" "$INTAKE_PLIST"
+ render_plist "$KIT_ROOT/launchd/${HEARTBEAT_LABEL}.plist" "$HEARTBEAT_PLIST"
+ 
+-# Flip RunAtLoad true for intake KeepAlive-ish restart via enable+start
+-# Templates stay false in git; we enable via launchctl, not by rewriting RunAtLoad.
++# Templates stay dormant in git. The installed plists become armed copies.
+ 
+ launchctl bootout "gui/$(id -u)/${INTAKE_LABEL}" 2>/dev/null || true
+ launchctl bootout "gui/$(id -u)/${HEARTBEAT_LABEL}" 2>/dev/null || true
+ 
+-# Temporarily enable RunAtLoad for this install only
+-_tmp_intake="$(mktemp)"
+-_tmp_hb="$(mktemp)"
+-sed 's|<key>RunAtLoad</key>[[:space:]]*<false/>|<key>RunAtLoad</key>\n  <true/>|; s|<key>KeepAlive</key>[[:space:]]*<false/>|<key>KeepAlive</key>\n  <true/>|' \
+-  "$INTAKE_PLIST" >"$_tmp_intake"
+-sed 's|<key>RunAtLoad</key>[[:space:]]*<false/>|<key>RunAtLoad</key>\n  <true/>|' \
+-  "$HEARTBEAT_PLIST" >"$_tmp_hb"
+-mv "$_tmp_intake" "$INTAKE_PLIST"
+-mv "$_tmp_hb" "$HEARTBEAT_PLIST"
++# Use plistlib because XML keys and values are separate lines in the templates.
++"$GDDP_PYTHON" "$KIT_ROOT/bin/set_plist_bools.py" \
++  "$INTAKE_PLIST" RunAtLoad KeepAlive
++"$GDDP_PYTHON" "$KIT_ROOT/bin/set_plist_bools.py" \
++  "$HEARTBEAT_PLIST" RunAtLoad
+ 
+ launchctl bootstrap "gui/$(id -u)" "$INTAKE_PLIST" 2>/dev/null || launchctl load -w "$INTAKE_PLIST"
+ launchctl bootstrap "gui/$(id -u)" "$HEARTBEAT_PLIST" 2>/dev/null || launchctl load -w "$HEARTBEAT_PLIST"
+diff --git a/deploy/mini-heartbeat/bin/set_plist_bools.py b/deploy/mini-heartbeat/bin/set_plist_bools.py
 new file mode 100644
-index 0000000..c0e7f72
+index 0000000..2762212
 --- /dev/null
-+++ b/docs/echo-usage.md
-@@ -0,0 +1,29 @@
-+# Echo Utility Usage
++++ b/deploy/mini-heartbeat/bin/set_plist_bools.py
+@@ -0,0 +1,59 @@
++#!/usr/bin/env python3
++"""Set approved launchd plist boolean keys without editing XML as text."""
 +
-+This document provides examples of how to use the echo functions provided in `scripts/echo.py`.
++import os
++import plistlib
++import sys
++import tempfile
++from pathlib import Path
 +
-+## Functions
 +
-+### `echo(msg: str) -> str`
-+Returns the message string unchanged.
++APPROVED_KEYS = {"RunAtLoad", "KeepAlive"}
 +
-+**Usage example:**
-+```python
-+from scripts.echo import echo
 +
-+result = echo("Hello World")
-+print(result)
-+# Output: Hello World
-+```
++def set_true(plist_path: Path, keys: list[str]) -> None:
++    invalid_keys = set(keys) - APPROVED_KEYS
++    if invalid_keys:
++        raise ValueError(f"unsupported plist key(s): {', '.join(sorted(invalid_keys))}")
 +
-+### `echo_loud(msg: str) -> str`
-+Returns the message uppercased with '!' appended.
++    with plist_path.open("rb") as source:
++        plist = plistlib.load(source)
 +
-+**Usage example:**
-+```python
-+from scripts.echo import echo_loud
++    for key in keys:
++        plist[key] = True
 +
-+result = echo_loud("hello")
-+print(result)
-+# Output: HELLO!
-+```
-diff --git a/result-summary.md b/result-summary.md
-index d25dd1b..b1ccae3 100644
---- a/result-summary.md
-+++ b/result-summary.md
-@@ -1,6 +1,7 @@
- # Result Summary
- 
--- Created `scripts/echo.py` which contains `echo` and `echo_loud` string manipulation functions.
-+- Updated `scripts/echo.py` with `echo` and `echo_loud` functions and embedded tests.
-+- Created `docs/echo-usage.md` containing usage examples for both functions.
- - Wrote `decision.md` to document the decision-making process for the implementation.
- - Generated `patch.diff` recording the total patch of all changes made.
- - Created `result-summary.md` (this file) briefly summarising the actions taken.
-diff --git a/scripts/echo.py b/scripts/echo.py
-index 9734e6d..42fa179 100644
---- a/scripts/echo.py
-+++ b/scripts/echo.py
-@@ -5,3 +5,11 @@ def echo(msg: str) -> str:
- def echo_loud(msg: str) -> str:
-     """Returns the message uppercased with '!' appended."""
-     return f"{msg.upper()}!"
++    temporary_path = None
++    try:
++        with tempfile.NamedTemporaryFile(
++            mode="wb",
++            dir=plist_path.parent,
++            prefix=f".{plist_path.name}.",
++            delete=False,
++        ) as destination:
++            plistlib.dump(plist, destination, sort_keys=False)
++            temporary_path = Path(destination.name)
++        os.chmod(temporary_path, plist_path.stat().st_mode)
++        os.replace(temporary_path, plist_path)
++    finally:
++        if temporary_path is not None:
++            temporary_path.unlink(missing_ok=True)
++
++
++def main(arguments: list[str]) -> int:
++    if len(arguments) < 2:
++        print(
++            "usage: set_plist_bools.py PLIST_PATH KEY [KEY ...]",
++            file=sys.stderr,
++        )
++        return 2
++
++    try:
++        set_true(Path(arguments[0]), arguments[1:])
++    except (OSError, plistlib.InvalidFileException, ValueError) as error:
++        print(f"set_plist_bools.py: {error}", file=sys.stderr)
++        return 1
++    return 0
++
 +
 +if __name__ == "__main__":
-+    # Basic tests
-+    assert echo("test") == "test"
-+    assert echo("") == ""
-+    assert echo_loud("test") == "TEST!"
-+    assert echo_loud("") == "!"
-+    print("All tests passed!")
++    raise SystemExit(main(sys.argv[1:]))
+diff --git a/deploy/mini-heartbeat/test_render_plist.py b/deploy/mini-heartbeat/test_render_plist.py
+index 44f1511..e95925f 100644
+--- a/deploy/mini-heartbeat/test_render_plist.py
++++ b/deploy/mini-heartbeat/test_render_plist.py
+@@ -1,11 +1,13 @@
+ import plistlib
+ import subprocess
++import sys
+ from pathlib import Path
+ 
+ KIT_ROOT = Path(__file__).resolve().parent
+ COMMON_SH = KIT_ROOT / "bin" / "common.sh"
+ INTAKE_TEMPLATE = KIT_ROOT / "launchd" / "com.gddp.intake.plist"
+ HEARTBEAT_TEMPLATE = KIT_ROOT / "launchd" / "com.gddp.heartbeat.plist"
++PLIST_BOOL_SETTER = KIT_ROOT / "bin" / "set_plist_bools.py"
+ 
+ 
+ def _render_plist(template: Path, env: dict[str, str]) -> dict:
+@@ -57,6 +59,29 @@ def test_render_plist_default_secret_cmds():
+     assert env["GDDP_WEBHOOK_SECRET_CMD"] == "pass show gddp/webhook-secret"
+ 
+ 
++def test_arm_helper_enables_intake_restart_flags(tmp_path):
++    installed_plist = tmp_path / "com.gddp.intake.plist"
++    installed_plist.write_bytes(INTAKE_TEMPLATE.read_bytes())
++
++    subprocess.run(
++        [
++            sys.executable,
++            str(PLIST_BOOL_SETTER),
++            str(installed_plist),
++            "RunAtLoad",
++            "KeepAlive",
++        ],
++        check=True,
++        capture_output=True,
++        text=True,
++    )
++
++    with installed_plist.open("rb") as source:
++        armed_plist = plistlib.load(source)
++    assert armed_plist["RunAtLoad"] is True
++    assert armed_plist["KeepAlive"] is True
++
++
+ def test_render_plist_substitutes_runtime_paths():
+     env = _render_intake_plist(
+         _base_render_env(
+@@ -113,4 +138,4 @@ def test_xml_special_chars_survive_plist_render():
+         )
+     )
+ 
+-    assert env["GDDP_WEBHOOK_SECRET_CMD"] == webhook
+\ No newline at end of file
++    assert env["GDDP_WEBHOOK_SECRET_CMD"] == webhook
+diff --git a/graph-update.yaml b/graph-update.yaml
+new file mode 100644
+index 0000000..452000b
+--- /dev/null
++++ b/graph-update.yaml
+@@ -0,0 +1,5 @@
++# graph-update.yaml — Heartbeat Crash Recovery Node
++# Graph truth stays human-owned; this node produces evidence only.
++node: heartbeat-crash-recovery
++job: job_20260716T102119061b92648235b8
++status_updates: []
+diff --git a/result-summary.md b/result-summary.md
+index b1ccae3..37cd3c2 100644
+--- a/result-summary.md
++++ b/result-summary.md
+@@ -1,7 +1,32 @@
+-# Result Summary
++# Result Summary: Heartbeat & Intake Crash Recovery
+ 
+-- Updated `scripts/echo.py` with `echo` and `echo_loud` functions and embedded tests.
+-- Created `docs/echo-usage.md` containing usage examples for both functions.
+-- Wrote `decision.md` to document the decision-making process for the implementation.
+-- Generated `patch.diff` recording the total patch of all changes made.
+-- Created `result-summary.md` (this file) briefly summarising the actions taken.
++Automated crash-recovery evidence is green. The live intake restart criterion remains pending an operator-owned launchd drill.
++
++## Acceptance Status
++
++1. **`id: stale-claim-recovery-tested`**
++   - **Status:** Met & Tested.
++   - **Details:** Added `test_stale_claim_recovery_processed` in `scripts/runtime/heartbeat/test_crash_recovery.py`. It proves that when an event is stuck in the `'claimed'` status past the 30-minute stale cutoff, subsequent heartbeat runs successfully adopt, re-claim, and process the event without data loss or operator intervention.
++
++2. **`id: intake-restart-proven`**
++   - **Status:** Pending operator drill.
++   - **Details:** Fixed `arm.sh` to set `RunAtLoad=true` and `KeepAlive=true` with a plist-aware helper, and added a focused automated test. No launchd or process operations were performed. `decision.md` lists the exact evidence the operator drill must capture.
++
++3. **`id: no-double-processing`**
++   - **Status:** Met & Tested.
++   - **Details:** Added `test_no_double_processing` in `scripts/runtime/heartbeat/test_crash_recovery.py`. Both runners are synchronized immediately before the atomic claim `UPDATE`, proving that exactly one creates a job while the other safely skips it.
++
++4. **`id: crash-drill-runbook`**
++   - **Status:** Met & Documented.
++   - **Details:** Created a reproducible crash drill runbook in `decision.md` to guide engineers through performing live validation of process recovery before overnight execution windows.
++
++5. **`id: suite-green`**
++   - **Status:** Met.
++   - **Details:** `python3 -m pytest -q` passes: 269 tests, no regressions.
++
++## Required Artifacts Included in the PR
++
++- `decision.md` — Rationale, crash drill runbook, and pending live-evidence requirements.
++- `result-summary.md` — This file.
++- `graph-update.yaml` — Simple yaml indicating human-owned graph truth.
++- `patch.diff` — The full, clean code diff.
+diff --git a/scripts/runtime/heartbeat/test_crash_recovery.py b/scripts/runtime/heartbeat/test_crash_recovery.py
+new file mode 100644
+index 0000000..c2dad19
+--- /dev/null
++++ b/scripts/runtime/heartbeat/test_crash_recovery.py
+@@ -0,0 +1,286 @@
++"""test_crash_recovery.py — Tests for heartbeat crash recovery and concurrency.
++
++Proves:
++- stale-claim-recovery-tested: stale 'claimed' events (past 30 mins) are re-claimed.
++- no-double-processing: concurrent heartbeat runs produce exactly one job for a received event.
++"""
++
++import concurrent.futures
++import sqlite3
++import sys
++import threading
++from pathlib import Path
++from unittest.mock import MagicMock
++from datetime import datetime, timedelta, timezone
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[3]
++sys.path.insert(0, str(ROOT))
++
++from scripts.runtime.heartbeat import runner
++from scripts.runtime.heartbeat.runner import _plan_dispatches, connect
++from scripts.runtime.heartbeat.graph_reader import NodeData
++
++
++def _init_db_file(db_path: Path) -> None:
++    con = sqlite3.connect(db_path)
++    cur = con.cursor()
++    cur.executescript(
++        """
++        PRAGMA foreign_keys=ON;
++
++        CREATE TABLE events (
++            event_id                TEXT PRIMARY KEY,
++            schema_version          TEXT NOT NULL DEFAULT '1.0',
++            received_at             TEXT NOT NULL,
++            source                  TEXT NOT NULL,
++            event_type              TEXT NOT NULL,
++            actor                   TEXT,
++            branch                  TEXT,
++            base_branch             TEXT,
++            pr_number               INTEGER,
++            issue_number            INTEGER,
++            commit_sha              TEXT,
++            url                     TEXT,
++            repo                    TEXT,
++            project_id              TEXT,
++            project_node_candidates TEXT,
++            scope_status            TEXT DEFAULT 'pending',
++            priority                TEXT DEFAULT 'pending',
++            risk_level              TEXT DEFAULT 'pending',
++            raw_payload_path        TEXT,
++            normalized_payload_path TEXT,
++            classification          TEXT,
++            routing                 TEXT,
++            status                  TEXT DEFAULT 'received',
++            claimed_at              TEXT
++        );
++
++        CREATE TABLE jobs (
++            job_id              TEXT PRIMARY KEY,
++            schema_version      TEXT NOT NULL DEFAULT '1.0',
++            created_at          TEXT NOT NULL,
++            event_id            TEXT,
++            project_id          TEXT,
++            repo                TEXT,
++            node_id             TEXT NOT NULL,
++            job_type            TEXT NOT NULL,
++            executor            TEXT NOT NULL,
++            queue_state         TEXT DEFAULT 'ready',
++            title               TEXT NOT NULL,
++            goal                TEXT NOT NULL,
++            why                 TEXT,
++            source_context      TEXT,
++            constraints         TEXT,
++            acceptance_criteria TEXT,
++            dependencies        TEXT,
++            priority            TEXT DEFAULT 'medium',
++            risk_level          TEXT DEFAULT 'low',
++            estimated_effort    TEXT DEFAULT 'medium',
++            status              TEXT DEFAULT 'ready',
++            attempt             INTEGER DEFAULT 0,
++            max_attempts        INTEGER DEFAULT 3,
++            artifacts_dir       TEXT,
++            result_summary_path TEXT,
++            FOREIGN KEY(event_id) REFERENCES events(event_id)
++        );
++
++        CREATE TABLE queue_records (
++            queue_item_id    TEXT PRIMARY KEY,
++            schema_version   TEXT NOT NULL DEFAULT '1.0',
++            job_id           TEXT NOT NULL,
++            queue            TEXT NOT NULL,
++            available_at     TEXT NOT NULL,
++            lease_owner      TEXT,
++            lease_expires_at TEXT,
++            retry_count      INTEGER DEFAULT 0,
++            last_error       TEXT,
++            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
++        );
++        """
++    )
++    con.commit()
++    con.close()
++
++
++@pytest.fixture
++def test_db_path(tmp_path, monkeypatch):
++    db_file = tmp_path / "queue.db"
++    _init_db_file(db_file)
++
++    # Mock runtime root and DB path in the runner
++    monkeypatch.setattr(runner, "DB_PATH", db_file)
++    monkeypatch.setattr(runner, "RUNTIME_ROOT", tmp_path)
++
++    return db_file
++
++
++def test_stale_claim_recovery_processed(test_db_path):
++    """Proves: an event stuck in 'claimed' past the stale cutoff is re-claimed and processed by a later heartbeat run."""
++    con = connect()
++
++    now_utc = datetime.now(timezone.utc)
++    stale_time = (now_utc - timedelta(minutes=45)).isoformat()
++    fresh_time = (now_utc - timedelta(minutes=15)).isoformat()
++
++    # 1. Insert a stale event and a fresh event
++    con.execute(
++        "INSERT INTO events (event_id, received_at, source, event_type, project_id, repo, status, claimed_at, url) "
++        "VALUES (?, ?, 'github', 'issue.opened', 'test-project', 'owner/repo', 'claimed', ?, 'node: test-node-stale')",
++        ("evt_stale", now_utc.isoformat(), stale_time)
++    )
++    con.execute(
++        "INSERT INTO events (event_id, received_at, source, event_type, project_id, repo, status, claimed_at, url) "
++        "VALUES (?, ?, 'github', 'issue.opened', 'test-project', 'owner/repo', 'claimed', ?, 'node: test-node-fresh')",
++        ("evt_fresh", now_utc.isoformat(), fresh_time)
++    )
++    con.commit()
++
++    # 2. Setup mock ready nodes
++    node_stale = NodeData(
++        node_id="test-node-stale",
++        title="Stale Node Title",
++        status="ready",
++        type="task",
++        why="Testing stale claim recovery",
++        depends_on=[],
++        acceptance_criteria=["Criteria 1"],
++        constraints=["Constraint 1"],
++        allowed_execution_modes=["jules"],
++        required_artifacts=["decision.md"],
++        priority="high",
++        unlocks=[]
++    )
++
++    node_fresh = NodeData(
++        node_id="test-node-fresh",
++        title="Fresh Node Title",
++        status="ready",
++        type="task",
++        why="Testing fresh claim should not be touched",
++        depends_on=[],
++        acceptance_criteria=["Criteria 2"],
++        constraints=["Constraint 2"],
++        allowed_execution_modes=["jules"],
++        required_artifacts=["decision.md"],
++        priority="high",
++        unlocks=[]
++    )
++
++    ready_nodes = [node_stale, node_fresh]
++    mock_reader = MagicMock()
++
++    # 3. Call _plan_dispatches
++    planned = _plan_dispatches(
++        con=con,
++        project_id="test-project",
++        repo="owner/repo",
++        ready_nodes=ready_nodes,
++        reader=mock_reader
++    )
++
++    # 4. Assertions:
++    # - Only the stale event should have been re-claimed and processed
++    assert len(planned) == 1, f"Expected exactly 1 planned dispatch, got {len(planned)}"
++    assert planned[0].event_id == "evt_stale"
++    assert planned[0].job["node_id"] == "test-node-stale"
++
++    # - Check the database to confirm statuses
++    stale_row = con.execute("SELECT status, claimed_at FROM events WHERE event_id = 'evt_stale'").fetchone()
++    fresh_row = con.execute("SELECT status, claimed_at FROM events WHERE event_id = 'evt_fresh'").fetchone()
++
++    # Once processed in _plan_dispatches, status transitions from 'claimed' to 'classified'
++    assert stale_row["status"] == "classified"
++
++    # The fresh event remains in claimed status with its original fresh timestamp
++    assert fresh_row["status"] == "claimed"
++    assert fresh_row["claimed_at"] == fresh_time
++
++    con.close()
++
++
++def test_no_double_processing(test_db_path):
++    """Proves: two concurrent heartbeat runs over the same received event produce exactly one job (atomic claim holds)."""
++    con_main = connect()
++
++    # 1. Insert exactly one 'received' event
++    con_main.execute(
++        "INSERT INTO events (event_id, received_at, source, event_type, project_id, repo, status, url) "
++        "VALUES (?, ?, 'github', 'issue.opened', 'test-project', 'owner/repo', 'received', 'node: test-node-concurrent')",
++        ("evt_concurrent", datetime.now(timezone.utc).isoformat())
++    )
++    con_main.commit()
++    con_main.close()
++
++    node_concurrent = NodeData(
++        node_id="test-node-concurrent",
++        title="Concurrent Node",
++        status="ready",
++        type="task",
++        why="Testing concurrent claim race condition",
++        depends_on=[],
++        acceptance_criteria=["Criteria C"],
++        constraints=["Constraint C"],
++        allowed_execution_modes=["jules"],
++        required_artifacts=["decision.md"],
++        priority="high",
++        unlocks=[]
++    )
++    ready_nodes = [node_concurrent]
++    mock_reader = MagicMock()
++
++    claim_barrier = threading.Barrier(2)
++    claim_attempts = []
++    claim_attempts_lock = threading.Lock()
++
++    class ClaimBarrierConnection:
++        """Pause both runners after SELECT and immediately before the claim UPDATE."""
++
++        def __init__(self, connection):
++            self.connection = connection
++
++        def execute(self, statement, parameters=()):
++            normalized_statement = " ".join(statement.split())
++            if "UPDATE events SET status = 'claimed'" in normalized_statement:
++                with claim_attempts_lock:
++                    claim_attempts.append(threading.get_ident())
++                claim_barrier.wait(timeout=5)
++            return self.connection.execute(statement, parameters)
++
++        def __getattr__(self, name):
++            return getattr(self.connection, name)
++
++    # 2. Run _plan_dispatches in two concurrent threads on independent connections to the same DB file
++    def run_worker():
++        # Open an independent database connection for this thread
++        sqlite_connection = connect()
++        con_thread = ClaimBarrierConnection(sqlite_connection)
++        try:
++            planned_dispatches = _plan_dispatches(
++                con=con_thread,
++                project_id="test-project",
++                repo="owner/repo",
++                ready_nodes=ready_nodes,
++                reader=mock_reader
++            )
++            return planned_dispatches
++        finally:
++            sqlite_connection.close()
++
++    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
++        futures = [executor.submit(run_worker), executor.submit(run_worker)]
++        results = [f.result() for f in concurrent.futures.as_completed(futures)]
++
++    # 3. Assertions
++    # One worker must have planned 1 dispatch, and the other must have planned 0.
++    total_planned = sum(len(r) for r in results)
++    assert len(claim_attempts) == 2, "Both runners must reach the atomic claim UPDATE"
++    assert total_planned == 1, f"Expected exactly 1 planned dispatch in total, got {total_planned}"
++
++    # Verify via DB that only 1 job exists
++    con_check = connect()
++    jobs = con_check.execute("SELECT * FROM jobs").fetchall()
++    assert len(jobs) == 1, f"Expected exactly 1 job in database, found {len(jobs)}"
++    assert jobs[0]["node_id"] == "test-node-concurrent"
++    con_check.close()
