@@ -57,7 +57,7 @@
       inside the 60s SDK default.
     -->
     <key>OTEL_EXPORTER_OTLP_ENDPOINT</key>
-    <string>http://127.0.0.1:4318</string>
+    <string>http://127.0.0.1:4319</string>
     <key>OTEL_EXPORTER_OTLP_PROTOCOL</key>
     <string>http/protobuf</string>
     <key>OTEL_SERVICE_NAME</key>
