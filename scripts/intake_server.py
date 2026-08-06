@@ -91,7 +91,7 @@ def connect():
 
 def verify_signature(payload_bytes: bytes, signature: str) -> bool:
     if not WEBHOOK_SECRET:
-        return True  # skip verification if no secret configured
+        return False  # fail closed if no secret configured
     expected = "sha256=" + hmac.new(
         WEBHOOK_SECRET.encode(), payload_bytes, hashlib.sha256
     ).hexdigest()
@@ -172,11 +172,15 @@ def webhook():
     gh_event_type = request.headers.get("X-GitHub-Event", "")
 
     # 1. Signature check
-    if WEBHOOK_SECRET and not verify_signature(payload_bytes, sig):
+    if not verify_signature(payload_bytes, sig):
         print("  [intake] REJECTED — invalid signature")
         return jsonify({"error": "invalid signature"}), 401
 
-    payload = json.loads(payload_bytes)
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        print("  [intake] REJECTED — invalid json payload")
+        return jsonify({"error": "invalid json payload"}), 400
 
     # 2. Save raw payload to disk (always, regardless of type)
     raw_dir = RUNTIME_ROOT / "events" / "raw"
@@ -219,6 +223,9 @@ def webhook():
             )
         """, event)
         con.commit()
+    except sqlite3.Error as e:
+        print("  [intake] REJECTED — internal server error")
+        return jsonify({"error": "internal server error"}), 500
     finally:
         con.close()
 
