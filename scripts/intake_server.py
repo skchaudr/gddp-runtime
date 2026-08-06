@@ -176,7 +176,11 @@ def webhook():
         print("  [intake] REJECTED — invalid signature")
         return jsonify({"error": "invalid signature"}), 401
 
-    payload = json.loads(payload_bytes)
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        print("  [intake] REJECTED — invalid json")
+        return jsonify({"error": "invalid json"}), 400
 
     # 2. Save raw payload to disk (always, regardless of type)
     raw_dir = RUNTIME_ROOT / "events" / "raw"
@@ -219,6 +223,9 @@ def webhook():
             )
         """, event)
         con.commit()
+    except sqlite3.Error as e:
+        print(f"  [intake] REJECTED — database error")
+        return jsonify({"error": "database error"}), 500
     finally:
         con.close()
 
