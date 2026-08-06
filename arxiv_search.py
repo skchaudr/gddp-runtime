@@ -13,10 +13,12 @@ queries = [
 
 for query in queries:
     print(f"\nSearching for: {query}")
-    url = f'http://export.arxiv.org/api/query?search_query={urllib.parse.quote(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
+    url = f'https://export.arxiv.org/api/query?search_query={urllib.parse.quote(query)}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
     try:
         response = urllib.request.urlopen(url)
         data = response.read()
+        # SECURITY: xml.etree.ElementTree is vulnerable to XML External Entity (XXE) attacks.
+        # HTTPS is required to ensure the XML payload is trusted and prevent Man-in-the-Middle (MITM) attacks.
         root = ET.fromstring(data)
         for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
             title = entry.find('{http://www.w3.org/2005/Atom}title').text.replace('\n', ' ')

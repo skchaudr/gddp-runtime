@@ -1,0 +1,4 @@
+## 2024-05-31 - MITM leading to XXE in XML parsing
+**Vulnerability:** The script `arxiv_search.py` fetched data from `http://export.arxiv.org` (unencrypted) and parsed it using `xml.etree.ElementTree`. `xml.etree.ElementTree` is inherently vulnerable to XML External Entity (XXE) attacks if the source data is malicious. Using an unencrypted connection allowed a potential Man-in-the-Middle (MITM) to inject a malicious XML payload.
+**Learning:** Even when accessing seemingly safe external APIs (like arXiv), the combination of unencrypted HTTP communication and an insecure XML parser creates a critical vulnerability.
+**Prevention:** Always use HTTPS when making network requests, especially when the response is parsed by a potentially unsafe parser. Alternatively, or additionally, use a secure parser like `defusedxml` which protects against XXE.
