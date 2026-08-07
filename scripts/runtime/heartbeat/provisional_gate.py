@@ -29,6 +29,8 @@ from pathlib import Path
 
 import yaml
 
+from ..gates import write_gate
+from ..repo_resolver import resolve_project_repo_checkout
 from .graph_reader import GraphReader
 
 PROVISIONAL = "provisional"
@@ -129,6 +131,20 @@ def maybe_mark_provisional(
         _atomic_write(node_path, new_node_text)
         _atomic_write(project_path, new_project_text)
         print(f"  → provisional: {node_id} marked provisional (evidence: {evidence_ref})")
+
+        # Gate token: write a per-node admission signal into the repo
+        # checkout for mission-mode executors. Non-fatal by design — a
+        # failed gate write leaves the node provisional and the operator
+        # can still accept by hand.
+        try:
+            repo_checkout = resolve_project_repo_checkout(
+                project_id, config_root=root
+            )
+            if repo_checkout is not None:
+                write_gate(str(repo_checkout), node_id, verdict_receipt_path=evidence_ref)
+        except Exception as gate_exc:
+            print(f"  → gate token WARNING (non-fatal): {gate_exc}")
+
         return True
     except Exception as exc:  # non-fatal by design — see docstring
         print(f"  → provisional write ERROR (non-fatal): {exc}")
