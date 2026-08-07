@@ -1,0 +1,1 @@
+{"ts":"2026-08-07T22:41:31.170044+00:00","project_id":"gate-live-test","node_id":"node-01-gate-smoke","from_status":"provisional","to_status":"deferred","reason":"Live-fire gate revocation smoke test: defer after evaluator pass.","kind":"graph","source":"gddp operator menu"}
