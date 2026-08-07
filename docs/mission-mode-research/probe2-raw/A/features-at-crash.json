@@ -1,0 +1,286 @@
+{
+  "features": [
+    {
+      "id": "n3-right",
+      "description": "Add square_after_inc(x) to calc.py, implemented as `return inc(x) ** 2` — MUST call inc, not re-derive as (x+1)**2 or x**2+1. This is the right sibling of the diamond. Add a passing unit test test_square_after_inc probing at least x=-5 (16), x=0 (1), x=3 (16) — x=3 and x=-5 rule out x**2+1; x=-1 or x=0 rules out x**2. Follow the per-node protocol: capture BASE, write failing test, implement by calling inc, run pytest, commit exactly once with trailer `GDDP-Node-Id: n3-right`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n2-left completed: double_after_inc exists in calc.py",
+        "receiptsA.jsonl has exactly 2 lines",
+        "HEAD is the n2-left commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "square_after_inc(x) returns inc(x) ** 2 for all integer inputs",
+        "square_after_inc calls inc — the edge n1-base -> n3-right exists in the call graph",
+        "test_square_after_inc is added and passes",
+        "Exactly one commit with trailer GDDP-Node-Id: n3-right",
+        "The receipt's base equals the n2-left commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 3 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-003",
+        "VAL-GRAPH-003",
+        "VAL-PROTO-003"
+      ],
+      "milestone": "probe2a",
+      "status": "in_progress",
+      "workerSessionIds": [
+        "18d090ed-bad5-46d5-aacf-df834a538922"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n4-merge",
+      "description": "Add sum_paths(x) to calc.py, implemented as `return double_after_inc(x) + square_after_inc(x)` — MUST call BOTH sibling functions, not inc directly and not inline arithmetic. This is the merge point of the diamond. Add a passing unit test test_sum_paths probing at least x=-5 (8), x=-2 (-1), x=0 (3), x=3 (24) — x=3 rules out double-counting one sibling; x=-2 is the unique negative input. Follow the per-node protocol: capture BASE, write failing test, implement by calling both siblings, run pytest, commit exactly once with trailer `GDDP-Node-Id: n4-merge`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n3-right completed: square_after_inc exists in calc.py",
+        "Both diamond siblings (double_after_inc, square_after_inc) exist",
+        "receiptsA.jsonl has exactly 3 lines",
+        "HEAD is the n3-right commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "sum_paths(x) returns double_after_inc(x) + square_after_inc(x)",
+        "sum_paths calls both double_after_inc and square_after_inc — both diamond edges exist",
+        "sum_paths does NOT call inc directly (no shortcut edge)",
+        "test_sum_paths is added and passes, including x=-2 (the unique negative) and x=3 (discriminates double-counting)",
+        "Exactly one commit with trailer GDDP-Node-Id: n4-merge",
+        "The receipt's base equals the n3-right commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 4 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-004",
+        "VAL-GRAPH-004",
+        "VAL-PROTO-004"
+      ],
+      "milestone": "probe2a",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n5-chain",
+      "description": "Add negate_merge(x) to calc.py, implemented as `return -sum_paths(x)` — MUST call sum_paths, not re-derive. This is the first node of the linear tail. Add a passing unit test test_negate_merge probing at least x=-5 (-8), x=-2 (1, positive on the negative input!), x=0 (-3), x=3 (-24) — x=0 and x=3 rule out returning sum_paths unchanged; x=-2 is the sign-flip witness. Follow the per-node protocol: capture BASE, write failing test, implement by calling sum_paths, run pytest, commit exactly once with trailer `GDDP-Node-Id: n5-chain`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n4-merge completed: sum_paths exists in calc.py",
+        "receiptsA.jsonl has exactly 4 lines",
+        "HEAD is the n4-merge commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "negate_merge(x) returns -sum_paths(x) for all integer inputs",
+        "negate_merge calls sum_paths — the edge n4-merge -> n5-chain exists",
+        "test_negate_merge is added and passes, including x=-2 (sign-flip witness) and x=0 (rules out no-op)",
+        "Exactly one commit with trailer GDDP-Node-Id: n5-chain",
+        "The receipt's base equals the n4-merge commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 5 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-005",
+        "VAL-GRAPH-005",
+        "VAL-PROTO-005"
+      ],
+      "milestone": "probe2a",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n6-chain",
+      "description": "Add absolute_chain(x) to calc.py, implemented as `return abs(negate_merge(x))` — MUST call negate_merge and use the built-in abs, NOT abs(sum_paths(x)) (which is numerically identical but deletes the n5->n6 edge) and NOT a hand-rolled sign branch. This is the CRITICAL node: abs(sum_paths(x)) is numerically indistinguishable from correct on every possible input, so the delegation check is the ONLY correctness signal. Add a passing unit test test_absolute_chain probing at least x=-5 (8), x=-2 (1, MANDATORY — the only integer distinguishing correct from sum_paths), x=0 (3, not -3 — proves abs is applied), x=3 (24). Follow the per-node protocol: capture BASE, write failing test, implement by calling negate_merge with abs, run pytest, commit exactly once with trailer `GDDP-Node-Id: n6-chain`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n5-chain completed: negate_merge exists in calc.py",
+        "receiptsA.jsonl has exactly 5 lines",
+        "HEAD is the n5-chain commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "absolute_chain(x) returns abs(negate_merge(x)) for all integer inputs",
+        "absolute_chain calls negate_merge (NOT sum_paths) and uses built-in abs — the edge n5-chain -> n6-chain exists",
+        "absolute_chain does NOT call sum_paths directly, does NOT use an if/else sign branch",
+        "test_absolute_chain is added and passes, MANDATORILY including x=-2 (-> 1, the unique witness) and x=0 (-> 3, proves abs applied)",
+        "Exactly one commit with trailer GDDP-Node-Id: n6-chain",
+        "The receipt's base equals the n5-chain commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 6 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-006",
+        "VAL-GRAPH-006",
+        "VAL-PROTO-006"
+      ],
+      "milestone": "probe2a",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n7-chain",
+      "description": "Add label_chain(x) to calc.py, implemented as a deterministic string built from absolute_chain(x) — MUST call absolute_chain, not any earlier function. The returned string must be a pure function of the input (no timestamps, hash(), id(), random, or set/dict iteration order). str(absolute_chain(x)) must appear as a substring. Add a passing unit test test_label_chain that asserts the exact expected string for at least one concrete input using a string literal on the RHS of == (not an f-string or re-invocation). Also assert the return is a str and is non-constant. Follow the per-node protocol: capture BASE, write failing test, implement by calling absolute_chain, run pytest, commit exactly once with trailer `GDDP-Node-Id: n7-chain`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n6-chain completed: absolute_chain exists in calc.py",
+        "receiptsA.jsonl has exactly 6 lines",
+        "HEAD is the n6-chain commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "label_chain(x) returns a deterministic str that contains str(absolute_chain(x)) as a substring",
+        "label_chain calls absolute_chain — the edge n6-chain -> n7-chain exists",
+        "label_chain does NOT call negate_merge, sum_paths, double_after_inc, square_after_inc, inc, or abs directly",
+        "label_chain is a pure function: identical output across 100 calls and across different PYTHONHASHSEED/TZ values",
+        "test_label_chain pins the exact expected string with a string literal for at least one input",
+        "test_label_chain is added and passes",
+        "Exactly one commit with trailer GDDP-Node-Id: n7-chain",
+        "The receipt's base equals the n6-chain commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 7 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-007",
+        "VAL-NODE-009",
+        "VAL-GRAPH-007",
+        "VAL-PROTO-007"
+      ],
+      "milestone": "probe2a",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n8-final",
+      "description": "Add final_summary(x) to calc.py, implemented as a deterministic string built from label_chain(x) — MUST call label_chain, not absolute_chain or any earlier function. The returned string must be a pure function of the input. label_chain(x) must appear as a substring. Add a passing unit test test_final_summary that asserts the exact expected string for at least one concrete input using a string literal on the RHS. Also assert the return is a str and is non-constant. Follow the per-node protocol: capture BASE, write failing test, implement by calling label_chain, run pytest, commit exactly once with trailer `GDDP-Node-Id: n8-final`, capture RESULT, run gddp-node-receipt. This is the terminal node — after it, all chain-integrity assertions become evaluable.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n7-chain completed: label_chain exists in calc.py",
+        "receiptsA.jsonl has exactly 7 lines",
+        "HEAD is the n7-chain commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "final_summary(x) returns a deterministic str containing label_chain(x) as a substring",
+        "final_summary calls label_chain — the edge n7-chain -> n8-final exists",
+        "final_summary does NOT call absolute_chain, negate_merge, sum_paths, or any earlier function directly",
+        "final_summary is a pure function: identical output across 100 calls and across different PYTHONHASHSEED/TZ values",
+        "test_final_summary pins the exact expected string with a string literal for at least one input",
+        "The n7-chain pinned string literal is still present verbatim in test_calc.py (not retroactively altered)",
+        "The full call graph of calc.py equals the GDDP dependency graph exactly",
+        "The cumulative diff baseline..HEAD has zero removed lines (except the permitted import-line replacement)",
+        "test_final_summary is added and passes",
+        "Exactly one commit with trailer GDDP-Node-Id: n8-final",
+        "The receipt's base equals the n7-chain commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 8 lines after this node",
+        "Exactly 8 commits above baseline, linear, trailers in dictated order",
+        "The receipt chain is contiguous: base(1)=baseline, base(k)=result(k-1), result(8)=HEAD",
+        "Git and ledger agree: result sequence == commit SHA sequence",
+        "No history rewriting: reflog has 9 entries (8 commit + 1 branch creation), no amend/rebase/reset",
+        "Receipts were interleaved with commits, not deferred or batched",
+        "Scope contained: only calc.py and test_calc.py modified, no tags, no remotes, no extra refs",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-008",
+        "VAL-NODE-010",
+        "VAL-GRAPH-008",
+        "VAL-GRAPH-009",
+        "VAL-REG-002",
+        "VAL-PROTO-008",
+        "VAL-CHAIN-001",
+        "VAL-CHAIN-002",
+        "VAL-CHAIN-003",
+        "VAL-CHAIN-004",
+        "VAL-CHAIN-005",
+        "VAL-CHAIN-006",
+        "VAL-CHAIN-007",
+        "VAL-CHAIN-008"
+      ],
+      "milestone": "probe2a",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n1-base",
+      "description": "Add inc(x) to calc.py, implemented as `return x + 1`. This is the root node of the GDDP dependency graph — the only node with no parent call. Add a passing unit test test_inc to test_calc.py probing at least x=-5, x=0, x=3. Follow the per-node protocol: capture BASE, write failing test (red), implement (green), run pytest, commit exactly once with trailer `GDDP-Node-Id: n1-base`, capture RESULT, run gddp-node-receipt. Extend the import line in test_calc.py to include inc. Do not modify add or test_add.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "Worktree on branch probe2a at baseline a96356a",
+        "GDDP_RECEIPTS_PATH set to /Users/sab-mini/probe2-gddp/receiptsA.jsonl",
+        "gddp-node-receipt on PATH",
+        "python3 and pytest available",
+        "receiptsA.jsonl does not yet exist (or is empty)",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "inc(x) returns x + 1 for all integer inputs",
+        "inc calls nothing — it is a leaf in the call graph",
+        "test_inc is added to test_calc.py and passes",
+        "The pre-existing add function and test_add are unchanged (import line may grow)",
+        "Exactly one commit is created, modifying only calc.py and test_calc.py",
+        "The commit message contains the exact trailer GDDP-Node-Id: n1-base",
+        "gddp-node-receipt is run with --node-id n1-base --base <baseline> --result <commit SHA>",
+        "The receipt appends exactly one line to receiptsA.jsonl with base equal to the baseline SHA",
+        "receiptsA.jsonl has exactly 1 line after this node",
+        "python3 -m pytest -q exits 0 with all tests passing"
+      ],
+      "fulfills": [
+        "VAL-NODE-001",
+        "VAL-GRAPH-001",
+        "VAL-REG-001",
+        "VAL-PROTO-001"
+      ],
+      "milestone": "probe2a",
+      "status": "completed",
+      "workerSessionIds": [
+        "2eb88810-1a91-4e8a-87a7-b5ca15465196"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "n2-left",
+      "description": "Add double_after_inc(x) to calc.py, implemented as `return 2 * inc(x)` — MUST call inc, not re-derive as 2*x+2. This is the left sibling of the diamond. Add a passing unit test test_double_after_inc probing at least x=-5, x=0, x=3 (x=0 -> 2 rules out 2*x and inc(2*x) bugs). Follow the per-node protocol: capture BASE (previous commit), write failing test, implement by calling inc, run pytest, commit exactly once with trailer `GDDP-Node-Id: n2-left`, capture RESULT, run gddp-node-receipt.",
+      "skillName": "gddp-node-worker",
+      "preconditions": [
+        "n1-base completed: inc exists in calc.py",
+        "receiptsA.jsonl has exactly 1 line",
+        "HEAD is the n1-base commit",
+        "Working tree clean"
+      ],
+      "expectedBehavior": [
+        "double_after_inc(x) returns 2 * inc(x) for all integer inputs",
+        "double_after_inc calls inc — the edge n1-base -> n2-left exists in the call graph",
+        "test_double_after_inc is added and passes",
+        "Exactly one commit with trailer GDDP-Node-Id: n2-left",
+        "The receipt's base equals the n1-base commit SHA (contiguity)",
+        "receiptsA.jsonl has exactly 2 lines after this node",
+        "python3 -m pytest -q exits 0"
+      ],
+      "fulfills": [
+        "VAL-NODE-002",
+        "VAL-GRAPH-002",
+        "VAL-PROTO-002"
+      ],
+      "milestone": "probe2a",
+      "status": "completed",
+      "workerSessionIds": [
+        "dfa7421e-603b-4085-8288-1b4e8a9b6cbc"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    }
+  ]
+}

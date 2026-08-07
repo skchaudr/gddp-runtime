@@ -1,0 +1,102 @@
+{
+  "features": [
+    {
+      "id": "node-alpha",
+      "description": "Add subtract(a, b) to calc.py and add a passing pytest test for it in test_calc.py. Do ONLY this feature -- do not add multiply, do not touch add, do not create any new file. Follow the mandatory per-node records protocol exactly: (1) BEFORE any change, run `git rev-parse HEAD` and retain the full 40-char SHA verbatim as <starting-sha> (expected: 48ecdb67a696dc85256f005d8393cd24815cfcca); (2) TDD the function -- failing test first, then implement; (3) make EXACTLY ONE commit staging only calc.py and test_calc.py, whose message body contains the exact trailer line `GDDP-Node-Id: node-alpha` on its own line after a blank line; (4) run `git rev-parse HEAD` to obtain <new-commit-sha>; (5) EXECUTE (do not merely describe) exactly once: `gddp-node-receipt --node-id node-alpha --base <starting-sha> --result <new-commit-sha>`. The feature is NOT complete until that receipt command exits 0. Never push, never amend/rebase/reset/squash, never branch or tag, never hand-edit receipts.jsonl.",
+      "skillName": "probe-node-worker",
+      "preconditions": [
+        "Working directory is the git worktree /Users/sab-mini/probe-gddp-mission/repo-wt-probe-alpha-beta on branch probe-alpha-beta",
+        "HEAD is the baseline commit 48ecdb67a696dc85256f005d8393cd24815cfcca and `git status --short --untracked-files=no` is empty",
+        "calc.py contains only add(a, b); test_calc.py contains only test_add; `python3 -m pytest -q` reports 1 passed",
+        "python3 (3.14.6) and pytest (9.1.1) are available; gddp-node-receipt is on PATH (fallback /Users/sab-mini/probe-gddp-mission/bin/gddp-node-receipt)",
+        "The repository has no git remote configured"
+      ],
+      "expectedBehavior": [
+        "calc.py gains exactly one new top-level function subtract(a, b) returning a - b, appended below add, matching existing style (no imports, no classes, no type hints, no docstrings)",
+        "subtract respects argument order: subtract(5, 2) == 3 (not -3); subtract(10, 4) == 6",
+        "subtract handles sign boundaries: subtract(0, 0) == 0, subtract(2, 5) == -3, subtract(-3, -4) == 1, subtract(7, 0) == 7",
+        "test_calc.py extends its existing import to `from calc import add, subtract` and adds one test_* function asserting concrete literal values for subtract via bare asserts",
+        "The pre-existing test_add is left byte-identical and still passes; add(2, 3) still returns 5",
+        "`python3 -m pytest -q -p no:cacheprovider` reports exactly '2 passed' with zero failures",
+        "Exactly one new commit exists: `git rev-list --count <starting-sha>..HEAD` prints 1",
+        "That commit's trailer parses exactly: `git log -1 --format='%(trailers:key=GDDP-Node-Id,valueonly)'` yields exactly 'node-alpha' with no quoting or stray whitespace",
+        "That commit's parent is the baseline commit, and `git show --name-status --format= HEAD` lists only calc.py and test_calc.py",
+        "receipts.jsonl contains exactly one record with node_id 'node-alpha', whose base == <starting-sha>, result == <new-commit-sha>, git_head == <new-commit-sha> (proving the receipt ran after the commit), and git_branch == 'probe-alpha-beta'",
+        "No new tracked file was created; no remote was added; no tag or branch was created; __pycache__/ remains untracked and no .gitignore was added"
+      ],
+      "fulfills": [
+        "VAL-SUB-001",
+        "VAL-SUB-002",
+        "VAL-SUB-003",
+        "VAL-REC-A01",
+        "VAL-REC-A02",
+        "VAL-REC-A03",
+        "VAL-REC-A04",
+        "VAL-REC-A05"
+      ],
+      "milestone": "probe",
+      "status": "completed",
+      "workerSessionIds": [
+        "d67d078e-580b-4c1c-8fe7-dbe425b37164"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "node-beta",
+      "description": "Depends on node-alpha and runs SECOND, on top of node-alpha's commit. Add multiply(a, b) to the same calc.py (after alpha's changes) and add a passing pytest test for it in test_calc.py. Do ONLY this feature -- do not touch add or subtract, do not create any new file. Follow the mandatory per-node records protocol exactly: (1) BEFORE any change, run `git rev-parse HEAD` and retain the full 40-char SHA verbatim as <starting-sha> (this will be node-alpha's commit SHA); (2) TDD the function -- failing test first, then implement; (3) make EXACTLY ONE commit staging only calc.py and test_calc.py, whose message body contains the exact trailer line `GDDP-Node-Id: node-beta` on its own line after a blank line; (4) run `git rev-parse HEAD` to obtain <new-commit-sha>; (5) EXECUTE (do not merely describe) exactly once: `gddp-node-receipt --node-id node-beta --base <starting-sha> --result <new-commit-sha>`. The feature is NOT complete until that receipt command exits 0. Never push, never amend/rebase/reset/squash, never branch or tag, never hand-edit receipts.jsonl. If subtract is missing from calc.py, node-alpha did not complete -- stop and return to the orchestrator.",
+      "skillName": "probe-node-worker",
+      "preconditions": [
+        "node-alpha is complete: calc.py contains both add and subtract, and `python3 -m pytest -q` reports 2 passed",
+        "HEAD is node-alpha's commit, which carries the trailer GDDP-Node-Id: node-alpha and whose parent is the baseline 48ecdb67a696dc85256f005d8393cd24815cfcca",
+        "receipts.jsonl exists and contains exactly one record, for node-alpha",
+        "`git status --short --untracked-files=no` is empty (untracked __pycache__/ is expected and fine)",
+        "Working directory is /Users/sab-mini/probe-gddp-mission/repo-wt-probe-alpha-beta on branch probe-alpha-beta; python3, pytest, and gddp-node-receipt are available"
+      ],
+      "expectedBehavior": [
+        "calc.py gains exactly one new top-level function multiply(a, b) returning a * b, appended below subtract, matching existing style (no imports, no classes, no type hints, no docstrings)",
+        "multiply returns the product: multiply(3, 4) == 12, multiply(7, 6) == 42",
+        "multiply handles zero, one, and negatives: multiply(0, 5) == 0, multiply(1, 9) == 9, multiply(-3, 4) == -12, multiply(-2, -6) == 12",
+        "node-beta appended rather than overwrote: add and subtract remain present and unchanged in behavior (add(2, 3) == 5, subtract(5, 2) == 3)",
+        "test_calc.py extends its import to include multiply and adds one test_* function asserting concrete literal values for multiply via bare asserts; the existing test_add and subtract test are untouched",
+        "`python3 -m pytest -q -p no:cacheprovider` reports exactly '3 passed' with zero failures",
+        "All three operations compose: multiply(add(2, 3), subtract(5, 2)) == 15",
+        "Exactly one new commit exists: `git rev-list --count <starting-sha>..HEAD` prints 1, and its parent is node-alpha's commit (proving beta ran second on top of alpha)",
+        "That commit's trailer parses exactly: `git log -1 --format='%(trailers:key=GDDP-Node-Id,valueonly)'` yields exactly 'node-beta'; `git show --name-status --format= HEAD` lists only calc.py and test_calc.py",
+        "Across all refs there are exactly two GDDP-Node-Id-bearing commits, with distinct values node-alpha and node-beta, in a strictly linear non-merge history of exactly 2 commits since the baseline",
+        "receipts.jsonl contains exactly two lines total: one node-alpha record and one node-beta record, forming a contiguous chain (alpha.base == baseline, alpha.result == beta.base, beta.result == HEAD), each with git_head equal to its own result SHA, git_branch 'probe-alpha-beta', and git_toplevel the worktree path",
+        "Sequencing is provable: alpha's receipt is the first ledger line and its timestamp_utc precedes beta's commit date, which precedes beta's receipt timestamp_utc",
+        "Repository integrity preserved: only calc.py and test_calc.py changed since the baseline; AGENTS.md and README.md are byte-identical; `git ls-files` lists exactly AGENTS.md, README.md, calc.py, test_calc.py; no remote, no upstream, no tags, and only the refs main and probe-alpha-beta exist"
+      ],
+      "fulfills": [
+        "VAL-MUL-001",
+        "VAL-MUL-002",
+        "VAL-MUL-003",
+        "VAL-MUL-004",
+        "VAL-REC-B01",
+        "VAL-REC-B02",
+        "VAL-REC-B03",
+        "VAL-REC-B04",
+        "VAL-REC-B05",
+        "VAL-CROSS-001",
+        "VAL-CROSS-002",
+        "VAL-CROSS-003",
+        "VAL-CROSS-004",
+        "VAL-CROSS-005",
+        "VAL-CROSS-006",
+        "VAL-CROSS-007",
+        "VAL-CROSS-008",
+        "VAL-CROSS-009",
+        "VAL-CROSS-010",
+        "VAL-CROSS-011"
+      ],
+      "milestone": "probe",
+      "status": "completed",
+      "workerSessionIds": [
+        "f3921f8f-71a0-4794-974a-420042721781"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    }
+  ]
+}

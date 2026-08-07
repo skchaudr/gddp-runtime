@@ -1,0 +1,8 @@
+{
+  "workerModel": "glm-5.2",
+  "validationWorkerModel": "glm-5.2",
+  "workerReasoningEffort": "high",
+  "validationWorkerReasoningEffort": "high",
+  "skipScrutiny": true,
+  "skipUserTesting": true
+}

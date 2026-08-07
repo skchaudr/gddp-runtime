@@ -1,0 +1,108 @@
+{
+  "timestamp": "2026-08-07T21:08:34.914Z",
+  "workerSessionId": "d67d078e-580b-4c1c-8fe7-dbe425b37164",
+  "featureId": "node-alpha",
+  "milestone": "probe",
+  "commitId": "5111d16ec89a295e7d9f78fa22ee056b456efc86",
+  "repoPath": "/Users/sab-mini/probe-gddp-mission/repo-wt-probe-alpha-beta",
+  "successState": "success",
+  "returnToOrchestrator": false,
+  "handoff": {
+    "salientSummary": "Implemented node-alpha: added subtract(a, b) to calc.py plus test_subtract in test_calc.py following TDD (confirmed ImportError red, then 2 passed green). Captured starting SHA 48ecdb67a696dc85256f005d8393cd24815cfcca before any edit, made exactly one commit 5111d16ec89a295e7d9f78fa22ee056b456efc86 carrying the trailer GDDP-Node-Id: node-alpha, then executed gddp-node-receipt once (exit 0). Verified the ledger holds exactly one node-alpha record whose base/result/git_head all match.",
+    "whatWasImplemented": "Added a single pure function subtract(a, b) returning a - b to calc.py, appended below the existing add() and matching its style exactly (flat top-level def, no imports, no type hints, no docstring). Extended the existing import in test_calc.py from 'from calc import add' to 'from calc import add, subtract' and added test_subtract() asserting subtract(5, 2) == 3, subtract(10, 4) == 6, subtract(0, 0) == 0, subtract(2, 5) == -3, subtract(-3, -4) == 1, and subtract(7, 0) == 7 with bare asserts against concrete literals. test_add was left byte-identical. Committed exactly once with the exact GDDP-Node-Id: node-alpha trailer, then ran the receipt CLI exactly once with exit 0.",
+    "whatWasLeftUndone": "",
+    "verification": {
+      "commandsRun": [
+        {
+          "command": "git rev-parse HEAD",
+          "exitCode": 0,
+          "observation": "Captured BEFORE any edit: 48ecdb67a696dc85256f005d8393cd24815cfcca. Retained verbatim as <starting-sha>, matches expected baseline."
+        },
+        {
+          "command": "git status --short --untracked-files=no",
+          "exitCode": 0,
+          "observation": "Empty at start - no uncommitted tracked changes, safe to proceed."
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider",
+          "exitCode": 2,
+          "observation": "RED as intended: 'ImportError: cannot import name subtract from calc'. Confirms the new test genuinely exercises subtract rather than passing vacuously."
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider",
+          "exitCode": 0,
+          "observation": "GREEN after implementing: '2 passed'. Matches the expected count for node-alpha (baseline 1 + 1 new); test_add still passing."
+        },
+        {
+          "command": "python3 -c \"from calc import add, subtract; print(add(2,3), subtract(5,2), subtract(2,5), subtract(0,0), subtract(-3,-4))\"",
+          "exitCode": 0,
+          "observation": "Printed '5 3 -3 0 1'. Argument order is correct (subtract(5,2)==3, not -3), add is unaffected, all sign cases verified."
+        },
+        {
+          "command": "git add calc.py test_calc.py && git status --short",
+          "exitCode": 0,
+          "observation": "Staged exactly 'M calc.py' and 'M test_calc.py'. __pycache__/ remained untracked and unstaged."
+        },
+        {
+          "command": "git commit -F - <<'EOF'...EOF",
+          "exitCode": 0,
+          "observation": "Single commit 5111d16ec89a295e7d9f78fa22ee056b456efc86 created. Subject 'node-alpha: add subtract to calc', blank line, then trailer 'GDDP-Node-Id: node-alpha'."
+        },
+        {
+          "command": "git log -1 --format='%H|%(trailers:key=GDDP-Node-Id,valueonly)'",
+          "exitCode": 0,
+          "observation": "'5111d16ec89a295e7d9f78fa22ee056b456efc86|node-alpha' - git's trailer parser resolves the value to exactly 'node-alpha' with no quoting or whitespace."
+        },
+        {
+          "command": "git rev-list --count 48ecdb67a696dc85256f005d8393cd24815cfcca..HEAD",
+          "exitCode": 0,
+          "observation": "Printed '1'. Exactly one commit was created, as required."
+        },
+        {
+          "command": "git show --name-status --format= HEAD",
+          "exitCode": 0,
+          "observation": "'M calc.py' and 'M test_calc.py' only. No other file added, renamed, or deleted."
+        },
+        {
+          "command": "git rev-parse HEAD",
+          "exitCode": 0,
+          "observation": "Captured AFTER commit: 5111d16ec89a295e7d9f78fa22ee056b456efc86. Retained as <new-commit-sha>."
+        },
+        {
+          "command": "gddp-node-receipt --node-id node-alpha --base 48ecdb67a696dc85256f005d8393cd24815cfcca --result 5111d16ec89a295e7d9f78fa22ee056b456efc86",
+          "exitCode": 0,
+          "observation": "Executed exactly once, exit 0. Ledger record created. Not re-run."
+        },
+        {
+          "command": "python3 -c \"import json; rows=[...]; mine=[r for r in rows if r['node_id']=='node-alpha']; print(len(mine), ...)",
+          "exitCode": 0,
+          "observation": "Ledger has 1 total record, exactly 1 node-alpha record. base=48ecdb67a696dc85256f005d8393cd24815cfcca, result=5111d16ec89a295e7d9f78fa22ee056b456efc86, git_head=5111d16ec89a295e7d9f78fa22ee056b456efc86 (matches result, proves receipt ran after commit), git_branch=probe-alpha-beta."
+        },
+        {
+          "command": "git status --short --untracked-files=no",
+          "exitCode": 0,
+          "observation": "Empty. Working tree clean of tracked changes; __pycache__/ remains untracked as expected."
+        }
+      ]
+    },
+    "tests": {
+      "added": [
+        {
+          "file": "test_calc.py",
+          "cases": [
+            {
+              "name": "test_subtract",
+              "verifies": "Asserts subtract returns the difference in correct argument order (subtract(5,2)==3) and handles zero, negative operands, and negative results (subtract(10,4)==6, subtract(2,5)==-3, subtract(0,0)==0, subtract(-3,-4)==1, subtract(7,0)==7)."
+            }
+          ]
+        }
+      ],
+      "coverage": "The test covers all required cases: positive difference, negative difference, zero minuend, zero subtrahend, both zero, and negative operands. Argument order is verified explicitly."
+    },
+    "discoveredIssues": [],
+    "skillFeedback": {
+      "followedProcedure": true,
+      "deviations": []
+    }
+  }
+}

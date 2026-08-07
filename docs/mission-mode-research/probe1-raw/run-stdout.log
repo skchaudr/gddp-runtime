@@ -1,0 +1,26 @@
+**Mission complete.** Both graph nodes executed successfully and the end-of-mission gate is open: **28/28 assertions passed**.
+
+## Graph mapping — strict 1:1 preserved
+
+```
+node-alpha ──▶ 5111d16e…fc86  [GDDP-Node-Id: node-alpha]  ──▶ receipt line 1
+node-beta  ──▶ 674c78e5…4630  [GDDP-Node-Id: node-beta ]  ──▶ receipt line 2
+```
+
+- **Exactly two features**, IDs exactly `node-alpha` and `node-beta` — no renaming, no decomposition, no added setup/validation/docs/cleanup features.
+- **Exactly one milestone**, `probe`, containing both.
+- **Exactly two commits** above baseline `48ecdb6`, strictly linear, alpha-then-beta, each carrying its exact trailer (verified with git's trailer parser across `--all`, not substring grep).
+- **Exactly two receipt records**, forming an unbroken chain `48ecdb67 → 5111d16e → 674c78e5 = HEAD`.
+- **No push, no remote, no tags, no new branches**, only `calc.py` and `test_calc.py` touched, `3 passed`.
+
+## Notable verification findings
+
+The ordering guarantee was proven at the *protocol* level, not just via commit ancestry. Alpha's receipt landed ~75s **before** beta's commit was even created (`alpha.ts 21:08:04 < beta commit 21:09:19 < beta.ts 21:09:33`), which rules out the batched "both commits, then both receipts" pattern that ancestry alone cannot exclude. Each receipt's ambient `git_head` (captured by the CLI, not supplied by the worker) equals its own commit SHA, proving each receipt ran *after* its commit rather than being fabricated.
+
+A contract review pass before execution caught two issues worth flagging: an assertion that would have **failed a fully compliant run** (`__pycache__/` is unavoidably untracked, and the only "fixes" — a `.gitignore` — would themselves have violated the no-new-files rule), and a gap where nothing proved the temporal half of the protocol. Both were corrected pre-flight.
+
+## One deliberate deviation to flag
+
+I did **not** perform the usual end-of-mission README update. Doing so would have required a third commit and a modification outside `calc.py`/`test_calc.py`, directly violating the probe's exact-two-node mapping and breaking `VAL-CROSS-002`, `VAL-CROSS-006`, and `VAL-CROSS-008` — all of which currently pass. The mission's explicit constraints took precedence. Say the word if you'd like a README change made as separate, clearly out-of-band work.
+
+Artifacts are in `…/missions/e708b834-7b3b-4524-a6af-21c514549f44/` (`architecture.md`, `validation-contract.md`, `validation-state.json`, `features.json`, `AGENTS.md`, `skills/probe-node-worker/`, `services.yaml`, `init.sh`, `library/`).

@@ -1,0 +1,84 @@
+{
+  "timestamp": "2026-08-07T22:47:55.297Z",
+  "workerSessionId": "dfa7421e-603b-4085-8288-1b4e8a9b6cbc",
+  "featureId": "n2-left",
+  "milestone": "probe2a",
+  "commitId": "eb156d9eb3859965c8b3d06a363ec3a1f29f629b",
+  "repoPath": "/Users/sab-mini/probe2-gddp/repoA-wt-probe2a",
+  "successState": "success",
+  "returnToOrchestrator": false,
+  "handoff": {
+    "salientSummary": "Implemented n2-left: added double_after_inc(x) returning 2*inc(x), with a passing test probing x=-5, x=0, x=3. Committed once with trailer GDDP-Node-Id: n2-left and recorded the receipt (line 2). All 3 tests green.",
+    "whatWasImplemented": "Added double_after_inc(x) to calc.py, implemented as `return 2 * inc(x)` (calls inc, does not re-derive). Added test_double_after_inc to test_calc.py with probes for x=-5 (-8), x=0 (2), x=3 (8); x=0 -> 2 rules out 2*x and inc(2*x) bugs. Extended the import line to `from calc import add, inc, double_after_inc`. Committed as a single commit with GDDP-Node-Id: n2-left trailer. Receipt appended to receiptsA.jsonl as line 2; base chains to the n1-base commit c8541db.",
+    "whatWasLeftUndone": "",
+    "verification": {
+      "commandsRun": [
+        {
+          "command": "python3 -m pytest -q (baseline)",
+          "exitCode": 0,
+          "observation": "2 passed in 0.00s"
+        },
+        {
+          "command": "python3 -m pytest -q (RED)",
+          "exitCode": 2,
+          "observation": "ImportError: cannot import name 'double_after_inc' from 'calc'"
+        },
+        {
+          "command": "python3 -m pytest -q (GREEN)",
+          "exitCode": 0,
+          "observation": "3 passed in 0.00s"
+        },
+        {
+          "command": "git show -s --format=%B HEAD | grep '^GDDP-Node-Id: n2-left$'",
+          "exitCode": 0,
+          "observation": "GDDP-Node-Id: n2-left"
+        },
+        {
+          "command": "git diff-tree --no-commit-id --name-only -r HEAD",
+          "exitCode": 0,
+          "observation": "calc.py\\ntest_calc.py"
+        },
+        {
+          "command": "gddp-node-receipt --node-id n2-left --base c8541db8ba9291f8ddc13055aeca6c58ee13dba3 --result eb156d9eb3859965c8b3d06a363ec3a1f29f629b",
+          "exitCode": 0,
+          "observation": "{\"base\":\"c8541db8ba9291f8ddc13055aeca6c58ee13dba3\",\"git_branch\":\"probe2a\",\"git_head\":\"eb156d9eb3859965c8b3d06a363ec3a1f29f629b\",\"git_toplevel\":\"/Users/sab-mini/probe2-gddp/repoA-wt-probe2a\",\"node_id\":\"n2-left\",\"result\":\"eb156d9eb3859965c8b3d06a363ec3a1f29f629b\",\"timestamp_utc\":\"2026-08-07T22:47:37.128629+00:00\"}"
+        },
+        {
+          "command": "wc -l < /Users/sab-mini/probe2-gddp/receiptsA.jsonl",
+          "exitCode": 0,
+          "observation": "2"
+        },
+        {
+          "command": "git status --porcelain",
+          "exitCode": 0,
+          "observation": "?? __pycache__/ (only untracked pycache)"
+        },
+        {
+          "command": "python3 -c \"import calc; print(calc.double_after_inc(0))\"",
+          "exitCode": 0,
+          "observation": "2"
+        }
+      ],
+      "interactiveChecks": []
+    },
+    "tests": {
+      "added": [
+        {
+          "file": "test_calc.py",
+          "cases": [
+            {
+              "name": "test_double_after_inc",
+              "verifies": "double_after_inc returns 2*inc(x) for x=-5 (-8), x=0 (2), x=3 (8); x=0 -> 2 rules out 2*x and inc(2*x) bugs"
+            }
+          ]
+        }
+      ],
+      "coverage": "Probes three inputs including x=0 and a negative, matching VAL-NODE-002 witness set (x=-5,0,3). Delegation to inc verified by implementation and VAL-GRAPH-002 contract."
+    },
+    "discoveredIssues": [],
+    "skillFeedback": {
+      "followedProcedure": true,
+      "deviations": []
+    }
+  }
+}

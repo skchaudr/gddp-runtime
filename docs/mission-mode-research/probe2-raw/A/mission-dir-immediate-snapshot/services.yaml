@@ -1,0 +1,4 @@
+commands:
+  test: cd /Users/sab-mini/probe2-gddp/repoA-wt-probe2a && python3 -m pytest -q
+
+services: {}
