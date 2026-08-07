@@ -1,0 +1,33 @@
+=== status main ===
+## main
+=== status worktree ===
+## probe2a
+ M calc.py
+ M test_calc.py
+?? __pycache__/
+=== log all ===
+* eb156d9 (probe2a) probe2a: add double_after_inc
+* c8541db probe2a: add inc
+* a96356a (HEAD -> main) probe2: establish calculator baseline
+=== branches ===
+* main    a96356a probe2: establish calculator baseline
++ probe2a eb156d9 (/Users/sab-mini/probe2-gddp/repoA-wt-probe2a) probe2a: add double_after_inc
+=== worktrees ===
+worktree /Users/sab-mini/probe2-gddp/repoA
+HEAD a96356a50f173d98731b9944e65ff593c81333f0
+branch refs/heads/main
+
+worktree /Users/sab-mini/probe2-gddp/repoA-wt-probe2a
+HEAD eb156d9eb3859965c8b3d06a363ec3a1f29f629b
+branch refs/heads/probe2a
+
+=== reflog all ===
+eb156d9 refs/heads/probe2a@{2026-08-07 15:47:32 -0700}: commit: probe2a: add double_after_inc
+eb156d9 worktrees/repoA-wt-probe2a/HEAD@{2026-08-07 15:47:32 -0700}: commit: probe2a: add double_after_inc
+c8541db refs/heads/probe2a@{2026-08-07 15:45:58 -0700}: commit: probe2a: add inc
+c8541db worktrees/repoA-wt-probe2a/HEAD@{2026-08-07 15:45:58 -0700}: commit: probe2a: add inc
+a96356a refs/heads/probe2a@{2026-08-07 15:29:40 -0700}: branch: Created from HEAD
+a96356a worktrees/repoA-wt-probe2a/HEAD@{2026-08-07 15:29:40 -0700}: reset: moving to HEAD
+a96356a worktrees/repoA-wt-probe2a/HEAD@{2026-08-07 15:29:40 -0700}: 
+a96356a refs/heads/main@{2026-08-07 15:28:39 -0700}: commit (initial): probe2: establish calculator baseline
+a96356a HEAD@{2026-08-07 15:28:39 -0700}: commit (initial): probe2: establish calculator baseline

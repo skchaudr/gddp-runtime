@@ -1,0 +1,8 @@
+{
+  "workerModel": "claude-haiku-4-5-20251001",
+  "validationWorkerModel": "claude-haiku-4-5-20251001",
+  "workerReasoningEffort": "high",
+  "validationWorkerReasoningEffort": "high",
+  "skipScrutiny": true,
+  "skipUserTesting": true
+}

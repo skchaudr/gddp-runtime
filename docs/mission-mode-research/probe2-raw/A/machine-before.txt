@@ -1,0 +1,33 @@
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                     4149.
+Pages active:                                 377981.
+Pages inactive:                               374727.
+Pages speculative:                              3825.
+Pages throttled:                                   0.
+Pages wired down:                             156154.
+Pages purgeable:                                9079.
+"Translation faults":                     1914055145.
+Pages copy-on-write:                       222291453.
+Pages zero filled:                         513270959.
+Pages reactivated:                          51593814.
+Pages purged:                               10570292.
+File-backed pages:                            266961.
+Anonymous pages:                              489572.
+Pages stored in compressor:                   344854.
+Pages occupied by compressor:                  98371.
+Decompressions:                             88167730.
+Compressions:                               96926977.
+Pageins:                                    39841589.
+Pageouts:                                     279943.
+Swapins:                                    14754506.
+Swapouts:                                   16541348.
+---
+15:28  up 5 days, 22:52, 3 users, load averages: 3.04 2.44 2.14
+---
+  489     1 S    210640 /Applications/Factory.app/Contents/Resources/bin/droid daemon --remote-access --enable-child-ipc --droid-path /Applications/Factory.app/Contents/Resources/bin/droid
+55790 55480 S    111568 /Applications/Factory.app/Contents/Resources/bin/droid daemon --enable-child-ipc --droid-path /Applications/Factory.app/Contents/Resources/bin/droid --listen ipc
+93329     1 S     38560 /Users/sab-mini/.local/bin/otelcol-contrib --config /Users/sab-mini/.local/share/droid-observability/collector/config.yaml
+97341   489 S    293328 /Applications/Factory.app/Contents/Resources/bin/droid exec --input-format stream-jsonrpc --output-format stream-jsonrpc
+17881 87099 S+   359472 /Users/sab-mini/.local/bin/droid exec --input-format stream-jsonrpc --output-format stream-jsonrpc
+87099 83092 S+   699088 droid
+87143 87099 S+   253840 /Users/sab-mini/.local/bin/droid exec --input-format stream-jsonrpc --output-format stream-jsonrpc

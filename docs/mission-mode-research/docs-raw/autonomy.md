@@ -1,0 +1,91 @@
+# Autonomy Level
+
+Choose Off, Low, Medium, or High to control what Droid can do without repeated confirmations.
+
+Autonomy Level sets the highest-risk work Droid can run without pausing for approval. It is separate from interaction mode: Normal Mode executes work, while Spec Mode plans before implementation.
+
+## Choose a level
+
+Execute commands and MCP tools have a risk level (`low`, `medium`, or `high`). Droid runs them automatically when the risk is at or below your Autonomy Level, unless a denylist or sandbox check requires approval, or the command matches the blocklist. Blocklisted commands never run at any level and have no approval prompt.
+
+| Autonomy Level | What can run without approval                           | Examples                                                               |
+| -------------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Off**        | Built-in read tools and allowlisted commands only       | `Read`, `LS`, `ls`, `pwd`, `git status`                                |
+| **Low**        | File edits plus low-risk commands and MCP tools         | `Edit`, `Create`, `rg`, showing logs                                   |
+| **Medium**     | Everything from Low plus reversible workspace changes   | `npm install`, `pip install`, `git commit`, `mv`, `cp`, build tooling  |
+| **High**       | High-risk actions unless safety checks require approval | `docker compose up`, `git push` if allowed, migrations, custom scripts |
+
+Droid still streams output and highlights file changes at every level.
+
+## How approvals work
+
+Autonomy Level controls automatic approval, not which tools are available. Tool policy, MCP configuration, model support, and organization controls can still restrict tools.
+
+{/* sweep-allow: term-bullets */}
+
+- **Normal vs. Spec Mode**: In Normal Mode, Autonomy Level controls approvals. Spec Mode is read-only planning; after approval, Droid exits Spec Mode and returns to Normal Mode for implementation.
+- **File changes**: Low or higher lets Droid create, edit, and patch files without asking first.
+- **Commands and MCP tools**: Droid compares the tool risk level to your Autonomy Level. If the risk is higher, it asks before continuing.
+- **Allowlisted commands**: Commands in the allowlist can run without approval unless they also match the denylist or blocklist.
+- **Safety checks**: Denylisted dangerous commands still ask at High, including dangerous commands nested inside `$(...)` or backticks. Blocklisted commands are rejected outright at every level, with no approval prompt. [Sandbox](/autonomy-and-safety/sandbox) read, write, and network checks can also prompt separately.
+- **Allow always**: Choosing an "always allow" option raises the current Autonomy Level to the level required by that prompt. Sandbox "allow always" options instead persist the allowed path or domain.
+- **Spec approval**: When approving a Spec Mode plan, choose **Proceed with implementation** to continue with manual approvals, or choose an available Low, Medium, or High option for implementation. Organization Maximum Autonomy Level can hide higher options.
+
+## Command allowlists, denylists, and blocklists
+
+Use `commandAllowlist`, `commandDenylist`, and `commandBlocklist` in [Settings](/droid-cli/settings) to encode command policy for your user profile, a project, a local project override, or a nested folder.
+
+- Allowlist entries are treated as low-risk for the matching scope.
+- Denylist entries always take precedence over allowlist entries. A denied command still runs if you explicitly approve it.
+- Blocklist entries can never run: there is no approval prompt, and the block holds even under full autonomy, auto-run, or `--skip-permissions-unsafe`. Use it for commands that must be hard-stopped regardless of approvals.
+- Commands not covered by any list fall back to the active Autonomy Level and command restrictions.
+- Organization-managed settings have the highest priority. Local and project settings can add defaults for a repo or machine, but they cannot weaken organization command policy or raise autonomy above the organization maximum. See [Enterprise Controls & Managed Settings](/enterprise/hierarchical-settings-and-org-control).
+
+The built-in denylist covers common destructive patterns such as filesystem wipes, disk formatting, shutdown commands, fork bombs, and broad permission or ownership changes. Add project-specific commands when your repo has additional dangerous scripts or deployment paths.
+
+<Warning>
+  Because the blocklist cannot be bypassed by approval, it is the strongest control available. droid resolves the actual program being invoked before matching, so a blocked command cannot be slipped through with a wrapper shell (for example `bash -c "…"`), an absolute path, quoting tricks, or command substitution.
+</Warning>
+
+## Change the level
+
+- Press <Kbd keys='Ctrl+L' /> to cycle `Off → Low → Medium → High → Off`. Organization policy can cap the highest available level.
+- Press <Kbd keys='Shift+Tab' /> to switch between Normal Mode and Spec Mode.
+- Set a default in `/settings` for future sessions.
+- Change Autonomy Level before implementation, from the [Spec Mode](/autonomy-and-safety/specification-mode) approval dialog, or any time after leaving Spec Mode.
+
+## Where Autonomy Level applies
+
+{/* sweep-allow: term-bullets */}
+
+- **Interactive CLI**: `droid` uses the session's current Autonomy Level. `droid "<prompt>"` starts the same interactive CLI with an initial prompt, so the first task uses your configured default. See the [CLI reference](/droid-cli/cli-reference).
+- **Factory App**: Factory App sessions use the same Normal, Spec, Mission, and Autonomy Level controls as CLI sessions.
+- **Droid Exec**: `droid exec` is read-only by default. Use `--auto low`, `--auto medium`, or `--auto high` for non-interactive runs that need edits, local development commands, or broader automation. See [Droid Exec](/droid-exec/overview).
+- **Custom Droids (Subagents)**: Task-launched subagents inherit the parent session's Autonomy Level by default, or use the **Subagent autonomy level** setting (`inherit`, `off`, `low`, `medium`, `high`) when configured, always clamped to the organization's Maximum Autonomy Level. In Spec Mode they are read-only. Organization and Droid tool policy can still restrict them. See [Custom Droids](/harness/subagents).
+- **Factory Missions**: Missions orchestration requires High autonomy or `--skip-permissions-unsafe` (unsafe: skips all permission checks; use only in isolated sandboxes), and admins can restrict who can start Missions. See [Factory Missions](/missions/overview).
+
+## Enterprise Controls
+
+Enterprise admins can set organization-wide autonomy boundaries with organization-managed settings. See [Enterprise Controls & Managed Settings](/enterprise/hierarchical-settings-and-org-control).
+
+- **Default Autonomy Level** sets the starting level for new sessions.
+- **Maximum Autonomy Level** caps how high members can raise autonomy. If the maximum is Medium, High is unavailable in the CLI.
+
+These controls layer with command allowlists, command denylists, MCP restrictions, sandbox settings, and Missions access controls.
+
+## Use it safely
+
+- Start new or high-stakes work with Off or Low until you trust the plan.
+- Match the minimum level to the work: use Low for file edits and generated reports, Medium when the run must install dependencies, build, test, or make local commits, and High for pushes, deployments, Task-launched subagents, Missions, or other orchestration.
+- Add defense in depth with [blocking hooks](/harness/hooks), command denylists, MCP restrictions, least-privilege credentials, and isolated runners.
+- For CI workflows, choose the lowest `droid exec --auto` level that allows the workflow to complete. See [Automated Code Review](/software-factory/code-review-ci) and [Droid Exec](/droid-exec/overview).
+- If you spot a suspect command, interrupt, provide guidance, and resume at the Autonomy Level that fits the remaining risk.
+
+<RelatedLinks>
+  <RelatedLink href='/autonomy-and-safety/specification-mode' title='Interaction Modes'>
+    Understand Normal, Spec, and Mission Mode and how they relate to autonomy.
+  </RelatedLink>
+  <RelatedLink href='/harness/hooks' title='Hooks'>
+    Enforce deterministic policy and validation at every tool call.
+  </RelatedLink>
+</RelatedLinks>

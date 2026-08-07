@@ -1,0 +1,144 @@
+{
+  "assertions": {
+    "VAL-SUB-001": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-SUB-002": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-SUB-003": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-REC-A01": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-REC-A02": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-REC-A03": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-REC-A04": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-REC-A05": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-alpha (session cd2fd62e)"
+    },
+    "VAL-MUL-001": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-MUL-002": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-MUL-003": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-MUL-004": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-REC-B01": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-REC-B02": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-REC-B03": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-REC-B04": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-REC-B05": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/node-beta (session 7fa7364c)"
+    },
+    "VAL-CROSS-001": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-002": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-003": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-004": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-005": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-006": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-007": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-008": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-009": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-010": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    },
+    "VAL-CROSS-011": {
+      "status": "passed",
+      "verifiedAt": "2026-08-07T21:12:39.158011+00:00",
+      "evidence": "orchestrator-validation/cross-area (session 00c199bd)"
+    }
+  }
+}
