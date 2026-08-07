@@ -29,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from ..gates import write_gate
+from ..gates import read_gate, write_gate
 from ..repo_resolver import resolve_project_repo_checkout
 from .graph_reader import GraphReader
 
@@ -119,7 +119,26 @@ def maybe_mark_provisional(
         if current in TERMINAL_STATUSES:
             return False
         if current == PROVISIONAL:
-            return False  # idempotent: already marked by an earlier attempt
+            # Self-heal: if the gate token is missing (transient write
+            # failure on the attempt that marked this provisional), rewrite
+            # it now. The graph status is already provisional so dependents
+            # already see it as satisfied — a missing gate contradicts that.
+            try:
+                repo_checkout = resolve_project_repo_checkout(
+                    project_id, config_root=root
+                )
+                if repo_checkout is not None and read_gate(
+                    str(repo_checkout), node_id
+                ) is None:
+                    receipt = verification.get("receipt_path") or evidence_ref
+                    write_gate(
+                        str(repo_checkout), node_id,
+                        verdict_receipt_path=receipt,
+                    )
+                    print(f"  → gate self-heal: rewrote missing token for {node_id}")
+            except Exception as heal_exc:
+                print(f"  → gate self-heal WARNING (non-fatal): {heal_exc}")
+            return False  # idempotent: already provisional
 
         node_cli = _load_node_cli(root)
         new_node_text, _old = node_cli.replace_node_status(
@@ -141,7 +160,8 @@ def maybe_mark_provisional(
                 project_id, config_root=root
             )
             if repo_checkout is not None:
-                write_gate(str(repo_checkout), node_id, verdict_receipt_path=evidence_ref)
+                receipt = verification.get("receipt_path") or evidence_ref
+                write_gate(str(repo_checkout), node_id, verdict_receipt_path=receipt)
         except Exception as gate_exc:
             print(f"  → gate token WARNING (non-fatal): {gate_exc}")
 
