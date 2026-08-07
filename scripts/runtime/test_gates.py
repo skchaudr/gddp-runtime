@@ -185,50 +185,166 @@ def test_revoke_gate_removes_token(tmp_path: Path) -> None:
     assert revoked_again is False
 
 
-def test_hook_fires_on_pass_only(tmp_path: Path) -> None:
-    """The gate write happens on the evaluation pass path, not the fail path.
+def test_hook_fires_on_pass_and_writes_gate(tmp_path: Path) -> None:
+    """On a pass verdict, the gate token IS written to the repo checkout.
 
-    This is tested by importing the provisional gate hook and calling it
-    with a pass verdict (should write a gate) and a fail verdict (should not).
-    We mock the graph reader and repo resolver so no real graph is needed.
+    Exercises the full pass path through maybe_mark_provisional: verdict
+    eligibility → node status rewrite → gate token write. The fail-path
+    only test (below) covers the negative case.
     """
     from unittest.mock import patch, MagicMock
     from runtime.heartbeat.provisional_gate import maybe_mark_provisional
 
+    config = tmp_path / "config"
+    proj_dir = config / "graphs" / "test-proj" / "nodes"
+    proj_dir.mkdir(parents=True)
+    node_yaml = (
+        "node_id: node-pass\n"
+        "status: ready\n"
+        "type: capability\n"
+    )
+    (proj_dir / "node-pass.yaml").write_text(node_yaml)
+    project_yaml = (
+        "project_id: test-proj\n"
+        "nodes:\n"
+        "  - id: node-pass\n"
+        "    status: ready\n"
+        "    type: capability\n"
+    )
+    (config / "graphs" / "test-proj" / "project.yaml").write_text(project_yaml)
+
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / ".gddp" / "gates").mkdir(parents=True, exist_ok=True)
+    (repo / ".git").mkdir()
+    (tmp_path / "receipt.json").write_text('{"verdict": "pass"}')
 
-    pass_verification = {
-        "verdict": "pass",
-        "integrity": {
-            "intent_preserved": True,
-            "graph_integrity_preserved": True,
-        },
-    }
-    fail_verification = {"verdict": "fail"}
-
-    # Mock graph reader + node_cli to avoid real graph files
-    mock_reader = MagicMock()
-    mock_reader.config_path = tmp_path / "config"
+    # Mock the surgical rewriters (real node_cli is in gddp-config, not
+    # available in a runtime test fixture)
+    mock_cli = MagicMock()
+    mock_cli.replace_node_status.return_value = (
+        node_yaml.replace("status: ready", "status: provisional"),
+        "ready",
+    )
+    mock_cli.replace_project_index_status.return_value = (
+        project_yaml.replace("status: ready", "status: provisional"),
+        "ready",
+    )
 
     with patch(
-        "runtime.heartbeat.provisional_gate.GraphReader",
-        return_value=mock_reader,
+        "runtime.heartbeat.provisional_gate.resolve_project_repo_checkout",
+        return_value=repo,
     ), patch(
+        "runtime.heartbeat.provisional_gate._load_node_cli",
+        return_value=mock_cli,
+    ):
+        result = maybe_mark_provisional(
+            project_id="test-proj",
+            node_id="node-pass",
+            verification={
+                "verdict": "pass",
+                "integrity": {
+                    "intent_preserved": True,
+                    "graph_integrity_preserved": True,
+                },
+                "receipt_path": str(tmp_path / "receipt.json"),
+            },
+            evidence_ref="res_test",
+            config_path=str(config),
+        )
+
+    assert result is True
+    gate = read_gate(str(repo), "node-pass")
+    assert gate is not None
+    assert gate["node_id"] == "node-pass"
+    assert len(gate.get("verdict_receipt_sha256", "")) == 64
+
+
+def test_hook_does_not_write_gate_on_fail(tmp_path: Path) -> None:
+    """A fail verdict never writes a gate token."""
+    from unittest.mock import patch
+    from runtime.heartbeat.provisional_gate import maybe_mark_provisional
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    (repo / ".gddp" / "gates").mkdir(parents=True, exist_ok=True)
+
+    with patch(
         "runtime.heartbeat.provisional_gate.resolve_project_repo_checkout",
         return_value=repo,
     ):
-        # Pass path: should call write_gate (but node path doesn't exist,
-        # so maybe_mark_provisional returns False before gate write — we
-        # verify the gate is NOT written when verdict fails)
-        result_fail = maybe_mark_provisional(
+        result = maybe_mark_provisional(
             project_id="test-proj",
             node_id="node-fail",
-            verification=fail_verification,
-            evidence_ref="res_test",
+            verification={"verdict": "fail"},
+            evidence_ref="res_fail",
             config_path=str(tmp_path / "config"),
         )
-        assert result_fail is False
-        # No gate token for the fail node
-        assert read_gate(str(repo), "node-fail") is None
+
+    assert result is False
+    assert read_gate(str(repo), "node-fail") is None
+
+
+def test_frontier_self_heal_rewrites_missing_gate(tmp_path: Path) -> None:
+    """advance_frontier's _ensure_dependency_gates rewrites a missing token
+    when a dependent is about to dispatch."""
+    import sqlite3
+    from runtime.heartbeat.frontier import _ensure_dependency_gates
+
+    config = tmp_path / "config"
+    config.mkdir()
+    # Minimal project structure so resolve_project_repo_checkout can find it
+    proj_dir = config / "graphs" / "heal-proj"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "project.yaml").write_text(
+        "project_id: heal-proj\n"
+        "repo: /fake/repo\n"
+        "nodes: []\n"
+    )
+
+    # Mock the repo checkout to a real temp dir with .git
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    # A stored receipt for the dep node
+    verif_dir = config / "verification" / "heal-proj" / "node-a"
+    verif_dir.mkdir(parents=True)
+    receipt_file = verif_dir / "job1-attempt0.json"
+    receipt_file.write_text('{"verdict": "pass"}')
+
+    from unittest.mock import patch
+    with patch(
+        "runtime.heartbeat.frontier.resolve_project_repo_checkout",
+        return_value=repo,
+    ):
+        _ensure_dependency_gates(config, "heal-proj", ["node-a"])
+
+    gate = read_gate(str(repo), "node-a")
+    assert gate is not None
+    assert gate["node_id"] == "node-a"
+    assert len(gate.get("verdict_receipt_sha256", "")) == 64
+
+
+def test_frontier_self_heal_skips_existing_gate(tmp_path: Path) -> None:
+    """If the gate already exists, _ensure_dependency_gates is a no-op."""
+    config = tmp_path / "config"
+    config.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    write_gate(str(repo), "node-a", None)
+
+    from unittest.mock import patch
+    from runtime.heartbeat.frontier import _ensure_dependency_gates
+
+    with patch(
+        "runtime.heartbeat.frontier.resolve_project_repo_checkout",
+        return_value=repo,
+    ):
+        _ensure_dependency_gates(config, "heal-proj", ["node-a"])
+
+    # Token is unchanged
+    gate = read_gate(str(repo), "node-a")
+    assert gate is not None
+    assert "verdict_receipt_sha256" not in gate  # original write had no receipt

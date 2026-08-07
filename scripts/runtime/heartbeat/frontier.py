@@ -39,6 +39,8 @@ from pathlib import Path
 
 import yaml
 
+from ..gates import read_gate, write_gate
+from ..repo_resolver import resolve_project_repo_checkout
 from .graph_reader import GraphReader
 from .provisional_gate import _atomic_write, _load_node_cli
 from .scope_checker import SATISFIED_DEP_STATUSES
@@ -102,6 +104,7 @@ def advance_frontier(
         )
         _atomic_write(node_path, node_text)
         _atomic_write(project_path, project_text)
+        _ensure_dependency_gates(root, project_id, depends_on)
         _inject_dispatch_event(con, project, node_id, now)
         transitioned.append(node_id)
         print(
@@ -115,6 +118,56 @@ def advance_frontier(
         # cached project/node state predates the writes above.
         reader.invalidate(project_id)
     return transitioned
+
+
+def _ensure_dependency_gates(
+    root: Path, project_id: str, depends_on: list[str]
+) -> None:
+    """Ensure each provisional dependency has its gate token in the persistent
+    checkout. A missing token (transient write failure on the attempt that
+    marked it provisional) is rewritten from the latest stored receipt.
+
+    This is the self-heal point: the frontier is where a gate is actually
+    NEEDED (a dependent is about to dispatch), so this is where we detect and
+    repair a missing one. Non-fatal and logged.
+    """
+    try:
+        checkout = resolve_project_repo_checkout(project_id, config_root=root)
+    except Exception:
+        return
+    if checkout is None:
+        return
+
+    for dep in depends_on:
+        try:
+            if read_gate(str(checkout), dep) is not None:
+                continue
+            # Gate missing — find the stored receipt and rewrite
+            receipt_dir = root / "verification" / project_id / dep
+            receipt_path = None
+            if receipt_dir.is_dir():
+                receipts = sorted(
+                    receipt_dir.glob("*.json"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if receipts:
+                    receipt_path = str(receipts[0])
+            written = write_gate(
+                str(checkout), dep, verdict_receipt_path=receipt_path
+            )
+            if written is not None:
+                print(
+                    f"  → gate self-heal at frontier: rewrote missing "
+                    f"token for {dep}"
+                )
+            else:
+                print(
+                    f"  → gate self-heal WARNING (non-fatal): failed to "
+                    f"rewrite token for {dep}"
+                )
+        except Exception as exc:
+            print(f"  → gate self-heal WARNING (non-fatal): {exc}")
 
 
 def _has_active_job(con: sqlite3.Connection, project_id: str, node_id: str) -> bool:
