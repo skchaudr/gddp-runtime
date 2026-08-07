@@ -15,8 +15,9 @@ reconciliation, evaluation, and review pipeline:
 2. **Persistent mode** attaches to an externally supervised Factory/Droid
    mission. The external supervisor owns the long-lived process, session,
    resume/restart behavior, worktree/session state, validator, and UAT. GDDP
-   sends one immutable `NodePacket` at a time and consumes stable receipts and
-   evidence from that mission.
+   hands the mission the authored graph as context, and consumes stable
+   receipts and evidence from that mission. Assignments and claimed
+   completions return through GDDP's authority boundary.
 
 The invariant across both modes is:
 
@@ -86,8 +87,10 @@ Minimum proposed fields:
 - Factory artifact roots
 - stop conditions
 
-It does not contain a preplanned node list. GDDP continues reading the live
-graph and deciding which `NodePacket` is eligible next.
+It may include the authored graph, node definitions, and the current ready
+frontier as mission context. GDDP remains authoritative for dependency state,
+leases, acceptance, and graph truth. The mission can know the whole plan; it
+cannot independently make its own graph state authoritative.
 
 ### Existing `NodePacket`
 
@@ -331,7 +334,7 @@ It does not choose or invent that contract.
 - Rebuilding Factory mission orchestration inside GDDP
 - Treating a process, mission, session, commit, test, or verdict as graph truth
 - Storing persistent-mode PID or supervision state in GDDP's attempt spool
-- Preplanning a mission's node list in `MissionPacket`
+- Treating the mission's knowledge of the graph as graph authority
 - Adding a second scheduler, evaluator, reconciler, or missions database before
   demonstrated need
 - Copying Factory's internal artifact model when path/hash references provide
