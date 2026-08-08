@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .mission_git_verify import verify_git_result
+
 
 @dataclass(frozen=True)
 class CollectedNodeEvidence:
@@ -22,6 +24,7 @@ class CollectedNodeEvidence:
     worker_session_id: str | None
     review_required: bool
     review_reason: str | None
+    completion_quarantine_reason: str | None
 
 
 def collect_mission_evidence(
@@ -34,6 +37,7 @@ def collect_mission_evidence(
     receipts_path: str | Path | None = None,
     mission_outcome: str | None = None,
     git_verified: Mapping[str, Mapping[str, object]] | None = None,
+    git_repo_path: str | Path | None = None,
 ) -> list[CollectedNodeEvidence]:
     """Read mission artifacts and write one exact-feature manifest per node.
 
@@ -94,7 +98,22 @@ def collect_mission_evidence(
             if git_verified is not None and feature_id in git_verified
             else None
         )
+        if (
+            selected_verification is None
+            and git_repo_path is not None
+            and base_sha is not None
+            and result_sha is not None
+        ):
+            selected_verification = verify_git_result(
+                git_repo_path,
+                base_sha=base_sha,
+                result_sha=result_sha,
+                engagement_branch=result_ref,
+            ).to_manifest()
         cross_check = _cross_check(receipt, handoff, selected_verification)
+        quarantine_reasons = _quarantine_reasons(
+            cross_check, selected_verification
+        )
         missing = _missing_channels(
             receipt=receipt,
             handoff=selected_handoff,
@@ -109,12 +128,18 @@ def collect_mission_evidence(
         if receipt is not None and _receipt_identity_conflicts(receipt):
             reasons.append("conflicting_receipt_feature_ids")
         reasons.extend(_disagreement_reasons(cross_check))
+        reasons.extend(quarantine_reasons)
         if mission_outcome in {"crashed", "failed"} and not _node_complete(
             receipt, selected_handoff, selected_progress, cross_check
         ):
             reasons.append(f"mission_{mission_outcome}")
         reasons = list(dict.fromkeys(reasons))
         review_reason = ", ".join(reasons) if reasons else None
+        completion_quarantine_reason = (
+            "; ".join(dict.fromkeys(quarantine_reasons))
+            if quarantine_reasons
+            else None
+        )
 
         manifest = {
             "engagement_id": engagement_id,
@@ -133,6 +158,7 @@ def collect_mission_evidence(
             "missing_channels": missing,
             "review_required": review_reason is not None,
             "review_reason": review_reason,
+            "completion_quarantine_reason": completion_quarantine_reason,
             "mission_outcome": mission_outcome,
         }
         manifest_path = destination / _manifest_name(feature_id)
@@ -146,6 +172,7 @@ def collect_mission_evidence(
                 worker_session_id=worker_session_id,
                 review_required=review_reason is not None,
                 review_reason=review_reason,
+                completion_quarantine_reason=completion_quarantine_reason,
             )
         )
     return collected
@@ -405,6 +432,24 @@ def _disagreement_reasons(cross_check: Mapping[str, bool | None]) -> list[str]:
         for key, matches in cross_check.items()
         if matches is False
     ]
+
+
+def _quarantine_reasons(
+    cross_check: Mapping[str, bool | None],
+    git_verified: Mapping[str, object] | None,
+) -> list[str]:
+    reasons: list[str] = []
+    if git_verified is not None:
+        verification_reason = _string(
+            git_verified.get("completion_quarantine_reason")
+        )
+        if verification_reason is not None:
+            reasons.append(verification_reason)
+    if cross_check.get("receipt_matches_handoff") is False:
+        reasons.append("receipt result does not match handoff commitId")
+    if cross_check.get("receipt_matches_git") is False:
+        reasons.append("receipt result does not match git-verified result")
+    return reasons
 
 
 def _feature_drift_reason(

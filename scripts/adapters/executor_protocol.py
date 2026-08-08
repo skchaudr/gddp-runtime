@@ -158,6 +158,7 @@ class PatchResult:
     worktree_path: str | None = None      # kept on persist failure
     feature_id: str | None = None         # engagement fan-out join key
     evidence_manifest_path: str | None = None
+    completion_quarantine_reason: str | None = None
     review_required: bool = False
     error: str | None = None
 

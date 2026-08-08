@@ -327,6 +327,22 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     record_path = adapter.session_root / ref.session_id / "session.json"
     record = json.loads(record_path.read_text())
     record["feature_ids"] = ids
+    repo = adapter.session_root.parent / "collect-repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "tracked.txt").write_text("root\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "root"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "switch", "-c", "gddp/eng-status"], cwd=repo, check=True
+    )
+    record["repo_path"] = str(repo)
     record_path.write_text(json.dumps(record))
     mission_dir = Path(record["mission_dir"])
     state = json.loads((mission_dir / "state.json").read_text())
@@ -340,7 +356,27 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     handoff_dir.mkdir()
     receipts = []
     for index, feature_id in enumerate(ids):
-        result_sha = str(index + 1) * 40
+        base_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        (repo / "tracked.txt").write_text(f"{feature_id}\n")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"complete {feature_id}"],
+            cwd=repo,
+            check=True,
+        )
+        result_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
         worker_id = f"worker-{index}"
         progress.extend(
             [
@@ -366,7 +402,7 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
                     "featureId": feature_id,
                     "workerSessionId": worker_id,
                     "commitId": result_sha,
-                    "repoPath": f"/repos/{feature_id}",
+                    "repoPath": str(repo),
                     "successState": "success",
                 }
             )
@@ -374,11 +410,11 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
         receipts.append(
             {
                 "node_id": feature_id,
-                "base": "0" * 40 if index == 0 else str(index) * 40,
+                "base": base_sha,
                 "result": result_sha,
                 "git_head": result_sha,
                 "git_branch": "gddp/eng-status",
-                "git_toplevel": f"/repos/{feature_id}",
+                "git_toplevel": str(repo),
             }
         )
     (mission_dir / "progress_log.jsonl").write_text(
@@ -395,11 +431,19 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
     ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
 
     results = adapter.collect_engagement(ref)
+    record = json.loads(
+        (adapter.session_root / ref.session_id / "session.json").read_text()
+    )
+    receipts = [
+        json.loads(line)
+        for line in Path(record["mission_dir"], "receipts.jsonl")
+        .read_text()
+        .splitlines()
+    ]
 
     assert [result.feature_id for result in results] == ["node-alpha", "node-beta"]
     assert [result.result_commit_sha for result in results] == [
-        "1" * 40,
-        "2" * 40,
+        receipt["result"] for receipt in receipts
     ]
     assert {result.result_ref for result in results} == {"gddp/eng-status"}
     for result in results:
@@ -412,7 +456,7 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         assert manifest["receipt"]["node_id"] == result.feature_id
         assert manifest["handoff"]["commitId"] == result.result_commit_sha
         assert manifest["progress"]["outcome"] == "success"
-        assert manifest["git_verified"] is None
+        assert manifest["git_verified"]["verified"] is True
 
 
 @pytest.mark.parametrize(

@@ -176,6 +176,7 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "process_returncode": None,
                 "engagement_branch": engagement_branch,
                 "feature_ids": list(feature_ids),
+                "repo_path": str(self.cwd),
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
                 "receipts_path": str(receipts_path),
@@ -298,6 +299,7 @@ class MissionAdapter(EngagementAdapterDefaults):
             demanded_feature_ids=demanded,
             receipts_path=record.get("receipts_path"),
             mission_outcome=_collection_outcome(record),
+            git_repo_path=record.get("repo_path") or self.cwd,
         )
         results: list[PatchResult] = []
         for item in evidence:
@@ -309,12 +311,15 @@ class MissionAdapter(EngagementAdapterDefaults):
                 PatchResult(
                     success=not review_required,
                     base_commit_sha=item.base_sha,
-                    result_commit_sha=item.result_sha
-                    if not review_required
-                    else None,
+                    result_commit_sha=(
+                        item.result_sha if verification.proceed else None
+                    ),
                     result_ref=str(record["engagement_branch"]),
                     feature_id=item.feature_id,
                     evidence_manifest_path=str(item.manifest_path),
+                    completion_quarantine_reason=(
+                        item.completion_quarantine_reason
+                    ),
                     review_required=review_required,
                     error=error,
                 )
