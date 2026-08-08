@@ -24,6 +24,7 @@ from .executor_protocol import (
     SessionRef,
     SessionStatus,
 )
+from .mission_evidence import collect_mission_evidence
 from .mission_projection import project_mission, verify_planned_feature_ids
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
@@ -125,6 +126,7 @@ class MissionAdapter(EngagementAdapterDefaults):
         engagement_dir = self.session_root / engagement_id
         stdout_path = engagement_dir / "stdout"
         stderr_path = engagement_dir / "stderr"
+        receipts_path = engagement_dir / "receipts.jsonl"
         process: subprocess.Popen | None = None
         try:
             engagement_dir.mkdir(parents=True, exist_ok=False)
@@ -138,6 +140,8 @@ class MissionAdapter(EngagementAdapterDefaults):
                     stdout_path.open("wb") as stdout,
                     stderr_path.open("wb") as stderr,
                 ):
+                    mission_env = dict(os.environ)
+                    mission_env["GDDP_RECEIPTS_PATH"] = str(receipts_path)
                     process = subprocess.Popen(
                         [
                             self.droid_path,
@@ -155,6 +159,7 @@ class MissionAdapter(EngagementAdapterDefaults):
                         stdout=stdout,
                         stderr=stderr,
                         start_new_session=True,
+                        env=mission_env,
                     )
                 mission_dir = _wait_for_mission_dir(
                     self.mission_root,
@@ -173,6 +178,7 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "feature_ids": list(feature_ids),
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
+                "receipts_path": str(receipts_path),
                 "cancelled": False,
             }
             _write_json(engagement_dir / "session.json", record)
@@ -263,7 +269,8 @@ class MissionAdapter(EngagementAdapterDefaults):
         if result.evidence_manifest_path:
             destination = Path(dest_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(Path(result.evidence_manifest_path).read_text())
+            manifest = json.loads(Path(result.evidence_manifest_path).read_text())
+            _write_json(destination, manifest)
             result.patch_path = str(destination)
         return result
 
@@ -283,59 +290,32 @@ class MissionAdapter(EngagementAdapterDefaults):
         verification = verify_planned_feature_ids(
             mission_dir / "features.json", demanded
         )
-        if not verification.proceed:
-            return [
-                self._review_result(
-                    record_path.parent,
-                    record,
-                    feature_id,
-                    verification.reason,
-                )
-                for feature_id in demanded
-            ]
-
-        completions = _feature_completions(
-            mission_dir / "progress_log.jsonl"
+        evidence = collect_mission_evidence(
+            mission_dir=mission_dir,
+            output_dir=record_path.parent / "evidence",
+            engagement_id=str(record["engagement_id"]),
+            result_ref=str(record["engagement_branch"]),
+            demanded_feature_ids=demanded,
+            receipts_path=record.get("receipts_path"),
+            mission_outcome=_collection_outcome(record),
         )
         results: list[PatchResult] = []
-        for feature_id in demanded:
-            completion = completions.get(feature_id)
-            commit_id = (
-                completion.get("commitId")
-                if isinstance(completion, Mapping)
-                else None
-            )
-            success_state = (
-                completion.get("successState")
-                if isinstance(completion, Mapping)
-                else None
-            )
-            success = (
-                isinstance(commit_id, str)
-                and bool(commit_id)
-                and success_state == "success"
-            )
-            error = None
-            if not success:
-                error = (
-                    f"incomplete mission evidence for feature {feature_id}; "
-                    "human review required"
-                )
-            manifest_path = self._write_manifest(
-                record_path.parent,
-                record,
-                feature_id,
-                completion,
-                error,
-            )
+        for item in evidence:
+            review_required = item.review_required or not verification.proceed
+            error = item.review_reason
+            if not verification.proceed:
+                error = verification.reason
             results.append(
                 PatchResult(
-                    success=success,
-                    result_commit_sha=commit_id if success else None,
+                    success=not review_required,
+                    base_commit_sha=item.base_sha,
+                    result_commit_sha=item.result_sha
+                    if not review_required
+                    else None,
                     result_ref=str(record["engagement_branch"]),
-                    feature_id=feature_id,
-                    evidence_manifest_path=str(manifest_path),
-                    review_required=not success,
+                    feature_id=item.feature_id,
+                    evidence_manifest_path=str(item.manifest_path),
+                    review_required=review_required,
                     error=error,
                 )
             )
@@ -380,53 +360,6 @@ class MissionAdapter(EngagementAdapterDefaults):
         except (OSError, json.JSONDecodeError):
             return record_path, None
         return record_path, record if isinstance(record, dict) else None
-
-    def _review_result(
-        self,
-        engagement_dir: Path,
-        record: Mapping[str, object],
-        feature_id: str,
-        reason: str,
-    ) -> PatchResult:
-        manifest_path = self._write_manifest(
-            engagement_dir, record, feature_id, None, reason
-        )
-        return PatchResult(
-            success=False,
-            result_ref=str(record["engagement_branch"]),
-            feature_id=feature_id,
-            evidence_manifest_path=str(manifest_path),
-            review_required=True,
-            error=reason,
-        )
-
-    def _write_manifest(
-        self,
-        engagement_dir: Path,
-        record: Mapping[str, object],
-        feature_id: str,
-        completion: Mapping[str, object] | None,
-        error: str | None,
-    ) -> Path:
-        manifest_dir = engagement_dir / "evidence"
-        manifest_dir.mkdir(exist_ok=True)
-        manifest_path = manifest_dir / f"{_safe_component(feature_id)}.json"
-        payload = {
-            "engagement_id": record["engagement_id"],
-            "mission_dir": record["mission_dir"],
-            "feature_id": feature_id,
-            "worker_session_id": (
-                completion.get("workerSessionId") if completion else None
-            ),
-            "result_sha": completion.get("commitId") if completion else None,
-            "result_ref": record["engagement_branch"],
-            "progress": dict(completion) if completion else None,
-            "review_required": error is not None,
-            "review_reason": error,
-        }
-        _write_json(manifest_path, payload)
-        return manifest_path
-
 
 def _packet_node(packet: NodePacket) -> NodeData:
     return NodeData(
@@ -492,26 +425,6 @@ def _last_progress_event(path: Path) -> dict | None:
     return None
 
 
-def _feature_completions(path: Path) -> dict[str, dict]:
-    completions: dict[str, dict] = {}
-    try:
-        lines = path.read_text(errors="replace").splitlines()
-    except OSError:
-        return completions
-    for line in lines:
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (
-            isinstance(event, dict)
-            and event.get("type") == "worker_completed"
-            and isinstance(event.get("featureId"), str)
-        ):
-            completions[event["featureId"]] = event
-    return completions
-
-
 def _factory_state(mission_dir: Path) -> str | None:
     try:
         payload = json.loads((mission_dir / "state.json").read_text())
@@ -521,6 +434,19 @@ def _factory_state(mission_dir: Path) -> str | None:
         return None
     state = payload.get("state")
     return str(state) if state is not None else None
+
+
+def _collection_outcome(record: Mapping[str, object]) -> str:
+    returncode = record.get("process_returncode")
+    if returncode not in {None, 0}:
+        return "failed"
+    mission_dir = Path(str(record["mission_dir"]))
+    terminal = _last_progress_event(mission_dir / "progress_log.jsonl")
+    if terminal and terminal.get("type") == "mission_completed":
+        return "completed"
+    if _factory_state(mission_dir) == "completed":
+        return "completed"
+    return "crashed"
 
 
 def _positive_int(value: object) -> int | None:

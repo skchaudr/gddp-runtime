@@ -118,6 +118,11 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     assert Path(popen.call_args.kwargs["stdout"].name).name == "stdout"
     assert Path(popen.call_args.kwargs["stderr"].name).name == "stderr"
     assert popen.call_args.kwargs["start_new_session"] is True
+    receipts_path = Path(
+        popen.call_args.kwargs["env"]["GDDP_RECEIPTS_PATH"]
+    )
+    assert receipts_path.parent == adapter.session_root / result.engagement_id
+    assert receipts_path.name == "receipts.jsonl"
     assert result.process_pid == launched.pid
     assert result.mission_dir == str(adapter.mission_root / "factory-id")
     assert result.feature_ids == ("node-alpha", "node-beta")
@@ -324,21 +329,63 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     record["feature_ids"] = ids
     record_path.write_text(json.dumps(record))
     mission_dir = Path(record["mission_dir"])
+    state = json.loads((mission_dir / "state.json").read_text())
+    state["missionId"] = "mis_collect_fixture"
+    (mission_dir / "state.json").write_text(json.dumps(state))
     (mission_dir / "features.json").write_text(
         json.dumps({"features": [{"id": feature_id} for feature_id in ids]})
     )
-    progress = [
-        {
-            "type": "worker_completed",
-            "featureId": feature_id,
-            "workerSessionId": f"worker-{index}",
-            "commitId": str(index + 1) * 40,
-            "successState": "success",
-        }
-        for index, feature_id in enumerate(ids)
-    ]
+    progress = []
+    handoff_dir = mission_dir / "handoffs"
+    handoff_dir.mkdir()
+    receipts = []
+    for index, feature_id in enumerate(ids):
+        result_sha = str(index + 1) * 40
+        worker_id = f"worker-{index}"
+        progress.extend(
+            [
+                {
+                    "timestamp": f"2026-08-07T00:0{index}:00Z",
+                    "type": "worker_started",
+                    "featureId": feature_id,
+                    "workerSessionId": worker_id,
+                },
+                {
+                    "timestamp": f"2026-08-07T00:0{index}:30Z",
+                    "type": "worker_completed",
+                    "featureId": feature_id,
+                    "workerSessionId": worker_id,
+                    "commitId": result_sha,
+                    "successState": "success",
+                },
+            ]
+        )
+        (handoff_dir / f"{index}.json").write_text(
+            json.dumps(
+                {
+                    "featureId": feature_id,
+                    "workerSessionId": worker_id,
+                    "commitId": result_sha,
+                    "repoPath": f"/repos/{feature_id}",
+                    "successState": "success",
+                }
+            )
+        )
+        receipts.append(
+            {
+                "node_id": feature_id,
+                "base": "0" * 40 if index == 0 else str(index) * 40,
+                "result": result_sha,
+                "git_head": result_sha,
+                "git_branch": "gddp/eng-status",
+                "git_toplevel": f"/repos/{feature_id}",
+            }
+        )
     (mission_dir / "progress_log.jsonl").write_text(
         "".join(json.dumps(item) + "\n" for item in progress)
+    )
+    (mission_dir / "receipts.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in receipts)
     )
     return ref
 
@@ -361,6 +408,11 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         manifest = json.loads(Path(result.evidence_manifest_path).read_text())
         assert manifest["feature_id"] == result.feature_id
         assert manifest["result_sha"] == result.result_commit_sha
+        assert manifest["mission_id"] == "mis_collect_fixture"
+        assert manifest["receipt"]["node_id"] == result.feature_id
+        assert manifest["handoff"]["commitId"] == result.result_commit_sha
+        assert manifest["progress"]["outcome"] == "success"
+        assert manifest["git_verified"] is None
 
 
 @pytest.mark.parametrize(
