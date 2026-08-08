@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import uuid
@@ -43,6 +44,8 @@ def collect_mission_evidence(
     worktree: Mapping[str, object] | None = None,
     git_verified: Mapping[str, Mapping[str, object]] | None = None,
     git_repo_path: str | Path | None = None,
+    origin_remote: str | None = None,
+    push_audit_path: str | Path | None = None,
 ) -> list[CollectedNodeEvidence]:
     """Read mission artifacts and write one exact-feature manifest per node.
 
@@ -72,6 +75,11 @@ def collect_mission_evidence(
         else mission_path / "receipts.jsonl"
     )
     receipts = _read_receipts(receipt_file)
+    push_records = (
+        _read_jsonl(Path(push_audit_path).resolve())
+        if push_audit_path is not None
+        else None
+    )
     drift_reason = _feature_drift_reason(feature_ids, observed_ids)
 
     collected: list[CollectedNodeEvidence] = []
@@ -114,8 +122,23 @@ def collect_mission_evidence(
                 base_sha=base_sha,
                 result_sha=result_sha,
                 engagement_branch=result_ref,
+                origin_remote=origin_remote,
             ).to_manifest()
         cross_check = _cross_check(receipt, handoff, selected_verification)
+        push_verification = (
+            _push_verification(
+                push_records,
+                result_sha=result_sha,
+                result_ref=result_ref,
+                completed_at=(
+                    _string(selected_progress.get("completed_at"))
+                    if selected_progress is not None
+                    else None
+                ),
+            )
+            if push_records is not None
+            else None
+        )
         quarantine_reasons = _quarantine_reasons(
             cross_check, selected_verification
         )
@@ -134,6 +157,16 @@ def collect_mission_evidence(
             reasons.append("conflicting_receipt_feature_ids")
         reasons.extend(_disagreement_reasons(cross_check))
         reasons.extend(quarantine_reasons)
+        if (
+            push_verification is not None
+            and push_verification["verified"] is not True
+        ):
+            reasons.append("feature_push_not_verified")
+            if result_sha is not None:
+                quarantine_reasons.append(
+                    f"feature commit {result_sha} lacks a successful individual "
+                    f"push to origin/{result_ref}"
+                )
         node_complete = _node_complete(
             receipt, selected_handoff, selected_progress, cross_check
         )
@@ -191,6 +224,7 @@ def collect_mission_evidence(
             "handoff": selected_handoff,
             "progress": selected_progress,
             "git_verified": selected_verification,
+            "push_verification": push_verification,
             "cross_check": cross_check,
             "missing_channels": missing,
             "review_required": review_reason is not None,
@@ -269,6 +303,65 @@ def _read_receipts(path: Path) -> dict[str, list[dict[str, object]]]:
         if feature_id is not None:
             receipts.setdefault(feature_id, []).append(receipt)
     return receipts
+
+
+def _push_verification(
+    records: Sequence[Mapping[str, object]],
+    *,
+    result_sha: str | None,
+    result_ref: str,
+    completed_at: str | None,
+) -> dict[str, object]:
+    expected_argv = [
+        "git",
+        "push",
+        "origin",
+        f"HEAD:refs/heads/{result_ref}",
+    ]
+    expected_origin_ref = f"origin/{result_ref}"
+    matching = [
+        dict(record)
+        for record in records
+        if result_sha is not None and record.get("commit_sha") == result_sha
+    ]
+    successful = next(
+        (
+            record
+            for record in reversed(matching)
+            if record.get("allowed") is True
+            and record.get("returncode") == 0
+            and record.get("argv") == expected_argv
+            and expected_origin_ref
+            in (record.get("origin_containing_refs") or ())
+            and _timestamp_at_or_before(
+                _string(record.get("timestamp_utc")),
+                completed_at,
+            )
+        ),
+        None,
+    )
+    return {
+        "verified": successful is not None,
+        "expected_argv": expected_argv,
+        "expected_origin_ref": expected_origin_ref,
+        "feature_completed_at": completed_at,
+        "matching_attempts": matching,
+        "successful_attempt": successful,
+    }
+
+
+def _timestamp_at_or_before(
+    observed: str | None,
+    boundary: str | None,
+) -> bool:
+    if observed is None or boundary is None:
+        return False
+    try:
+        observed_at = dt.datetime.fromisoformat(observed.replace("Z", "+00:00"))
+        boundary_at = dt.datetime.fromisoformat(boundary.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return observed_at <= boundary_at
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:

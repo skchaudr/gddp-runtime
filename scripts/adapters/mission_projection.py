@@ -11,6 +11,7 @@ from pathlib import Path
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
 DEFAULT_MILESTONE_ID = "gddp-engagement"
+DEFAULT_ENGAGEMENT_BRANCH = "gddp/<engagement-id>"
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ def project_mission(
     nodes: Sequence[NodeData],
     *,
     milestone_id: str = DEFAULT_MILESTONE_ID,
+    engagement_branch: str = DEFAULT_ENGAGEMENT_BRANCH,
 ) -> str:
     """Return a mission specification containing one feature per node."""
     projected = _topological_nodes(nodes)
@@ -91,12 +93,31 @@ def project_mission(
                     "- This feature is not complete until that receipt command "
                     "exits successfully."
                 ),
-                "- Push the work branch.",
                 (
-                    "- Never push to `main`, the default branch, or any shared "
-                    "or release branch."
+                    "- Push this feature's commit immediately and only to the "
+                    f"engagement work branch with `git push origin "
+                    f"HEAD:refs/heads/{engagement_branch}`."
                 ),
-                "- Never force-push or use `--force-with-lease`.",
+                "- Do not defer or batch this push with a later feature.",
+                (
+                    "- Never push to `main`, the repository default branch, "
+                    "or any shared or release branch."
+                ),
+                (
+                    "- Never force-push: do not use `--force`, `-f`, "
+                    "`--force-with-lease`, a leading `+` refspec, or any other "
+                    "non-fast-forward override."
+                ),
+                (
+                    "- After the push, run "
+                    "`git branch -r --contains <commit SHA>`; its output must "
+                    f"list `origin/{engagement_branch}`."
+                ),
+                (
+                    "- This feature is not complete and must not report "
+                    "success until its own commit is reachable from that "
+                    "origin ref."
+                ),
                 "",
             ]
         )

@@ -104,6 +104,48 @@ def test_result_must_be_reachable_from_exact_engagement_branch(tmp_path):
     assert "not reachable" in (unreachable.completion_quarantine_reason or "")
 
 
+def test_result_must_be_reachable_from_origin_engagement_ref(tmp_path):
+    remote = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", str(remote))
+    repo, root = _repo(tmp_path)
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "switch", "-c", "gddp/engagement")
+    result = _commit(repo, "feature result", "result\n")
+
+    local_only = verify_git_result(
+        repo,
+        base_sha=root,
+        result_sha=result,
+        engagement_branch="gddp/engagement",
+        origin_remote="origin",
+    )
+
+    assert local_only.reachable is True
+    assert local_only.origin_reachable is False
+    assert local_only.verified is False
+    assert "origin/gddp/engagement" in (
+        local_only.completion_quarantine_reason or ""
+    )
+
+    _git(
+        repo,
+        "push",
+        "origin",
+        "HEAD:refs/heads/gddp/engagement",
+    )
+    pushed = verify_git_result(
+        repo,
+        base_sha=root,
+        result_sha=result,
+        engagement_branch="gddp/engagement",
+        origin_remote="origin",
+    )
+
+    assert pushed.origin_reachable is True
+    assert pushed.origin_containing_refs == ("origin/gddp/engagement",)
+    assert pushed.verified is True
+
+
 def test_missing_result_preserves_claim_and_routes_to_review(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "branch", "gddp/engagement", root)
@@ -131,7 +173,26 @@ def _write_collect_fixture(
     base_sha: str,
     result_sha: str,
     engagement_branch: str,
+    push_result: bool = True,
 ) -> tuple[MissionAdapter, SessionRef]:
+    if push_result:
+        remote = tmp_path / "collect-origin.git"
+        _git(tmp_path, "init", "--bare", str(remote))
+        _git(repo, "remote", "add", "origin", str(remote))
+        object_type = subprocess.run(
+            ["git", "cat-file", "-t", result_sha],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if object_type.returncode == 0:
+            _git(
+                repo,
+                "push",
+                "origin",
+                f"{result_sha}:refs/heads/{engagement_branch}",
+            )
     mission_root = tmp_path / "factory-missions"
     mission_dir = mission_root / "mis-git"
     handoffs = mission_dir / "handoffs"
@@ -261,6 +322,30 @@ def test_collect_missing_commit_preserves_claim_and_reviews(tmp_path):
     assert manifest["result_sha"] == missing
     assert manifest["git_verified"]["result_sha"] == missing
     assert manifest["git_verified"]["commit_exists"] is False
+
+
+def test_collect_rejects_feature_commit_that_is_local_only(tmp_path):
+    repo, root = _repo(tmp_path)
+    _git(repo, "switch", "-c", "gddp/engagement")
+    result = _commit(repo, "local-only result", "result\n")
+    adapter, session_ref = _write_collect_fixture(
+        tmp_path,
+        repo,
+        base_sha=root,
+        result_sha=result,
+        engagement_branch="gddp/engagement",
+        push_result=False,
+    )
+
+    collected = adapter.collect_engagement(session_ref)[0]
+    manifest = json.loads(Path(collected.evidence_manifest_path).read_text())
+
+    assert collected.success is False
+    assert collected.review_required is True
+    assert manifest["git_verified"]["origin_reachable"] is False
+    assert "origin/gddp/engagement" in (
+        collected.completion_quarantine_reason or ""
+    )
 
 
 def test_collect_quarantines_handoff_result_disagreement(tmp_path):

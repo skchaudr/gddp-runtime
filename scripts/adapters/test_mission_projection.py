@@ -95,7 +95,10 @@ def test_projection_rejects_cycles_in_the_selected_nodes():
 
 def test_every_feature_requires_the_complete_minimal_execution_contract():
     node_ids = ["audit-One", "execute_two"]
-    mission = project_mission([_node(node_id) for node_id in node_ids])
+    mission = project_mission(
+        [_node(node_id) for node_id in node_ids],
+        engagement_branch="gddp/engagement-123",
+    )
 
     for node_id in node_ids:
         description = _feature_description(mission, node_id)
@@ -106,10 +109,23 @@ def test_every_feature_requires_the_complete_minimal_execution_contract():
             "--base <starting SHA> --result <commit SHA>"
         ) in description
         assert "not complete until that receipt command exits successfully" in description
-        assert "Push the work branch." in description
-        assert "Never push to `main`" in description
+        assert (
+            "git push origin "
+            "HEAD:refs/heads/gddp/engagement-123"
+        ) in description
+        assert "Do not defer or batch this push with a later feature." in description
+        assert "Never push to `main`, the repository default branch" in description
         assert "shared or release branch" in description
         assert "Never force-push" in description
+        assert "`--force`, `-f`, `--force-with-lease`" in description
+        assert "leading `+` refspec" in description
+        assert (
+            "git branch -r --contains <commit SHA>"
+        ) in description
+        assert "must list `origin/gddp/engagement-123`" in description
+        assert (
+            "not complete and must not report success until"
+        ) in description
 
 
 def test_projection_contains_no_gddp_gate_coupling():

@@ -123,6 +123,15 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     )
     assert receipts_path.parent == adapter.session_root / result.engagement_id
     assert receipts_path.name == "receipts.jsonl"
+    push_audit_path = Path(
+        popen.call_args.kwargs["env"]["GDDP_PUSH_AUDIT_PATH"]
+    )
+    git_guard_dir = Path(
+        popen.call_args.kwargs["env"]["PATH"].split(os.pathsep)[0]
+    )
+    assert push_audit_path.parent == adapter.session_root / result.engagement_id
+    assert push_audit_path.name == "push-audit.jsonl"
+    assert (git_guard_dir / "git").stat().st_mode & 0o111
     assert result.process_pid == launched.pid
     assert result.mission_dir == str(adapter.mission_root / "factory-id")
     assert result.feature_ids == ("node-alpha", "node-beta")
@@ -134,6 +143,7 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     assert record["process_pid"] == launched.pid
     assert record["engagement_branch"] == result.engagement_branch
     assert record["feature_ids"] == ["node-alpha", "node-beta"]
+    assert record["push_audit_path"] == str(push_audit_path)
 
 
 def test_single_packet_dispatch_uses_engagement_lifecycle(tmp_path, monkeypatch):
@@ -356,10 +366,20 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     (repo / "tracked.txt").write_text("root\n")
     subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-m", "root"], cwd=repo, check=True)
+    remote = adapter.session_root.parent / "collect-origin.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=repo,
+        check=True,
+    )
     subprocess.run(
         ["git", "switch", "-c", "gddp/eng-status"], cwd=repo, check=True
     )
     record["repo_path"] = str(repo)
+    record["push_audit_path"] = str(
+        Path(record["mission_dir"]) / "push-audit.jsonl"
+    )
     record_path.write_text(json.dumps(record))
     mission_dir = Path(record["mission_dir"])
     state = json.loads((mission_dir / "state.json").read_text())
@@ -372,6 +392,7 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     handoff_dir = mission_dir / "handoffs"
     handoff_dir.mkdir()
     receipts = []
+    push_audits = []
     for index, feature_id in enumerate(ids):
         base_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -394,6 +415,16 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
             capture_output=True,
             check=True,
         ).stdout.strip()
+        subprocess.run(
+            [
+                "git",
+                "push",
+                "origin",
+                "HEAD:refs/heads/gddp/eng-status",
+            ],
+            cwd=repo,
+            check=True,
+        )
         worker_id = f"worker-{index}"
         progress.extend(
             [
@@ -434,11 +465,31 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
                 "git_toplevel": str(repo),
             }
         )
+        push_audits.append(
+            {
+                "argv": [
+                    "git",
+                    "push",
+                    "origin",
+                    "HEAD:refs/heads/gddp/eng-status",
+                ],
+                "allowed": True,
+                "reason": None,
+                "engagement_branch": "gddp/eng-status",
+                "commit_sha": result_sha,
+                "origin_containing_refs": ["origin/gddp/eng-status"],
+                "returncode": 0,
+                "timestamp_utc": f"2026-08-07T00:0{index}:20Z",
+            }
+        )
     (mission_dir / "progress_log.jsonl").write_text(
         "".join(json.dumps(item) + "\n" for item in progress)
     )
     (mission_dir / "receipts.jsonl").write_text(
         "".join(json.dumps(item) + "\n" for item in receipts)
+    )
+    Path(record["push_audit_path"]).write_text(
+        "".join(json.dumps(item) + "\n" for item in push_audits)
     )
     return ref
 
@@ -512,6 +563,54 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         assert manifest["handoff"]["commitId"] == result.result_commit_sha
         assert manifest["progress"]["outcome"] == "success"
         assert manifest["git_verified"]["verified"] is True
+        assert manifest["push_verification"]["verified"] is True
+
+
+def test_collect_requires_an_individual_successful_push_for_each_feature(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record = json.loads(
+        (adapter.session_root / ref.session_id / "session.json").read_text()
+    )
+    audit_path = Path(record["push_audit_path"])
+    only_beta = [
+        line
+        for line in audit_path.read_text().splitlines()
+        if json.loads(line)["commit_sha"]
+        != json.loads(
+            Path(record["mission_dir"], "handoffs", "0.json").read_text()
+        )["commitId"]
+    ]
+    audit_path.write_text("".join(line + "\n" for line in only_beta))
+
+    alpha, beta = adapter.collect_engagement(ref)
+
+    assert alpha.success is False
+    assert alpha.review_required is True
+    alpha_manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
+    assert alpha_manifest["push_verification"]["verified"] is False
+    assert "feature_push_not_verified" in (alpha.error or "")
+    assert beta.success is True
+
+
+def test_collect_rejects_push_recorded_after_feature_reported_success(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha"])
+    record = json.loads(
+        (adapter.session_root / ref.session_id / "session.json").read_text()
+    )
+    audit_path = Path(record["push_audit_path"])
+    audit = json.loads(audit_path.read_text())
+    audit["timestamp_utc"] = "2026-08-07T00:00:40Z"
+    audit_path.write_text(json.dumps(audit) + "\n")
+
+    result = adapter.collect_engagement(ref)[0]
+    manifest = json.loads(Path(result.evidence_manifest_path).read_text())
+
+    assert result.success is False
+    assert manifest["progress"]["completed_at"] == "2026-08-07T00:00:30Z"
+    assert manifest["push_verification"]["verified"] is False
+    assert "feature_push_not_verified" in (result.error or "")
 
 
 def test_crash_collection_keeps_completed_evidence_and_reviews_partial_node(
