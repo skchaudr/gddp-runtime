@@ -7,11 +7,55 @@ On the Pi: set GDDP_CONFIG_PATH env var or pass explicitly.
 """
 
 import os
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from typing import Optional
 
 import yaml
+
+DEFAULT_MISSION_ENGAGEMENT_SIZE = 1
+DEFAULT_MISSION_MAX_PAIRS = 5
+
+
+def parse_execution_policy(value: object) -> dict:
+    """Validate mission sizing and return a policy with stable defaults."""
+    if value is None:
+        policy = {}
+    elif isinstance(value, Mapping):
+        policy = dict(value)
+    else:
+        raise ValueError("execution_policy must be a mapping")
+
+    for field_name, default in (
+        ("mission_engagement_size", DEFAULT_MISSION_ENGAGEMENT_SIZE),
+        ("mission_max_pairs", DEFAULT_MISSION_MAX_PAIRS),
+    ):
+        configured = policy.get(field_name, default)
+        if (
+            isinstance(configured, bool)
+            or not isinstance(configured, int)
+            or configured < 1
+        ):
+            raise ValueError(
+                f"execution_policy.{field_name} must be a positive integer"
+            )
+        policy[field_name] = configured
+    return policy
+
+
+def select_ready_subgraph(
+    eligible_pairs: Iterable[tuple[object, object]],
+    execution_policy: object,
+) -> list[tuple[object, object]]:
+    """Select a deterministic, policy-bounded prefix of ready node pairs."""
+    policy = parse_execution_policy(execution_policy)
+    pair_limit = min(
+        policy["mission_engagement_size"],
+        policy["mission_max_pairs"],
+    )
+    return list(islice(eligible_pairs, pair_limit))
 
 
 @dataclass
@@ -94,7 +138,9 @@ class GraphReader:
             project_name=data["project_name"],
             repo=data["repo"],
             nodes=data.get("nodes", []),
-            execution_policy=data.get("execution_policy", {}),
+            execution_policy=parse_execution_policy(
+                data.get("execution_policy", {})
+            ),
         )
         self._project_cache[project_id] = graph
         return graph

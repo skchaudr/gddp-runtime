@@ -21,6 +21,7 @@ from adapters.local_subprocess_adapter import (
     DroidSubprocessAdapter,
     LocalSubprocessAdapter,
 )
+from adapters.mission_adapter import MissionAdapter
 
 
 
@@ -30,12 +31,15 @@ ADAPTERS = {
     "jules_cli": JulesCliAdapter,
     "local_subprocess": LocalSubprocessAdapter,
     "droid": DroidSubprocessAdapter,
+    "factory_mission": MissionAdapter,
 }
 
 # Executors that run inside a local checkout and therefore receive repo_path
 # as their cwd. Name-keyed (not class-keyed) so tests can substitute
 # duck-typed adapter doubles into ADAPTERS.
-_LOCAL_TRANSPORT_EXECUTORS = frozenset({"local_subprocess", "droid"})
+_LOCAL_TRANSPORT_EXECUTORS = frozenset(
+    {"local_subprocess", "droid", "factory_mission"}
+)
 
 MEDIATED_ADAPTERS = {
     "jules": JulesActionAdapter,
