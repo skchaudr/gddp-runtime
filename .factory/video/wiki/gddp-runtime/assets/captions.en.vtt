@@ -1,0 +1,489 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:02.242
+Graph driven development runtime answers a
+
+2
+00:00:02.242 --> 00:00:04.484
+hard problem. Agents can ship code
+
+3
+00:00:04.484 --> 00:00:06.726
+quickly. The harder part is keeping scope,
+
+4
+00:00:06.726 --> 00:00:08.968
+dependencies, and completion under human
+
+5
+00:00:08.968 --> 00:00:11.210
+control.
+
+6
+00:00:11.645 --> 00:00:13.922
+g d d p runtime is the
+
+7
+00:00:13.922 --> 00:00:16.198
+execution control plane for that contract.
+
+8
+00:00:16.198 --> 00:00:18.475
+Project truth lives in a separate repo
+
+9
+00:00:18.475 --> 00:00:20.752
+called g d d p config. Humans
+
+10
+00:00:20.752 --> 00:00:23.028
+author nodes, dependencies, and acceptance
+
+11
+00:00:23.028 --> 00:00:25.305
+criteria there.
+
+12
+00:00:25.740 --> 00:00:28.460
+This repository never silently rewrites
+
+13
+00:00:28.460 --> 00:00:31.181
+that truth. It reads the graph, observes
+
+14
+00:00:31.181 --> 00:00:33.901
+attempts, stores evidence, and stops at
+
+15
+00:00:33.901 --> 00:00:36.622
+review. Executors determine how. Operators
+
+16
+00:00:36.622 --> 00:00:39.342
+still decide what is accepted.
+
+17
+00:00:39.777 --> 00:00:41.809
+Think of the unit of intent as
+
+18
+00:00:41.809 --> 00:00:43.841
+a node. A job, a session, a
+
+19
+00:00:43.841 --> 00:00:45.873
+commit, a test run, and a verdict
+
+20
+00:00:45.873 --> 00:00:47.905
+are all evidence about an attempt to
+
+21
+00:00:47.905 --> 00:00:49.937
+satisfy that node. None of them completes
+
+22
+00:00:49.937 --> 00:00:51.969
+the node automatically.
+
+23
+00:00:52.403 --> 00:00:54.801
+The operating loop is a round trip.
+
+24
+00:00:54.801 --> 00:00:57.198
+A ready node plus an explicit event
+
+25
+00:00:57.198 --> 00:00:59.596
+becomes a bounded job. An adapter
+
+26
+00:00:59.596 --> 00:01:01.993
+dispatches a neutral packet. Durable
+
+27
+00:01:01.993 --> 00:01:04.391
+evidence returns. Evaluation writes a
+
+28
+00:01:04.391 --> 00:01:06.788
+receipt. A human accepts, retries, blocks,
+
+29
+00:01:06.788 --> 00:01:09.186
+or defers.
+
+30
+00:01:09.621 --> 00:01:12.291
+Here is the system map. Operators author
+
+31
+00:01:12.291 --> 00:01:14.962
+graphs in config. Intake accepts GitHub
+
+32
+00:01:14.962 --> 00:01:17.632
+webhooks into SQLite events. The heartbeat
+
+33
+00:01:17.632 --> 00:01:20.303
+claims work and plans dispatches. Adapters
+
+34
+00:01:20.303 --> 00:01:22.973
+talk to Jules, Droid, local subprocess, or
+
+35
+00:01:22.973 --> 00:01:25.644
+Factory mission.
+
+36
+00:01:26.078 --> 00:01:28.949
+Runtime state lives in SQLite under
+
+37
+00:01:28.949 --> 00:01:31.821
+events, jobs, sessions, and results. Graph
+
+38
+00:01:31.821 --> 00:01:34.692
+YAML stays outside. That separation is
+
+39
+00:01:34.692 --> 00:01:37.564
+load bearing. Machinery can fail and
+
+40
+00:01:37.564 --> 00:01:40.435
+recover without inventing project truth.
+
+41
+00:01:40.870 --> 00:01:43.237
+Every few minutes the heartbeat ticks.
+
+42
+00:01:43.237 --> 00:01:45.604
+First it reconciles open executor sessions
+
+43
+00:01:45.604 --> 00:01:47.970
+so asynchronous work can finish even when
+
+44
+00:01:47.970 --> 00:01:50.337
+no new webhook arrives. Then it may
+
+45
+00:01:50.337 --> 00:01:52.704
+advance the frontier one hop.
+
+46
+00:01:53.137 --> 00:01:55.545
+After that it claims pending events,
+
+47
+00:01:55.545 --> 00:01:57.952
+classifies only explicit node tags, scope
+
+48
+00:01:57.952 --> 00:02:00.360
+checks for duplicates, and reserves job
+
+49
+00:02:00.360 --> 00:02:02.768
+and session rows under a database lock.
+
+50
+00:02:02.768 --> 00:02:05.175
+Dispatch can fan out, but recording stays
+
+51
+00:02:05.175 --> 00:02:07.583
+serialized.
+
+52
+00:02:08.017 --> 00:02:10.422
+Await review still counts as active. That
+
+53
+00:02:10.422 --> 00:02:12.826
+prevents the same node from being launched
+
+54
+00:02:12.826 --> 00:02:15.231
+twice while a human has not decided
+
+55
+00:02:15.231 --> 00:02:17.635
+yet. Provisional dependents may proceed,
+
+56
+00:02:17.635 --> 00:02:20.040
+but completion remains human owned.
+
+57
+00:02:20.475 --> 00:02:22.571
+Executors are replaceable transports
+
+58
+00:02:22.571 --> 00:02:24.667
+behind one packet contract. Local
+
+59
+00:02:24.667 --> 00:02:26.763
+subprocess and Droid run one attempt per
+
+60
+00:02:26.763 --> 00:02:28.860
+durable spool directory and return a
+
+61
+00:02:28.860 --> 00:02:30.956
+commit reference. Jules still uses the
+
+62
+00:02:30.956 --> 00:02:33.052
+older mediated issue and pull request
+
+63
+00:02:33.052 --> 00:02:35.148
+path.
+
+64
+00:02:35.583 --> 00:02:37.642
+Factory mission is the multi node path.
+
+65
+00:02:37.642 --> 00:02:39.701
+Eligible ready nodes are projected into
+
+66
+00:02:39.701 --> 00:02:41.760
+one engagement with a strict one to
+
+67
+00:02:41.760 --> 00:02:43.819
+one feature mapping. Feature identity
+
+68
+00:02:43.819 --> 00:02:45.878
+drift parks the engagement for review
+
+69
+00:02:45.878 --> 00:02:47.937
+instead of pretending the graph still
+
+70
+00:02:47.937 --> 00:02:49.996
+matches.
+
+71
+00:02:50.430 --> 00:02:52.575
+Inside a mission, each feature should make
+
+72
+00:02:52.575 --> 00:02:54.719
+one commit with a node trailer. Evidence
+
+73
+00:02:54.719 --> 00:02:56.864
+is sliced per node after the process
+
+74
+00:02:56.864 --> 00:02:59.009
+ends. Push guards and post hoc remote
+
+75
+00:02:59.009 --> 00:03:01.153
+checks defend protected branches when
+
+76
+00:03:01.153 --> 00:03:03.298
+hooks are bypassed.
+
+77
+00:03:03.734 --> 00:03:06.092
+When work returns, evaluation pins a
+
+78
+00:03:06.092 --> 00:03:08.451
+commit and materializes a worktree.
+
+79
+00:03:08.451 --> 00:03:10.809
+Deterministic criteria build the floor:
+
+80
+00:03:10.809 --> 00:03:13.168
+constraints, artifacts, dependencies, and
+
+81
+00:03:13.168 --> 00:03:15.526
+probes. If criteria are still
+
+82
+00:03:15.526 --> 00:03:17.885
+indeterminate, a semantic lane can
+
+83
+00:03:17.885 --> 00:03:20.243
+adjudicate.
+
+84
+00:03:20.677 --> 00:03:22.980
+Integrity always runs as a separate
+
+85
+00:03:22.980 --> 00:03:25.282
+question. Did this attempt preserve
+
+86
+00:03:25.282 --> 00:03:27.584
+project intent and structural health. The
+
+87
+00:03:27.584 --> 00:03:29.887
+combiner takes the worse of criteria and
+
+88
+00:03:29.887 --> 00:03:32.189
+integrity. A verdict receipt is evidence,
+
+89
+00:03:32.189 --> 00:03:34.492
+never an accept action.
+
+90
+00:03:34.927 --> 00:03:36.985
+A strong pass may mark the graph
+
+91
+00:03:36.985 --> 00:03:39.044
+node provisional so dependents can
+
+92
+00:03:39.044 --> 00:03:41.102
+dispatch. That is scheduler visibility.
+
+93
+00:03:41.102 --> 00:03:43.160
+Complete still requires a human edit in
+
+94
+00:03:43.160 --> 00:03:45.218
+g d d p config. Tests can
+
+95
+00:03:45.218 --> 00:03:47.277
+fail on an accepted node without rewriting
+
+96
+00:03:47.277 --> 00:03:49.335
+history.
+
+97
+00:03:49.770 --> 00:03:51.851
+By the numbers this is a dense
+
+98
+00:03:51.851 --> 00:03:53.933
+Python control plane. About thirty nine
+
+99
+00:03:53.933 --> 00:03:56.014
+thousand lines of Python, over four
+
+100
+00:03:56.014 --> 00:03:58.095
+hundred commits in recent months, and the
+
+101
+00:03:58.095 --> 00:04:00.176
+hottest directories are the heartbeat and
+
+102
+00:04:00.176 --> 00:04:02.258
+adapters. Roughly one in five commits
+
+103
+00:04:02.258 --> 00:04:04.339
+carries bot co authorship as a lower
+
+104
+00:04:04.339 --> 00:04:06.420
+bound.
+
+105
+00:04:06.854 --> 00:04:09.381
+On production hosts the operator path is
+
+106
+00:04:09.381 --> 00:04:11.908
+the mini heartbeat kit. Install dormant if
+
+107
+00:04:11.908 --> 00:04:14.435
+needed, run smoke, then arm with an
+
+108
+00:04:14.435 --> 00:04:16.963
+explicit flag. Do not invoke the raw
+
+109
+00:04:16.963 --> 00:04:19.490
+runner without the environment that loads
+
+110
+00:04:19.490 --> 00:04:22.017
+spool paths and executor argument vectors.
+
+111
+00:04:22.452 --> 00:04:24.612
+Linux hosts need Kill Mode process on
+
+112
+00:04:24.612 --> 00:04:26.773
+the oneshot timer so the tick cannot
+
+113
+00:04:26.773 --> 00:04:28.933
+reap freshly spawned workers. Secrets
+
+114
+00:04:28.933 --> 00:04:31.094
+resolve through commands, not committed
+
+115
+00:04:31.094 --> 00:04:33.254
+files. Only one exclusive control plane
+
+116
+00:04:33.254 --> 00:04:35.415
+should be armed unless split brain is
+
+117
+00:04:35.415 --> 00:04:37.575
+intentional.
+
+118
+00:04:38.010 --> 00:04:40.614
+Remember the contract as four short lines.
+
+119
+00:04:40.614 --> 00:04:43.217
+Nodes are intent. Receipts are evidence.
+
+120
+00:04:43.217 --> 00:04:45.821
+Evaluators advise. Humans decide. That is
+
+121
+00:04:45.821 --> 00:04:48.424
+how g d d p keeps agent
+
+122
+00:04:48.424 --> 00:04:51.028
+momentum without losing the graph.

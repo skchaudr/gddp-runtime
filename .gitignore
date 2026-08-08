@@ -67,3 +67,9 @@ package-lock.json
 .pi-subagents/
 .worktrees/
 .superpowers/
+
+# HyperFrames / wiki video build workspace (heavy intermediates; final MP4 lives in droid-wiki/video/)
+.factory/video/wiki/**/node_modules/
+.factory/video/wiki/**/out/
+.factory/video/wiki/**/assets/tts/
+.factory/video/wiki/**/package-lock.json
