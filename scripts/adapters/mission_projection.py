@@ -14,6 +14,18 @@ from scripts.runtime.heartbeat.graph_reader import NodeData
 DEFAULT_MILESTONE_ID = "gddp-engagement"
 DEFAULT_ENGAGEMENT_BRANCH = "gddp/<engagement-id>"
 
+# Mission-readiness guidance emitted into the mission spec so the droid
+# mission planner has the explicit command catalog it demands and does not
+# block planning on a start-stack script or user-facing QA. Override per
+# engagement via ``project_mission(..., mission_readiness=...)``.
+DEFAULT_MISSION_READINESS: tuple[str, ...] = (
+    "Validation command: `python3 -m pytest -q` (the executable validation path).",
+    "No application services to start or stop: this is a CLI/library repo, not a web stack. Do not invent a start script.",
+    "User-facing QA is disabled (`missionModelSettings.skipUserTesting=true`); validators must stay read-only and must not attempt to drive a UI.",
+    "Environment is already provisioned; no `init.sh` setup step is required.",
+    "Do not block mission planning on a missing start-stack command.",
+)
+
 
 @dataclass(frozen=True)
 class PlanningVerification:
@@ -34,9 +46,15 @@ def project_mission(
     *,
     milestone_id: str = DEFAULT_MILESTONE_ID,
     engagement_branch: str = DEFAULT_ENGAGEMENT_BRANCH,
+    mission_readiness: Sequence[str] | None = None,
 ) -> str:
     """Return a mission specification containing one feature per node."""
     projected = _topological_nodes(nodes)
+    readiness = (
+        DEFAULT_MISSION_READINESS
+        if mission_readiness is None
+        else tuple(mission_readiness)
+    )
     lines = [
         "# GDDP graph engagement",
         "",
@@ -49,9 +67,10 @@ def project_mission(
         f"- Id: `{milestone_id}`",
         f"- Name: `{milestone_id}`",
         "",
-        "## Features",
-        "",
     ]
+    if readiness:
+        lines.extend(["## Mission readiness", "", *_item_lines(readiness), ""])
+    lines.extend(["## Features", ""])
 
     for node in projected:
         lines.extend(

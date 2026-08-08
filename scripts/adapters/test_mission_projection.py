@@ -335,3 +335,22 @@ def test_projection_serializes_frozen_nodepacket_criteria_without_mappingproxy_e
     assert '"id": "report-exists"' in mission
     assert '"scope": "read-only"' in mission
     assert "mappingproxy" not in mission.casefold()
+
+
+def test_projection_emits_default_mission_readiness_block():
+    mission = project_mission([_node("source-node")])
+
+    assert "## Mission readiness" in mission
+    assert "python3 -m pytest -q" in mission
+    assert "No application services to start or stop" in mission
+    assert "User-facing QA is disabled" in mission
+
+
+def test_projection_mission_readiness_override_replaces_default():
+    custom = ("- Custom validation: `make lint`", "- No services to start.")
+
+    mission = project_mission([_node("source-node")], mission_readiness=custom)
+
+    assert "## Mission readiness" in mission
+    assert "Custom validation: `make lint`" in mission
+    assert "python3 -m pytest -q" not in mission

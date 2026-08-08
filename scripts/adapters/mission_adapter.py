@@ -46,6 +46,7 @@ class MissionAdapter(EngagementAdapterDefaults):
         mission_root: str | Path | None = None,
         droid_path: str = "droid",
         mission_dir_timeout: float = 10,
+        model: str | None = None,
     ) -> None:
         self.repo = repo
         self.cwd = Path(cwd).resolve() if cwd else None
@@ -62,6 +63,7 @@ class MissionAdapter(EngagementAdapterDefaults):
         ).expanduser().resolve()
         self.droid_path = droid_path
         self.mission_dir_timeout = mission_dir_timeout
+        self.model = model or os.environ.get("GDDP_MISSION_MODEL")
         self._processes: dict[str, subprocess.Popen] = {}
 
     def dispatch(self, packet: NodePacket) -> DispatchResult:
@@ -153,18 +155,21 @@ class MissionAdapter(EngagementAdapterDefaults):
                         audit_path=push_audit_path,
                         base_env=mission_env,
                     )
+                    mission_argv = [
+                        self.droid_path,
+                        "exec",
+                        "--mission",
+                        "-f",
+                        str(mission_path),
+                        "--auto",
+                        "high",
+                        "-w",
+                        engagement_branch,
+                    ]
+                    if self.model:
+                        mission_argv.extend(["-m", self.model])
                     process = subprocess.Popen(
-                        [
-                            self.droid_path,
-                            "exec",
-                            "--mission",
-                            "-f",
-                            str(mission_path),
-                            "--auto",
-                            "high",
-                            "-w",
-                            engagement_branch,
-                        ],
+                        mission_argv,
                         cwd=str(self.cwd),
                         stdin=subprocess.DEVNULL,
                         stdout=stdout,

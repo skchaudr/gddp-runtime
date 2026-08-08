@@ -907,3 +907,53 @@ def test_dispatcher_batches_jobs_through_engagement_capability(
     packets = adapter.dispatch_engagement.call_args.args[0]
     assert [packet.node_id for packet in packets] == ["node-alpha", "node-beta"]
     assert all(isinstance(packet, NodePacket) for packet in packets)
+
+
+def test_dispatch_inserts_model_flag_when_configured(tmp_path, monkeypatch):
+    adapter = _make_adapter(
+        tmp_path,
+        droid_path="/opt/factory/droid",
+        model="custom:Grok-4.5-sub-(Hermes)-0",
+    )
+    launched = _FakeProcess()
+    popen = MagicMock(return_value=launched)
+
+    def launch(*args, **kwargs):
+        _create_factory_mission(adapter)
+        return popen(*args, **kwargs)
+
+    monkeypatch.setattr(mission_adapter, "_git_head", lambda path: None)
+    monkeypatch.setattr(mission_adapter, "_process_identity", lambda pid: None)
+    monkeypatch.setattr(mission_adapter.subprocess, "Popen", launch)
+    adapter.dispatch_engagement([_packet("node-alpha")])
+
+    argv = popen.call_args.args[0]
+    assert "-m" in argv
+    assert argv[argv.index("-m") + 1] == "custom:Grok-4.5-sub-(Hermes)-0"
+
+
+def test_dispatch_omits_model_flag_when_not_configured(tmp_path, monkeypatch):
+    monkeypatch.delenv("GDDP_MISSION_MODEL", raising=False)
+    adapter = _make_adapter(tmp_path, droid_path="/opt/factory/droid")
+    launched = _FakeProcess()
+    popen = MagicMock(return_value=launched)
+
+    def launch(*args, **kwargs):
+        _create_factory_mission(adapter)
+        return popen(*args, **kwargs)
+
+    monkeypatch.setattr(mission_adapter, "_git_head", lambda path: None)
+    monkeypatch.setattr(mission_adapter, "_process_identity", lambda pid: None)
+    monkeypatch.setattr(mission_adapter.subprocess, "Popen", launch)
+    adapter.dispatch_engagement([_packet("node-alpha")])
+
+    argv = popen.call_args.args[0]
+    assert "-m" not in argv
+
+
+def test_adapter_model_defaults_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("GDDP_MISSION_MODEL", "custom:env-model-0")
+
+    adapter = _make_adapter(tmp_path)
+
+    assert adapter.model == "custom:env-model-0"
