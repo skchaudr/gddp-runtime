@@ -72,4 +72,5 @@ package-lock.json
 .factory/video/wiki/**/node_modules/
 .factory/video/wiki/**/out/
 .factory/video/wiki/**/assets/tts/
+.factory/video/wiki/**/assets/narration.mp3
 .factory/video/wiki/**/package-lock.json
