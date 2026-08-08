@@ -11,6 +11,7 @@ executors (Jules CLI, Droid, etc.) complete asynchronously without webhooks.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -24,10 +25,11 @@ from pathlib import Path
 # Ensure adapters directory is importable (same pattern as dispatcher.py).
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from adapters.executor_protocol import SessionRef
+from adapters.executor_protocol import PatchResult, SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
+from .completion_discipline import submit_completion
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .provisional_gate import maybe_mark_provisional
 from .state_recorder import (
@@ -38,11 +40,31 @@ from .state_recorder import (
     mark_job_cancelled,
     mark_job_failed,
     mark_job_running,
+    mark_jobs_awaiting_review,
     recover_stale_dispatching_sessions,
     update_executor_session_state,
 )
 
 DEFAULT_MAX_CONCURRENT_EVALUATIONS = 2
+
+
+def _session_value(session, key: str) -> str | None:
+    """Read an optional session column across current and legacy test rows."""
+    keys = session.keys() if hasattr(session, "keys") else ()
+    if key not in keys:
+        return None
+    value = session[key]
+    return str(value) if value is not None else None
+
+
+def _sha256_file(path: str | None) -> str | None:
+    """Hash an evidence manifest when it remains readable."""
+    if not path:
+        return None
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -58,6 +80,9 @@ class PendingEvaluation:
     attempt: int
     result_commit_sha: str
     expected_base_commit_sha: str | None = None
+    execution_attempt_id: str | None = None
+    evidence_manifest_sha256: str | None = None
+    mission_receipt_id: str | None = None
 
 
 class EvaluationBatch:
@@ -79,9 +104,23 @@ class EvaluationBatch:
         self._started = False
         self._finalized = False
 
-    def add(self, session, job, result_commit_sha: str) -> None:
+    def add(
+        self,
+        session,
+        job,
+        result_commit_sha: str,
+        *,
+        expected_base_commit_sha: str | None = None,
+        evidence_manifest_path: str | None = None,
+        mission_receipt_id: str | None = None,
+    ) -> None:
         if self._started:
             raise RuntimeError("cannot add evaluations after the batch starts")
+        manifest_path = (
+            evidence_manifest_path
+            if evidence_manifest_path is not None
+            else _session_value(session, "evidence_manifest_path")
+        )
         self._pending.append(
             PendingEvaluation(
                 session_db_id=str(session["session_db_id"]),
@@ -92,7 +131,20 @@ class EvaluationBatch:
                 job_id=str(job["job_id"]),
                 attempt=int(job["attempt"] or 0),
                 result_commit_sha=result_commit_sha,
-                expected_base_commit_sha=session["expected_base_commit_sha"],
+                expected_base_commit_sha=(
+                    expected_base_commit_sha
+                    if expected_base_commit_sha is not None
+                    else session["expected_base_commit_sha"]
+                ),
+                execution_attempt_id=_session_value(
+                    session, "execution_attempt_id"
+                ),
+                evidence_manifest_sha256=_sha256_file(manifest_path),
+                mission_receipt_id=(
+                    mission_receipt_id
+                    if mission_receipt_id is not None
+                    else _session_value(session, "completion_id")
+                ),
             )
         )
 
@@ -201,20 +253,55 @@ def reconcile_sessions(
 
     print(f"[reconcile] {len(sessions)} active executor session(s) to poll.")
 
+    session_groups: dict[tuple[str, str], list] = {}
     for session in sessions:
+        session_groups.setdefault(
+            (str(session["executor"]), str(session["session_id"])), []
+        ).append(session)
+
+    for group in session_groups.values():
         try:
-            _reconcile_one(
-                con,
-                session,
-                repo_path,
-                current_time=current_time,
-                missing_stale_after=missing_stale_after,
-                evaluation_batch=batch,
-            )
+            engagement_group = [
+                candidate for candidate in group
+                if candidate["state"] != "collected"
+            ]
+            adapter_cls = ADAPTERS.get(group[0]["executor"])
+            adapter = None
+            if adapter_cls is not None and engagement_group:
+                job = con.execute(
+                    "SELECT repo FROM jobs WHERE job_id = ?",
+                    (engagement_group[0]["job_id"],),
+                ).fetchone()
+                adapter = adapter_cls(
+                    repo=str(job["repo"] or "") if job is not None else ""
+                )
+                supports_engagement = getattr(
+                    adapter, "supports_engagement", lambda: False
+                )
+                if supports_engagement():
+                    _reconcile_engagement_group(
+                        con,
+                        adapter,
+                        engagement_group,
+                        repo_path,
+                        batch,
+                    )
+                    engagement_group = []
+            for session in group:
+                if session in engagement_group or session["state"] == "collected":
+                    _reconcile_one(
+                        con,
+                        session,
+                        repo_path,
+                        current_time=current_time,
+                        missing_stale_after=missing_stale_after,
+                        evaluation_batch=batch,
+                        adapter=adapter,
+                    )
         except Exception as exc:
             # A failed reconcile for one session must not stop others.
             print(
-                f"[reconcile] ERROR reconciling {session['session_db_id']}: {exc}"
+                f"[reconcile] ERROR reconciling {group[0]['session_db_id']}: {exc}"
             )
             con.commit()
 
@@ -264,6 +351,25 @@ def cancel_executor_session(con, session_db_id: str) -> str:
             error = f"cancellation failed: {exc}"
 
         if accepted:
+            supports_engagement = getattr(
+                adapter, "supports_engagement", lambda: False
+            )
+            if supports_engagement():
+                engagement_sessions = con.execute(
+                    "SELECT session_db_id, job_id FROM executor_sessions "
+                    "WHERE executor = ? AND session_id = ?",
+                    (executor, session["session_id"]),
+                ).fetchall()
+                for related in engagement_sessions:
+                    update_executor_session_state(
+                        con,
+                        related["session_db_id"],
+                        state="cancelled",
+                        error="engagement cancellation accepted",
+                    )
+                    mark_job_cancelled(con, related["job_id"])
+                con.commit()
+                return "cancelled"
             result_state = "cancelled"
             error = "local executor cancellation accepted"
         elif executor == "jules_cli":
@@ -316,6 +422,7 @@ def _reconcile_one(
     current_time: datetime,
     missing_stale_after: timedelta,
     evaluation_batch: EvaluationBatch,
+    adapter=None,
 ) -> None:
     """Reconcile a single executor session."""
     session_db_id = session["session_db_id"]
@@ -363,7 +470,8 @@ def _reconcile_one(
         evaluation_batch.add(session, job_row, result_sha)
         return
 
-    adapter = adapter_cls(repo=job_row["repo"] or "")
+    if adapter is None:
+        adapter = adapter_cls(repo=job_row["repo"] or "")
     session_ref = SessionRef(executor=executor, session_id=session_id)
 
     # Poll the session. A transient polling error (CLI timeout, network blip)
@@ -392,7 +500,7 @@ def _reconcile_one(
             job_row,
             evaluation_batch,
         )
-    elif status.state == "failed":
+    elif status.state in {"failed", "crashed"}:
         _handle_failed(con, session, job_row, status.error, repo_path)
     elif status.state == "missing":
         created_at = datetime.fromisoformat(
@@ -423,6 +531,248 @@ def _reconcile_one(
             update_executor_session_state(con, session_db_id, state="running")
             con.commit()
     # "dispatched" → still queued; no action needed this tick.
+
+
+def _reconcile_engagement_group(
+    con,
+    adapter,
+    sessions,
+    repo_path: Path,
+    evaluation_batch: EvaluationBatch,
+) -> None:
+    """Poll and collect one shared engagement, then fan out by feature id."""
+    if not sessions:
+        return
+    session_ref = SessionRef(
+        executor=str(sessions[0]["executor"]),
+        session_id=str(sessions[0]["session_id"]),
+    )
+    status = adapter.status(session_ref)
+    if status.state in {"dispatched", "running"}:
+        for session in sessions:
+            if session["state"] != status.state:
+                update_executor_session_state(
+                    con, session["session_db_id"], state=status.state
+                )
+        con.commit()
+        return
+    if status.state == "missing":
+        for session in sessions:
+            job = con.execute(
+                "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
+            ).fetchone()
+            if job is not None:
+                _handle_failed(con, session, job, status.error, repo_path)
+        return
+    if status.state not in {"completed", "failed", "crashed"}:
+        return
+
+    results = adapter.collect_engagement(session_ref)
+    by_feature = {
+        result.feature_id: result
+        for result in results
+        if isinstance(result.feature_id, str)
+    }
+    jobs_by_node = {}
+    for session in sessions:
+        job = con.execute(
+            "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
+        ).fetchone()
+        if job is not None:
+            jobs_by_node[str(job["node_id"])] = (session, job)
+
+    if len(by_feature) != len(results) or set(by_feature) != set(jobs_by_node):
+        reason = (
+            "engagement collect feature ids do not match reserved node ids; "
+            "human review required"
+        )
+        for session, job in jobs_by_node.values():
+            _route_engagement_result_to_review(
+                con, session, job, None, reason
+            )
+        con.commit()
+        return
+
+    completion_decisions = {}
+    quarantined_session_ids: set[str] = set()
+    for feature_id, (session, _job) in jobs_by_node.items():
+        result = by_feature[feature_id]
+        if result.completion_id is None:
+            continue
+        decision = submit_completion(
+            con,
+            session_db_id=session["session_db_id"],
+            completion_id=result.completion_id,
+            completion_digest_sha256=result.completion_digest_sha256,
+            result_commit_sha=result.result_commit_sha,
+            evidence_manifest_path=result.evidence_manifest_path,
+        )
+        completion_decisions[feature_id] = decision
+        quarantined_session_ids.update(decision.quarantined_session_db_ids)
+
+    for feature_id, (session, job) in jobs_by_node.items():
+        result = by_feature[feature_id]
+        decision = completion_decisions.get(feature_id)
+        if decision is not None and decision.action == "duplicate":
+            # Exact replay: first stored commit/evidence is authoritative, but
+            # review disposition must be preserved — a quarantined first result
+            # (or incoming quarantine claim) must not be laundered into
+            # evaluation. Only the stranded-running bug changes here.
+            if decision.result_commit_sha:
+                quarantine = (
+                    decision.quarantine_reason
+                    or result.completion_quarantine_reason
+                    or result.error
+                )
+                review_required = bool(
+                    result.review_required
+                    or decision.quarantine_reason
+                    or result.completion_quarantine_reason
+                )
+                result = PatchResult(
+                    success=bool(result.success) and not review_required,
+                    base_commit_sha=result.base_commit_sha,
+                    result_commit_sha=decision.result_commit_sha,
+                    result_ref=result.result_ref,
+                    feature_id=result.feature_id or feature_id,
+                    evidence_manifest_path=(
+                        decision.evidence_manifest_path
+                        or result.evidence_manifest_path
+                    ),
+                    completion_id=result.completion_id,
+                    completion_digest_sha256=result.completion_digest_sha256,
+                    completion_quarantine_reason=(
+                        result.completion_quarantine_reason
+                        or decision.quarantine_reason
+                    ),
+                    review_required=review_required,
+                    error=quarantine if review_required else None,
+                )
+        if session["session_db_id"] in quarantined_session_ids:
+            continue
+        if (
+            not result.success
+            or result.review_required
+            or not result.result_commit_sha
+            or not result.result_ref
+        ):
+            _route_engagement_result_to_review(
+                con,
+                session,
+                job,
+                result,
+                result.error or "engagement result requires human review",
+            )
+            continue
+
+        branch_tip = _resolve_ref(repo_path, result.result_ref)
+        base = session["expected_base_commit_sha"]
+        if branch_tip is None:
+            _route_engagement_result_to_review(
+                con,
+                session,
+                job,
+                result,
+                f"engagement result ref {result.result_ref} cannot be resolved",
+            )
+            continue
+        if not _is_ancestor(repo_path, result.result_commit_sha, branch_tip):
+            _route_engagement_result_to_review(
+                con,
+                session,
+                job,
+                result,
+                (
+                    f"result {result.result_commit_sha} is not reachable from "
+                    f"engagement ref {result.result_ref}"
+                ),
+            )
+            continue
+        if not base or not _is_ancestor(
+            repo_path, base, result.result_commit_sha
+        ):
+            _route_engagement_result_to_review(
+                con,
+                session,
+                job,
+                result,
+                (
+                    f"result {result.result_commit_sha} does not descend from "
+                    f"expected base {base or 'missing'}"
+                ),
+            )
+            continue
+
+        update_executor_session_state(
+            con,
+            session["session_db_id"],
+            state="collected",
+            error=(
+                status.error
+                if status.state in {"failed", "crashed"}
+                else None
+            ),
+            result_commit_sha=result.result_commit_sha,
+            patch_path=(
+                result.evidence_manifest_path
+                or result.patch_path
+                or result.result_ref
+            ),
+        )
+        _ensure_result_ref(
+            repo_path,
+            job["job_id"],
+            session["session_id"],
+            result.result_commit_sha,
+        )
+        evaluation_batch.add(
+            session,
+            job,
+            result.result_commit_sha,
+            expected_base_commit_sha=(
+                _parent_commit(repo_path, result.result_commit_sha)
+                or session["expected_base_commit_sha"]
+            ),
+            evidence_manifest_path=result.evidence_manifest_path,
+            mission_receipt_id=result.completion_id,
+        )
+    con.commit()
+
+
+def _route_engagement_result_to_review(
+    con,
+    session,
+    job,
+    result,
+    reason: str,
+) -> None:
+    """Preserve incomplete engagement evidence and park graph truth for review."""
+    update_executor_session_state(
+        con,
+        session["session_db_id"],
+        state="evaluated",
+        error=reason,
+        patch_path=(
+            getattr(result, "evidence_manifest_path", None)
+            if result is not None
+            else None
+        ),
+    )
+    quarantine_reason = (
+        getattr(result, "completion_quarantine_reason", None)
+        if result is not None
+        else None
+    )
+    if quarantine_reason is not None:
+        con.execute(
+            """
+            UPDATE executor_sessions
+               SET completion_quarantine_reason = ?
+             WHERE session_db_id = ?
+            """,
+            (quarantine_reason, session["session_db_id"]),
+        )
+    mark_jobs_awaiting_review(con, (job["job_id"],))
 
 
 def _handle_completed(
@@ -824,6 +1174,9 @@ def _run_evaluation(pending: PendingEvaluation) -> dict:
             pr_ref=None,  # no PR for CLI path
             job_id=pending.job_id,
             attempt=pending.attempt,
+            execution_attempt_id=pending.execution_attempt_id,
+            evidence_manifest_sha256=pending.evidence_manifest_sha256,
+            mission_receipt_id=pending.mission_receipt_id,
         )
     except Exception as exc:
         return {"verification_status": "error", "error": str(exc)}
@@ -890,14 +1243,7 @@ def _finalize_evaluation(
         state="evaluated",
     )
     # Mark job as awaiting_review (human decides graph truth).
-    con.execute(
-        "UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review' WHERE job_id = ?",
-        (pending.job_id,),
-    )
-    con.execute(
-        "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
-        (pending.job_id,),
-    )
+    mark_jobs_awaiting_review(con, (pending.job_id,))
     con.commit()
 
     # Provisional flow (mode 1 default): a qualifying verdict marks the node
@@ -952,6 +1298,22 @@ def _resolve_ref(repo_path: Path, ref_name: str) -> str | None:
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--verify", f"refs/heads/{ref_name}^{{commit}}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return proc.stdout.strip() if proc.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _parent_commit(repo_path: Path, result_sha: str) -> str | None:
+    """Resolve the feature commit's first parent for node-scoped evaluation."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{result_sha}^{{commit}}^"],
             cwd=str(repo_path),
             capture_output=True,
             text=True,

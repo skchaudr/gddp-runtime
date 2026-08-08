@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from scripts.runtime.verification import orchestrator
+from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.schemas import (
     ConstraintCheck,
     CriterionCheck,
@@ -422,6 +424,137 @@ def test_criteria_pass_but_intent_violated_yields_non_pass_verdict(
     assert receipt.integrity.intent_preserved is False
     # Action must mention human review and halt progression
     assert "Human review required" in receipt.required_next_action
+
+
+def test_all_evaluator_lanes_run_and_worst_verdict_is_written(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    """Mission results retain the existing deterministic, semantic, integrity path."""
+    det = DeterministicResult(
+        criteria=[
+            CriterionCheck(
+                id="c1",
+                criterion="criterion needs semantic review",
+                status="indeterminate",
+                confidence=0.6,
+                method="inspection",
+                evidence=["module.py"],
+                reasoning="deterministic evidence is incomplete",
+                mismatch_kind="",
+                mismatch_detail="",
+                needs_evidence=False,
+                human_question="",
+            )
+        ],
+        constraints=[],
+        artifacts_present={},
+        deps_status={},
+        criteria_mismatches=[],
+        missing_evidence=[],
+        human_review_questions=[],
+    )
+    deterministic_calls = 0
+
+    def _deterministic(**_kwargs):
+        nonlocal deterministic_calls
+        deterministic_calls += 1
+        return det
+
+    monkeypatch.setattr(orchestrator.deterministic, "assemble", _deterministic)
+    semantic_calls = 0
+
+    def _semantic(**_kwargs):
+        nonlocal semantic_calls
+        semantic_calls += 1
+        return SemanticOutput(
+            judgments=[
+                {
+                    "criterion_id": "c1",
+                    "judgment": "judged_pass",
+                    "confidence": 0.9,
+                    "evidence": ["module.py:1"],
+                    "reasoning": "Semantic evidence passes.",
+                }
+            ],
+            overall_reasoning="Criteria pass.",
+            risks=None,
+            followup_candidates=None,
+            budget_exhausted=False,
+        )
+
+    integrity = MockIntegrityHarness(
+        IntegrityOutput(
+            verdict="drift",
+            intent_preserved=False,
+            graph_integrity_preserved=True,
+            required_human_review=True,
+            confidence=0.8,
+            findings=[],
+            reasoning="Intent drift is worse than the criteria pass.",
+        )
+    )
+
+    receipt = orchestrator.verify(
+        node_yaml={"node_id": "mission-node"},
+        project_yaml={"project_id": "mission-project"},
+        repo=tmp_path,
+        runner=MockRunner("{}"),
+        toolbox=SemanticToolbox(tmp_path),
+        semantic_harness=_semantic,
+        integrity_harness=integrity,
+        now=lambda: "2026-08-07T00:00:00+00:00",
+    )
+
+    assert deterministic_calls == 1
+    assert semantic_calls == 1
+    assert integrity.calls == 1
+    assert receipt.criteria_verdict == Verdict.PASS
+    assert receipt.verdict == Verdict.NEEDS_HUMAN_REVIEW
+
+
+def test_mission_provenance_is_preserved_in_written_receipt(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        orchestrator.deterministic,
+        "assemble",
+        lambda **_: _row12_deterministic(),
+    )
+    receipt = orchestrator.verify(
+        node_yaml={"node_id": "mission-node"},
+        project_yaml={"project_id": "mission-project"},
+        repo=tmp_path,
+        runner=MockRunner("{}"),
+        toolbox=SemanticToolbox(tmp_path),
+        execution_attempt_id="job-1:attempt:0",
+        evidence_manifest_sha256="a" * 64,
+        mission_receipt_id="mis_1:mission-node:worker-1",
+        now=lambda: "2026-08-07T00:00:00+00:00",
+    )
+    path = write_receipt(
+        receipt,
+        receipt.project_id,
+        base=tmp_path / "receipts",
+        job_id="job-1",
+        attempt=0,
+    )
+
+    payload = json.loads(path.read_text())
+    assert payload["execution_attempt_id"] == "job-1:attempt:0"
+    assert payload["evidence_manifest_sha256"] == "a" * 64
+    assert payload["mission_receipt_id"] == "mis_1:mission-node:worker-1"
+
+    legacy = orchestrator.verify(
+        node_yaml={"node_id": "legacy-node"},
+        project_yaml={"project_id": "legacy-project"},
+        repo=tmp_path,
+        runner=MockRunner("{}"),
+        toolbox=SemanticToolbox(tmp_path),
+        now=lambda: "2026-08-07T00:00:00+00:00",
+    )
+    assert legacy.execution_attempt_id is None
+    assert legacy.evidence_manifest_sha256 is None
+    assert legacy.mission_receipt_id is None
 
 
 def test_integrity_harness_none_does_not_run_integrity(

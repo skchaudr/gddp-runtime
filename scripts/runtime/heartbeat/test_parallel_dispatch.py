@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.runtime.heartbeat import job_factory, runner, state_recorder
+from scripts.adapters.executor_protocol import EngagementDispatchResult, SessionRef
 from scripts.runtime.heartbeat.dispatcher import DispatchResult
 
 
@@ -46,6 +47,102 @@ def test_execute_dispatches_passes_target_checkout(monkeypatch, tmp_path):
         "repo": "owner/MyAPI",
         "repo_path": str(target_repo),
     }
+
+
+def test_execute_dispatches_batches_engagement_capable_ready_subgraph(
+    monkeypatch, tmp_path
+):
+    observed = []
+    monkeypatch.setattr(
+        runner, "executor_supports_engagement", lambda *args: True
+    )
+
+    def fake_engagement(jobs, repo, repo_path=None):
+        observed.append((jobs, repo, repo_path))
+        return EngagementDispatchResult(
+            success=True,
+            engagement_id="engagement-1",
+            session_ref=SessionRef("factory_mission", "engagement-1"),
+            feature_ids=tuple(job["node_id"] for job in jobs),
+        )
+
+    monkeypatch.setattr(runner, "dispatch_engagement", fake_engagement)
+    planned = [
+        runner.PlannedDispatch(
+            event_id=f"event-{node_id}",
+            classification={"executor_recommendation": "factory_mission"},
+            job={
+                "job_id": f"job-{node_id}",
+                "node_id": node_id,
+                "executor": "factory_mission",
+            },
+            session_db_id=f"session-{node_id}",
+        )
+        for node_id in ("node-alpha", "node-beta")
+    ]
+
+    outcomes = runner._execute_dispatches(
+        planned, "owner/repo", str(tmp_path)
+    )
+
+    assert len(observed) == 1
+    assert [job["node_id"] for job in observed[0][0]] == [
+        "node-alpha",
+        "node-beta",
+    ]
+    assert {
+        outcome.session_ref.session_id for outcome in outcomes.values()
+    } == {"engagement-1"}
+
+
+def test_execute_dispatches_chunks_engagements_by_policy_and_base(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        runner, "executor_supports_engagement", lambda *args: True
+    )
+
+    def fake_engagement(jobs, repo, repo_path=None):
+        calls.append([job["node_id"] for job in jobs])
+        session_id = f"engagement-{len(calls)}"
+        return EngagementDispatchResult(
+            success=True,
+            engagement_id=session_id,
+            session_ref=SessionRef("factory_mission", session_id),
+            feature_ids=tuple(job["node_id"] for job in jobs),
+        )
+
+    monkeypatch.setattr(runner, "dispatch_engagement", fake_engagement)
+    planned = [
+        runner.PlannedDispatch(
+            event_id=f"event-{index}",
+            classification={"executor_recommendation": "factory_mission"},
+            job={
+                "job_id": f"job-{index}",
+                "node_id": f"node-{index}",
+                "executor": "factory_mission",
+                "expected_base_commit_sha": (
+                    "a" * 40 if index < 4 else "b" * 40
+                ),
+            },
+            session_db_id=f"session-{index}",
+        )
+        for index in range(6)
+    ]
+
+    runner._execute_dispatches(
+        planned,
+        "owner/repo",
+        execution_policy={
+            "mission_engagement_size": 1,
+            "mission_max_pairs": 5,
+        },
+    )
+
+    assert sorted(calls) == [
+        ["node-0", "node-1"],
+        ["node-2", "node-3"],
+        ["node-4", "node-5"],
+    ]
 
 
 def _init_db(db_path: Path) -> None:

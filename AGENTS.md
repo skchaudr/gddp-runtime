@@ -211,10 +211,7 @@ commands, and continue without first becoming a repository janitor.
 Co-author ALL Git commits with `<agent-name> + <model>` this is so crucial and must happen, failure of this weakens traceability 
 
 
-## Known limitations — factory_mission adapter (mission/milestone3, 2026-08-07)
-
-Recorded here after the build mission's completion message claimed they were
-"recorded in AGENTS.md" and they were not. (The irony is noted and instructive.)
+## Known limitations — factory_mission adapter (mission/milestone3)
 
 1. droid 0.189.0 rejects the documented standalone hook-file shape — hooks
    unusable as an integration point this version (docs/CLI mismatch).
@@ -223,7 +220,11 @@ Recorded here after the build mission's completion message claimed they were
 3. Crash/resume behavior only partially observed (PROBE-2A): state.json goes
    stale after SIGTERM — infer liveness from process exit + progress_log tail.
 4. Genuine failure behavior (worker-level) not yet tested against real droid.
+5. Push-guard prevention residual: absolute git + `-c core.hooksPath=/dev/null`
+   bypasses PATH shim and pre-push hook. Closed by post-hoc detection in
+   `mission_evidence._protected_branch_push_reasons` (live ls-remote tip first),
+   which quarantines feature results reachable from a protected branch.
 
-Plus reviewer-found gaps pending the fix round (Sol, 2026-08-07): push guard
-bypassable via absolute git + core.hooksPath=/dev/null; duplicate completion
-strands its job in running; receipt git-context fields unvalidated.
+Reviewer-found gaps (Sol, 2026-08-07) were fixed and re-verified before merge:
+duplicate completion preserves quarantine disposition (no laundering);
+receipt git-context validated at evidence time.

@@ -133,6 +133,7 @@ class SessionStatus:
         "awaiting_reply",
         "needs_operator",
         "completed",
+        "crashed",
         "failed",
         "missing",
         "poll_error",
@@ -155,6 +156,12 @@ class PatchResult:
     result_commit_sha: str | None = None  # commit-ref transport (local)
     result_ref: str | None = None         # durable per-attempt ref name
     worktree_path: str | None = None      # kept on persist failure
+    feature_id: str | None = None         # engagement fan-out join key
+    evidence_manifest_path: str | None = None
+    completion_id: str | None = None
+    completion_digest_sha256: str | None = None
+    completion_quarantine_reason: str | None = None
+    review_required: bool = False
     error: str | None = None
 
 
@@ -166,6 +173,36 @@ class DispatchResult:
     session_ref: SessionRef | None = None
     issue_url: str | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class EngagementDispatchResult:
+    """Receipt for one executor session spanning multiple node attempts."""
+
+    success: bool
+    engagement_id: str | None = None
+    session_ref: SessionRef | None = None
+    mission_dir: str | None = None
+    process_pid: int | None = None
+    engagement_branch: str | None = None
+    feature_ids: tuple[str, ...] = ()
+    error: str | None = None
+
+
+class EngagementAdapterDefaults:
+    """Opt-in engagement extension shared by one-node adapters."""
+
+    def supports_engagement(self) -> bool:
+        return False
+
+    def dispatch_engagement(
+        self, packets: list[NodePacket]
+    ) -> EngagementDispatchResult:
+        raise NotImplementedError("adapter does not support engagement dispatch")
+
+    def collect_engagement(self, session_ref: SessionRef) -> list[PatchResult]:
+        raise NotImplementedError("adapter does not support engagement collection")
+
 
 @runtime_checkable
 class ExecutorAdapter(Protocol):
@@ -190,6 +227,20 @@ class ExecutorAdapter(Protocol):
 
     def cancel(self, session_ref: SessionRef) -> bool:
         """Best-effort cancellation. Not all executors support this."""
+        ...
+
+    def supports_engagement(self) -> bool:
+        """Whether this adapter can dispatch multiple node attempts together."""
+        ...
+
+    def dispatch_engagement(
+        self, packets: list[NodePacket]
+    ) -> EngagementDispatchResult:
+        """Send ordered node attempts through one executor engagement."""
+        ...
+
+    def collect_engagement(self, session_ref: SessionRef) -> list[PatchResult]:
+        """Collect one node-scoped result per feature in the engagement."""
         ...
 
     # Optional capability, probed with hasattr rather than declared above:

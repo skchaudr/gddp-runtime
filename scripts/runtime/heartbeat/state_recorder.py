@@ -6,6 +6,7 @@ Single responsibility: write to the DB. No business logic here.
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
 from .job_factory import ts_id
@@ -123,6 +124,33 @@ def mark_job_cancelled(con: sqlite3.Connection, job_id: str) -> None:
     con.execute(
         "UPDATE queue_records SET queue = 'cancelled' WHERE job_id = ?",
         (job_id,),
+    )
+
+
+def mark_jobs_awaiting_review(
+    con: sqlite3.Connection, job_ids: Iterable[str]
+) -> None:
+    """Route runtime job and queue records to human review."""
+    unique_ids = tuple(dict.fromkeys(job_ids))
+    if not unique_ids:
+        return
+    placeholders = ",".join("?" for _ in unique_ids)
+    con.execute(
+        f"""
+        UPDATE jobs
+           SET status = 'awaiting_review',
+               queue_state = 'awaiting_review'
+         WHERE job_id IN ({placeholders})
+        """,
+        unique_ids,
+    )
+    con.execute(
+        f"""
+        UPDATE queue_records
+           SET queue = 'awaiting_review'
+         WHERE job_id IN ({placeholders})
+        """,
+        unique_ids,
     )
 
 

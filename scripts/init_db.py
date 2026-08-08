@@ -197,6 +197,10 @@ def init_db():
         expected_base_commit_sha   TEXT,               -- commit visible at dispatch time
         result_commit_sha          TEXT,               -- commit after patch application (set by runtime)
         patch_path                 TEXT,               -- path to retrieved patch file
+        completion_id              TEXT,               -- stable executor completion identity
+        completion_digest_sha256   TEXT,               -- digest binding normalized completion evidence
+        completion_quarantine_reason TEXT,             -- evidence conflict requiring human review
+        evidence_manifest_path     TEXT,               -- per-node evidence manifest
         error                      TEXT,
         created_at                 TEXT NOT NULL,
         updated_at                 TEXT NOT NULL,
@@ -218,6 +222,25 @@ def init_db():
     _ensure_column(con, "jobs", "plumbing_attempt", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(con, "executor_sessions", "execution_attempt_id", "TEXT")
     _ensure_column(con, "executor_sessions", "attempt_index", "INTEGER")
+    _ensure_column(con, "executor_sessions", "completion_id", "TEXT")
+    _ensure_column(
+        con,
+        "executor_sessions",
+        "completion_digest_sha256",
+        "TEXT",
+    )
+    _ensure_column(
+        con,
+        "executor_sessions",
+        "completion_quarantine_reason",
+        "TEXT",
+    )
+    _ensure_column(
+        con,
+        "executor_sessions",
+        "evidence_manifest_path",
+        "TEXT",
+    )
 
     # Old session rows predate first-class attempt identity. Their durable
     # creation order is the only available attempt ordering, so backfill it
@@ -252,6 +275,12 @@ def init_db():
         """CREATE INDEX IF NOT EXISTS
            idx_executor_sessions_execution_attempt_id
            ON executor_sessions(execution_attempt_id)"""
+    )
+    con.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS
+           idx_executor_sessions_completion_id_unique
+           ON executor_sessions(completion_id)
+           WHERE completion_id IS NOT NULL"""
     )
 
     con.commit()

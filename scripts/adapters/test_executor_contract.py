@@ -29,6 +29,7 @@ from adapters.local_subprocess_adapter import (
     DroidSubprocessAdapter,
     LocalSubprocessAdapter,
 )
+from adapters.mission_adapter import MissionAdapter
 from adapters import local_subprocess_adapter
 from runtime.heartbeat import dispatcher
 
@@ -153,17 +154,20 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
         argv=(sys.executable, "-c", "pass"),
         spool_root=tmp_path,
     )
+    mission = MissionAdapter("owner/repo")
 
     assert isinstance(api, ExecutorAdapter)
     assert isinstance(cli, ExecutorAdapter)
     assert isinstance(local, ExecutorAdapter)
     assert isinstance(droid, ExecutorAdapter)
+    assert isinstance(mission, ExecutorAdapter)
     assert not isinstance(action, ExecutorAdapter)
     assert dispatcher.ADAPTERS == {
         "jules_api": JulesApiAdapter,
         "jules_cli": JulesCliAdapter,
         "local_subprocess": LocalSubprocessAdapter,
         "droid": DroidSubprocessAdapter,
+        "factory_mission": MissionAdapter,
     }
     assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
 

@@ -22,6 +22,8 @@ In short: the human operator declares what; the agents determine how. The relati
 
 Bounded work is dispatched to an agent through a thin adapter, with Jules wired in today and Codex or a local harness ready to take its place tomorrow. Runtime state and structured receipts are stored in SQLite for persistence. Crucially, the executor halts at the review gate, leaving the graph state unchanged.
 
+The direct executor set now also includes the single-node `local_subprocess`/`droid` transport and the multi-node `factory_mission` adapter. `factory_mission` projects an eligible graph subgraph into one unattended Factory headless mission while preserving a separate evidence and review record for every source node.
+
 Project truth lives in a separate repository (gddp-config); gddp-runtime reads it but never writes it.
 
 ---
@@ -55,6 +57,9 @@ The system has:
   working adapter. Adding a new executor means writing a new adapter
   against the same dispatch contract — not rewriting the orchestration
   layer.
+  Direct adapters include `local_subprocess`/`droid` for one packet per
+  process and `factory_mission` for an engagement containing multiple
+  topologically ordered node packets.
 - **Manual review workflow**: When a job lands in `awaiting_review`,
   the operator takes exactly one manual action: accept (update graph
   truth), retry (re-dispatch from persisted state), block (record the
@@ -118,6 +123,8 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 **Executor adapters**:
 - `scripts/adapters/jules_action_adapter.py`: Dispatches Jules work through GitHub issues with the `jules` label. Requires `GITHUB_TOKEN` or `GH_TOKEN`.
 - `scripts/adapters/jules_cli_adapter.py`: CLI adapter stub (not implemented).
+- `scripts/adapters/local_subprocess_adapter.py`: Runs one executor-neutral node packet per durable local subprocess; its `DroidSubprocessAdapter` specialization invokes `droid exec`.
+- `scripts/adapters/mission_adapter.py`: Runs a selected subgraph as one Factory headless mission (`droid exec --mission`) and exposes engagement-level dispatch, status, collect, and cancel operations.
 
 **SQLite state persistence**:
 - `scripts/init_db.py` initializes the schema: `events`, `jobs`, `queue`, `results`.
@@ -148,8 +155,98 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 | `scripts/intake_server.py` | Webhook intake and event normalization |
 | `scripts/rollback.py` | Job rollback utility |
 | `scripts/adapters/` | Executor adapters |
+| `scripts/adapters/mission_projection.py` | Graph-node to Factory-mission projection |
+| `scripts/adapters/mission_evidence.py` | Per-node evidence slicing after a mission |
+| `scripts/adapters/mission_git_verify.py` | Per-node base-to-result git verification |
+| `scripts/adapters/mission_push_guard.py` | PATH-shim and pre-push-hook mission push policy |
+| `scripts/gddp_node_receipt.py` | Worker-facing per-feature git receipt CLI |
 | `deploy/` | Deployment scripts and operator runbooks |
 | `docs/` | Host roles and operator-practice notes |
+
+---
+
+## Factory Mission Executor
+
+`factory_mission` lets GDDP dispatch a bounded, dependency-ordered subgraph as one Factory Mission engagement rather than cold-starting one executor process per node. It is an executor adapter, not a new scheduler, graph, evaluator, or review system: mission results return through the existing executor-session reconciler, two-lane evaluator, and human review gate.
+
+### How it works
+
+1. The heartbeat selects eligible ready work according to the graph and `execution_policy`, then sends topologically ordered `NodePacket`s through the engagement extension of `ExecutorAdapter`.
+2. `mission_projection.py` renders `mission.md` with a contract-imposed **1:1 mapping**: every GDDP node becomes exactly one Factory feature with the same ID and order. Added, removed, renamed, split, merged, or reordered features park the engagement for human review.
+3. `MissionAdapter` creates an isolated `gddp/<engagement-id>` work branch and launches:
+
+   ```bash
+   droid exec --mission -f <generated-mission.md> --auto high -w gddp/<engagement-id>
+   ```
+
+4. Each feature captures its starting SHA, makes exactly one commit carrying `GDDP-Node-Id: <node-id>`, invokes `gddp-node-receipt`, and pushes only its own commit to the engagement branch. Push policy is enforced twice: by a guarded `git` executable on `PATH` and by a pre-push hook.
+5. After the mission terminates, GDDP slices the engagement artifacts into one evidence manifest per node. It independently verifies the declared base→result boundary, commit trailer, ancestry, changed paths, receipt, and remote reachability before the existing reconciler/evaluator/review pipeline consumes the result.
+
+The contractual surface is **git**, not Factory's internal state. Factory's process exit and mission progress are coarse engagement evidence; per-node commits, refs, ancestry, and receipts establish what work can be attributed to each graph node.
+
+### Records discipline and node fidelity
+
+One mission process may execute several nodes, but it does not collapse their identities. Each `executor_sessions` row retains its own expected base, result commit, evidence manifest, and completion state. Completion IDs are nullable until independently observed; `completion_digest_sha256` binds accepted completion content, while `completion_quarantine_reason` records malformed or conflicting completion evidence instead of silently promoting it. `VerdictReceipt` may link the resulting judgment back to `execution_attempt_id`, `evidence_manifest_sha256`, and `mission_receipt_id`.
+
+This is intentionally implemented through the existing adapter, session, reconciler, evaluator, and review seams. No new GDDP subsystem owns mission truth, and mission success never changes graph/node status.
+
+### Configure and run mission mode
+
+Prerequisites:
+
+- Factory Droid installed, authenticated, and available as `droid`.
+- A local checkout of the target repository with an `origin` remote.
+- `gddp-config` available through `GDDP_CONFIG_PATH`.
+- `gddp-node-receipt` on the mission workers' `PATH`.
+
+Expose the checked-in receipt CLI under the contract name and configure the runtime:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+ln -sf "$PWD/scripts/gddp_node_receipt.py" "$HOME/.local/bin/gddp-node-receipt"
+export PATH="$HOME/.local/bin:$PATH"
+export GDDP_CONFIG_PATH=/path/to/gddp-config
+export GDDP_RUNTIME_ROOT="$PWD"
+```
+
+Select mission mode in the human-owned graph. Every included node must allow `factory_mission`; the project policy controls the bounded engagement size:
+
+```yaml
+# graphs/<project-id>/project.yaml
+execution_policy:
+  default_executor: factory_mission
+  max_concurrent_jobs: 4
+  mission_engagement_size: 2
+  mission_max_pairs: 2
+
+# graphs/<project-id>/nodes/<node-id>.yaml
+allowed_execution_modes:
+  - factory_mission
+```
+
+For an armed control plane, use the mini-heartbeat kit so its environment, spool, and executor settings are loaded:
+
+```bash
+bash deploy/mini-heartbeat/bin/smoke.sh
+MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh
+```
+
+Do not invoke the raw heartbeat runner or manually launch the generated mission during normal operation. The mini-heartbeat entrypoint loads `GDDP_CONFIG_PATH` and the executor environment, while the adapter owns the exact `droid exec --mission` command, receipt path, push guards, process supervision, and durable session record. Optional storage overrides are `GDDP_MISSION_SESSION_DIR` (default: `db/mission-sessions`) and `GDDP_FACTORY_MISSION_DIR` (default: `~/.factory/missions`).
+
+Run the mission adapter and end-to-end pipeline tests with:
+
+```bash
+.venv/bin/python -m pytest -q \
+  scripts/adapters/test_mission_adapter.py \
+  scripts/adapters/test_mission_projection.py \
+  scripts/adapters/test_mission_evidence.py \
+  scripts/adapters/test_mission_git_verify.py \
+  scripts/adapters/test_mission_push_guard.py \
+  scripts/runtime/heartbeat/test_mission_config.py \
+  scripts/runtime/heartbeat/test_mission_reconciler.py \
+  scripts/runtime/heartbeat/test_mission_pipeline_e2e.py \
+  scripts/test_gddp_node_receipt.py
+```
 
 ---
 
@@ -225,6 +322,8 @@ python3 -m runtime.replay --job-id <job-id>
 | `GDDP_RUNTIME_ROOT` | Runtime state root for SQLite, events, and jobs; defaults to the repo root locally and `~/opclaw` in deployment | Optional for local dev; set by deployed service |
 | `GITHUB_TOKEN` or `GH_TOKEN` | GitHub API access for the Jules adapter (issue dispatch) | Required for Jules adapter |
 | `GITHUB_WEBHOOK_SECRET` | Webhook signature validation secret for `scripts/intake_server.py` | Optional |
+| `GDDP_MISSION_SESSION_DIR` | Durable `factory_mission` session records, logs, receipts, and evidence; defaults to `db/mission-sessions` | Optional |
+| `GDDP_FACTORY_MISSION_DIR` | Factory mission state directory; defaults to `~/.factory/missions` | Optional |
 
 ---
 

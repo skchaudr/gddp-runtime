@@ -30,9 +30,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .classifier import classify
-from .dispatcher import cancel_remote_session, dispatch, executor_preflight_error
+from .dispatcher import (
+    cancel_remote_session,
+    dispatch,
+    dispatch_engagement,
+    executor_preflight_error,
+    executor_supports_engagement,
+)
 from .frontier import advance_frontier
-from .graph_reader import GraphReader
+from .graph_reader import GraphReader, parse_execution_policy
 from .job_factory import build_job
 from .reconciler import (
     DEFAULT_MAX_CONCURRENT_EVALUATIONS,
@@ -226,7 +232,10 @@ def run_heartbeat(
                 return
 
             outcomes_by_job_id = _execute_dispatches(
-                planned_dispatches, repo, repo_path
+                planned_dispatches,
+                repo,
+                repo_path,
+                execution_policy=project.execution_policy,
             )
             _record_outcomes(con, planned_dispatches, outcomes_by_job_id, repo_path)
 
@@ -538,6 +547,8 @@ def _execute_dispatches(
     planned_dispatches: list[PlannedDispatch],
     repo: str,
     repo_path: str | None = None,
+    *,
+    execution_policy: dict | None = None,
 ) -> dict[str, DispatchOutcome]:
     """
     Phase B: Worker threads execute dispatch in the target checkout.
@@ -545,29 +556,69 @@ def _execute_dispatches(
     print(f"Dispatching {len(planned_dispatches)} job(s) in parallel.\n")
 
     outcomes_by_job_id: dict[str, DispatchOutcome] = {}
-    max_workers = min(32, max(1, len(planned_dispatches)))
+    policy = parse_execution_policy(execution_policy)
+    engagement_node_limit = 2 * min(
+        policy["mission_engagement_size"], policy["mission_max_pairs"]
+    )
+    grouped: list[tuple[list[PlannedDispatch], bool]] = []
+    engagement_groups: dict[tuple[str, str | None], list[PlannedDispatch]] = {}
+    capabilities: dict[str, bool] = {}
+    for planned in planned_dispatches:
+        executor_name = str(planned.job.get("executor") or "")
+        if executor_name not in capabilities:
+            capabilities[executor_name] = executor_supports_engagement(
+                executor_name, repo, repo_path
+            )
+        if capabilities[executor_name]:
+            group_key = (
+                executor_name,
+                planned.job.get("expected_base_commit_sha"),
+            )
+            engagement_groups.setdefault(group_key, []).append(planned)
+        else:
+            grouped.append(([planned], False))
+    for candidates in engagement_groups.values():
+        grouped.extend(
+            (candidates[start:start + engagement_node_limit], True)
+            for start in range(0, len(candidates), engagement_node_limit)
+        )
+
+    max_workers = min(32, max(1, len(grouped)))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_plan = {
-            executor.submit(dispatch, planned.job, repo, repo_path): planned
-            for planned in planned_dispatches
-        }
-        for future in as_completed(future_to_plan):
-            planned = future_to_plan[future]
+        future_to_group = {}
+        for group, engagement_capable in grouped:
+            if engagement_capable:
+                future = executor.submit(
+                    dispatch_engagement,
+                    [planned.job for planned in group],
+                    repo,
+                    repo_path,
+                )
+            else:
+                future = executor.submit(
+                    dispatch, group[0].job, repo, repo_path
+                )
+            future_to_group[future] = group
+
+        for future in as_completed(future_to_group):
+            group = future_to_group[future]
             try:
                 result = future.result()
-                outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
-                    planned=planned,
-                    success=result.success,
-                    issue_url=result.issue_url,
-                    error=result.error,
-                    session_ref=getattr(result, "session_ref", None),
-                )
+                for planned in group:
+                    outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
+                        planned=planned,
+                        success=result.success,
+                        issue_url=getattr(result, "issue_url", None) or "",
+                        error=result.error or "",
+                        session_ref=getattr(result, "session_ref", None),
+                    )
             except Exception as exc:
-                outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
-                    planned=planned,
-                    success=False,
-                    error=f"Dispatch raised exception: {exc}",
-                )
+                for planned in group:
+                    outcomes_by_job_id[planned.job["job_id"]] = DispatchOutcome(
+                        planned=planned,
+                        success=False,
+                        error=f"Dispatch raised exception: {exc}",
+                    )
     return outcomes_by_job_id
 
 

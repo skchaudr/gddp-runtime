@@ -13,7 +13,12 @@ from pathlib import Path
 
 # Ensure adapters directory is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
+from adapters.executor_protocol import (
+    DispatchResult,
+    EngagementDispatchResult,
+    NodePacket,
+    SessionRef,
+)
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
@@ -21,6 +26,7 @@ from adapters.local_subprocess_adapter import (
     DroidSubprocessAdapter,
     LocalSubprocessAdapter,
 )
+from adapters.mission_adapter import MissionAdapter
 
 
 
@@ -30,12 +36,15 @@ ADAPTERS = {
     "jules_cli": JulesCliAdapter,
     "local_subprocess": LocalSubprocessAdapter,
     "droid": DroidSubprocessAdapter,
+    "factory_mission": MissionAdapter,
 }
 
 # Executors that run inside a local checkout and therefore receive repo_path
 # as their cwd. Name-keyed (not class-keyed) so tests can substitute
 # duck-typed adapter doubles into ADAPTERS.
-_LOCAL_TRANSPORT_EXECUTORS = frozenset({"local_subprocess", "droid"})
+_LOCAL_TRANSPORT_EXECUTORS = frozenset(
+    {"local_subprocess", "droid", "factory_mission"}
+)
 
 MEDIATED_ADAPTERS = {
     "jules": JulesActionAdapter,
@@ -63,6 +72,24 @@ def executor_preflight_error(
     return None
 
 
+def executor_supports_engagement(
+    executor: str, repo: str, repo_path: str | None = None
+) -> bool:
+    """Return the adapter's optional multi-node capability."""
+    selected = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "") or executor
+    adapter_cls = ADAPTERS.get(selected)
+    if adapter_cls is None:
+        return False
+    try:
+        adapter = _build_adapter(adapter_cls, selected, repo, repo_path)
+        supports_engagement = getattr(
+            adapter, "supports_engagement", lambda: False
+        )
+        return bool(supports_engagement())
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def dispatch(
     job: dict, repo: str, repo_path: str | None = None
 ) -> DispatchResult:
@@ -88,6 +115,81 @@ def dispatch(
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
     return adapter.dispatch(packet)
+
+
+def dispatch_engagement(
+    jobs: Sequence[Mapping[str, object]],
+    repo: str,
+    repo_path: str | None = None,
+) -> EngagementDispatchResult:
+    """Dispatch ordered jobs through one engagement-capable adapter."""
+    if not jobs:
+        return EngagementDispatchResult(
+            success=False, error="engagement dispatch requires at least one job"
+        )
+    configured_executor = str(jobs[0].get("executor") or "")
+    if not configured_executor:
+        return EngagementDispatchResult(
+            success=False, error="engagement job is missing executor"
+        )
+    if any(
+        str(job.get("executor") or "") != configured_executor for job in jobs
+    ):
+        return EngagementDispatchResult(
+            success=False, error="engagement jobs must use the same executor"
+        )
+
+    executor = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "") or configured_executor
+    adapter_cls = ADAPTERS.get(executor)
+    if adapter_cls is None:
+        return EngagementDispatchResult(
+            success=False, error=f"Unknown executor: {executor}"
+        )
+    try:
+        adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
+        if not adapter.supports_engagement():
+            return EngagementDispatchResult(
+                success=False,
+                error=f"executor {executor} does not support engagements",
+            )
+        _validate_engagement_order(jobs)
+        packets = [_build_node_packet(job) for job in jobs]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return EngagementDispatchResult(
+            success=False, error=f"Invalid engagement dispatch packet: {exc}"
+        )
+    return adapter.dispatch_engagement(packets)
+
+
+def _validate_engagement_order(
+    jobs: Sequence[Mapping[str, object]],
+) -> None:
+    """Reject an engagement whose selected dependencies follow dependents."""
+    node_ids = tuple(str(job.get("node_id") or "") for job in jobs)
+    if any(not node_id for node_id in node_ids):
+        raise ValueError("engagement jobs require node ids")
+    if len(set(node_ids)) != len(node_ids):
+        raise ValueError("engagement jobs contain duplicate node ids")
+
+    selected_ids = set(node_ids)
+    preceding_node_ids: set[str] = set()
+    for job, node_id in zip(jobs, node_ids, strict=True):
+        dependencies = _decode_sequence(
+            job.get("dependencies"), "dependencies"
+        )
+        late_dependencies = [
+            str(dependency)
+            for dependency in dependencies
+            if str(dependency) in selected_ids
+            and str(dependency) not in preceding_node_ids
+        ]
+        if late_dependencies:
+            raise ValueError(
+                "engagement jobs must be in topological order: "
+                f"{node_id} precedes selected dependencies "
+                f"{late_dependencies!r}"
+            )
+        preceding_node_ids.add(node_id)
 
 
 def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):

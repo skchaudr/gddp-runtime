@@ -188,6 +188,9 @@ class VerdictReceipt(BaseModel):
     expected_base_commit_sha: str | None = None
     pr_ref: str | None = None
     job_id: str | None = None
+    execution_attempt_id: str | None = None
+    evidence_manifest_sha256: str | None = None
+    mission_receipt_id: str | None = None
     # Phase 2: canonical context offered + per-lane coverage signal.
     canonical_context: dict[str, str] | None = None
     context_coverage: ContextCoverage | None = None

@@ -133,3 +133,26 @@ def test_receipt_provenance_fields_round_trip() -> None:
     restored = VerdictReceipt.model_validate_json(js)
     assert restored.evaluated_tree_sha == "abc123tree"
     assert restored.merge_commit_sha == "abc123commit"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("execution_attempt_id", "job-1:attempt:0"),
+        ("evidence_manifest_sha256", "a" * 64),
+        ("mission_receipt_id", "mission-receipt-1"),
+    ],
+)
+def test_receipt_mission_provenance_is_optional_and_round_trips(
+    field_name: str,
+    value: str,
+) -> None:
+    legacy_receipt = VerdictReceipt.model_validate(_receipt_payload())
+    assert getattr(legacy_receipt, field_name) is None
+
+    receipt = VerdictReceipt.model_validate(
+        _receipt_payload(**{field_name: value})
+    )
+    restored = VerdictReceipt.model_validate_json(receipt.model_dump_json())
+
+    assert getattr(restored, field_name) == value
