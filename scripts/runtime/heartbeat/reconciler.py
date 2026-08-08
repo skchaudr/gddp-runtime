@@ -614,12 +614,23 @@ def _reconcile_engagement_group(
         result = by_feature[feature_id]
         decision = completion_decisions.get(feature_id)
         if decision is not None and decision.action == "duplicate":
-            # Exact replay: the first stored result is authoritative. Drive this
-            # job forward with that result — never leave it running forever
-            # because the session was marked completion_duplicate.
+            # Exact replay: first stored commit/evidence is authoritative, but
+            # review disposition must be preserved — a quarantined first result
+            # (or incoming quarantine claim) must not be laundered into
+            # evaluation. Only the stranded-running bug changes here.
             if decision.result_commit_sha:
+                quarantine = (
+                    decision.quarantine_reason
+                    or result.completion_quarantine_reason
+                    or result.error
+                )
+                review_required = bool(
+                    result.review_required
+                    or decision.quarantine_reason
+                    or result.completion_quarantine_reason
+                )
                 result = PatchResult(
-                    success=True,
+                    success=bool(result.success) and not review_required,
                     base_commit_sha=result.base_commit_sha,
                     result_commit_sha=decision.result_commit_sha,
                     result_ref=result.result_ref,
@@ -630,8 +641,12 @@ def _reconcile_engagement_group(
                     ),
                     completion_id=result.completion_id,
                     completion_digest_sha256=result.completion_digest_sha256,
-                    review_required=False,
-                    error=None,
+                    completion_quarantine_reason=(
+                        result.completion_quarantine_reason
+                        or decision.quarantine_reason
+                    ),
+                    review_required=review_required,
+                    error=quarantine if review_required else None,
                 )
         if session["session_db_id"] in quarantined_session_ids:
             continue

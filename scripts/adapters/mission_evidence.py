@@ -640,11 +640,14 @@ def _protected_branch_push_reasons(
 
     Environment push guards are best-effort (absolute git + ``-c
     core.hooksPath=/dev/null`` can bypass them). Collection must still catch
-    protected-branch pollution by checking whether any feature result is
-    reachable from origin/main (or local main).
+    protected-branch pollution by checking whether any feature result is an
+    ancestor of the *live* remote protected tip (``git ls-remote``), falling
+    back to cached origin/* and local tips when offline.
     """
     from .mission_git_verify import (
         _is_ancestor,
+        _object_type,
+        _remote_branch_tip,
         _remote_branches_containing,
         _resolve_local_branch,
     )
@@ -660,23 +663,49 @@ def _protected_branch_push_reasons(
     if not protected:
         return reasons
 
+    def _append(reason: str) -> None:
+        if reason not in reasons:
+            reasons.append(reason)
+
+    def _result_on_tip(tip: str) -> bool:
+        if tip == result_sha:
+            return True
+        if _object_type(repo, tip) != "commit":
+            return False
+        return _is_ancestor(repo, result_sha, tip)
+
+    # Live remote tips first — catches direct URL pushes that leave origin/*
+    # cache stale. Offline / missing remote → None and we fall through.
+    for name in protected:
+        live_tip = _remote_branch_tip(repo, "origin", name)
+        if live_tip is None:
+            continue
+        if _result_on_tip(live_tip):
+            _append(
+                f"feature result {result_sha} is reachable from protected "
+                f"branch origin/{name} (ls-remote tip {live_tip}) — "
+                f"protected-branch push detected"
+            )
+
+    # Cached remote-tracking refs (may be stale; still useful offline).
     for remote_ref in _remote_branches_containing(repo, result_sha):
         short = remote_ref.removeprefix("origin/")
         if short in protected:
-            reasons.append(
+            _append(
                 f"feature result {result_sha} is reachable from protected "
-                f"branch {remote_ref} — protected-branch push detected"
+                f"branch {remote_ref} — protected-branch push detected "
+                f"(cached origin ref)"
             )
 
+    # Local protected branch tips as final offline fallback.
     for name in protected:
         tip = _resolve_local_branch(repo, name)
         if tip is not None and _is_ancestor(repo, result_sha, tip):
-            reason = (
+            _append(
                 f"feature result {result_sha} is reachable from protected "
-                f"branch {name} (tip {tip}) — protected-branch push detected"
+                f"branch {name} (local tip {tip}) — protected-branch push "
+                f"detected"
             )
-            if reason not in reasons:
-                reasons.append(reason)
     return reasons
 
 

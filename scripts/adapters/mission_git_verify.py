@@ -268,6 +268,32 @@ def _remote_branches_containing(
     )
 
 
+def _remote_branch_tip(
+    repo_path: Path, remote: str, branch_name: str
+) -> str | None:
+    """True remote tip via ``git ls-remote`` (no local ref update).
+
+    Returns None when offline / remote missing / empty. Does not fetch.
+    """
+    process = _run_git(
+        repo_path,
+        "ls-remote",
+        remote,
+        f"refs/heads/{branch_name}",
+    )
+    if process is None or process.returncode != 0:
+        return None
+    for line in process.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].endswith(f"refs/heads/{branch_name}"):
+            tip = parts[0].strip()
+            return tip or None
+        if len(parts) >= 1 and parts[0].strip():
+            # Single matching ref: "<sha>\trefs/heads/<branch>"
+            return parts[0].strip()
+    return None
+
+
 def _commit_node_trailers(
     repo_path: Path, commit_sha: str
 ) -> tuple[str, ...]:

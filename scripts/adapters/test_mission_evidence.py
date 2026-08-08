@@ -482,3 +482,136 @@ def test_protected_branch_push_is_detected_post_hoc(tmp_path):
     )
     assert alpha.review_required is True
     assert "protected-branch push detected" in (alpha.completion_quarantine_reason or "")
+
+
+def test_protected_branch_push_detected_via_ls_remote_when_cache_stale(tmp_path):
+    """Direct URL push leaves origin/* cache stale; ls-remote must still catch it."""
+    import subprocess
+
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    (repo / "f").write_text("base\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "base"],
+        check=True,
+        capture_output=True,
+    )
+    base = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-C", str(repo), "remote", "add", "origin", str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "push", "-u", "origin", "main"],
+        check=True,
+        capture_output=True,
+    )
+
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-b", "gddp/eng-stale"],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "f").write_text("feature\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "feature"],
+        check=True,
+        capture_output=True,
+    )
+    result = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # Bypass: push feature tip straight to origin's main URL (absolute path
+    # style). Local origin/main cache stays at base until a fetch.
+    subprocess.run(
+        ["git", "-C", str(repo), "push", str(bare), f"{result}:refs/heads/main"],
+        check=True,
+        capture_output=True,
+    )
+    cached = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "origin/main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert cached == base  # cache deliberately stale
+
+    mission_dir, output_dir = _mission_fixture(tmp_path)
+    _write_complete_channels(mission_dir)
+    (mission_dir / "receipts.jsonl").write_text(
+        json.dumps(
+            {
+                "node_id": "node-alpha",
+                "base": base,
+                "result": result,
+                "git_head": result,
+                "git_branch": "gddp/eng-stale",
+                "git_toplevel": str(repo),
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "node_id": "node-beta",
+                "base": base,
+                "result": result,
+                "git_head": result,
+                "git_branch": "gddp/eng-stale",
+                "git_toplevel": str(repo),
+            }
+        )
+        + "\n"
+    )
+    (mission_dir / "handoffs" / "0.json").write_text(
+        json.dumps(
+            {
+                "featureId": "node-alpha",
+                "workerSessionId": "worker-alpha",
+                "commitId": result,
+                "repoPath": str(repo),
+                "successState": "success",
+            }
+        )
+    )
+    (mission_dir / "handoffs" / "1.json").write_text(
+        json.dumps(
+            {
+                "featureId": "node-beta",
+                "workerSessionId": "worker-beta",
+                "commitId": result,
+                "repoPath": str(repo),
+                "successState": "success",
+            }
+        )
+    )
+
+    alpha, beta = collect_mission_evidence(
+        mission_dir=mission_dir,
+        output_dir=output_dir,
+        engagement_id="eng-stale",
+        result_ref="gddp/eng-stale",
+        demanded_feature_ids=("node-alpha", "node-beta"),
+        git_repo_path=repo,
+    )
+    assert alpha.review_required is True
+    reason = alpha.completion_quarantine_reason or ""
+    assert "protected-branch push detected" in reason
+    assert "ls-remote" in reason

@@ -376,6 +376,79 @@ def test_reconciler_exact_duplicate_drives_job_forward_with_first_result(
     assert added.args[2] == "a" * 40  # first stored result, not the replay claim
 
 
+def test_reconciler_quarantined_duplicate_is_not_enqueued_for_evaluation(
+    monkeypatch, tmp_path
+):
+    """Replay carrying a quarantine reason must not launder into evaluation.
+
+    Exact-duplicate forwarding fixes the stranded-running bug, but must
+    preserve review disposition from the first stored result / incoming claim.
+    """
+    con = _connection()
+    quarantine = (
+        "feature result is reachable from protected branch main "
+        "— protected-branch push detected"
+    )
+    con.execute(
+        """
+        UPDATE executor_sessions
+           SET completion_id = 'completion-shared',
+               completion_digest_sha256 = ?,
+               result_commit_sha = ?,
+               evidence_manifest_path = '/evidence/existing.json',
+               completion_quarantine_reason = ?
+         WHERE session_db_id = 'session-1'
+        """,
+        ("1" * 64, "a" * 40, quarantine),
+    )
+    con.commit()
+    session = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchone()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="completed")
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=False,
+            feature_id="node-beta",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/replay.json",
+            completion_id="completion-shared",
+            completion_digest_sha256="1" * 64,
+            review_required=True,
+            completion_quarantine_reason=(
+                "feature result is reachable from protected branch main "
+                "— protected-branch push detected"
+            ),
+            error=(
+                "feature result is reachable from protected branch main "
+                "— protected-branch push detected"
+            ),
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "a" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, [session], tmp_path, batch
+    )
+
+    row = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchone()
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = 'job-node-beta'"
+    ).fetchone()
+    assert row["result_commit_sha"] == "a" * 40  # first stored cargo
+    assert "protected-branch" in (row["error"] or "")
+    assert job["status"] == "awaiting_review"
+    assert job["queue_state"] == "awaiting_review"
+    batch.add.assert_not_called()
+
+
 def test_reconciler_same_session_replay_resumes_first_evaluation(
     monkeypatch, tmp_path
 ):

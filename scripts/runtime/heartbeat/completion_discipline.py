@@ -55,7 +55,7 @@ def submit_completion(
             """
             SELECT session_db_id, job_id, completion_id,
                    completion_digest_sha256, result_commit_sha,
-                   evidence_manifest_path
+                   evidence_manifest_path, completion_quarantine_reason
               FROM executor_sessions
              WHERE session_db_id = ?
             """,
@@ -68,7 +68,7 @@ def submit_completion(
             """
             SELECT session_db_id, job_id, completion_id,
                    completion_digest_sha256, result_commit_sha,
-                   evidence_manifest_path
+                   evidence_manifest_path, completion_quarantine_reason
               FROM executor_sessions
              WHERE completion_id = ?
             """,
@@ -126,11 +126,15 @@ def submit_completion(
                     ),
                 )
             con.commit()
+            first_quarantine = existing["completion_quarantine_reason"]
+            if first_quarantine is not None:
+                first_quarantine = str(first_quarantine).strip() or None
             return CompletionDecision(
                 action="duplicate",
                 existing_session_db_id=str(existing["session_db_id"]),
                 result_commit_sha=existing["result_commit_sha"],
                 evidence_manifest_path=existing["evidence_manifest_path"],
+                quarantine_reason=first_quarantine,
             )
 
         reason = _conflict_reason(
