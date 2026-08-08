@@ -1,0 +1,39 @@
+Graph driven development runtime answers a hard problem. Agents can ship code quickly. The harder part is keeping scope, dependencies, and completion under human control.
+
+g d d p runtime is the execution control plane for that contract. Project truth lives in a separate repo called g d d p config. Humans author nodes, dependencies, and acceptance criteria there.
+
+This repository never silently rewrites that truth. It reads the graph, observes attempts, stores evidence, and stops at review. Executors determine how. Operators still decide what is accepted.
+
+Think of the unit of intent as a node. A job, a session, a commit, a test run, and a verdict are all evidence about an attempt to satisfy that node. None of them completes the node automatically.
+
+The operating loop is a round trip. A ready node plus an explicit event becomes a bounded job. An adapter dispatches a neutral packet. Durable evidence returns. Evaluation writes a receipt. A human accepts, retries, blocks, or defers.
+
+Here is the system map. Operators author graphs in config. Intake accepts GitHub webhooks into SQLite events. The heartbeat claims work and plans dispatches. Adapters talk to Jules, Droid, local subprocess, or Factory mission.
+
+Runtime state lives in SQLite under events, jobs, sessions, and results. Graph YAML stays outside. That separation is load bearing. Machinery can fail and recover without inventing project truth.
+
+Every few minutes the heartbeat ticks. First it reconciles open executor sessions so asynchronous work can finish even when no new webhook arrives. Then it may advance the frontier one hop.
+
+After that it claims pending events, classifies only explicit node tags, scope checks for duplicates, and reserves job and session rows under a database lock. Dispatch can fan out, but recording stays serialized.
+
+Await review still counts as active. That prevents the same node from being launched twice while a human has not decided yet. Provisional dependents may proceed, but completion remains human owned.
+
+Executors are replaceable transports behind one packet contract. Local subprocess and Droid run one attempt per durable spool directory and return a commit reference. Jules still uses the older mediated issue and pull request path.
+
+Factory mission is the multi node path. Eligible ready nodes are projected into one engagement with a strict one to one feature mapping. Feature identity drift parks the engagement for review instead of pretending the graph still matches.
+
+Inside a mission, each feature should make one commit with a node trailer. Evidence is sliced per node after the process ends. Push guards and post hoc remote checks defend protected branches when hooks are bypassed.
+
+When work returns, evaluation pins a commit and materializes a worktree. Deterministic criteria build the floor: constraints, artifacts, dependencies, and probes. If criteria are still indeterminate, a semantic lane can adjudicate.
+
+Integrity always runs as a separate question. Did this attempt preserve project intent and structural health. The combiner takes the worse of criteria and integrity. A verdict receipt is evidence, never an accept action.
+
+A strong pass may mark the graph node provisional so dependents can dispatch. That is scheduler visibility. Complete still requires a human edit in g d d p config. Tests can fail on an accepted node without rewriting history.
+
+By the numbers this is a dense Python control plane. About thirty nine thousand lines of Python, over four hundred commits in recent months, and the hottest directories are the heartbeat and adapters. Roughly one in five commits carries bot co authorship as a lower bound.
+
+On production hosts the operator path is the mini heartbeat kit. Install dormant if needed, run smoke, then arm with an explicit flag. Do not invoke the raw runner without the environment that loads spool paths and executor argument vectors.
+
+Linux hosts need Kill Mode process on the oneshot timer so the tick cannot reap freshly spawned workers. Secrets resolve through commands, not committed files. Only one exclusive control plane should be armed unless split brain is intentional.
+
+Remember the contract as four short lines. Nodes are intent. Receipts are evidence. Evaluators advise. Humans decide. That is how g d d p keeps agent momentum without losing the graph.
