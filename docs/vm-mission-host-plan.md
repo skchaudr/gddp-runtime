@@ -83,3 +83,5 @@ Because `~/.factory` and the repo worktrees are **bind-mounted**, evidence never
 
 ## Report line
 Version 0.188.0 → **0.189.0**; docker **absent**; gddp clean + heartbeat timer active + **517 tests passed**; this plan file.
+
+- 2026-08-08: docker installed + verified on khoj-38 — Docker version 26.1.5+dfsg1 (docker.io via apt), daemon active/enabled, hello-world OK via sg docker, docker ps clean.
