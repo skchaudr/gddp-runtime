@@ -38,6 +38,9 @@ def collect_mission_evidence(
     demanded_feature_ids: Sequence[str] | None = None,
     receipts_path: str | Path | None = None,
     mission_outcome: str | None = None,
+    mission_failure_reason: str | None = None,
+    mission_process: Mapping[str, object] | None = None,
+    worktree: Mapping[str, object] | None = None,
     git_verified: Mapping[str, Mapping[str, object]] | None = None,
     git_repo_path: str | Path | None = None,
 ) -> list[CollectedNodeEvidence]:
@@ -131,10 +134,20 @@ def collect_mission_evidence(
             reasons.append("conflicting_receipt_feature_ids")
         reasons.extend(_disagreement_reasons(cross_check))
         reasons.extend(quarantine_reasons)
-        if mission_outcome in {"crashed", "failed"} and not _node_complete(
+        node_complete = _node_complete(
             receipt, selected_handoff, selected_progress, cross_check
-        ):
+        )
+        handoff_state = (
+            _string(selected_handoff.get("successState"))
+            if selected_handoff is not None
+            else None
+        )
+        if handoff_state is not None and handoff_state != "success":
+            reasons.append(f"handoff_{handoff_state}")
+        if mission_outcome in {"crashed", "failed"} and not node_complete:
             reasons.append(f"mission_{mission_outcome}")
+            if worktree is not None and worktree.get("dirty") is True:
+                reasons.append("dirty_worktree")
         reasons = list(dict.fromkeys(reasons))
         review_reason = ", ".join(reasons) if reasons else None
         completion_quarantine_reason = (
@@ -184,6 +197,11 @@ def collect_mission_evidence(
             "review_reason": review_reason,
             "completion_quarantine_reason": completion_quarantine_reason,
             "mission_outcome": mission_outcome,
+            "mission_failure_reason": mission_failure_reason,
+            "mission_process": (
+                dict(mission_process) if mission_process is not None else None
+            ),
+            "worktree": dict(worktree) if worktree is not None else None,
         }
         manifest_path = destination / _manifest_name(feature_id)
         _write_json(manifest_path, manifest)

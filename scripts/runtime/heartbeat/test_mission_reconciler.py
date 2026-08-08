@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from scripts.adapters.executor_protocol import PatchResult, SessionStatus
 from scripts.runtime.heartbeat import reconciler
 
@@ -152,6 +154,65 @@ def test_reconciler_routes_engagement_review_result_without_commit(
         row[0]
         for row in con.execute("SELECT state FROM executor_sessions")
     } == {"evaluated"}
+
+
+@pytest.mark.parametrize("terminal_state", ["crashed", "failed"])
+def test_reconciler_collects_partial_evidence_after_engagement_failure(
+    monkeypatch, tmp_path, terminal_state
+):
+    con = _connection()
+    sessions = con.execute(
+        "SELECT * FROM executor_sessions ORDER BY session_db_id"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(
+        state=terminal_state,
+        error="mission process died before mission_completed",
+    )
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-alpha",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-alpha.json",
+        ),
+        PatchResult(
+            success=False,
+            feature_id="node-beta",
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-beta.json",
+            review_required=True,
+            error="mission_crashed: incomplete feature",
+        ),
+    ]
+    failed = MagicMock()
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_handle_failed", failed)
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "b" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, sessions, tmp_path, batch
+    )
+
+    adapter.collect_engagement.assert_called_once()
+    failed.assert_not_called()
+    rows = {
+        row["job_id"]: row
+        for row in con.execute(
+            "SELECT * FROM executor_sessions ORDER BY session_db_id"
+        )
+    }
+    assert rows["job-node-alpha"]["state"] == "collected"
+    assert rows["job-node-alpha"]["result_commit_sha"] == "b" * 40
+    assert rows["job-node-beta"]["state"] == "evaluated"
+    assert (
+        rows["job-node-beta"]["patch_path"]
+        == "/evidence/node-beta.json"
+    )
+    batch.add.assert_called_once()
 
 
 def test_reconciler_persists_ancestry_mismatch_quarantine_reason(tmp_path):

@@ -322,6 +322,23 @@ def test_status_reports_crashed_despite_stale_running_state(tmp_path, monkeypatc
     assert "mission_completed" in (status.error or "")
 
 
+def test_status_reports_nonzero_exit_as_failed(tmp_path, monkeypatch):
+    adapter = _make_adapter(tmp_path)
+    ref = _write_session(
+        adapter,
+        pid=114,
+        returncode=17,
+        progress=[{"type": "worker_started", "featureId": "node-alpha"}],
+        state="running",
+    )
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: False)
+
+    status = adapter.status(ref)
+
+    assert status.state == "failed"
+    assert "exit code 17" in (status.error or "")
+
+
 def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     ref = _write_session(adapter, pid=120, returncode=0)
     record_path = adapter.session_root / ref.session_id / "session.json"
@@ -426,6 +443,44 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     return ref
 
 
+def _interrupt_beta(adapter: MissionAdapter, ref: SessionRef) -> tuple[dict, Path]:
+    record_path = adapter.session_root / ref.session_id / "session.json"
+    record = json.loads(record_path.read_text())
+    record["process_returncode"] = None
+    record_path.write_text(json.dumps(record))
+    mission_dir = Path(record["mission_dir"])
+    state = json.loads((mission_dir / "state.json").read_text())
+    state["state"] = "running"
+    (mission_dir / "state.json").write_text(json.dumps(state))
+
+    (mission_dir / "handoffs" / "1.json").unlink()
+    receipt_lines = [
+        line
+        for line in (mission_dir / "receipts.jsonl").read_text().splitlines()
+        if json.loads(line)["node_id"] != "node-beta"
+    ]
+    (mission_dir / "receipts.jsonl").write_text(
+        "".join(line + "\n" for line in receipt_lines)
+    )
+    progress = [
+        json.loads(line)
+        for line in (mission_dir / "progress_log.jsonl").read_text().splitlines()
+        if json.loads(line).get("featureId") != "node-beta"
+    ]
+    progress.append(
+        {
+            "timestamp": "2026-08-07T00:10:00Z",
+            "type": "worker_started",
+            "featureId": "node-beta",
+            "workerSessionId": "worker-beta",
+        }
+    )
+    (mission_dir / "progress_log.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in progress)
+    )
+    return record, mission_dir
+
+
 def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
     adapter = _make_adapter(tmp_path)
     ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
@@ -457,6 +512,93 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         assert manifest["handoff"]["commitId"] == result.result_commit_sha
         assert manifest["progress"]["outcome"] == "success"
         assert manifest["git_verified"]["verified"] is True
+
+
+def test_crash_collection_keeps_completed_evidence_and_reviews_partial_node(
+    tmp_path,
+):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    _record, _mission_dir = _interrupt_beta(adapter, ref)
+
+    alpha, beta = adapter.collect_engagement(ref)
+
+    assert alpha.success is True
+    alpha_manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
+    assert alpha_manifest["git_verified"]["verified"] is True
+    assert alpha_manifest["mission_outcome"] == "crashed"
+    assert beta.success is False
+    assert beta.review_required is True
+    beta_manifest = json.loads(Path(beta.evidence_manifest_path).read_text())
+    assert beta_manifest["result_sha"] is None
+    assert beta_manifest["mission_failure_reason"]
+    assert "crashed" in (beta.error or "")
+
+
+def test_nonzero_exit_preserves_completed_evidence_and_records_failure(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record, _mission_dir = _interrupt_beta(adapter, ref)
+    record["process_returncode"] = 23
+    record_path = adapter.session_root / ref.session_id / "session.json"
+    record_path.write_text(json.dumps(record))
+
+    alpha, beta = adapter.collect_engagement(ref)
+
+    assert alpha.success is True
+    assert beta.review_required is True
+    beta_manifest = json.loads(Path(beta.evidence_manifest_path).read_text())
+    assert beta_manifest["mission_outcome"] == "failed"
+    assert beta_manifest["mission_process"]["exit_code"] == 23
+    assert "exit code 23" in beta_manifest["mission_failure_reason"]
+
+
+def test_failed_feature_handoff_routes_only_that_node_to_review(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record_path = adapter.session_root / ref.session_id / "session.json"
+    record = json.loads(record_path.read_text())
+    record["process_returncode"] = 0
+    record_path.write_text(json.dumps(record))
+    mission_dir = Path(record["mission_dir"])
+    with (mission_dir / "progress_log.jsonl").open("a") as progress:
+        progress.write(json.dumps({"type": "mission_completed"}) + "\n")
+    handoff_path = mission_dir / "handoffs" / "0.json"
+    handoff = json.loads(handoff_path.read_text())
+    handoff["successState"] = "failure"
+    handoff_path.write_text(json.dumps(handoff))
+
+    alpha, beta = adapter.collect_engagement(ref)
+
+    assert alpha.success is False
+    assert alpha.review_required is True
+    manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
+    assert manifest["handoff"]["successState"] == "failure"
+    assert "handoff_failure" in (alpha.error or "")
+    assert beta.success is True
+
+
+def test_dirty_crash_worktree_is_reported_without_becoming_a_result(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record, _mission_dir = _interrupt_beta(adapter, ref)
+    repo = Path(record["repo_path"])
+    (repo / "tracked.txt").write_text("interrupted tracked edit\n")
+    (repo / "untracked-draft.txt").write_text("partial work\n")
+
+    alpha, beta = adapter.collect_engagement(ref)
+
+    alpha_manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
+    beta_manifest = json.loads(Path(beta.evidence_manifest_path).read_text())
+    assert alpha.success is True
+    assert alpha_manifest["worktree"]["dirty"] is True
+    assert beta.review_required is True
+    assert beta.result_commit_sha is None
+    assert beta_manifest["worktree"]["changed_paths"] == [
+        "tracked.txt",
+        "untracked-draft.txt",
+    ]
+    assert "dirty_worktree" in (beta.error or "")
 
 
 @pytest.mark.parametrize(

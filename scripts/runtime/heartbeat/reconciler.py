@@ -517,7 +517,7 @@ def _reconcile_engagement_group(
                 )
         con.commit()
         return
-    if status.state in {"failed", "crashed", "missing"}:
+    if status.state == "missing":
         for session in sessions:
             job = con.execute(
                 "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
@@ -525,7 +525,7 @@ def _reconcile_engagement_group(
             if job is not None:
                 _handle_failed(con, session, job, status.error, repo_path)
         return
-    if status.state != "completed":
+    if status.state not in {"completed", "failed", "crashed"}:
         return
 
     results = adapter.collect_engagement(session_ref)
@@ -639,6 +639,11 @@ def _reconcile_engagement_group(
             con,
             session["session_db_id"],
             state="collected",
+            error=(
+                status.error
+                if status.state in {"failed", "crashed"}
+                else None
+            ),
             result_commit_sha=result.result_commit_sha,
             patch_path=(
                 result.evidence_manifest_path

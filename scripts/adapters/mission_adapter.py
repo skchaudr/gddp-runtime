@@ -253,7 +253,10 @@ class MissionAdapter(EngagementAdapterDefaults):
         factory_state = _factory_state(Path(str(record["mission_dir"])))
         if factory_state:
             details += f"; Factory state.json reported {factory_state!r}"
-        return SessionStatus(state="crashed", error=details)
+        return SessionStatus(
+            state="failed" if returncode not in {None, 0} else "crashed",
+            error=details,
+        )
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
         results = self.collect_engagement(session_ref)
@@ -286,8 +289,18 @@ class MissionAdapter(EngagementAdapterDefaults):
                 )
             ]
 
+        terminal_status = self.status(session_ref)
+        _, refreshed_record = self._record(session_ref)
+        if refreshed_record is not None:
+            record = refreshed_record
         demanded = tuple(str(item) for item in record.get("feature_ids", ()))
         mission_dir = Path(str(record["mission_dir"]))
+        mission_outcome = _collection_outcome(record)
+        mission_failure_reason = (
+            terminal_status.error
+            if terminal_status.state in {"crashed", "failed"}
+            else None
+        )
         verification = verify_planned_feature_ids(
             mission_dir / "features.json", demanded
         )
@@ -298,7 +311,19 @@ class MissionAdapter(EngagementAdapterDefaults):
             result_ref=str(record["engagement_branch"]),
             demanded_feature_ids=demanded,
             receipts_path=record.get("receipts_path"),
-            mission_outcome=_collection_outcome(record),
+            mission_outcome=mission_outcome,
+            mission_failure_reason=mission_failure_reason,
+            mission_process={
+                "pid": _positive_int(record.get("process_pid")),
+                "exit_code": record.get("process_returncode"),
+                "stdout_path": record.get("stdout_path"),
+                "stderr_path": record.get("stderr_path"),
+                "cancelled": bool(record.get("cancelled")),
+            },
+            worktree=_git_worktree_evidence(
+                record.get("repo_path") or self.cwd,
+                str(record["engagement_branch"]),
+            ),
             git_repo_path=record.get("repo_path") or self.cwd,
         )
         results: list[PatchResult] = []
@@ -451,8 +476,6 @@ def _collection_outcome(record: Mapping[str, object]) -> str:
     terminal = _last_progress_event(mission_dir / "progress_log.jsonl")
     if terminal and terminal.get("type") == "mission_completed":
         return "completed"
-    if _factory_state(mission_dir) == "completed":
-        return "completed"
     return "crashed"
 
 
@@ -478,6 +501,103 @@ def _git_head(path: Path) -> str | None:
         return None
     head = process.stdout.strip()
     return head if process.returncode == 0 and head else None
+
+
+def _git_worktree_evidence(
+    repo_path: object,
+    engagement_branch: str,
+) -> dict[str, object]:
+    """Observe, but never clean or stage, the engagement worktree."""
+    if not isinstance(repo_path, str | Path):
+        return {
+            "path": None,
+            "dirty": None,
+            "status_porcelain": [],
+            "changed_paths": [],
+            "error": "repository path is unavailable",
+        }
+    repo = Path(repo_path).expanduser().resolve()
+    worktree = _find_branch_worktree(repo, engagement_branch)
+    if worktree is None:
+        return {
+            "path": None,
+            "dirty": None,
+            "status_porcelain": [],
+            "changed_paths": [],
+            "error": (
+                f"engagement worktree for branch {engagement_branch} "
+                "could not be located"
+            ),
+        }
+    try:
+        process = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "path": str(worktree),
+            "dirty": None,
+            "status_porcelain": [],
+            "changed_paths": [],
+            "error": f"git status failed: {exc}",
+        }
+    if process.returncode != 0:
+        return {
+            "path": str(worktree),
+            "dirty": None,
+            "status_porcelain": [],
+            "changed_paths": [],
+            "error": (
+                f"git status exited with code {process.returncode}: "
+                f"{process.stderr.strip()}"
+            ),
+        }
+    entries = [line for line in process.stdout.splitlines() if line]
+    changed_paths = sorted(
+        {
+            line[3:].split(" -> ", 1)[-1]
+            for line in entries
+            if len(line) > 3
+        }
+    )
+    return {
+        "path": str(worktree),
+        "dirty": bool(entries),
+        "status_porcelain": entries,
+        "changed_paths": changed_paths,
+        "error": None,
+    }
+
+
+def _find_branch_worktree(repo: Path, engagement_branch: str) -> Path | None:
+    try:
+        process = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if process.returncode != 0:
+        return None
+    current_path: Path | None = None
+    desired_ref = f"refs/heads/{engagement_branch}"
+    for line in process.stdout.splitlines():
+        if line.startswith("worktree "):
+            current_path = Path(line.removeprefix("worktree ")).resolve()
+        elif line == f"branch {desired_ref}" and current_path is not None:
+            return current_path
+        elif not line:
+            current_path = None
+    return None
 
 
 def _pid_is_running(pid: int) -> bool:
