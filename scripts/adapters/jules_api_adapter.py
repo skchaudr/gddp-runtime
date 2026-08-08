@@ -13,6 +13,7 @@ from pathlib import Path
 
 from adapters.executor_protocol import (
     DispatchResult,
+    EngagementAdapterDefaults,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -23,7 +24,7 @@ from adapters.jules_cli_adapter import JulesCliAdapter
 _DEFAULT_BASE_URL = "https://jules.googleapis.com/v1alpha"
 
 
-class JulesApiAdapter:
+class JulesApiAdapter(EngagementAdapterDefaults):
     """Dispatch, poll, and collect Jules sessions through the REST API."""
 
     def __init__(

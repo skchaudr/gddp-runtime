@@ -13,7 +13,12 @@ from pathlib import Path
 
 # Ensure adapters directory is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from adapters.executor_protocol import DispatchResult, NodePacket, SessionRef
+from adapters.executor_protocol import (
+    DispatchResult,
+    EngagementDispatchResult,
+    NodePacket,
+    SessionRef,
+)
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.jules_cli_adapter import JulesCliAdapter
@@ -67,6 +72,24 @@ def executor_preflight_error(
     return None
 
 
+def executor_supports_engagement(
+    executor: str, repo: str, repo_path: str | None = None
+) -> bool:
+    """Return the adapter's optional multi-node capability."""
+    selected = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "") or executor
+    adapter_cls = ADAPTERS.get(selected)
+    if adapter_cls is None:
+        return False
+    try:
+        adapter = _build_adapter(adapter_cls, selected, repo, repo_path)
+        supports_engagement = getattr(
+            adapter, "supports_engagement", lambda: False
+        )
+        return bool(supports_engagement())
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def dispatch(
     job: dict, repo: str, repo_path: str | None = None
 ) -> DispatchResult:
@@ -92,6 +115,49 @@ def dispatch(
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
     return adapter.dispatch(packet)
+
+
+def dispatch_engagement(
+    jobs: Sequence[Mapping[str, object]],
+    repo: str,
+    repo_path: str | None = None,
+) -> EngagementDispatchResult:
+    """Dispatch ordered jobs through one engagement-capable adapter."""
+    if not jobs:
+        return EngagementDispatchResult(
+            success=False, error="engagement dispatch requires at least one job"
+        )
+    configured_executor = str(jobs[0].get("executor") or "")
+    if not configured_executor:
+        return EngagementDispatchResult(
+            success=False, error="engagement job is missing executor"
+        )
+    if any(
+        str(job.get("executor") or "") != configured_executor for job in jobs
+    ):
+        return EngagementDispatchResult(
+            success=False, error="engagement jobs must use the same executor"
+        )
+
+    executor = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "") or configured_executor
+    adapter_cls = ADAPTERS.get(executor)
+    if adapter_cls is None:
+        return EngagementDispatchResult(
+            success=False, error=f"Unknown executor: {executor}"
+        )
+    try:
+        adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
+        if not adapter.supports_engagement():
+            return EngagementDispatchResult(
+                success=False,
+                error=f"executor {executor} does not support engagements",
+            )
+        packets = [_build_node_packet(job) for job in jobs]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return EngagementDispatchResult(
+            success=False, error=f"Invalid engagement dispatch packet: {exc}"
+        )
+    return adapter.dispatch_engagement(packets)
 
 
 def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):

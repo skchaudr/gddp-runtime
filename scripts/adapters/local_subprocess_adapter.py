@@ -13,6 +13,7 @@ from pathlib import Path
 
 from adapters.executor_protocol import (
     DispatchResult,
+    EngagementAdapterDefaults,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -25,7 +26,7 @@ _CWD_ENV = "GDDP_LOCAL_SUBPROCESS_CWD"
 _EXECUTOR = "local_subprocess"
 
 
-class LocalSubprocessAdapter:
+class LocalSubprocessAdapter(EngagementAdapterDefaults):
     """Run one packet per process and retain lifecycle state in a spool."""
 
     # Routing identity recorded on SessionRef. Subclasses (e.g. droid) must

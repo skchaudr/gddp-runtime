@@ -35,6 +35,7 @@ from pathlib import Path
 
 from adapters.executor_protocol import (
     DispatchResult,
+    EngagementAdapterDefaults,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -67,7 +68,7 @@ def _flatten(item) -> str:
     return str(item)
 
 
-class JulesCliAdapter:
+class JulesCliAdapter(EngagementAdapterDefaults):
     """
     Dispatches a job to Jules via the Jules CLI.
 
