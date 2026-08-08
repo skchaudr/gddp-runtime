@@ -30,6 +30,9 @@ def verify(
     expected_base_commit_sha: str | None = None,
     pr_ref: str | None = None,
     job_id: str | None = None,
+    execution_attempt_id: str | None = None,
+    evidence_manifest_sha256: str | None = None,
+    mission_receipt_id: str | None = None,
     now: Callable[[], str] = lambda: __import__("datetime")
     .datetime.now(__import__("datetime").timezone.utc)
     .isoformat(),
@@ -105,6 +108,9 @@ def verify(
         expected_base_commit_sha=expected_base_commit_sha,
         pr_ref=pr_ref,
         job_id=job_id,
+        execution_attempt_id=execution_attempt_id,
+        evidence_manifest_sha256=evidence_manifest_sha256,
+        mission_receipt_id=mission_receipt_id,
         canonical_context=canonical,
         context_coverage=coverage,
     )

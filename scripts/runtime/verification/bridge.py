@@ -53,6 +53,9 @@ def verify_job_return(
     pr_ref: str | None = None,
     job_id: str | None = None,
     attempt: int | None = None,
+    execution_attempt_id: str | None = None,
+    evidence_manifest_sha256: str | None = None,
+    mission_receipt_id: str | None = None,
 ) -> dict:
     """Run verification for a returned job. Always returns a dict, never raises.
 
@@ -64,11 +67,33 @@ def verify_job_return(
     Transient failures (timeout, crash, garbled output) get exactly one retry;
     missing config/repo paths do not — those need a human, not a rerun.
     """
-    first = _verify_once(project_id, node_id, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt)
+    first = _verify_once(
+        project_id,
+        node_id,
+        merge_commit_sha,
+        expected_base_commit_sha,
+        pr_ref,
+        job_id,
+        attempt,
+        execution_attempt_id,
+        evidence_manifest_sha256,
+        mission_receipt_id,
+    )
     if first["verification_status"] == "ok" or first.get("retryable") is False:
         first.pop("retryable", None)
         return first
-    second = _verify_once(project_id, node_id, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt)
+    second = _verify_once(
+        project_id,
+        node_id,
+        merge_commit_sha,
+        expected_base_commit_sha,
+        pr_ref,
+        job_id,
+        attempt,
+        execution_attempt_id,
+        evidence_manifest_sha256,
+        mission_receipt_id,
+    )
     second.pop("retryable", None)
     if second["verification_status"] == "error":
         second["error"] = f"(after 1 retry) {second['error']}; first attempt: {first['error']}"
@@ -83,6 +108,9 @@ def _verify_once(
     pr_ref: str | None = None,
     job_id: str | None = None,
     attempt: int | None = None,
+    execution_attempt_id: str | None = None,
+    evidence_manifest_sha256: str | None = None,
+    mission_receipt_id: str | None = None,
 ) -> dict:
     if not project_id or not node_id:
         return {
@@ -141,6 +169,7 @@ def _verify_once(
         return _run_cli(
             worktree_path, node_yaml, project_yaml, config_root, receipt_dir,
             merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt,
+            execution_attempt_id, evidence_manifest_sha256, mission_receipt_id,
         )
     finally:
         _remove_worktree(repo, worktree_path)
@@ -213,7 +242,21 @@ def _remove_worktree(repo: Path, path: Path) -> None:
         pass
 
 
-def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge_commit_sha, expected_base_commit_sha, pr_ref, job_id, attempt) -> dict:
+def _run_cli(
+    eval_repo,
+    node_yaml,
+    project_yaml,
+    config_root,
+    receipt_dir,
+    merge_commit_sha,
+    expected_base_commit_sha,
+    pr_ref,
+    job_id,
+    attempt,
+    execution_attempt_id,
+    evidence_manifest_sha256,
+    mission_receipt_id,
+) -> dict:
     semantic_args = shlex.split(
         os.environ.get("GDDP_VERIFY_SEMANTIC_ARGS", DEFAULT_SEMANTIC_ARGS)
     )
@@ -240,6 +283,12 @@ def _run_cli(eval_repo, node_yaml, project_yaml, config_root, receipt_dir, merge
         cmd += ["--job-id", job_id]
     if attempt is not None:
         cmd += ["--attempt", str(attempt)]
+    if execution_attempt_id:
+        cmd += ["--execution-attempt-id", execution_attempt_id]
+    if evidence_manifest_sha256:
+        cmd += ["--evidence-manifest-sha256", evidence_manifest_sha256]
+    if mission_receipt_id:
+        cmd += ["--mission-receipt-id", mission_receipt_id]
 
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_RUNTIME_ROOT)

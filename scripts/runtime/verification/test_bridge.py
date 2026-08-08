@@ -323,6 +323,44 @@ class TestProvenancePassthrough(unittest.TestCase):
         self.assertIn("abc123", res["error"])
         mock_run.assert_not_called()
 
+    def test_mission_provenance_is_forwarded_to_cli(self):
+        summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
+        cli_proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(summary), stderr=""
+        )
+        with _fake_paths_exist(), patch(
+            "scripts.runtime.verification.bridge._create_worktree",
+            return_value=Path("/tmp/fake-wt"),
+        ), patch(
+            "scripts.runtime.verification.bridge._remove_worktree"
+        ), patch(
+            "scripts.runtime.verification.bridge.subprocess.run",
+            return_value=cli_proc,
+        ) as mock_run:
+            res = bridge.verify_job_return(
+                "vault-doctor",
+                "auth-node",
+                merge_commit_sha="abc123",
+                execution_attempt_id="job-1:attempt:0",
+                evidence_manifest_sha256="a" * 64,
+                mission_receipt_id="mis_1:auth-node:worker-1",
+            )
+
+        self.assertEqual(res["verification_status"], "ok")
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(
+            cmd[cmd.index("--execution-attempt-id") + 1],
+            "job-1:attempt:0",
+        )
+        self.assertEqual(
+            cmd[cmd.index("--evidence-manifest-sha256") + 1],
+            "a" * 64,
+        )
+        self.assertEqual(
+            cmd[cmd.index("--mission-receipt-id") + 1],
+            "mis_1:auth-node:worker-1",
+        )
+
 
 class TestWorktreeLifecycle(unittest.TestCase):
     def test_create_and_remove_clears_worktree_registration(self):
@@ -394,6 +432,58 @@ class TestWorktreeLifecycle(unittest.TestCase):
             fetch_idx = next(i for i, c in enumerate(git_commands) if "fetch" in c)
             wt_idx = next(i for i, c in enumerate(git_commands) if "worktree" in c)
             self.assertLess(fetch_idx, wt_idx, "fetch must happen before worktree add")
+
+    def test_external_commit_is_materialized_exactly_and_detached(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=External Worker",
+                    "-c",
+                    "user.email=worker@example.com",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "external mission result",
+                    "-q",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            external_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+            worktree = bridge._create_worktree(repo, external_sha)
+            self.assertIsNotNone(worktree)
+            try:
+                evaluated_sha = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=worktree,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+                branch = subprocess.run(
+                    ["git", "symbolic-ref", "-q", "--short", "HEAD"],
+                    cwd=worktree,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(evaluated_sha, external_sha)
+                self.assertNotEqual(worktree, repo)
+                self.assertNotEqual(branch.returncode, 0)
+            finally:
+                bridge._remove_worktree(repo, worktree)
 
 
 if __name__ == "__main__":

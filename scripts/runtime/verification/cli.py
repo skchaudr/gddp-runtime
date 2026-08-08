@@ -182,6 +182,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pr-ref", default=None, help="PR number or URL.")
     parser.add_argument("--job-id", default=None, help="SQLite job_id for per-attempt receipt path.")
     parser.add_argument("--attempt", type=int, default=None, help="Persisted zero-based jobs.attempt value.")
+    parser.add_argument(
+        "--execution-attempt-id",
+        default=None,
+        help="Optional executor-neutral attempt identity for receipt provenance.",
+    )
+    parser.add_argument(
+        "--evidence-manifest-sha256",
+        default=None,
+        help="Optional SHA-256 digest of the collected per-node evidence manifest.",
+    )
+    parser.add_argument(
+        "--mission-receipt-id",
+        default=None,
+        help="Optional stable mission completion/receipt identity.",
+    )
     return parser
 
 
@@ -343,6 +358,9 @@ def main(argv: list[str] | None = None) -> int:
         expected_base_commit_sha=args.expected_base_commit_sha,
         pr_ref=args.pr_ref,
         job_id=args.job_id,
+        execution_attempt_id=args.execution_attempt_id,
+        evidence_manifest_sha256=args.evidence_manifest_sha256,
+        mission_receipt_id=args.mission_receipt_id,
     )
     path = write_receipt(
         receipt,
@@ -367,6 +385,12 @@ def main(argv: list[str] | None = None) -> int:
         summary["merge_commit_sha"] = receipt.merge_commit_sha
     if receipt.pr_ref:
         summary["pr_ref"] = receipt.pr_ref
+    if receipt.execution_attempt_id:
+        summary["execution_attempt_id"] = receipt.execution_attempt_id
+    if receipt.evidence_manifest_sha256:
+        summary["evidence_manifest_sha256"] = receipt.evidence_manifest_sha256
+    if receipt.mission_receipt_id:
+        summary["mission_receipt_id"] = receipt.mission_receipt_id
     # Summaries are operator-facing; raw coverage evidence remains in receipt.
     if receipt.context_coverage:
         criteria_coverage = receipt.context_coverage.criteria

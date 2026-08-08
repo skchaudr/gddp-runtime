@@ -410,3 +410,70 @@ def test_reconciler_same_session_replay_resumes_first_evaluation(
     assert row["state"] == "collected"
     assert row["result_commit_sha"] == "a" * 40
     batch.add.assert_called_once()
+
+
+def test_mission_evaluation_success_and_error_route_only_to_review(
+    monkeypatch,
+):
+    graph_status = {"value": "ready"}
+
+    def _provisional_only(**kwargs):
+        if kwargs["verification"].get("verdict") == "pass":
+            graph_status["value"] = "provisional"
+        return graph_status["value"] == "provisional"
+
+    monkeypatch.setattr(reconciler, "write_result", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        reconciler,
+        "maybe_mark_provisional",
+        _provisional_only,
+    )
+
+    for verification, expected_graph_status in (
+        (
+            {
+                "verification_status": "ok",
+                "verdict": "pass",
+                "integrity": {
+                    "intent_preserved": True,
+                    "graph_integrity_preserved": True,
+                    "required_human_review": False,
+                },
+            },
+            "provisional",
+        ),
+        ({"verification_status": "error", "error": "evaluator crashed"}, "ready"),
+    ):
+        con = _connection()
+        pending = reconciler.PendingEvaluation(
+            session_db_id="session-1",
+            session_id="engagement-1",
+            executor="factory_mission",
+            project_id="project",
+            node_id="node-alpha",
+            job_id="job-node-alpha",
+            attempt=0,
+            result_commit_sha="b" * 40,
+        )
+        graph_status["value"] = "ready"
+
+        reconciler._finalize_evaluation(con, pending, verification)
+
+        job = con.execute(
+            "SELECT status, queue_state FROM jobs WHERE job_id = ?",
+            (pending.job_id,),
+        ).fetchone()
+        queue = con.execute(
+            "SELECT queue FROM queue_records WHERE job_id = ?",
+            (pending.job_id,),
+        ).fetchone()["queue"]
+        session = con.execute(
+            "SELECT state, result_commit_sha FROM executor_sessions "
+            "WHERE session_db_id = ?",
+            (pending.session_db_id,),
+        ).fetchone()
+        assert tuple(job) == ("awaiting_review", "awaiting_review")
+        assert queue == "awaiting_review"
+        assert session["state"] == "evaluated"
+        assert graph_status["value"] == expected_graph_status
+        assert graph_status["value"] != "complete"

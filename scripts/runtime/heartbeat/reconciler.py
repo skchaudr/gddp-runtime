@@ -11,6 +11,7 @@ executors (Jules CLI, Droid, etc.) complete asynchronously without webhooks.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -47,6 +48,25 @@ from .state_recorder import (
 DEFAULT_MAX_CONCURRENT_EVALUATIONS = 2
 
 
+def _session_value(session, key: str) -> str | None:
+    """Read an optional session column across current and legacy test rows."""
+    keys = session.keys() if hasattr(session, "keys") else ()
+    if key not in keys:
+        return None
+    value = session[key]
+    return str(value) if value is not None else None
+
+
+def _sha256_file(path: str | None) -> str | None:
+    """Hash an evidence manifest when it remains readable."""
+    if not path:
+        return None
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 @dataclass(frozen=True)
 class PendingEvaluation:
     """Plain-data evaluator input safe to pass to a worker thread."""
@@ -60,6 +80,9 @@ class PendingEvaluation:
     attempt: int
     result_commit_sha: str
     expected_base_commit_sha: str | None = None
+    execution_attempt_id: str | None = None
+    evidence_manifest_sha256: str | None = None
+    mission_receipt_id: str | None = None
 
 
 class EvaluationBatch:
@@ -88,9 +111,16 @@ class EvaluationBatch:
         result_commit_sha: str,
         *,
         expected_base_commit_sha: str | None = None,
+        evidence_manifest_path: str | None = None,
+        mission_receipt_id: str | None = None,
     ) -> None:
         if self._started:
             raise RuntimeError("cannot add evaluations after the batch starts")
+        manifest_path = (
+            evidence_manifest_path
+            if evidence_manifest_path is not None
+            else _session_value(session, "evidence_manifest_path")
+        )
         self._pending.append(
             PendingEvaluation(
                 session_db_id=str(session["session_db_id"]),
@@ -105,6 +135,15 @@ class EvaluationBatch:
                     expected_base_commit_sha
                     if expected_base_commit_sha is not None
                     else session["expected_base_commit_sha"]
+                ),
+                execution_attempt_id=_session_value(
+                    session, "execution_attempt_id"
+                ),
+                evidence_manifest_sha256=_sha256_file(manifest_path),
+                mission_receipt_id=(
+                    mission_receipt_id
+                    if mission_receipt_id is not None
+                    else _session_value(session, "completion_id")
                 ),
             )
         )
@@ -665,6 +704,8 @@ def _reconcile_engagement_group(
                 _parent_commit(repo_path, result.result_commit_sha)
                 or session["expected_base_commit_sha"]
             ),
+            evidence_manifest_path=result.evidence_manifest_path,
+            mission_receipt_id=result.completion_id,
         )
     con.commit()
 
@@ -1104,6 +1145,9 @@ def _run_evaluation(pending: PendingEvaluation) -> dict:
             pr_ref=None,  # no PR for CLI path
             job_id=pending.job_id,
             attempt=pending.attempt,
+            execution_attempt_id=pending.execution_attempt_id,
+            evidence_manifest_sha256=pending.evidence_manifest_sha256,
+            mission_receipt_id=pending.mission_receipt_id,
         )
     except Exception as exc:
         return {"verification_status": "error", "error": str(exc)}

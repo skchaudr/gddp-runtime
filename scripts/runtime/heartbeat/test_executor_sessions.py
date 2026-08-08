@@ -12,6 +12,7 @@ in a temp dir for worktree/patch-application tests, and mocked subprocess-free
 adapters (the Jules CLI is never actually invoked).
 """
 
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -780,6 +781,80 @@ def test_external_evaluation_batch_defers_finalization(
         "SELECT status FROM jobs WHERE job_id = ?",
         (job_id,),
     ).fetchone()["status"] == "awaiting_review"
+
+
+def test_mission_session_provenance_reaches_evaluator(
+    con, tmp_path, monkeypatch,
+):
+    for name in (
+        "completion_id",
+        "completion_digest_sha256",
+        "completion_quarantine_reason",
+        "evidence_manifest_path",
+    ):
+        con.execute(f"ALTER TABLE executor_sessions ADD COLUMN {name} TEXT")
+    _insert_job(
+        con,
+        job_id="job_mission_eval",
+        executor="factory_mission",
+        status="running",
+        node_id="mission-node",
+    )
+    session_db_id = insert_executor_session(
+        con,
+        "job_mission_eval",
+        "factory_mission",
+        "engagement-1",
+        expected_base_commit_sha="a" * 40,
+    )
+    manifest = tmp_path / "mission-node.json"
+    manifest.write_bytes(b'{"feature_id":"mission-node"}\n')
+    expected_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    con.execute(
+        """
+        UPDATE executor_sessions
+           SET state = 'collected',
+               result_commit_sha = ?,
+               completion_id = ?,
+               evidence_manifest_path = ?
+         WHERE session_db_id = ?
+        """,
+        (
+            "b" * 40,
+            "mis_1:mission-node:worker-1",
+            str(manifest),
+            session_db_id,
+        ),
+    )
+    con.commit()
+    monkeypatch.setattr(
+        reconciler,
+        "ADAPTERS",
+        {"factory_mission": object},
+    )
+    calls = []
+    monkeypatch.setattr(
+        reconciler,
+        "verify_job_return",
+        lambda **kwargs: calls.append(kwargs)
+        or {"verification_status": "ok", "verdict": "pass"},
+    )
+    monkeypatch.setattr(reconciler, "write_result", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        reconciler,
+        "maybe_mark_provisional",
+        lambda **_kwargs: False,
+    )
+
+    reconciler.reconcile_sessions(con, tmp_path)
+
+    assert len(calls) == 1
+    assert calls[0]["execution_attempt_id"] == "job_mission_eval:attempt:0"
+    assert calls[0]["evidence_manifest_sha256"] == expected_digest
+    assert (
+        calls[0]["mission_receipt_id"]
+        == "mis_1:mission-node:worker-1"
+    )
 
 
 def test_reconcile_evaluates_remote_patch_built_on_another_base(
