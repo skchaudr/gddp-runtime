@@ -2,7 +2,7 @@
 
 **Status:** DRAFT — proposal only. No code changes authorized by this document.
 **Date:** 2026-08-08
-**Authors:** Claude (§1, §2, §3, §5) + Pi (§4, §6)
+**Authors:** Claude (§1–§3, §5, §7) + Pi (§4, §6). Round 2 (§7) additionally used a grok-4.5 researcher and a glm-5-turbo reviewer, both fact-checked.
 **Rule of engagement:** strictly proposal-first. Nothing here is executed until Sab
 accepts it. Per `AGENTS.md`, agents do not author graph nodes; this is a
 candidate list for human ruling, not a work plan.
@@ -211,7 +211,7 @@ Based on `docs/GDDP-becomes-small-and-real.md` and `AGENTS.md`, the following ar
 6. **`verification/` internal seams (§3.3): CORRECTED PUSH-DOWN.** The initial push-down proposal was backwards on facts. The true state:
    - `decision_engine.py` and `integrity_combiner.py` are lane-combiners called by `orchestrator.py`. They cannot live inside a single lane; they belong at the top level as part of the core contract.
    - `retry_budget.py` is imported by `scripts/runtime/return_router.py` (outside verification entirely). It should be moved OUT of `verification/` and towards its consumer.
-   - `shape_profiles/` is a pure orphan (zero non-test importers). It belongs in the delete/archive list, not the push-down list.
+   - `shape_profiles/` as a *package directory* is a pure orphan (zero non-test importers) and belongs in the delete/archive list. **CRITICAL CAVEAT:** The `shape_profile` *kwarg* passed through the semantic lane (`orchestrator.py`, `pi_runner.py`, `cli.py`) is live plumbing fed by explicit YAML paths (e.g., via `--shape-profile`). Ripping out the kwarg will break the semantic lane. Delete the `shape_profiles/` directory, but keep the kwarg intact.
    - The honest, pared-down top-level contract for verification is therefore: `orchestrator`, `schemas`, `cli`, `bridge`, `decision_engine`, and `integrity_combiner`.
 
 ---
@@ -298,17 +298,209 @@ If Sab approves this proposal, the execution should follow this order to preserv
    - Rename `gates.py` → `gate_tokens.py` and `provisional_gate.py` → `provisional_status.py`.
    - Demote the Jules adapters to a single mediated adapter; rely on direct transports.
 3. **Phase 3: Verification Subsystem Realignment (High value)**
-   - Delete/archive the orphaned `shape_profiles/`.
+   - Delete/archive the orphaned `shape_profiles/` directory (but strictly preserve the `shape_profile` kwarg plumbing in the semantic lane).
    - Move `retry_budget.py` out of `verification/` and towards its external consumer (`return_router.py`).
    - Retain `orchestrator.py`, `schemas.py`, `cli.py`, `bridge.py`, `decision_engine.py`, and `integrity_combiner.py` as the clean top-level API for verification.
 4. **Phase 4: Test Pruning**
-   - After deleting dead code and collapsing boundaries, aggressively prune `test_executor_sessions.py` (2,577 LOC) and `test_orchestrator.py` to only cover the surviving loop and contracts.
+   - After deleting dead code and collapsing boundaries, split the gravity well `test_executor_sessions.py` (2,577 LOC) along its section boundaries (e.g., `test_reconciler.py`) and aggressively prune it along with `test_orchestrator.py` to cover only the surviving loop and contracts.
+   - **PROTECTED:** Do not touch `deterministic/test_deterministic.py`. It has the highest assert density in the repo, cleanly maps to its module, and is the counter-example of good testing. It is explicitly protected from this pruning.
+5. **Phase 5: `CHECK_PROBES` extraction (§7.1–7.2) — gated on Sab, not sequenced with the rest**
+
+   Added by Claude after round 2; the largest single proposal in this document
+   and the only one that crosses repo boundaries. Extract the 423-line
+   `CHECK_PROBES` registry (`probes.py:12-434`) out of the runtime and into
+   per-project data under `gddp-config/graphs/<project>/`, loaded by project.
+
+   This phase is **deliberately not ordered** against Phases 1–4, because it is
+   not a cleanup — it changes what the deterministic lane can do. Today 88% of
+   live criteria already fall through to heuristics and `gddp-runtime`'s own 130
+   criteria hit the registry zero times (§7.2), so extraction removes no
+   coverage that exists. But it makes that gap explicit, and whether GDDP should
+   sit with a visible unfixed gap or close it first is a human decision. **Do
+   not begin Phase 5 without an explicit ruling from Sab.**
 
 ---
 
-## §7 Open questions for Sab
+## §7 Round 2 — the deterministic lane and the test mass
 
-0. **Resolved, but flagging the process.** Two rulings in this document were
+§1 flagged that the real bulk lives in places round 1 never opened. This section
+opens them.
+
+**Method.** A grok-4.5 researcher (thinking high) and a glm-5-turbo reviewer
+(thinking high) were run as a chain over the two surfaces, under a standing rule
+that every claim carry a `file:line` or a reproducible command. Claude then
+re-derived every load-bearing number independently. Raw agent output is at
+`.pi-subagents/artifacts/outputs/fdf1bfe9-*/. handoffs/` (`grok-analysis-v2.md`,
+`gpt-review-v2.md`).
+
+**Accuracy of the agent pass.** High. Independently confirmed: `probes.py` 1,021
+LOC; `CHECK_PROBES` 59 entries; type split symbol 30 / func 21 / tier_distinct 3
+/ paths 2 / path 1 / human_review 1 / project_policy 1; `evaluate_criterion`
+spanning `probes.py:633-905`; and the three test triples 2,577/56/255,
+731/45/115, 781/19/77 — all exact. Three defects, all cosmetic: the registry
+block is 423 lines (`probes.py:12-434` inclusive), not 424; six `shape_profile`
+citations dropped their `scripts/runtime/verification/` prefix; and
+`wc -l decision_loop/*.py` gives 1,136, not the 1,446 full-package figure
+(`powers/` needs a recursive find). No substantive claim failed verification.
+
+### 7.1 The finding: `probes.py` is another project's verification data
+
+`probes.py:1` declares its ancestry: *"ported from
+`gddp-config/scripts/verify_node.py`"*. What came across with the port is a
+423-line literal dict, `CHECK_PROBES` (`probes.py:12-434`), of 59 hardcoded
+criterion IDs — and they are not GDDP's. They are `playwright-flag-skeleton`,
+`chromium-launch`, `photos-filtered-by-extension`, `fb-create-url-constant`:
+the acceptance criteria of a Facebook Marketplace listing tool.
+
+That table is live, not vestigial. `deterministic/__init__.py:84` calls
+`evaluate_criterion`, which calls `probe_for` (`probes.py:436-438`), which
+reads `CHECK_PROBES` — reachable on every `orchestrator.verify()`.
+
+### 7.2 What neither agent measured: does the table ever fire?
+
+Grok listed this as an explicit residual risk — *"production graph criterion-ID
+hit rate against CHECK_PROBES not measured"* — and the reviewer let it stand. It
+is the number that decides the whole question, so I measured it: every
+`acceptance_criteria` id across all 14 live graphs in `~/repos/gddp-config/graphs`,
+matched against the registry using the real lookup rule
+(`{node_id}:{criterion_id}` then bare `{criterion_id}`).
+
+| Graph | Nodes | Criteria | Registry hits |
+|---|---:|---:|---:|
+| `sell-valuables` | 10 | 50 | **50** |
+| `aa-cli` | 12 | 64 | **9** |
+| **`gddp-runtime`** | **22** | **130** | **0** |
+| `vault-doctor` | 7 | 51 | 0 |
+| `aa-cli-verify` | 11 | 32 | 0 |
+| `album-production` | 10 | 50 | 0 |
+| `myapi` | 6 | 27 | 0 |
+| `vm-harness-audit` | 5 | 23 | 0 |
+| `pi-hub-projection` | 4 | 22 | 0 |
+| `skc-portfolio-migration` | 10 | 20 | 0 |
+| `pi-harness-hygiene` | 2 | 10 | 0 |
+| `test-project` | 3 | 8 | 0 |
+| `sab-orchestrate` | 1 | 5 | 0 |
+| `_template` | 1 | 1 | 0 |
+| **Total** | **104** | **493** | **59** |
+
+Three facts fall out:
+
+1. **12 of 14 live graphs receive zero typed probes.** All 59 hits land on
+   `sell-valuables` and `aa-cli`.
+2. **`gddp-runtime`'s own 22 nodes and 130 criteria get zero.** The project that
+   owns the evaluator is not served by its own typed probe layer at all. Every
+   GDDP self-verification criterion falls through to the untyped fallback path —
+   `keyword_scan_source`, `no_probe`, or path heuristics (`probes.py:705-760`).
+3. **88% of live criteria (434 of 493) never touch the registry.** The typed
+   layer covers 12%.
+
+So the deterministic lane's largest single artifact is per-project data for two
+projects, one of which is finished, carried inside the generic runtime — while
+the runtime verifies its own graph on heuristics. This is §0's pattern at its
+purest: a port brought a working implementation across, the implementation's
+project-specific half was never separated out, and it became architecture.
+
+**Proposed:** extract `CHECK_PROBES` out of the runtime entirely and into
+per-project data under `gddp-config/graphs/<project>/`, loaded by project.
+`AGENTS.md:32` already states the intended split — *"the tools it will need in a
+production environment are per-project capabilities, but the baseline
+capabilities it will need are read-only tooling."* This makes the runtime honor
+a rule it already declares. It removes 423 LOC from `probes.py` (41%) and turns
+a silent 88% fallback rate into an explicit, per-project, measurable one.
+
+**Not proposed, and worth saying plainly:** this does not make verification
+*better* on its own. Today GDDP evaluates its own nodes with keyword scans. That
+is a capability gap the extraction makes visible rather than fixes. Sab should
+decide whether visible-and-unfixed is the right next state.
+
+### 7.3 Secondary findings in the lane
+
+- **`any_of` is a phantom type.** Handled at `probes.py:871`
+  (`if ptype in ("symbol", "any_of")`), zero registry entries, exercised only by
+  monkeypatch at `test_deterministic.py:150-164`. Dead branch.
+- **`constraints.py` is coupled to the kitchen sink.** `constraints.py:10-16`
+  imports five helpers back out of `probes.py`. Extracting the registry is a
+  precondition for that seam ever being clean.
+- **The lane is smaller than it looks.** Excluding tests, the deterministic lane
+  is 1,331 LOC across five files — and 1,021 of that (77%) is `probes.py`. The
+  other four files are 57, 105, 12, and 136 LOC. There is no diffuse bulk here;
+  there is one file.
+- **`evaluate_criterion` is the complexity peak.** 273 LOC, 41 branch points,
+  in a single function (`probes.py:633-905`). `eval_tier_distinct` adds 111 LOC
+  and 27 branches. Flagging, not proposing — this needs a reader who knows the
+  intended semantics.
+
+### 7.4 The test mass
+
+| File | LOC | Tests | Asserts | Density | Verdict |
+|---|---:|---:|---:|---:|---|
+| `heartbeat/test_executor_sessions.py` | 2,577 | 56 | 255 | 9.9% | accreted, high severity |
+| `verification/test_orchestrator.py` | 781 | 19 | 77 | 9.9% | accreted by phase, medium |
+| `deterministic/test_deterministic.py` | 731 | 45 | 115 | 15.7% | **coherent — leave alone** |
+
+`test_executor_sessions.py` is a gravity well, and its own section headers prove
+it. Section 2, "Reconciler tests", runs `:478-2049` — **1,572 LOC and 34 of the
+file's 56 tests in one section**, absorbing reconcile, retry budgets,
+cancellation, ref validation, plumbing deaths, session aging, and auth park.
+Section 7 is still titled "Issue #6 — GDDP_EXECUTOR_OVERRIDE" (`:2387`) but
+continues past its two override tests into reply-latch and evaluation-batch
+tests (`:2442-2558`) — accretion that outgrew its own heading. Its imports
+(`:32-42`) pull `executor_protocol`, both Jules adapters, `dispatcher`,
+`reconciler`, `runner`, and `state_recorder`: seven subsystems, one file, while
+`test_runner.py`, `test_classifier.py`, and `test_claiming.py` already sit
+beside it as separate files.
+
+**Proposed:** split by the section boundaries the file already declares — the
+reconciler section is its own `test_reconciler.py`. Do not attempt this before
+Phase 1 deletions land.
+
+`test_deterministic.py` should be explicitly protected from Phase 4. It has the
+highest assertion density in the repo, an average test body of 15 LOC, a 25-line
+preamble, and it maps cleanly onto its own module. It is the counter-example, not
+a target.
+
+### 7.5 Correction to what §4.2.6 and §8 already say
+
+Round 1 called `shape_profiles/` "dead". That is imprecise in a way that could
+cause damage, and the round-2 pass caught it. Precisely:
+
+- The **package** is orphaned: `load_shape_profile` has no importer outside its
+  own test (`test_shape_profiles.py`, 45 LOC). Package total is 56 LOC.
+  Deleting the directory is safe.
+- The **`shape_profile` kwarg is live plumbing**, threaded through
+  `verification/orchestrator.py:23,58` → `semantic/agent.py:195,201,378,384` →
+  `semantic/prompt.py:34,40` → `semantic/pi_runner.py:137,146`.
+- `verification/cli.py:289` populates it via `_load_yaml(args.shape_profile)`
+  from an arbitrary `--shape-profile` path — **not** through
+  `load_shape_profile`. The two shipped YAMLs are unreachable through the
+  package API but still reachable by explicit path.
+
+Anyone who reads "shape_profiles is dead" and removes the kwarg breaks the
+semantic lane. §6 Phase 3 has been updated to state the distinction.
+
+### 7.6 Revised sizing
+
+Round 1 warned against reading the 34% headline as recoverable. Round 2 puts
+real numbers on what Phases 1–4 actually remove:
+
+| Source | LOC | Confidence |
+|---|---:|---|
+| `decision_loop/` package (incl. `powers/`, incl. its 572 LOC of tests) | 1,446 | verified |
+| `CHECK_PROBES` extracted from `probes.py` | 423 | verified |
+| `shape_profiles/` package + its test | 101 | verified |
+| Canary trio, `node_status_history.py`, `replay.py` + `test_replay.py` | ~400 | approximate |
+| **Removed from the runtime** | **≈2,370** | **~8% of 29,779** |
+
+Plus a split (not a deletion) of 2,577 LOC of test into files that name what
+they test. **Eight percent, not thirty-four.** The 34% figure was never
+recoverable bulk; it was one subsystem carrying one oversized file that happens
+to hold another project's data.
+
+---
+
+## §8 Open questions for Sab
+
+0. **Resolved, but flagging the process.** (See also §7.5 — a third imprecision, "shape_profiles is dead", was caught in round 2.) Two rulings in this document were
    initially made on premises that turned out to be false — the "three
    overlapping gate surfaces" collapse (withdrawn by Claude after reading the
    modules' public functions) and the `verification/` push-down (revised by Pi
