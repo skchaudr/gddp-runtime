@@ -16,12 +16,19 @@ class GitVerification:
     commit_exists: bool
     ancestry_holds: bool
     reachable: bool
+    origin_reachable: bool | None
+    origin_refs: tuple[str, ...]
     review_required: bool
     completion_quarantine_reason: str | None
 
     @property
     def verified(self) -> bool:
-        return self.commit_exists and self.ancestry_holds and self.reachable
+        return bool(
+            self.commit_exists
+            and self.ancestry_holds
+            and self.reachable
+            and self.origin_reachable is not False
+        )
 
     def to_manifest(self) -> dict[str, object]:
         return {**asdict(self), "verified": self.verified}
@@ -33,6 +40,7 @@ def verify_git_result(
     base_sha: str,
     result_sha: str,
     engagement_branch: str,
+    require_origin: bool = False,
 ) -> GitVerification:
     """Verify a claimed result against real objects in ``repo_path``.
 
@@ -57,6 +65,12 @@ def verify_git_result(
         branch_tip
         and _is_ancestor(repo, result_sha, branch_tip)
     )
+    origin_refs = (
+        _origin_refs_containing(repo, result_sha)
+        if commit_exists and require_origin
+        else ()
+    )
+    origin_reachable = bool(origin_refs) if require_origin else None
 
     reasons: list[str] = []
     if not commit_exists:
@@ -80,6 +94,10 @@ def verify_git_result(
                 f"result {result_sha} is not reachable from engagement "
                 f"branch {engagement_branch}"
             )
+        if require_origin and not origin_reachable:
+            reasons.append(
+                f"result {result_sha} is not reachable from an origin ref"
+            )
 
     quarantine_reason = "; ".join(reasons) if reasons else None
     return GitVerification(
@@ -88,6 +106,8 @@ def verify_git_result(
         commit_exists=commit_exists,
         ancestry_holds=ancestry_holds,
         reachable=reachable,
+        origin_reachable=origin_reachable,
+        origin_refs=origin_refs,
         review_required=quarantine_reason is not None,
         completion_quarantine_reason=quarantine_reason,
     )
@@ -119,6 +139,20 @@ def _resolve_local_branch(repo_path: Path, branch_name: str) -> str | None:
         return None
     commit = process.stdout.strip()
     return commit or None
+
+
+def _origin_refs_containing(
+    repo_path: Path, result_sha: str
+) -> tuple[str, ...]:
+    process = _run_git(repo_path, "branch", "-r", "--contains", result_sha)
+    if process is None or process.returncode != 0:
+        return ()
+    return tuple(
+        line.strip()
+        for line in process.stdout.splitlines()
+        if line.strip().startswith("origin/")
+        and " -> " not in line
+    )
 
 
 def _run_git(

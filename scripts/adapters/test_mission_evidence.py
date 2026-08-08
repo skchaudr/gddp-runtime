@@ -343,3 +343,96 @@ def test_crash_preserves_completed_node_and_reviews_incomplete_node(tmp_path):
     assert beta_manifest["result_sha"] is None
     assert beta_manifest["mission_outcome"] == "crashed"
     assert "crashed" in beta.review_reason
+
+
+def test_push_policy_requires_each_feature_push_before_completion(tmp_path):
+    mission_dir, output_dir = _mission_fixture(tmp_path)
+    _write_complete_channels(mission_dir)
+    push_audit = mission_dir / "push-audit.jsonl"
+    _write_jsonl(
+        push_audit,
+        [
+            {
+                "timestamp_utc": "2026-08-07T02:04:30Z",
+                "argv": [
+                    "push",
+                    "origin",
+                    "HEAD:refs/heads/gddp/eng-1",
+                ],
+                "remote": "origin",
+                "destination": "refs/heads/gddp/eng-1",
+                "head": "b" * 40,
+                "allowed": True,
+                "returncode": 0,
+            }
+        ],
+    )
+    verified = {
+        feature_id: {
+            "result_sha": result_sha,
+            "verified": True,
+            "origin_reachable": True,
+            "origin_refs": ["origin/gddp/eng-1"],
+            "completion_quarantine_reason": None,
+        }
+        for feature_id, result_sha in [
+            ("node-alpha", "a" * 40),
+            ("node-beta", "b" * 40),
+        ]
+    }
+
+    alpha, beta = collect_mission_evidence(
+        mission_dir=mission_dir,
+        output_dir=output_dir,
+        engagement_id="eng-per-feature-push",
+        result_ref="gddp/eng-1",
+        demanded_feature_ids=("node-alpha", "node-beta"),
+        git_verified=verified,
+        push_audit_path=push_audit,
+        enforce_push_policy=True,
+    )
+
+    assert alpha.review_required is True
+    assert "feature_push_not_verified_before_completion" in (
+        alpha.review_reason or ""
+    )
+    assert beta.review_required is False
+    beta_manifest = json.loads(beta.manifest_path.read_text())
+    assert beta_manifest["push_policy"]["verified_before_completion"] is True
+
+
+def test_unsafe_push_attempt_routes_every_feature_to_review(tmp_path):
+    mission_dir, output_dir = _mission_fixture(tmp_path)
+    _write_complete_channels(mission_dir)
+    push_audit = mission_dir / "push-audit.jsonl"
+    _write_jsonl(
+        push_audit,
+        [
+            {
+                "timestamp_utc": "2026-08-07T00:59:00Z",
+                "argv": ["push", "origin", "HEAD:refs/heads/main"],
+                "remote": "origin",
+                "destination": "refs/heads/main",
+                "head": "1" * 40,
+                "allowed": False,
+                "returncode": None,
+                "reason": "destination is not the engagement branch",
+            }
+        ],
+    )
+
+    collected = collect_mission_evidence(
+        mission_dir=mission_dir,
+        output_dir=output_dir,
+        engagement_id="eng-unsafe-push",
+        result_ref="gddp/eng-1",
+        demanded_feature_ids=("node-alpha", "node-beta"),
+        push_audit_path=push_audit,
+        enforce_push_policy=True,
+    )
+
+    assert all(item.review_required for item in collected)
+    assert all(
+        "unsafe_push_attempt" in (item.review_reason or "")
+        for item in collected
+    )

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .mission_git_verify import verify_git_result
+from .mission_push_policy import read_push_audit
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,8 @@ def collect_mission_evidence(
     mission_outcome: str | None = None,
     git_verified: Mapping[str, Mapping[str, object]] | None = None,
     git_repo_path: str | Path | None = None,
+    push_audit_path: str | Path | None = None,
+    enforce_push_policy: bool = False,
 ) -> list[CollectedNodeEvidence]:
     """Read mission artifacts and write one exact-feature manifest per node.
 
@@ -69,6 +72,11 @@ def collect_mission_evidence(
         else mission_path / "receipts.jsonl"
     )
     receipts = _read_receipts(receipt_file)
+    push_records = (
+        read_push_audit(push_audit_path)
+        if push_audit_path is not None
+        else []
+    )
     drift_reason = _feature_drift_reason(feature_ids, observed_ids)
 
     collected: list[CollectedNodeEvidence] = []
@@ -111,6 +119,7 @@ def collect_mission_evidence(
                 base_sha=base_sha,
                 result_sha=result_sha,
                 engagement_branch=result_ref,
+                require_origin=enforce_push_policy,
             ).to_manifest()
         cross_check = _cross_check(receipt, handoff, selected_verification)
         quarantine_reasons = _quarantine_reasons(
@@ -135,6 +144,23 @@ def collect_mission_evidence(
             receipt, selected_handoff, selected_progress, cross_check
         ):
             reasons.append(f"mission_{mission_outcome}")
+        push_policy = (
+            _push_policy_evidence(
+                push_records,
+                result_sha=result_sha,
+                result_ref=result_ref,
+                completed_at=(
+                    _string(selected_progress.get("completed_at"))
+                    if selected_progress is not None
+                    else None
+                ),
+                git_verified=selected_verification,
+            )
+            if enforce_push_policy
+            else None
+        )
+        if push_policy is not None:
+            reasons.extend(push_policy["reasons"])
         reasons = list(dict.fromkeys(reasons))
         review_reason = ", ".join(reasons) if reasons else None
         completion_quarantine_reason = (
@@ -179,6 +205,7 @@ def collect_mission_evidence(
             "progress": selected_progress,
             "git_verified": selected_verification,
             "cross_check": cross_check,
+            "push_policy": push_policy,
             "missing_channels": missing,
             "review_required": review_reason is not None,
             "review_reason": review_reason,
@@ -476,6 +503,90 @@ def _quarantine_reasons(
     if cross_check.get("receipt_matches_git") is False:
         reasons.append("receipt result does not match git-verified result")
     return reasons
+
+
+def _push_policy_evidence(
+    records: Sequence[Mapping[str, object]],
+    *,
+    result_sha: str | None,
+    result_ref: str,
+    completed_at: str | None,
+    git_verified: Mapping[str, object] | None,
+) -> dict[str, object]:
+    """Bind one completed feature to its own safe, successful origin push."""
+    expected_destination = f"refs/heads/{result_ref}"
+    unsafe_records = [
+        dict(record)
+        for record in records
+        if not _safe_push_record(record, expected_destination)
+    ]
+    successful = [
+        dict(record)
+        for record in records
+        if _safe_push_record(record, expected_destination)
+        and record.get("returncode") == 0
+        and _string(record.get("head")) == result_sha
+    ]
+    matching = successful[-1] if successful else None
+    push_timestamp = (
+        _string(matching.get("timestamp_utc")) if matching is not None else None
+    )
+    pushed_before_completion = bool(
+        push_timestamp
+        and completed_at
+        and _timestamp_not_after(push_timestamp, completed_at)
+    )
+    origin_reachable = bool(
+        git_verified and git_verified.get("origin_reachable") is True
+    )
+    reasons: list[str] = []
+    if unsafe_records:
+        reasons.append("unsafe_push_attempt")
+    if matching is None or not pushed_before_completion:
+        reasons.append("feature_push_not_verified_before_completion")
+    if not origin_reachable:
+        reasons.append("result_not_reachable_from_origin")
+    return {
+        "expected_destination": expected_destination,
+        "matching_push": matching,
+        "unsafe_attempts": unsafe_records,
+        "origin_reachable": origin_reachable,
+        "verified_before_completion": not reasons,
+        "reasons": reasons,
+    }
+
+
+def _safe_push_record(
+    record: Mapping[str, object],
+    expected_destination: str,
+) -> bool:
+    argv = record.get("argv")
+    force_syntax = (
+        isinstance(argv, list)
+        and any(
+            isinstance(argument, str)
+            and (
+                argument in {"--force", "-f", "--force-with-lease"}
+                or argument.startswith("--force-with-lease=")
+                or argument.startswith("+")
+            )
+            for argument in argv
+        )
+    )
+    return bool(
+        record.get("allowed") is True
+        and _string(record.get("remote")) == "origin"
+        and _string(record.get("destination")) == expected_destination
+        and not force_syntax
+    )
+
+
+def _timestamp_not_after(earlier: str, later: str) -> bool:
+    """Compare the UTC ISO-8601 timestamps emitted by Factory and the guard."""
+    try:
+        return earlier.replace("Z", "+00:00") <= later.replace("Z", "+00:00")
+    except (AttributeError, TypeError):
+        return False
 
 
 def _feature_drift_reason(

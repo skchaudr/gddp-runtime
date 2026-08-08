@@ -26,6 +26,7 @@ from .executor_protocol import (
 )
 from .mission_evidence import collect_mission_evidence
 from .mission_projection import project_mission, verify_planned_feature_ids
+from .mission_push_policy import install_push_guard
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
 _MISSION_CREATION_LOCK = threading.Lock()
@@ -127,13 +128,18 @@ class MissionAdapter(EngagementAdapterDefaults):
         stdout_path = engagement_dir / "stdout"
         stderr_path = engagement_dir / "stderr"
         receipts_path = engagement_dir / "receipts.jsonl"
+        push_audit_path = engagement_dir / "push-audit.jsonl"
         process: subprocess.Popen | None = None
         try:
             engagement_dir.mkdir(parents=True, exist_ok=False)
             mission_path = engagement_dir / "mission.md"
             mission_path.write_text(
-                project_mission([_packet_node(packet) for packet in packets])
+                project_mission(
+                    [_packet_node(packet) for packet in packets],
+                    engagement_branch=engagement_branch,
+                )
             )
+            push_guard_dir = install_push_guard(engagement_dir / "bin")
             with _mission_creation_lock(self.session_root):
                 existing_missions = _mission_directories(self.mission_root)
                 with (
@@ -142,6 +148,11 @@ class MissionAdapter(EngagementAdapterDefaults):
                 ):
                     mission_env = dict(os.environ)
                     mission_env["GDDP_RECEIPTS_PATH"] = str(receipts_path)
+                    mission_env["GDDP_ENGAGEMENT_BRANCH"] = engagement_branch
+                    mission_env["GDDP_PUSH_AUDIT_PATH"] = str(push_audit_path)
+                    mission_env["PATH"] = os.pathsep.join(
+                        (str(push_guard_dir), mission_env.get("PATH", ""))
+                    )
                     process = subprocess.Popen(
                         [
                             self.droid_path,
@@ -180,6 +191,7 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
                 "receipts_path": str(receipts_path),
+                "push_audit_path": str(push_audit_path),
                 "cancelled": False,
             }
             _write_json(engagement_dir / "session.json", record)
@@ -300,6 +312,8 @@ class MissionAdapter(EngagementAdapterDefaults):
             receipts_path=record.get("receipts_path"),
             mission_outcome=_collection_outcome(record),
             git_repo_path=record.get("repo_path") or self.cwd,
+            push_audit_path=record.get("push_audit_path"),
+            enforce_push_policy=True,
         )
         results: list[PatchResult] = []
         for item in evidence:

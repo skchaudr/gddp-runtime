@@ -104,6 +104,39 @@ def test_result_must_be_reachable_from_exact_engagement_branch(tmp_path):
     assert "not reachable" in (unreachable.completion_quarantine_reason or "")
 
 
+def test_result_must_be_reachable_from_origin_when_required(tmp_path):
+    repo, root = _repo(tmp_path)
+    remote = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", str(remote))
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "switch", "-c", "gddp/engagement")
+    result = _commit(repo, "feature result", "feature\n")
+
+    local_only = verify_git_result(
+        repo,
+        base_sha=root,
+        result_sha=result,
+        engagement_branch="gddp/engagement",
+        require_origin=True,
+    )
+    _git(repo, "push", "origin", "HEAD:refs/heads/gddp/engagement")
+    at_origin = verify_git_result(
+        repo,
+        base_sha=root,
+        result_sha=result,
+        engagement_branch="gddp/engagement",
+        require_origin=True,
+    )
+
+    assert local_only.reachable is True
+    assert local_only.origin_reachable is False
+    assert local_only.verified is False
+    assert "origin ref" in (local_only.completion_quarantine_reason or "")
+    assert at_origin.origin_reachable is True
+    assert at_origin.origin_refs == ("origin/gddp/engagement",)
+    assert at_origin.verified is True
+
+
 def test_missing_result_preserves_claim_and_routes_to_review(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "branch", "gddp/engagement", root)
@@ -132,6 +165,16 @@ def _write_collect_fixture(
     result_sha: str,
     engagement_branch: str,
 ) -> tuple[MissionAdapter, SessionRef]:
+    remote = tmp_path / "origin.git"
+    if not remote.exists():
+        _git(tmp_path, "init", "--bare", str(remote))
+        _git(repo, "remote", "add", "origin", str(remote))
+    _git(
+        repo,
+        "push",
+        "origin",
+        f"HEAD:refs/heads/{engagement_branch}",
+    )
     mission_root = tmp_path / "factory-missions"
     mission_dir = mission_root / "mis-git"
     handoffs = mission_dir / "handoffs"
@@ -197,6 +240,26 @@ def _write_collect_fixture(
         )
         + "\n"
     )
+    push_audit_path = session_dir / "push-audit.jsonl"
+    push_audit_path.write_text(
+        json.dumps(
+            {
+                "timestamp_utc": "2026-08-07T12:00:30Z",
+                "argv": [
+                    "push",
+                    "origin",
+                    f"HEAD:refs/heads/{engagement_branch}",
+                ],
+                "remote": "origin",
+                "source": "HEAD",
+                "destination": f"refs/heads/{engagement_branch}",
+                "head": result_sha,
+                "allowed": True,
+                "returncode": 0,
+            }
+        )
+        + "\n"
+    )
     (session_dir / "session.json").write_text(
         json.dumps(
             {
@@ -207,6 +270,7 @@ def _write_collect_fixture(
                 "engagement_branch": engagement_branch,
                 "feature_ids": ["node-alpha"],
                 "receipts_path": str(receipts_path),
+                "push_audit_path": str(push_audit_path),
             }
         )
     )

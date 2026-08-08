@@ -123,6 +123,17 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     )
     assert receipts_path.parent == adapter.session_root / result.engagement_id
     assert receipts_path.name == "receipts.jsonl"
+    push_audit_path = Path(
+        popen.call_args.kwargs["env"]["GDDP_PUSH_AUDIT_PATH"]
+    )
+    assert push_audit_path.parent == adapter.session_root / result.engagement_id
+    assert push_audit_path.name == "push-audit.jsonl"
+    assert popen.call_args.kwargs["env"]["GDDP_ENGAGEMENT_BRANCH"] == (
+        result.engagement_branch
+    )
+    assert Path(popen.call_args.kwargs["env"]["PATH"].split(os.pathsep)[0]) == (
+        adapter.session_root / result.engagement_id / "bin"
+    )
     assert result.process_pid == launched.pid
     assert result.mission_dir == str(adapter.mission_root / "factory-id")
     assert result.feature_ids == ("node-alpha", "node-beta")
@@ -134,6 +145,7 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     assert record["process_pid"] == launched.pid
     assert record["engagement_branch"] == result.engagement_branch
     assert record["feature_ids"] == ["node-alpha", "node-beta"]
+    assert record["push_audit_path"] == str(push_audit_path)
 
 
 def test_single_packet_dispatch_uses_engagement_lifecycle(tmp_path, monkeypatch):
@@ -339,6 +351,12 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     (repo / "tracked.txt").write_text("root\n")
     subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-m", "root"], cwd=repo, check=True)
+    remote = adapter.session_root.parent / "collect-origin.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
+    )
+    subprocess.run(["git", "push", "origin", "main"], cwd=repo, check=True)
     subprocess.run(
         ["git", "switch", "-c", "gddp/eng-status"], cwd=repo, check=True
     )
@@ -355,6 +373,7 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
     handoff_dir = mission_dir / "handoffs"
     handoff_dir.mkdir()
     receipts = []
+    push_audit = []
     for index, feature_id in enumerate(ids):
         base_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -377,7 +396,18 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
             capture_output=True,
             check=True,
         ).stdout.strip()
+        subprocess.run(
+            [
+                "git",
+                "push",
+                "origin",
+                "HEAD:refs/heads/gddp/eng-status",
+            ],
+            cwd=repo,
+            check=True,
+        )
         worker_id = f"worker-{index}"
+        completed_at = f"2026-08-07T00:0{index}:30Z"
         progress.extend(
             [
                 {
@@ -387,7 +417,7 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
                     "workerSessionId": worker_id,
                 },
                 {
-                    "timestamp": f"2026-08-07T00:0{index}:30Z",
+                    "timestamp": completed_at,
                     "type": "worker_completed",
                     "featureId": feature_id,
                     "workerSessionId": worker_id,
@@ -417,12 +447,35 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
                 "git_toplevel": str(repo),
             }
         )
+        push_audit.append(
+            {
+                "timestamp_utc": f"2026-08-07T00:0{index}:20Z",
+                "argv": [
+                    "push",
+                    "origin",
+                    "HEAD:refs/heads/gddp/eng-status",
+                ],
+                "remote": "origin",
+                "source": "HEAD",
+                "destination": "refs/heads/gddp/eng-status",
+                "head": result_sha,
+                "allowed": True,
+                "returncode": 0,
+            }
+        )
     (mission_dir / "progress_log.jsonl").write_text(
         "".join(json.dumps(item) + "\n" for item in progress)
     )
     (mission_dir / "receipts.jsonl").write_text(
         "".join(json.dumps(item) + "\n" for item in receipts)
     )
+    push_audit_path = adapter.session_root / ref.session_id / "push-audit.jsonl"
+    push_audit_path.write_text(
+        "".join(json.dumps(item) + "\n" for item in push_audit)
+    )
+    record = json.loads(record_path.read_text())
+    record["push_audit_path"] = str(push_audit_path)
+    record_path.write_text(json.dumps(record))
     return ref
 
 

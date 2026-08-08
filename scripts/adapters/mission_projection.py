@@ -31,6 +31,7 @@ def project_mission(
     nodes: Sequence[NodeData],
     *,
     milestone_id: str = DEFAULT_MILESTONE_ID,
+    engagement_branch: str = "the named engagement work branch",
 ) -> str:
     """Return a mission specification containing one feature per node."""
     projected = _topological_nodes(nodes)
@@ -91,12 +92,29 @@ def project_mission(
                     "- This feature is not complete until that receipt command "
                     "exits successfully."
                 ),
-                "- Push the work branch.",
                 (
-                    "- Never push to `main`, the default branch, or any shared "
-                    "or release branch."
+                    "- Push this feature's commit immediately, not in a later "
+                    "feature or at the end of the mission, using "
+                    f"`git push origin HEAD:refs/heads/{engagement_branch}`."
                 ),
-                "- Never force-push or use `--force-with-lease`.",
+                (
+                    "- Never push to `main`, the repository default branch, "
+                    "or any shared or release branch."
+                ),
+                (
+                    "- Never force-push. Do not use `--force`, `-f`, "
+                    "`--force-with-lease`, or a leading `+` refspec."
+                ),
+                (
+                    "- After the push, run "
+                    "`git branch -r --contains <commit SHA>` and verify its "
+                    f"output includes `origin/{engagement_branch}`."
+                ),
+                (
+                    "- The commit must be reachable from that origin ref "
+                    "before reporting this feature complete. A later "
+                    "feature's push does not satisfy this requirement."
+                ),
                 "",
             ]
         )
