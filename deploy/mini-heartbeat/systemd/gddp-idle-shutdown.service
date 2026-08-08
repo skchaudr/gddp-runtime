@@ -1,0 +1,10 @@
+# GDDP idle shutdown check (Linux port / khoj-38).
+# Executes idle_shutdown.py every 15 minutes via gddp-idle-shutdown.timer.
+# Triggers auto-shutdown if idle for 3 continuous hours.
+[Unit]
+Description=GDDP idle shutdown check service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/gddp-runtime
+ExecStart=/usr/bin/bash -lc "source %h/gddp-runtime/deploy/mini-heartbeat/env/gddp.env 2>/dev/null || true && exec /usr/bin/python3 %h/gddp-runtime/deploy/mini-heartbeat/bin/idle_shutdown.py --idle-minutes 180 --interval-minutes 15"
