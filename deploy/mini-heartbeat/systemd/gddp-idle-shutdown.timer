@@ -1,0 +1,15 @@
+# Fires gddp-idle-shutdown.service every 15 minutes.
+# Install on host (e.g., khoj-38):
+#   cp gddp-idle-shutdown.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now gddp-idle-shutdown.timer
+[Unit]
+Description=GDDP idle shutdown check timer (every 15 minutes)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
