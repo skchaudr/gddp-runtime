@@ -152,12 +152,44 @@ def dispatch_engagement(
                 success=False,
                 error=f"executor {executor} does not support engagements",
             )
+        _validate_engagement_order(jobs)
         packets = [_build_node_packet(job) for job in jobs]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return EngagementDispatchResult(
             success=False, error=f"Invalid engagement dispatch packet: {exc}"
         )
     return adapter.dispatch_engagement(packets)
+
+
+def _validate_engagement_order(
+    jobs: Sequence[Mapping[str, object]],
+) -> None:
+    """Reject an engagement whose selected dependencies follow dependents."""
+    node_ids = tuple(str(job.get("node_id") or "") for job in jobs)
+    if any(not node_id for node_id in node_ids):
+        raise ValueError("engagement jobs require node ids")
+    if len(set(node_ids)) != len(node_ids):
+        raise ValueError("engagement jobs contain duplicate node ids")
+
+    selected_ids = set(node_ids)
+    preceding_node_ids: set[str] = set()
+    for job, node_id in zip(jobs, node_ids, strict=True):
+        dependencies = _decode_sequence(
+            job.get("dependencies"), "dependencies"
+        )
+        late_dependencies = [
+            str(dependency)
+            for dependency in dependencies
+            if str(dependency) in selected_ids
+            and str(dependency) not in preceding_node_ids
+        ]
+        if late_dependencies:
+            raise ValueError(
+                "engagement jobs must be in topological order: "
+                f"{node_id} precedes selected dependencies "
+                f"{late_dependencies!r}"
+            )
+        preceding_node_ids.add(node_id)
 
 
 def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):

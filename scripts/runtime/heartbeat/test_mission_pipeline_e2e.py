@@ -14,7 +14,7 @@ from scripts.adapters import mission_adapter
 from scripts.adapters.executor_protocol import NodePacket
 from scripts.adapters.mission_adapter import MissionAdapter
 from scripts.runtime import results_store
-from scripts.runtime.heartbeat import dispatcher, reconciler, runner
+from scripts.runtime.heartbeat import dispatcher, job_factory, reconciler, runner
 from scripts.runtime.heartbeat.graph_reader import GraphReader
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.schemas import VerdictReceipt
@@ -78,7 +78,9 @@ def _write_graph(
     config_root: Path,
     repo: Path,
     node_ids: tuple[str, ...],
+    dependencies: dict[str, tuple[str, ...]] | None = None,
 ) -> None:
+    dependencies = dependencies or {}
     graph = config_root / "graphs" / "mission-e2e"
     nodes = graph / "nodes"
     nodes.mkdir(parents=True)
@@ -98,6 +100,13 @@ def _write_graph(
         "  mission_max_pairs: 5\n"
     )
     for node_id in node_ids:
+        node_dependencies = dependencies.get(node_id, ())
+        depends_on = (
+            "depends_on:\n"
+            + "".join(f"  - {dependency}\n" for dependency in node_dependencies)
+            if node_dependencies
+            else "depends_on: []\n"
+        )
         (nodes / f"{node_id}.yaml").write_text(
             "schema_version: '1.0'\n"
             "schema_type: node\n"
@@ -106,7 +115,7 @@ def _write_graph(
             "status: ready\n"
             "type: capability\n"
             f"why: Execute the operator-authored topic {node_id}.\n"
-            "depends_on: []\n"
+            f"{depends_on}"
             "acceptance_criteria:\n"
             f"  - Preserve the exact topic {node_id}.\n"
             "constraints:\n"
@@ -538,6 +547,7 @@ def test_eight_feature_engagement_preserves_topological_execution_order(
     tmp_path, monkeypatch
 ):
     repo, base = _repository(tmp_path)
+    config_root = tmp_path / "gddp-config"
     mission_root = tmp_path / "factory-missions"
     mission_root.mkdir()
     monkeypatch.setenv("GDDP_FACTORY_MISSION_DIR", str(mission_root))
@@ -550,31 +560,78 @@ def test_eight_feature_engagement_preserves_topological_execution_order(
         mission_dir_timeout=5,
     )
     node_ids = tuple(f"probe-2a-{index}" for index in range(8))
-    edges = (
-        (node_ids[0], node_ids[2]),
-        (node_ids[1], node_ids[2]),
-        (node_ids[2], node_ids[3]),
-        (node_ids[2], node_ids[4]),
-        (node_ids[3], node_ids[5]),
-        (node_ids[4], node_ids[5]),
-        (node_ids[5], node_ids[6]),
-        (node_ids[6], node_ids[7]),
+    dependencies = {
+        node_ids[2]: (node_ids[0], node_ids[1]),
+        node_ids[3]: (node_ids[2],),
+        node_ids[4]: (node_ids[2],),
+        node_ids[5]: (node_ids[3], node_ids[4]),
+        node_ids[6]: (node_ids[5],),
+        node_ids[7]: (node_ids[6],),
+    }
+    _write_graph(config_root, repo, node_ids, dependencies)
+    graph_nodes = GraphReader(config_path=str(config_root)).get_ready_nodes(
+        "mission-e2e"
     )
-    result = adapter.dispatch_engagement(
-        [_packet(node_id, base) for node_id in node_ids]
-    )
-    assert result.success is True
-    assert result.session_ref is not None
-    _wait_for_completion(adapter, result.session_ref)
+    jobs = []
+    for index, node in enumerate(graph_nodes):
+        job = job_factory.build_job(
+            node,
+            {"event_id": f"event-{index}"},
+            "mission-e2e",
+            "owner/repo",
+            tmp_path / "runtime",
+            "factory_mission",
+        )
+        job["expected_base_commit_sha"] = base
+        jobs.append(job)
+    assert {
+        job["node_id"]: tuple(json.loads(job["dependencies"]))
+        for job in jobs
+    } == {
+        node_id: dependencies.get(node_id, ())
+        for node_id in node_ids
+    }
 
-    collected = adapter.collect_engagement(result.session_ref)
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS,
+        "factory_mission",
+        lambda **_kwargs: adapter,
+    )
+    planned = [
+        runner.PlannedDispatch(
+            event_id=f"event-{index}",
+            classification={"executor_recommendation": "factory_mission"},
+            job=job,
+            session_db_id=f"session-{index}",
+        )
+        for index, job in enumerate(jobs)
+    ]
+    outcomes = runner._execute_dispatches(
+        planned,
+        "owner/repo",
+        str(repo),
+        execution_policy={
+            "mission_engagement_size": 4,
+            "mission_max_pairs": 5,
+        },
+    )
+    assert all(outcome.success for outcome in outcomes.values())
+    session_refs = {
+        outcome.session_ref for outcome in outcomes.values()
+    }
+    assert len(session_refs) == 1
+    session_ref = session_refs.pop()
+    assert session_ref is not None
+    _wait_for_completion(adapter, session_ref)
+
+    collected = adapter.collect_engagement(session_ref)
 
     assert [item.feature_id for item in collected] == list(node_ids)
     assert all(item.success for item in collected)
     record = json.loads(
         (
             adapter.session_root
-            / result.session_ref.session_id
+            / session_ref.session_id
             / "session.json"
         ).read_text()
     )
@@ -595,8 +652,9 @@ def test_eight_feature_engagement_preserves_topological_execution_order(
         for index, item in enumerate(progress)
         if item["type"] == "worker_completed"
     }
-    for dependency, dependent in edges:
-        assert completions[dependency] < starts[dependent]
+    for dependent, node_dependencies in dependencies.items():
+        for dependency in node_dependencies:
+            assert completions[dependency] < starts[dependent]
     receipts = [
         json.loads(line)
         for line in Path(record["receipts_path"]).read_text().splitlines()
@@ -609,6 +667,55 @@ def test_eight_feature_engagement_preserves_topological_execution_order(
     manifest = json.loads(Path(collected[0].evidence_manifest_path).read_text())
     assert manifest["engagement_history"]["node_ids"] == list(node_ids)
     assert len(manifest["engagement_history"]["commit_shas"]) == 8
+
+
+def test_production_dispatch_rejects_out_of_order_graph_jobs(
+    tmp_path, monkeypatch
+):
+    node_ids = ("root", "dependent")
+    config_root = tmp_path / "gddp-config"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_graph(
+        config_root,
+        repo,
+        node_ids,
+        {"dependent": ("root",)},
+    )
+    graph_nodes = GraphReader(config_path=str(config_root)).get_ready_nodes(
+        "mission-e2e"
+    )
+    jobs = [
+        {
+            **job_factory.build_job(
+                node,
+                {"event_id": f"event-{index}"},
+                "mission-e2e",
+                "owner/repo",
+                tmp_path / "runtime",
+                "factory_mission",
+            ),
+            "expected_base_commit_sha": "a" * 40,
+        }
+        for index, node in enumerate(graph_nodes)
+    ]
+    adapter = MagicMock()
+    adapter.supports_engagement.return_value = True
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS,
+        "factory_mission",
+        lambda **_kwargs: adapter,
+    )
+
+    result = dispatcher.dispatch_engagement(
+        list(reversed(jobs)),
+        "owner/repo",
+        str(repo),
+    )
+
+    assert result.success is False
+    assert "topological order" in (result.error or "")
+    adapter.dispatch_engagement.assert_not_called()
 
 
 def test_three_way_sha_disagreement_is_quarantined_before_evaluation(

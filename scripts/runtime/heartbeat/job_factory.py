@@ -52,6 +52,7 @@ def build_job(
         "why":                 node.why.strip(),
         "constraints":         json.dumps(node.constraints),
         "acceptance_criteria": json.dumps(node.acceptance_criteria),
+        "dependencies":        json.dumps(node.depends_on),
         "priority":            node.priority,
         "status":              "ready",
         "attempt":             0,
