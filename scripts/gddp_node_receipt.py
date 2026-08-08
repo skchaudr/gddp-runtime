@@ -21,7 +21,7 @@ class GitContextError(RuntimeError):
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="gddp-node-receipt")
+    parser = argparse.ArgumentParser(prog="gddp receipt")
     parser.add_argument("--node-id", required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--result", required=True)

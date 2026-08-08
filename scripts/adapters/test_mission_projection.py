@@ -105,7 +105,7 @@ def test_every_feature_requires_the_complete_minimal_execution_contract():
         assert "Make exactly one commit for this feature." in description
         assert f"GDDP-Node-Id: {node_id}" in description
         assert (
-            f"gddp-node-receipt --node-id {node_id} "
+            f"gddp receipt --node-id {node_id} "
             "--base <starting SHA> --result <commit SHA>"
         ) in description
         assert "not complete until that receipt command exits successfully" in description

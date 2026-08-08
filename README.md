@@ -179,7 +179,7 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
    droid exec --mission -f <generated-mission.md> --auto high -w gddp/<engagement-id>
    ```
 
-4. Each feature captures its starting SHA, makes exactly one commit carrying `GDDP-Node-Id: <node-id>`, invokes `gddp-node-receipt`, and pushes only its own commit to the engagement branch. Push policy is enforced twice: by a guarded `git` executable on `PATH` and by a pre-push hook.
+4. Each feature captures its starting SHA, makes exactly one commit carrying `GDDP-Node-Id: <node-id>`, invokes `gddp receipt`, and pushes only its own commit to the engagement branch. Push policy is enforced twice: by a guarded `git` executable on `PATH` and by a pre-push hook.
 5. After the mission terminates, GDDP slices the engagement artifacts into one evidence manifest per node. It independently verifies the declared base→result boundary, commit trailer, ancestry, changed paths, receipt, and remote reachability before the existing reconciler/evaluator/review pipeline consumes the result.
 
 The contractual surface is **git**, not Factory's internal state. Factory's process exit and mission progress are coarse engagement evidence; per-node commits, refs, ancestry, and receipts establish what work can be attributed to each graph node.
@@ -197,13 +197,15 @@ Prerequisites:
 - Factory Droid installed, authenticated, and available as `droid`.
 - A local checkout of the target repository with an `origin` remote.
 - `gddp-config` available through `GDDP_CONFIG_PATH`.
-- `gddp-node-receipt` on the mission workers' `PATH`.
+- `gddp` on the mission workers' `PATH` (provides `gddp receipt`).
 
 Expose the checked-in receipt CLI under the contract name and configure the runtime:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
-ln -sf "$PWD/scripts/gddp_node_receipt.py" "$HOME/.local/bin/gddp-node-receipt"
+# Prefer the normal gddp CLI (gddp-config/bin/gddp on PATH).
+# Direct module fallback if needed:
+# python3 scripts/gddp_node_receipt.py --node-id <id> --base <sha> --result <sha>
 export PATH="$HOME/.local/bin:$PATH"
 export GDDP_CONFIG_PATH=/path/to/gddp-config
 export GDDP_RUNTIME_ROOT="$PWD"

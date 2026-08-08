@@ -87,7 +87,7 @@ def project_mission(
                 ),
                 (
                     "- After committing, run "
-                    f"`gddp-node-receipt --node-id {node.node_id} "
+                    f"`gddp receipt --node-id {node.node_id} "
                     "--base <starting SHA> --result <commit SHA>`."
                 ),
                 (
