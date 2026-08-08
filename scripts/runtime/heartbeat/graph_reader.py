@@ -17,6 +17,40 @@ import yaml
 
 DEFAULT_MISSION_ENGAGEMENT_SIZE = 1
 DEFAULT_MISSION_MAX_PAIRS = 5
+DEFAULT_EXECUTION_MODE_ALLOWLIST = frozenset(
+    {
+        "agent",
+        "droid",
+        "factory_mission",
+        "human",
+        "jules",
+        "jules_api",
+        "jules_cli",
+        "local_subprocess",
+        "pi_worker",
+        "vertex",
+        "vm_worker",
+    }
+)
+
+
+def validate_node_execution_modes(
+    value: object,
+    allowed_modes: Iterable[str] = DEFAULT_EXECUTION_MODE_ALLOWLIST,
+) -> list[str]:
+    """Return declared modes after enforcing the runtime allowlist."""
+    if not isinstance(value, list):
+        raise ValueError("allowed_execution_modes must be a list")
+
+    allowlist = frozenset(allowed_modes)
+    disallowed = [
+        mode
+        for mode in value
+        if not isinstance(mode, str) or mode not in allowlist
+    ]
+    if disallowed:
+        raise ValueError(f"disallowed execution mode(s): {disallowed}")
+    return list(value)
 
 
 def parse_execution_policy(value: object) -> dict:
@@ -84,7 +118,12 @@ class ProjectGraph:
 
 
 class GraphReader:
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        *,
+        execution_mode_allowlist: Iterable[str] | None = None,
+    ):
         # Resolve path: arg > env var > sibling directory convention
         if config_path:
             self.config_path = Path(config_path)
@@ -100,6 +139,12 @@ class GraphReader:
                 f"gddp-config not found at {self.config_path}. "
                 "Set GDDP_CONFIG_PATH env var or pass config_path explicitly."
             )
+
+        self.execution_mode_allowlist = frozenset(
+            DEFAULT_EXECUTION_MODE_ALLOWLIST
+            if execution_mode_allowlist is None
+            else execution_mode_allowlist
+        )
 
         # Internal caches to eliminate redundant synchronous file I/O
         self._project_cache: dict[str, ProjectGraph] = {}
@@ -186,7 +231,10 @@ class GraphReader:
             depends_on=data.get("depends_on", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
             constraints=data.get("constraints", []),
-            allowed_execution_modes=data.get("allowed_execution_modes", ["jules"]),
+            allowed_execution_modes=validate_node_execution_modes(
+                data.get("allowed_execution_modes", ["jules"]),
+                self.execution_mode_allowlist,
+            ),
             required_artifacts=data.get("required_artifacts", []),
             priority=data.get("priority", "normal"),
             unlocks=data.get("unlocks", []),

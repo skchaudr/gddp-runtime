@@ -11,9 +11,51 @@ from scripts.runtime.heartbeat.graph_reader import (
 )
 
 
+def _write_factory_mission_node(config_root):
+    nodes_dir = config_root / "graphs" / "mission-project" / "nodes"
+    nodes_dir.mkdir(parents=True)
+    (nodes_dir / "mission-node.yaml").write_text(
+        """
+node_id: mission-node
+title: Mission node
+allowed_execution_modes:
+  - factory_mission
+""".lstrip()
+    )
+
+
 def test_factory_mission_registry_resolves_to_mission_adapter():
     assert dispatcher.ADAPTERS["factory_mission"] is MissionAdapter
     assert isinstance(dispatcher.ADAPTERS["factory_mission"](repo="owner/repo"), MissionAdapter)
+
+
+def test_runtime_node_validator_accepts_factory_mission_by_default(tmp_path):
+    _write_factory_mission_node(tmp_path)
+
+    node = GraphReader(str(tmp_path)).load_node(
+        "mission-project", "mission-node"
+    )
+
+    assert node.allowed_execution_modes == ["factory_mission"]
+
+
+def test_runtime_node_validator_rejects_factory_mission_removed_from_allowlist(
+    tmp_path,
+):
+    _write_factory_mission_node(tmp_path)
+    injected_allowlist = {"jules"}
+    reader = GraphReader(
+        str(tmp_path),
+        execution_mode_allowlist=injected_allowlist,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"disallowed execution mode.*factory_mission",
+    ):
+        reader.load_node("mission-project", "mission-node")
+
+    assert ("mission-project", "mission-node") not in reader._node_cache
 
 
 def test_execution_policy_accepts_mission_sizing_fields():
