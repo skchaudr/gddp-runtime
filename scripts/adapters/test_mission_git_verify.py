@@ -6,7 +6,10 @@ from pathlib import Path
 
 from scripts.adapters.executor_protocol import SessionRef
 from scripts.adapters.mission_adapter import MissionAdapter
-from scripts.adapters.mission_git_verify import verify_git_result
+from scripts.adapters.mission_git_verify import (
+    verify_engagement_history,
+    verify_git_result,
+)
 
 
 def _git(repo: Path, *args: str, input_text: str | None = None) -> str:
@@ -166,6 +169,73 @@ def test_missing_result_preserves_claim_and_routes_to_review(tmp_path):
     assert missing in (verification.completion_quarantine_reason or "")
 
 
+def test_result_commit_must_have_exact_node_trailer(tmp_path):
+    repo, root = _repo(tmp_path)
+    _git(repo, "switch", "-c", "gddp/engagement")
+    wrong = _commit(
+        repo,
+        "complete alpha\n\nGDDP-Node-Id: node-beta",
+        "wrong\n",
+    )
+
+    verification = verify_git_result(
+        repo,
+        base_sha=root,
+        result_sha=wrong,
+        engagement_branch="gddp/engagement",
+        expected_node_id="node-alpha",
+    )
+
+    assert verification.trailer_node_ids == ("node-beta",)
+    assert verification.trailer_matches is False
+    assert verification.verified is False
+    assert "GDDP-Node-Id" in (
+        verification.completion_quarantine_reason or ""
+    )
+
+
+def test_engagement_history_is_one_topological_commit_per_node(tmp_path):
+    repo, root = _repo(tmp_path)
+    _git(repo, "switch", "-c", "gddp/engagement")
+    alpha = _commit(
+        repo,
+        "complete alpha\n\nGDDP-Node-Id: node-alpha",
+        "alpha\n",
+    )
+    beta = _commit(
+        repo,
+        "complete beta\n\nGDDP-Node-Id: node-beta",
+        "beta\n",
+    )
+
+    valid = verify_engagement_history(
+        repo,
+        base_sha=root,
+        engagement_branch="gddp/engagement",
+        demanded_node_ids=("node-alpha", "node-beta"),
+    )
+
+    assert valid.verified is True
+    assert valid.commit_shas == (alpha, beta)
+    assert valid.node_ids == ("node-alpha", "node-beta")
+
+    _commit(repo, "out-of-contract cleanup", "extra\n")
+    invalid = verify_engagement_history(
+        repo,
+        base_sha=root,
+        engagement_branch="gddp/engagement",
+        demanded_node_ids=("node-alpha", "node-beta"),
+    )
+
+    assert invalid.verified is False
+    assert "exactly one commit per demanded node" in (
+        invalid.completion_quarantine_reason or ""
+    )
+    assert "exactly one GDDP-Node-Id trailer" in (
+        invalid.completion_quarantine_reason or ""
+    )
+
+
 def _write_collect_fixture(
     tmp_path: Path,
     repo: Path,
@@ -278,7 +348,11 @@ def test_collect_quarantines_real_ancestry_mismatch(tmp_path):
     repo, root = _repo(tmp_path)
     base = _commit(repo, "base line", "base\n")
     _git(repo, "switch", "-c", "gddp/engagement", root)
-    result = _commit(repo, "divergent result", "result\n")
+    result = _commit(
+        repo,
+        "divergent result\n\nGDDP-Node-Id: node-alpha",
+        "result\n",
+    )
     adapter, session_ref = _write_collect_fixture(
         tmp_path,
         repo,
@@ -327,7 +401,11 @@ def test_collect_missing_commit_preserves_claim_and_reviews(tmp_path):
 def test_collect_rejects_feature_commit_that_is_local_only(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "switch", "-c", "gddp/engagement")
-    result = _commit(repo, "local-only result", "result\n")
+    result = _commit(
+        repo,
+        "local-only result\n\nGDDP-Node-Id: node-alpha",
+        "result\n",
+    )
     adapter, session_ref = _write_collect_fixture(
         tmp_path,
         repo,
@@ -351,7 +429,11 @@ def test_collect_rejects_feature_commit_that_is_local_only(tmp_path):
 def test_collect_quarantines_handoff_result_disagreement(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "switch", "-c", "gddp/engagement")
-    result = _commit(repo, "valid result", "result\n")
+    result = _commit(
+        repo,
+        "valid result\n\nGDDP-Node-Id: node-alpha",
+        "result\n",
+    )
     adapter, session_ref = _write_collect_fixture(
         tmp_path,
         repo,

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+_NODE_TRAILER = re.compile(r"^GDDP-Node-Id:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,8 @@ class GitVerification:
     reachable: bool
     origin_reachable: bool | None
     origin_containing_refs: tuple[str, ...]
+    trailer_node_ids: tuple[str, ...]
+    trailer_matches: bool | None
     review_required: bool
     completion_quarantine_reason: str | None
 
@@ -28,10 +33,27 @@ class GitVerification:
             and self.ancestry_holds
             and self.reachable
             and self.origin_reachable is not False
+            and self.trailer_matches is not False
         )
 
     def to_manifest(self) -> dict[str, object]:
         return {**asdict(self), "verified": self.verified}
+
+
+@dataclass(frozen=True)
+class EngagementHistoryVerification:
+    """Observed base-to-branch commit history for one engagement."""
+
+    base_sha: str
+    engagement_branch: str
+    demanded_node_ids: tuple[str, ...]
+    commit_shas: tuple[str, ...]
+    node_ids: tuple[str | None, ...]
+    verified: bool
+    completion_quarantine_reason: str | None
+
+    def to_manifest(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def verify_git_result(
@@ -41,6 +63,7 @@ def verify_git_result(
     result_sha: str,
     engagement_branch: str,
     origin_remote: str | None = None,
+    expected_node_id: str | None = None,
 ) -> GitVerification:
     """Verify a claimed result against real objects in ``repo_path``.
 
@@ -78,6 +101,14 @@ def verify_git_result(
         if expected_origin_ref is not None
         else None
     )
+    trailer_node_ids = (
+        _commit_node_trailers(repo, result_sha) if commit_exists else ()
+    )
+    trailer_matches = (
+        trailer_node_ids == (expected_node_id,)
+        if expected_node_id is not None
+        else None
+    )
 
     reasons: list[str] = []
     if not commit_exists:
@@ -106,6 +137,12 @@ def verify_git_result(
                 f"result {result_sha} is not reachable from origin ref "
                 f"{expected_origin_ref}"
             )
+        if trailer_matches is False:
+            reasons.append(
+                f"result {result_sha} must have exactly one "
+                f"GDDP-Node-Id trailer for {expected_node_id}; observed "
+                f"{list(trailer_node_ids)!r}"
+            )
 
     quarantine_reason = "; ".join(reasons) if reasons else None
     return GitVerification(
@@ -116,8 +153,70 @@ def verify_git_result(
         reachable=reachable,
         origin_reachable=origin_reachable,
         origin_containing_refs=origin_containing_refs,
+        trailer_node_ids=trailer_node_ids,
+        trailer_matches=trailer_matches,
         review_required=quarantine_reason is not None,
         completion_quarantine_reason=quarantine_reason,
+    )
+
+
+def verify_engagement_history(
+    repo_path: str | Path,
+    *,
+    base_sha: str,
+    engagement_branch: str,
+    demanded_node_ids: tuple[str, ...],
+) -> EngagementHistoryVerification:
+    """Require a bijection between demanded nodes and branch-range commits."""
+    repo = Path(repo_path).resolve()
+    branch_tip = _resolve_local_branch(repo, engagement_branch)
+    commits = (
+        _commits_in_range(repo, base_sha, branch_tip)
+        if branch_tip is not None
+        else ()
+    )
+    trailers = tuple(
+        _commit_node_trailers(repo, commit_sha) for commit_sha in commits
+    )
+    node_ids = tuple(
+        values[0] if len(values) == 1 else None for values in trailers
+    )
+    reasons: list[str] = []
+    if branch_tip is None:
+        reasons.append(
+            f"engagement branch {engagement_branch} cannot be resolved"
+        )
+    if len(commits) != len(demanded_node_ids):
+        reasons.append(
+            "engagement history must contain exactly one commit per demanded "
+            f"node; observed {len(commits)} commits for "
+            f"{len(demanded_node_ids)} nodes"
+        )
+    malformed = [
+        commit_sha
+        for commit_sha, values in zip(commits, trailers, strict=True)
+        if len(values) != 1
+    ]
+    if malformed:
+        reasons.append(
+            "every engagement commit must have exactly one GDDP-Node-Id "
+            f"trailer; malformed commits {malformed!r}"
+        )
+    if node_ids != demanded_node_ids:
+        reasons.append(
+            "engagement commit trailers must match demanded node ids in "
+            f"topological order; demanded {list(demanded_node_ids)!r}, "
+            f"observed {list(node_ids)!r}"
+        )
+    reason = "; ".join(reasons) if reasons else None
+    return EngagementHistoryVerification(
+        base_sha=base_sha,
+        engagement_branch=engagement_branch,
+        demanded_node_ids=demanded_node_ids,
+        commit_shas=commits,
+        node_ids=node_ids,
+        verified=reason is None,
+        completion_quarantine_reason=reason,
     )
 
 
@@ -159,6 +258,36 @@ def _remote_branches_containing(
         "--contains",
         result_sha,
         "--format=%(refname:short)",
+    )
+    if process is None or process.returncode != 0:
+        return ()
+    return tuple(
+        line.strip()
+        for line in process.stdout.splitlines()
+        if line.strip()
+    )
+
+
+def _commit_node_trailers(
+    repo_path: Path, commit_sha: str
+) -> tuple[str, ...]:
+    process = _run_git(repo_path, "show", "-s", "--format=%B", commit_sha)
+    if process is None or process.returncode != 0:
+        return ()
+    return tuple(
+        match.group(1).strip()
+        for match in _NODE_TRAILER.finditer(process.stdout)
+    )
+
+
+def _commits_in_range(
+    repo_path: Path, base_sha: str, branch_tip: str
+) -> tuple[str, ...]:
+    process = _run_git(
+        repo_path,
+        "rev-list",
+        "--reverse",
+        f"{base_sha}..{branch_tip}",
     )
     if process is None or process.returncode != 0:
         return ()

@@ -404,7 +404,14 @@ def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
         (repo / "tracked.txt").write_text(f"{feature_id}\n")
         subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
         subprocess.run(
-            ["git", "commit", "-m", f"complete {feature_id}"],
+            [
+                "git",
+                "commit",
+                "-m",
+                f"complete {feature_id}",
+                "-m",
+                f"GDDP-Node-Id: {feature_id}",
+            ],
             cwd=repo,
             check=True,
         )

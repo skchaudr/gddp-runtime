@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .mission_git_verify import verify_git_result
+from .mission_git_verify import verify_engagement_history, verify_git_result
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,29 @@ def collect_mission_evidence(
         else mission_path / "receipts.jsonl"
     )
     receipts = _read_receipts(receipt_file)
+    first_receipt = next(
+        (
+            records[-1]
+            for feature_id in feature_ids
+            if (records := receipts.get(feature_id))
+        ),
+        None,
+    )
+    engagement_base = (
+        _string(first_receipt.get("base"))
+        if first_receipt is not None
+        else None
+    )
+    engagement_history = (
+        verify_engagement_history(
+            git_repo_path,
+            base_sha=engagement_base,
+            engagement_branch=result_ref,
+            demanded_node_ids=feature_ids,
+        )
+        if git_repo_path is not None and engagement_base is not None
+        else None
+    )
     push_records = (
         _read_jsonl(Path(push_audit_path).resolve())
         if push_audit_path is not None
@@ -123,6 +146,7 @@ def collect_mission_evidence(
                 result_sha=result_sha,
                 engagement_branch=result_ref,
                 origin_remote=origin_remote,
+                expected_node_id=feature_id,
             ).to_manifest()
         cross_check = _cross_check(receipt, handoff, selected_verification)
         push_verification = (
@@ -142,6 +166,14 @@ def collect_mission_evidence(
         quarantine_reasons = _quarantine_reasons(
             cross_check, selected_verification
         )
+        if (
+            engagement_history is not None
+            and not engagement_history.verified
+            and engagement_history.completion_quarantine_reason
+        ):
+            quarantine_reasons.append(
+                engagement_history.completion_quarantine_reason
+            )
         missing = _missing_channels(
             receipt=receipt,
             handoff=selected_handoff,
@@ -224,6 +256,11 @@ def collect_mission_evidence(
             "handoff": selected_handoff,
             "progress": selected_progress,
             "git_verified": selected_verification,
+            "engagement_history": (
+                engagement_history.to_manifest()
+                if engagement_history is not None
+                else None
+            ),
             "push_verification": push_verification,
             "cross_check": cross_check,
             "missing_channels": missing,
