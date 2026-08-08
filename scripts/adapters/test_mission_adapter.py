@@ -278,6 +278,7 @@ def _write_session(
                 "engagement_id": engagement_id,
                 "mission_dir": str(mission_dir),
                 "process_pid": pid,
+                "process_identity": "Sat Aug  8 00:00:00 2026 droid exec --mission",
                 "process_returncode": returncode,
                 "engagement_branch": f"gddp/{engagement_id}",
                 "feature_ids": ["node-alpha"],
@@ -296,6 +297,11 @@ def test_status_reports_live_pid_running_without_terminal_event(tmp_path, monkey
         progress=[{"type": "worker_started", "featureId": "node-alpha"}],
     )
     monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: True)
+    monkeypatch.setattr(
+        mission_adapter,
+        "_process_identity",
+        lambda pid: "Sat Aug  8 00:00:00 2026 droid exec --mission",
+    )
 
     assert adapter.status(ref).state == "running"
 
@@ -347,6 +353,83 @@ def test_status_reports_nonzero_exit_as_failed(tmp_path, monkeypatch):
 
     assert status.state == "failed"
     assert "exit code 17" in (status.error or "")
+
+
+def test_dispatch_fails_when_process_exits_immediately_nonzero(tmp_path, monkeypatch):
+    adapter = _make_adapter(tmp_path, droid_path="/opt/factory/droid")
+    launched = _FakeProcess(pid=55501, returncode=7)
+
+    def launch(*args, **kwargs):
+        _create_factory_mission(adapter, "early-exit")
+        # Popen is mocked; write the captured streams the real process would.
+        kwargs["stderr"].write(b"fatal: missing receipt tool\n")
+        kwargs["stderr"].flush()
+        return launched
+
+    monkeypatch.setattr(mission_adapter, "_git_head", lambda path: None)
+    monkeypatch.setattr(
+        mission_adapter, "_process_identity", lambda pid: "start droid exec --mission"
+    )
+    monkeypatch.setattr(mission_adapter.subprocess, "Popen", launch)
+
+    result = adapter.dispatch_engagement([_packet("node-alpha")])
+
+    assert result.success is False
+    assert result.session_ref is not None
+    assert "exit code 7" in (result.error or "")
+    assert "missing receipt tool" in (result.error or "")
+    record = json.loads(
+        (adapter.session_root / result.engagement_id / "session.json").read_text()
+    )
+    assert record["process_returncode"] == 7
+
+
+def test_status_includes_stderr_on_failed_exit(tmp_path, monkeypatch):
+    adapter = _make_adapter(tmp_path)
+    ref = _write_session(
+        adapter,
+        pid=116,
+        returncode=9,
+        progress=[],
+        state="running",
+    )
+    session_dir = adapter.session_root / ref.session_id
+    stderr_path = session_dir / "stderr"
+    stderr_path.write_text("Mission initialization is blocked: tool missing\n")
+    record_path = session_dir / "session.json"
+    record = json.loads(record_path.read_text())
+    record["stderr_path"] = str(stderr_path)
+    record_path.write_text(json.dumps(record))
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: False)
+
+    status = adapter.status(ref)
+
+    assert status.state == "failed"
+    assert "exit code 9" in (status.error or "")
+    assert "tool missing" in (status.error or "")
+
+
+def test_status_rejects_pid_reuse_without_launch_identity(tmp_path, monkeypatch):
+    adapter = _make_adapter(tmp_path)
+    ref = _write_session(
+        adapter,
+        pid=117,
+        returncode=None,
+        progress=[{"type": "worker_started"}],
+        state="running",
+    )
+    record_path = adapter.session_root / ref.session_id / "session.json"
+    record = json.loads(record_path.read_text())
+    record["process_identity"] = None
+    record_path.write_text(json.dumps(record))
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: True)
+    monkeypatch.setattr(
+        mission_adapter, "_process_identity", lambda pid: "other long-lived daemon"
+    )
+
+    status = adapter.status(ref)
+
+    assert status.state == "crashed"
 
 
 def _completed_fixture(adapter: MissionAdapter, ids: list[str]) -> SessionRef:
@@ -756,9 +839,10 @@ def test_cancel_kills_only_captured_process_group_and_preserves_evidence(tmp_pat
         start_new_session=True,
     )
     ref = _write_session(adapter, pid=captured.pid, returncode=None)
-    record = json.loads(
-        (adapter.session_root / ref.session_id / "session.json").read_text()
-    )
+    record_path = adapter.session_root / ref.session_id / "session.json"
+    record = json.loads(record_path.read_text())
+    record["process_identity"] = mission_adapter._process_identity(captured.pid)
+    record_path.write_text(json.dumps(record))
     sentinel = Path(record["mission_dir"], "sentinel.txt")
     sentinel.write_text("evidence")
 

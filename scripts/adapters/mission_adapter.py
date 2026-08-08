@@ -194,8 +194,27 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "push_audit_path": str(push_audit_path),
                 "cancelled": False,
             }
+            # Capture immediate exits before the adapter returns success.
+            # Heartbeat processes are short-lived; in-memory Popen is gone on
+            # the next tick, so an already-dead process must not look "running".
+            early_returncode = process.poll()
+            if early_returncode is not None:
+                record["process_returncode"] = early_returncode
             _write_json(engagement_dir / "session.json", record)
             self._processes[engagement_id] = process
+            if early_returncode is not None and early_returncode != 0:
+                return EngagementDispatchResult(
+                    success=False,
+                    engagement_id=engagement_id,
+                    session_ref=SessionRef(self.executor_name, engagement_id),
+                    mission_dir=str(mission_dir),
+                    process_pid=process.pid,
+                    engagement_branch=engagement_branch,
+                    feature_ids=feature_ids,
+                    error=_format_process_failure(
+                        record, returncode=early_returncode
+                    ),
+                )
         except Exception as exc:
             if process is not None:
                 try:
@@ -238,13 +257,15 @@ class MissionAdapter(EngagementAdapterDefaults):
         pid = _positive_int(record.get("process_pid"))
         alive = bool(pid and _pid_is_running(pid))
         expected_identity = record.get("process_identity")
-        if (
-            alive
-            and process is None
-            and expected_identity
-            and _process_identity(pid) != expected_identity
-        ):
-            alive = False
+        if alive and process is None:
+            current_identity = _process_identity(pid) if pid else None
+            if expected_identity:
+                if current_identity != expected_identity:
+                    alive = False
+            elif current_identity is None or "exec --mission" not in current_identity:
+                # No durable launch identity: do not trust bare PID liveness
+                # (PID reuse would strand the job as running forever).
+                alive = False
         if alive:
             return SessionStatus(state="running")
 
@@ -254,20 +275,9 @@ class MissionAdapter(EngagementAdapterDefaults):
         terminal_type = terminal.get("type") if terminal else None
         if returncode in {None, 0} and terminal_type == "mission_completed":
             return SessionStatus(state="completed")
-        details = (
-            f"mission process {pid or 'unknown'} is dead without a "
-            "mission_completed progress event"
-        )
-        if returncode not in {None, 0}:
-            details += f" (exit code {returncode})"
-        if record.get("cancelled"):
-            details += " (cancelled)"
-        factory_state = _factory_state(Path(str(record["mission_dir"])))
-        if factory_state:
-            details += f"; Factory state.json reported {factory_state!r}"
         return SessionStatus(
             state="failed" if returncode not in {None, 0} else "crashed",
-            error=details,
+            error=_format_process_failure(record, returncode=returncode),
         )
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
@@ -612,6 +622,47 @@ def _find_branch_worktree(repo: Path, engagement_branch: str) -> Path | None:
         elif not line:
             current_path = None
     return None
+
+
+def _read_text_tail(path: object, *, limit: int = 2000) -> str:
+    if not isinstance(path, str | Path):
+        return ""
+    try:
+        raw = Path(path).read_text(errors="replace")
+    except OSError:
+        return ""
+    text = raw.strip()
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+def _format_process_failure(
+    record: Mapping[str, object],
+    *,
+    returncode: object,
+) -> str:
+    pid = _positive_int(record.get("process_pid"))
+    details = (
+        f"mission process {pid or 'unknown'} is dead without a "
+        "mission_completed progress event"
+    )
+    if returncode not in {None, 0}:
+        details += f" (exit code {returncode})"
+    if record.get("cancelled"):
+        details += " (cancelled)"
+    factory_state = _factory_state(Path(str(record["mission_dir"])))
+    if factory_state:
+        details += f"; Factory state.json reported {factory_state!r}"
+    stderr = _read_text_tail(record.get("stderr_path"))
+    stdout = _read_text_tail(record.get("stdout_path"))
+    if stderr:
+        details += f"; stderr: {stderr}"
+    elif stdout:
+        details += f"; stdout: {stdout}"
+    return details
 
 
 def _pid_is_running(pid: int) -> bool:
