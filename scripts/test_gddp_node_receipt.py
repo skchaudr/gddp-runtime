@@ -109,6 +109,13 @@ def test_success_appends_one_complete_receipt_line(git_repo: Path):
 
 
 def test_git_context_is_observed_instead_of_copied_from_claims(git_repo: Path):
+    """CLI records observed context even when --result disagrees.
+
+    Mismatch rejection is the evidence collector's job (see
+    test_receipt_result_mismatching_git_head_is_quarantined), not the CLI's.
+    The CLI must still exit 0 and persist both the claim and the observation
+    so collection can quarantine with full evidence.
+    """
     receipts_path = git_repo / "receipts.jsonl"
     claimed_result = "0" * 40
 

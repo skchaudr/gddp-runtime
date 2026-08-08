@@ -312,9 +312,15 @@ def test_reconciler_persists_completion_identity_before_evaluation(
     assert batch.add.call_count == 2
 
 
-def test_reconciler_exact_duplicate_skips_second_evaluation(
+def test_reconciler_exact_duplicate_drives_job_forward_with_first_result(
     monkeypatch, tmp_path
 ):
+    """Exact replay must not leave the job running forever.
+
+    The first stored result is authoritative; the reconciler proceeds the
+    second session through evaluation with that result instead of parking
+    it as an unpolled completion_duplicate orphan.
+    """
     con = _connection()
     con.execute(
         """
@@ -345,8 +351,10 @@ def test_reconciler_exact_duplicate_skips_second_evaluation(
         )
     ]
     batch = MagicMock()
-    resolve_ref = MagicMock()
-    monkeypatch.setattr(reconciler, "_resolve_ref", resolve_ref)
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "a" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+    monkeypatch.setattr(reconciler, "_parent_commit", lambda *args: "0" * 40)
 
     reconciler._reconcile_engagement_group(
         con, adapter, [session], tmp_path, batch
@@ -355,12 +363,17 @@ def test_reconciler_exact_duplicate_skips_second_evaluation(
     row = con.execute(
         "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
     ).fetchone()
+    job = con.execute(
+        "SELECT status, queue_state FROM jobs WHERE job_id = 'job-node-beta'"
+    ).fetchone()
     assert row["result_commit_sha"] == "a" * 40
     assert row["evidence_manifest_path"] == "/evidence/existing.json"
-    assert row["state"] == "completion_duplicate"
+    assert row["state"] == "collected"
     assert row["completion_quarantine_reason"] is None
-    batch.add.assert_not_called()
-    resolve_ref.assert_not_called()
+    assert job["status"] == "running"  # evaluation batch owns the next hop
+    batch.add.assert_called_once()
+    added = batch.add.call_args
+    assert added.args[2] == "a" * 40  # first stored result, not the replay claim
 
 
 def test_reconciler_same_session_replay_resumes_first_evaluation(

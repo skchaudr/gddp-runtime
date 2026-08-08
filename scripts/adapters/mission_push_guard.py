@@ -31,8 +31,11 @@ def install_git_push_guard(
     """Install executable and hook guards for every mission-process push.
 
     The PATH shim provides the normal command boundary. The inherited Git
-    configuration adds an independent pre-push hook, so invoking the resolved
-    Git executable by absolute path cannot skip policy enforcement.
+    configuration adds an independent pre-push hook so absolute-path Git still
+    hits policy *unless* the caller overrides hooks with
+    ``git -c core.hooksPath=/dev/null``. That residual bypass cannot be closed
+    at environment level without heavier sandboxing; mission collection must
+    detect protected-branch pollution post-hoc (see mission_evidence).
     """
     original_path = base_env.get("PATH", os.defpath)
     real_git = shutil.which("git", path=original_path)

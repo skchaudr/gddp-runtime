@@ -25,7 +25,7 @@ from pathlib import Path
 # Ensure adapters directory is importable (same pattern as dispatcher.py).
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from adapters.executor_protocol import SessionRef
+from adapters.executor_protocol import PatchResult, SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
@@ -613,12 +613,26 @@ def _reconcile_engagement_group(
     for feature_id, (session, job) in jobs_by_node.items():
         result = by_feature[feature_id]
         decision = completion_decisions.get(feature_id)
-        if (
-            decision is not None
-            and decision.action == "duplicate"
-            and decision.existing_session_db_id != session["session_db_id"]
-        ):
-            continue
+        if decision is not None and decision.action == "duplicate":
+            # Exact replay: the first stored result is authoritative. Drive this
+            # job forward with that result — never leave it running forever
+            # because the session was marked completion_duplicate.
+            if decision.result_commit_sha:
+                result = PatchResult(
+                    success=True,
+                    base_commit_sha=result.base_commit_sha,
+                    result_commit_sha=decision.result_commit_sha,
+                    result_ref=result.result_ref,
+                    feature_id=result.feature_id or feature_id,
+                    evidence_manifest_path=(
+                        decision.evidence_manifest_path
+                        or result.evidence_manifest_path
+                    ),
+                    completion_id=result.completion_id,
+                    completion_digest_sha256=result.completion_digest_sha256,
+                    review_required=False,
+                    error=None,
+                )
         if session["session_db_id"] in quarantined_session_ids:
             continue
         if (

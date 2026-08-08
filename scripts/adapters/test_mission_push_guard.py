@@ -163,3 +163,42 @@ def test_absolute_git_path_cannot_bypass_push_guard(
     audit = json.loads(audit_path.read_text())
     assert audit["allowed"] is False
     assert audit["returncode"] != 0
+
+
+def test_absolute_git_with_hooks_path_override_is_residual_bypass(tmp_path):
+    """Document the residual prevention gap closed by post-hoc detection.
+
+    ``git -c core.hooksPath=/dev/null`` plus an absolute executable path
+    defeats both the PATH shim and the pre-push hook. Prevention cannot
+    close this at environment level; mission_evidence must detect the
+    resulting protected-branch pollution.
+    """
+    repo, remote, _result_sha = _repo_with_remote(tmp_path)
+    audit_path = tmp_path / "push-audit.jsonl"
+    guarded_env = install_git_push_guard(
+        tmp_path / "git-guard",
+        engagement_branch="gddp/engagement",
+        audit_path=audit_path,
+        base_env=os.environ,
+    )
+
+    process = subprocess.run(
+        [
+            guarded_env["GDDP_REAL_GIT"],
+            "-c",
+            "core.hooksPath=/dev/null",
+            "push",
+            "origin",
+            "HEAD:refs/heads/main",
+        ],
+        cwd=repo,
+        env=guarded_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    # Residual: prevention fails.
+    assert process.returncode == 0
+    refs = _git(remote, "for-each-ref", "--format=%(refname)", "refs/heads")
+    assert "refs/heads/main" in refs

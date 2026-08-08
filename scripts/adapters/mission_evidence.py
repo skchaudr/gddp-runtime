@@ -163,9 +163,29 @@ def collect_mission_evidence(
             if push_records is not None
             else None
         )
+        receipt_context_reasons = (
+            _receipt_git_context_reasons(
+                receipt,
+                git_repo_path=git_repo_path,
+                engagement_branch=result_ref,
+            )
+            if receipt is not None
+            else []
+        )
+        protected_push_reasons = (
+            _protected_branch_push_reasons(
+                git_repo_path,
+                result_sha=result_sha,
+                engagement_branch=result_ref,
+            )
+            if git_repo_path is not None and result_sha is not None
+            else []
+        )
         quarantine_reasons = _quarantine_reasons(
             cross_check, selected_verification
         )
+        quarantine_reasons.extend(receipt_context_reasons)
+        quarantine_reasons.extend(protected_push_reasons)
         if (
             engagement_history is not None
             and not engagement_history.verified
@@ -188,6 +208,8 @@ def collect_mission_evidence(
         if receipt is not None and _receipt_identity_conflicts(receipt):
             reasons.append("conflicting_receipt_feature_ids")
         reasons.extend(_disagreement_reasons(cross_check))
+        reasons.extend(receipt_context_reasons)
+        reasons.extend(protected_push_reasons)
         reasons.extend(quarantine_reasons)
         if (
             push_verification is not None
@@ -513,6 +535,149 @@ def _receipt_identity_conflicts(receipt: Mapping[str, object]) -> bool:
     node_id = _string(receipt.get("node_id"))
     feature_id = _string(receipt.get("featureId"))
     return node_id is not None and feature_id is not None and node_id != feature_id
+
+
+def _same_git_repository(left: str | Path, right: str | Path) -> bool:
+    """True when both paths resolve to the same git common directory.
+
+    Engagement worktrees share a common dir with the main checkout, so path
+    equality is the wrong check — compare ``rev-parse --git-common-dir``.
+    """
+    import subprocess
+
+    def common_dir(path: str | Path) -> str | None:
+        try:
+            resolved = Path(path).expanduser().resolve()
+        except OSError:
+            return None
+        try:
+            process = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=str(resolved),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if process.returncode != 0 or not process.stdout.strip():
+            return None
+        common = Path(process.stdout.strip())
+        if not common.is_absolute():
+            common = resolved / common
+        try:
+            return str(common.resolve())
+        except OSError:
+            return str(common)
+
+    left_common = common_dir(left)
+    right_common = common_dir(right)
+    if left_common is None or right_common is None:
+        try:
+            return str(Path(left).resolve()) == str(Path(right).expanduser().resolve())
+        except OSError:
+            return False
+    return left_common == right_common
+
+
+def _receipt_git_context_reasons(
+    receipt: Mapping[str, object],
+    *,
+    git_repo_path: str | Path | None,
+    engagement_branch: str,
+) -> list[str]:
+    """Quarantine when receipt self-description disagrees with claimed result.
+
+    The receipt CLI records observed git_head/branch/toplevel independently of
+    the claimed --result. Collection must reject envelopes where the cargo
+    (result) does not match the label (observed context).
+    """
+    reasons: list[str] = []
+    result_sha = _string(receipt.get("result"))
+    git_head = _string(receipt.get("git_head"))
+    git_branch = _string(receipt.get("git_branch"))
+    git_toplevel = _string(receipt.get("git_toplevel"))
+    if result_sha is None:
+        return reasons
+    if git_head is not None and git_head != result_sha:
+        reasons.append(
+            f"receipt result {result_sha} does not match observed git_head "
+            f"{git_head}"
+        )
+    if git_repo_path is not None and git_toplevel is not None:
+        if not _same_git_repository(git_repo_path, git_toplevel):
+            reasons.append(
+                f"receipt git_toplevel {git_toplevel!r} is not the same git "
+                f"repository as engagement repo {str(git_repo_path)!r}"
+            )
+    if git_repo_path is not None and git_branch is not None and result_sha is not None:
+        from .mission_git_verify import _is_ancestor, _resolve_local_branch
+
+        branch_name = git_branch.removeprefix("refs/heads/")
+        tip = _resolve_local_branch(Path(git_repo_path), branch_name)
+        if tip is None:
+            reasons.append(
+                f"receipt git_branch {git_branch!r} is not resolvable in the "
+                f"engagement repo"
+            )
+        elif not _is_ancestor(Path(git_repo_path), result_sha, tip):
+            reasons.append(
+                f"receipt result {result_sha} is not reachable from claimed "
+                f"git_branch {git_branch!r} (tip {tip})"
+            )
+    return reasons
+
+
+def _protected_branch_push_reasons(
+    git_repo_path: str | Path,
+    *,
+    result_sha: str,
+    engagement_branch: str,
+    protected_branches: Sequence[str] = ("main", "master"),
+) -> list[str]:
+    """Detect engagement commits that landed on protected branches.
+
+    Environment push guards are best-effort (absolute git + ``-c
+    core.hooksPath=/dev/null`` can bypass them). Collection must still catch
+    protected-branch pollution by checking whether any feature result is
+    reachable from origin/main (or local main).
+    """
+    from .mission_git_verify import (
+        _is_ancestor,
+        _remote_branches_containing,
+        _resolve_local_branch,
+    )
+
+    reasons: list[str] = []
+    repo = Path(git_repo_path)
+    engagement_name = engagement_branch.removeprefix("refs/heads/")
+    protected = {
+        name
+        for name in protected_branches
+        if name != engagement_name and not engagement_name.endswith(f"/{name}")
+    }
+    if not protected:
+        return reasons
+
+    for remote_ref in _remote_branches_containing(repo, result_sha):
+        short = remote_ref.removeprefix("origin/")
+        if short in protected:
+            reasons.append(
+                f"feature result {result_sha} is reachable from protected "
+                f"branch {remote_ref} — protected-branch push detected"
+            )
+
+    for name in protected:
+        tip = _resolve_local_branch(repo, name)
+        if tip is not None and _is_ancestor(repo, result_sha, tip):
+            reason = (
+                f"feature result {result_sha} is reachable from protected "
+                f"branch {name} (tip {tip}) — protected-branch push detected"
+            )
+            if reason not in reasons:
+                reasons.append(reason)
+    return reasons
 
 
 def _worker_session_id(

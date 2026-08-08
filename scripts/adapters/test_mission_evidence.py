@@ -343,3 +343,142 @@ def test_crash_preserves_completed_node_and_reviews_incomplete_node(tmp_path):
     assert beta_manifest["result_sha"] is None
     assert beta_manifest["mission_outcome"] == "crashed"
     assert "crashed" in beta.review_reason
+
+
+def test_receipt_result_mismatching_git_head_is_quarantined(tmp_path):
+    """Evidence collection catches self-inconsistent receipts.
+
+    The receipt CLI may still *write* a mismatched claim (observed context is
+    independent of --result). Collection must quarantine at evidence time.
+    """
+    mission_dir, output_dir = _mission_fixture(tmp_path)
+    _write_complete_channels(mission_dir)
+    lines = (mission_dir / "receipts.jsonl").read_text().splitlines()
+    rewritten = []
+    for line in lines:
+        receipt = json.loads(line)
+        if receipt["node_id"] == "node-alpha":
+            receipt["result"] = "f" * 40  # claim differs from git_head
+        rewritten.append(json.dumps(receipt))
+    (mission_dir / "receipts.jsonl").write_text("\n".join(rewritten) + "\n")
+    # handoff still claims the original commit — also a mismatch, but the
+    # git_head check must fire regardless.
+    alpha, beta = collect_mission_evidence(
+        mission_dir=mission_dir,
+        output_dir=output_dir,
+        engagement_id="eng-context",
+        result_ref="gddp/eng-1",
+        demanded_feature_ids=("node-alpha", "node-beta"),
+    )
+    assert alpha.review_required is True
+    assert alpha.completion_quarantine_reason is not None
+    assert "does not match observed git_head" in alpha.completion_quarantine_reason
+    assert beta.review_required is False
+
+
+def test_protected_branch_push_is_detected_post_hoc(tmp_path):
+    """Even if env guards are bypassed, collection catches main pollution."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    (repo / "f").write_text("base\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "base"],
+        check=True,
+        capture_output=True,
+    )
+    base = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-b", "gddp/eng-protected"],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "f").write_text("feature\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "feature"],
+        check=True,
+        capture_output=True,
+    )
+    result = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Simulate bypass: feature commit also lands on main.
+    subprocess.run(
+        ["git", "-C", str(repo), "branch", "-f", "main", result],
+        check=True,
+        capture_output=True,
+    )
+
+    mission_dir, output_dir = _mission_fixture(tmp_path)
+    _write_complete_channels(mission_dir)
+    (mission_dir / "receipts.jsonl").write_text(
+        json.dumps(
+            {
+                "node_id": "node-alpha",
+                "base": base,
+                "result": result,
+                "git_head": result,
+                "git_branch": "gddp/eng-protected",
+                "git_toplevel": str(repo),
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "node_id": "node-beta",
+                "base": base,
+                "result": result,
+                "git_head": result,
+                "git_branch": "gddp/eng-protected",
+                "git_toplevel": str(repo),
+            }
+        )
+        + "\n"
+    )
+    (mission_dir / "handoffs" / "0.json").write_text(
+        json.dumps(
+            {
+                "featureId": "node-alpha",
+                "workerSessionId": "worker-alpha",
+                "commitId": result,
+                "repoPath": str(repo),
+                "successState": "success",
+            }
+        )
+    )
+    (mission_dir / "handoffs" / "1.json").write_text(
+        json.dumps(
+            {
+                "featureId": "node-beta",
+                "workerSessionId": "worker-beta",
+                "commitId": result,
+                "repoPath": str(repo),
+                "successState": "success",
+            }
+        )
+    )
+
+    alpha, beta = collect_mission_evidence(
+        mission_dir=mission_dir,
+        output_dir=output_dir,
+        engagement_id="eng-protected",
+        result_ref="gddp/eng-protected",
+        demanded_feature_ids=("node-alpha", "node-beta"),
+        git_repo_path=repo,
+    )
+    assert alpha.review_required is True
+    assert "protected-branch push detected" in (alpha.completion_quarantine_reason or "")
