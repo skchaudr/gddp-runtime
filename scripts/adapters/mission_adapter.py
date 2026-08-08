@@ -317,6 +317,8 @@ class MissionAdapter(EngagementAdapterDefaults):
                     result_ref=str(record["engagement_branch"]),
                     feature_id=item.feature_id,
                     evidence_manifest_path=str(item.manifest_path),
+                    completion_id=item.completion_id,
+                    completion_digest_sha256=item.completion_digest_sha256,
                     completion_quarantine_reason=(
                         item.completion_quarantine_reason
                     ),

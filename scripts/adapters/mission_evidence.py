@@ -22,6 +22,8 @@ class CollectedNodeEvidence:
     base_sha: str | None
     result_sha: str | None
     worker_session_id: str | None
+    completion_id: str | None
+    completion_digest_sha256: str | None
     review_required: bool
     review_reason: str | None
     completion_quarantine_reason: str | None
@@ -140,6 +142,26 @@ def collect_mission_evidence(
             if quarantine_reasons
             else None
         )
+        completion_id = _completion_id(
+            mission_id=mission_id,
+            feature_id=feature_id,
+            worker_session_id=worker_session_id,
+        )
+        completion_digest_sha256 = (
+            _completion_digest(
+                completion_id=completion_id,
+                feature_id=feature_id,
+                worker_session_id=worker_session_id,
+                base_sha=base_sha,
+                result_sha=result_sha,
+                result_ref=result_ref,
+                receipt=receipt,
+                handoff=selected_handoff,
+                progress=selected_progress,
+            )
+            if completion_id is not None
+            else None
+        )
 
         manifest = {
             "engagement_id": engagement_id,
@@ -147,6 +169,8 @@ def collect_mission_evidence(
             "mission_id": mission_id,
             "feature_id": feature_id,
             "worker_session_id": worker_session_id,
+            "completion_id": completion_id,
+            "completion_digest_sha256": completion_digest_sha256,
             "base_sha": base_sha,
             "result_sha": result_sha,
             "result_ref": result_ref,
@@ -170,6 +194,8 @@ def collect_mission_evidence(
                 base_sha=base_sha,
                 result_sha=result_sha,
                 worker_session_id=worker_session_id,
+                completion_id=completion_id,
+                completion_digest_sha256=completion_digest_sha256,
                 review_required=review_reason is not None,
                 review_reason=review_reason,
                 completion_quarantine_reason=completion_quarantine_reason,
@@ -458,6 +484,48 @@ def _feature_drift_reason(
     if demanded_ids == observed_ids:
         return None
     return "feature_id_drift"
+
+
+def _completion_id(
+    *,
+    mission_id: str | None,
+    feature_id: str,
+    worker_session_id: str | None,
+) -> str | None:
+    """Build Factory's stable per-worker feature completion identity."""
+    if mission_id is None or worker_session_id is None:
+        return None
+    return f"{mission_id}:{feature_id}:{worker_session_id}"
+
+
+def _completion_digest(
+    *,
+    completion_id: str,
+    feature_id: str,
+    worker_session_id: str | None,
+    base_sha: str | None,
+    result_sha: str | None,
+    result_ref: str,
+    receipt: Mapping[str, object] | None,
+    handoff: Mapping[str, object] | None,
+    progress: Mapping[str, object] | None,
+) -> str:
+    """Hash the normalized completion envelope used for replay comparison."""
+    envelope = {
+        "completion_id": completion_id,
+        "feature_id": feature_id,
+        "worker_session_id": worker_session_id,
+        "base_sha": base_sha,
+        "result_sha": result_sha,
+        "result_ref": result_ref,
+        "receipt": dict(receipt) if receipt is not None else None,
+        "handoff": dict(handoff) if handoff is not None else None,
+        "progress": dict(progress) if progress is not None else None,
+    }
+    normalized = json.dumps(
+        envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 def _manifest_name(feature_id: str) -> str:

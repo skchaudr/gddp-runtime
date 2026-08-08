@@ -156,6 +156,16 @@ def test_complete_evidence_is_joined_only_by_exact_feature_id(tmp_path):
     assert alpha["mission_dir"] == str(mission_dir)
     assert alpha["mission_id"] == "mis_fixture"
     assert alpha["worker_session_id"] == "worker-alpha"
+    assert (
+        alpha["completion_id"]
+        == "mis_fixture:node-alpha:worker-alpha"
+    )
+    assert len(alpha["completion_digest_sha256"]) == 64
+    assert collected[0].completion_id == alpha["completion_id"]
+    assert (
+        collected[0].completion_digest_sha256
+        == alpha["completion_digest_sha256"]
+    )
     assert alpha["base_sha"] == "2" * 40
     assert alpha["result_sha"] == "a" * 40
     assert alpha["result_ref"] == "gddp/eng-1"

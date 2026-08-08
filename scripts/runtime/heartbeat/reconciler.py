@@ -28,6 +28,7 @@ from adapters.executor_protocol import SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
+from .completion_discipline import submit_completion
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .provisional_gate import maybe_mark_provisional
 from .state_recorder import (
@@ -38,6 +39,7 @@ from .state_recorder import (
     mark_job_cancelled,
     mark_job_failed,
     mark_job_running,
+    mark_jobs_awaiting_review,
     recover_stale_dispatching_sessions,
     update_executor_session_state,
 )
@@ -552,8 +554,34 @@ def _reconcile_engagement_group(
         con.commit()
         return
 
+    completion_decisions = {}
+    quarantined_session_ids: set[str] = set()
+    for feature_id, (session, _job) in jobs_by_node.items():
+        result = by_feature[feature_id]
+        if result.completion_id is None:
+            continue
+        decision = submit_completion(
+            con,
+            session_db_id=session["session_db_id"],
+            completion_id=result.completion_id,
+            completion_digest_sha256=result.completion_digest_sha256,
+            result_commit_sha=result.result_commit_sha,
+            evidence_manifest_path=result.evidence_manifest_path,
+        )
+        completion_decisions[feature_id] = decision
+        quarantined_session_ids.update(decision.quarantined_session_db_ids)
+
     for feature_id, (session, job) in jobs_by_node.items():
         result = by_feature[feature_id]
+        decision = completion_decisions.get(feature_id)
+        if (
+            decision is not None
+            and decision.action == "duplicate"
+            and decision.existing_session_db_id != session["session_db_id"]
+        ):
+            continue
+        if session["session_db_id"] in quarantined_session_ids:
+            continue
         if (
             not result.success
             or result.review_required
@@ -655,15 +683,7 @@ def _route_engagement_result_to_review(
             else None
         ),
     )
-    con.execute(
-        "UPDATE jobs SET status = 'awaiting_review', "
-        "queue_state = 'awaiting_review' WHERE job_id = ?",
-        (job["job_id"],),
-    )
-    con.execute(
-        "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
-        (job["job_id"],),
-    )
+    mark_jobs_awaiting_review(con, (job["job_id"],))
 
 
 def _handle_completed(
@@ -1131,14 +1151,7 @@ def _finalize_evaluation(
         state="evaluated",
     )
     # Mark job as awaiting_review (human decides graph truth).
-    con.execute(
-        "UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review' WHERE job_id = ?",
-        (pending.job_id,),
-    )
-    con.execute(
-        "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = ?",
-        (pending.job_id,),
-    )
+    mark_jobs_awaiting_review(con, (pending.job_id,))
     con.commit()
 
     # Provisional flow (mode 1 default): a qualifying verdict marks the node

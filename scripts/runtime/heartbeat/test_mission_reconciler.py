@@ -35,9 +35,16 @@ def _connection() -> sqlite3.Connection:
             expected_base_commit_sha TEXT,
             result_commit_sha TEXT,
             patch_path TEXT,
+            completion_id TEXT,
+            completion_digest_sha256 TEXT,
+            completion_quarantine_reason TEXT,
+            evidence_manifest_path TEXT,
             error TEXT,
             updated_at TEXT
         );
+        CREATE UNIQUE INDEX idx_completion_id
+            ON executor_sessions(completion_id)
+            WHERE completion_id IS NOT NULL;
         """
     )
     for index, node_id in enumerate(("node-alpha", "node-beta"), start=1):
@@ -52,7 +59,8 @@ def _connection() -> sqlite3.Connection:
         )
         con.execute(
             "INSERT INTO executor_sessions VALUES (?, ?, 'factory_mission', "
-            "'engagement-1', 'running', ?, NULL, NULL, NULL, '')",
+            "'engagement-1', 'running', ?, NULL, NULL, NULL, NULL, NULL, NULL, "
+            "NULL, '')",
             (f"session-{index}", job_id, "a" * 40),
         )
     con.commit()
@@ -144,3 +152,160 @@ def test_reconciler_routes_engagement_review_result_without_commit(
         row[0]
         for row in con.execute("SELECT state FROM executor_sessions")
     } == {"evaluated"}
+
+
+def test_reconciler_persists_completion_identity_before_evaluation(
+    monkeypatch, tmp_path
+):
+    con = _connection()
+    sessions = con.execute(
+        "SELECT * FROM executor_sessions ORDER BY session_db_id"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="completed")
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id=node_id,
+            result_commit_sha=result_sha,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path=f"/evidence/{node_id}.json",
+            completion_id=f"mission:{node_id}:worker",
+            completion_digest_sha256=str(index) * 64,
+        )
+        for index, (node_id, result_sha) in enumerate(
+            (("node-alpha", "b" * 40), ("node-beta", "c" * 40)),
+            start=1,
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "c" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, sessions, tmp_path, batch
+    )
+
+    rows = con.execute(
+        """
+        SELECT completion_id, completion_digest_sha256,
+               evidence_manifest_path, completion_quarantine_reason
+          FROM executor_sessions
+         ORDER BY session_db_id
+        """
+    ).fetchall()
+    assert [row["completion_id"] for row in rows] == [
+        "mission:node-alpha:worker",
+        "mission:node-beta:worker",
+    ]
+    assert [row["completion_digest_sha256"] for row in rows] == [
+        "1" * 64,
+        "2" * 64,
+    ]
+    assert [row["evidence_manifest_path"] for row in rows] == [
+        "/evidence/node-alpha.json",
+        "/evidence/node-beta.json",
+    ]
+    assert all(row["completion_quarantine_reason"] is None for row in rows)
+    assert batch.add.call_count == 2
+
+
+def test_reconciler_exact_duplicate_skips_second_evaluation(
+    monkeypatch, tmp_path
+):
+    con = _connection()
+    con.execute(
+        """
+        UPDATE executor_sessions
+           SET completion_id = 'completion-shared',
+               completion_digest_sha256 = ?,
+               result_commit_sha = ?,
+               evidence_manifest_path = '/evidence/existing.json'
+         WHERE session_db_id = 'session-1'
+        """,
+        ("1" * 64, "a" * 40),
+    )
+    con.commit()
+    session = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchone()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="completed")
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-beta",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/replay.json",
+            completion_id="completion-shared",
+            completion_digest_sha256="1" * 64,
+        )
+    ]
+    batch = MagicMock()
+    resolve_ref = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", resolve_ref)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, [session], tmp_path, batch
+    )
+
+    row = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchone()
+    assert row["result_commit_sha"] == "a" * 40
+    assert row["evidence_manifest_path"] == "/evidence/existing.json"
+    assert row["state"] == "completion_duplicate"
+    assert row["completion_quarantine_reason"] is None
+    batch.add.assert_not_called()
+    resolve_ref.assert_not_called()
+
+
+def test_reconciler_same_session_replay_resumes_first_evaluation(
+    monkeypatch, tmp_path
+):
+    con = _connection()
+    con.execute(
+        """
+        UPDATE executor_sessions
+           SET completion_id = 'completion-shared',
+               completion_digest_sha256 = ?,
+               result_commit_sha = ?,
+               evidence_manifest_path = '/evidence/existing.json'
+         WHERE session_db_id = 'session-1'
+        """,
+        ("1" * 64, "a" * 40),
+    )
+    con.commit()
+    session = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-1'"
+    ).fetchone()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="completed")
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-alpha",
+            result_commit_sha="a" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/existing.json",
+            completion_id="completion-shared",
+            completion_digest_sha256="1" * 64,
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "a" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, [session], tmp_path, batch
+    )
+
+    row = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-1'"
+    ).fetchone()
+    assert row["state"] == "collected"
+    assert row["result_commit_sha"] == "a" * 40
+    batch.add.assert_called_once()
