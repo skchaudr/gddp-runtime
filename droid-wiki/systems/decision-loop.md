@@ -1,10 +1,10 @@
 # Decision loop
 
-> Restored from the 2026-07-13 wiki. This describes untriggered legacy code. No webhook, cron, launchd, systemd, or heartbeat path currently calls it. See [Decision loop legacy](decision-loop-legacy.md).
+> Restored from the 2026-07-13 wiki. This describes the inherited secondary control path; the graph-driven [Heartbeat](heartbeat.md) is primary. See the current [Decision loop legacy](decision-loop-legacy.md) page before modifying scheduling behavior.
 
-`scripts/runtime/decision_loop/engine.py` is an inherited reasoning layer. If called, it reads project context, applies a fixed priority order, and emits one typed decision. The functions and tests exist, but the repository has no operational trigger for them.
+`scripts/runtime/decision_loop/engine.py` is an inherited event-driven reasoning layer. On each wake, whether from a webhook or a cron tick, it reads project context, applies a fixed priority order, and emits exactly one decision: verify a complete node, dispatch an eligible node, escalate something stuck, or no-op. Every decision is persisted to the `decision_results` table so the runtime's reasoning is auditable after the fact. New scheduling and return behavior normally belongs in the heartbeat, adapter, or return subsystems rather than this parallel path.
 
-This is not the live layer deciding what runtime does next. The heartbeat owns the operational loop.
+The decision loop is not the executor and not the agent harness. It is the layer that decides what the runtime should do next, given the current graph and SQLite state. It constrains the loop; it does not rebuild it.
 
 ## Key source files
 
@@ -21,12 +21,12 @@ This is not the live layer deciding what runtime does next. The heartbeat owns t
 
 ## Wake cycle
 
-The module exposes two callable entry points that share the same body:
+The loop has two entry points that share the same body:
 
-- `handle_event(trigger, project_id)` — accepts an event-shaped trigger.
-- `handle_cron(project_id)` — synthesizes a `{"event": "cron"}` trigger and delegates to `handle_event`.
+- `handle_event(trigger, project_id)` — called by the webhook router when an event arrives.
+- `handle_cron(project_id)` — called by cron on a schedule; synthesizes a `{"event": "cron"}` trigger and delegates to `handle_event`.
 
-A call runs once and exits. No installed cron or service makes it continuous.
+A single wake runs once and exits. There is no long-running loop inside the engine; the cron schedule is what makes it continuous. This keeps each decision isolated, cheap to reason about, and safe to retry.
 
 ```mermaid
 flowchart TD
@@ -69,7 +69,7 @@ The engine applies decisions in a fixed order. The first match wins and the loop
 5. **Project complete.** If every node is complete, `no_op: project_complete`.
 6. **Nothing actionable.** `no_op: nothing_actionable` — no pending nodes with met dependencies and nothing stuck.
 
-This priority order records the legacy design; it does not govern the live heartbeat.
+The priority order encodes the runtime's bias: clean before reason, reason about stuck work before starting new work, verify completed work before dispatching more, and only then move the graph forward.
 
 ## The powers
 
@@ -85,7 +85,7 @@ The engine acts through three power modules in `scripts/runtime/decision_loop/po
 
 ### accept_node
 
-`scripts/runtime/decision_loop/powers/accept_node.py` can call the inactive `open_evidence_pr` path. Because nothing operational invokes this decision loop, this is retained code rather than a current graph-update workflow.
+`scripts/runtime/decision_loop/powers/accept_node.py` is the power that touches graph truth, and it does so by proposing, not mutating. When a review passes, it assembles an `EvidencePacket` (acceptance check, scope verification, test status, risks, followup candidates) and calls `open_evidence_pr` to open a PR against `gddp-config` that proposes marking the node complete. A human merges it, or doesn't. The runtime never advances node status on its own.
 
 ## Output contract
 
@@ -95,7 +95,7 @@ Every decision is a `DecisionResult`, a union of `DispatchResult`, `EscalateResu
 
 - [overview/architecture.md](../overview/architecture.md) — full system flow, including where the decision loop sits relative to intake and the heartbeat.
 - [systems/return-router.md](return-router.md) — what happens after the loop dispatches work and the PR comes back.
-- [systems/intake-server.md](intake-server.md) — the live webhook receiver; it does not call this legacy loop.
+- [systems/intake-server.md](intake-server.md) — the webhook receiver whose events can wake the loop.
 - [systems/verification.md](../systems/verification.md) — the two-lane evaluator the loop runs on complete nodes.
 - [systems/state-persistence.md](../systems/state-persistence.md) — the SQLite tables the loop reads and writes.
-- [systems/heartbeat.md](../systems/heartbeat.md) — the live operational loop that replaced this path.
+- [systems/heartbeat.md](../systems/heartbeat.md) — the parallel dispatch loop the decision layer complements.

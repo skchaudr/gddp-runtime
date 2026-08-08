@@ -164,12 +164,12 @@ Only one exclusive intake/control plane should be armed unless split-brain is in
 
 Some code is intentionally inherited rather than canonical:
 
-- **Decision loop** (`scripts/runtime/decision_loop/`) — older wake/decide path with no production trigger; heartbeat does not invoke it.
-- **graph_updater.py** — inactive legacy PR-proposal code; the live return path does not call it.
-- **Jules CLI adapter** — implemented direct lifecycle adapter; availability still depends on the installed CLI.
+- **Decision loop** (`scripts/runtime/decision_loop/`) — older wake/decide path; secondary to heartbeat.
+- **graph_updater.py** — present for historical/graph helpers; automatic writeback of completion is frozen out of the return path.
+- **Jules CLI adapter** — stub.
 - **Big Pi archive** under `deploy/_archive/` — dead topology; do not run.
 
-These are current implementation seams, not protected architecture. Verify the premise before extending one; remove or replace inherited machinery when the smaller operating loop supports it.
+New work should extend the heartbeat + adapter + verification seams, not invent parallel schedulers.
 
 ## Related pages
 

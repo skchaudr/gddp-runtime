@@ -90,7 +90,7 @@ The suite is a regression net, not a proof of correct behavior under production 
 
 - Live webhook round-trips against `sab-mini`'s intake server (HMAC and secret rotation are tested in unit tests against `GITHUB_WEBHOOK_SECRET`, not against production).
 - Real droid mission end-of-run behavior (mission adapter has partial crash/resume coverage via PROBE-2A but not a full live droid run).
-- Real Jules CLI/API dispatch against the external service; adapters are implemented, while the suite uses doubles.
+- Real Jules dispatch (stub adapter).
 - Concurrent SQLite contention at production scale (coordinator serialization is covered by unit tests, not load tests).
 
 When a behavior is not covered and the assumption matters, record it in the handoff and add a probe or integration test before relying on it.

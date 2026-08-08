@@ -8,7 +8,7 @@ The database file lives at `db/queue.db` under the runtime root, resolved from `
 
 ## Initialization
 
-`scripts/init_db.py` is the canonical schema owner. Running it once creates all seven tables with `CREATE TABLE IF NOT EXISTS`, sets `PRAGMA journal_mode=WAL` and `PRAGMA foreign_keys=ON`, and prints the table list on success. Idempotent: safe to run from any state, fresh or upgrade.
+`scripts/init_db.py` is the canonical schema owner. Running it once creates all six tables with `CREATE TABLE IF NOT EXISTS`, sets `PRAGMA journal_mode=WAL` and `PRAGMA foreign_keys=ON`, and prints the table list on success. Idempotent: safe to run from any state, fresh or upgrade.
 
 ### WAL and foreign keys
 
@@ -159,9 +159,12 @@ decision_results  (standalone, no FK)
 
 ## Migration pattern
 
-`CREATE TABLE IF NOT EXISTS` never adds columns to an existing table, so `init_db.py` follows its canonical DDL with additive columns, indexes, and historical backfills. Inspect the current source rather than relying on a fixed migration count.
+`CREATE TABLE IF NOT EXISTS` never adds columns to an existing table, so `init_db.py` does additive migrations with explicit `ALTER TABLE` statements wrapped in `try/except sqlite3.OperationalError`. The `except` covers both "column already exists" and "table missing", which keeps `init_db` safe to run from any state, fresh or upgrade. Two such migrations are currently in place:
 
-There is no migration framework or down-migration system. Do **not** drop or reinitialize `queue.db` as routine upgrade advice: its jobs, results, sessions, and receipts are durable evidence. Take an online backup and write a preserving migration, or get an explicit operator decision before discarding runtime history.
+- `ALTER TABLE events ADD COLUMN claimed_at TEXT`
+- `ALTER TABLE events ADD COLUMN repo TEXT`
+
+There is no migration framework, no version table, no down migrations. The pattern is: add the column to the canonical `CREATE TABLE` for fresh installs, and append a guarded `ALTER TABLE` for upgrades. Anything that needs a rewrite is handled by dropping and reinitializing `queue.db`, which is acceptable because the database is runtime state, not source of truth.
 
 ## results_store.py
 

@@ -1,6 +1,6 @@
 # Deployment
 
-GDDP uses separate `gddp-config` and `gddp-runtime` checkouts on each active host. Paths are host-specific; use `GDDP_CONFIG_PATH` and `GDDP_RUNTIME_ROOT` rather than copying the Mini's absolute paths. Runtime does not turn execution success into graph completion.
+GDDP uses a two-repository layout on every active host. `/Users/sab-mini/repos/gddp-config` owns human-authored project graphs and node truth. `/Users/sab-mini/repos/gddp-runtime` owns the control loop, adapters, evaluator, SQLite state, and deployment kits. Runtime reads config; it does not turn execution success into graph completion.
 
 ## Host topology
 
@@ -8,9 +8,9 @@ GDDP uses separate `gddp-config` and `gddp-runtime` checkouts on each active hos
 | --- | --- | --- | --- |
 | `sab-mini` | Production control plane | Canonical production `db/queue.db`; intake and heartbeat active | macOS launchd: `com.gddp.intake`, `com.gddp.heartbeat` |
 | `pi-big` | Former production and offline secret-store backup | Disarmed; not a queue host | Old intake inactive and heartbeat cron commented |
-| `sab-air` | Operator workstation and optional Rig 1 Jules polling lane | No production intake | Dormant heartbeat-only launchd kit under its local runtime checkout |
+| `sab-air` | Operator workstation and optional Rig 1 Jules polling lane | No production intake | Dormant heartbeat-only launchd kit under `/Users/sab-mini/repos/gddp-runtime/deploy/rig1-heartbeat/` |
 | `sab-dev` | Agent-session VM | Dry-run queue only; no production webhooks | Development checkout, normally `~/gddp-runtime` and `~/gddp-config` |
-| `khoj-38` and later rigs | Linux execution hosts used to prove fresh-host portability | Per-host runtime state and local executor spool | systemd user timer from `deploy/mini-heartbeat/systemd/` in the local checkout |
+| `khoj-38` and later rigs | Linux execution hosts used to prove fresh-host portability | Per-host runtime state and local executor spool | systemd user timer from `/Users/sab-mini/repos/gddp-runtime/deploy/mini-heartbeat/systemd/` |
 
 `pi-small` is legacy OpenClaw and is outside GDDP. Other Tailscale machines are outside the runtime topology unless added to `/Users/sab-mini/repos/gddp-runtime/TOPOLOGY.md`.
 

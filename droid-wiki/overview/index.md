@@ -1,6 +1,6 @@
 # GDDP Runtime overview
 
-GDDP Runtime dispatches bounded work from a human-owned project graph, collects durable evidence from replaceable executors, and evaluates that evidence. Each attempt ends in human review, while qualifying provisional evidence may let dependent work continue. It never writes human acceptance.
+GDDP Runtime is the execution machinery for Graph-Driven Development: a control plane that dispatches bounded work from a human-owned project graph, collects durable evidence from replaceable executors, evaluates that evidence, and stops at human review. It never silently advances graph truth.
 
 ## What this repository is
 
@@ -56,11 +56,11 @@ Nothing in that path writes completion into `gddp-config`. Evaluators produce ev
 
 ## Status snapshot
 
-- Language: Python 3.11+ (stdlib + Flask, PyYAML, Pydantic; the live semantic and integrity lanes use the Pi harness)
+- Language: Python 3.11+ (stdlib + Flask, PyYAML, Pydantic; semantic lane may use Anthropic)
 - Persistence: SQLite WAL under `db/` (runtime state, not committed)
 - Graph truth: external `gddp-config` checkout via `GDDP_CONFIG_PATH`
 - Production control plane: `sab-mini` (macOS launchd); Linux hosts use the mini-heartbeat systemd units
-- Known boundary: evaluator and runtime never complete nodes; the Factory mission adapter is implemented but real mission completion, crash/resume, and worker-failure behavior remain only partially proven
+- Known boundary: evaluator and runtime never complete nodes; mission-mode Factory adapter is live with residual push-bypass detection
 
 ## Related wiki sections
 

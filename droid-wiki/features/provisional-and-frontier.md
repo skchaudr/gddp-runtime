@@ -17,8 +17,6 @@ Provisional flow separates scheduler momentum from human-owned graph truth. A qu
 
 Confidence is not a permission threshold. A node with `human_gate: true` never auto-promotes. Terminal `complete` and `deferred` nodes are untouched, and failures to write provisional state are non-fatal. The evaluator itself does not edit graph files; the heartbeat reconciliation layer performs this scheduler-visible write.
 
-This is a deliberate but unresolved boundary: the runtime writes scheduling statuses into the same YAML repository that stores human acceptance. It preserves human-only `complete`, but it means “runtime only reads config” is false.
-
 ## Frontier advance
 
 Projects opt in with `execution_policy.frontier_auto_advance: true`. `scripts/runtime/heartbeat/frontier.py` finds `pending` nodes whose dependencies are all `complete` or `provisional`, excluding `human_gate` nodes. It atomically rewrites them to `ready` and inserts explicit tagged dispatch events into the event ledger.

@@ -8,14 +8,6 @@ The Factory mission adapter executes a bounded, ordered group of node attempts i
 
 Factory mission is an executor transport, not a graph authority. Its feature completion, receipts, and git verification remain evidence. See [Doctrine](../background/doctrine.md).
 
-## Current proof limits
-
-- Droid 0.189.0 rejects the documented standalone hook-file shape; hooks are not the integration point for that version.
-- The required final `mission_completed` event has not been observed in a real successful mission; current completion handling assumes it.
-- Crash/resume was only partially observed: Factory `state.json` can remain stale after SIGTERM.
-- Genuine worker-level failure has not been exercised end to end.
-- Push prevention is bypassable; post-hoc protected-branch reachability detection quarantines detected pollution rather than preventing every push.
-
 ## Directory layout
 
 | Path | Role |

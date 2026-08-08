@@ -91,9 +91,24 @@
     "notes": "Full refresh after 30+ days of mission/provisional/mini-heartbeat changes; restored unique Jul-13 pages with staleness banners; config wiki remains at gddp-config/droid-wiki"
   },
   "videoOverview": {
-    "status": "skipped",
+    "status": "ready",
+    "sizeBytes": 6975602,
+    "contentType": "video/mp4",
+    "generatedAt": "2026-08-08T23:55:30.907Z",
+    "durationSeconds": 291.333,
+    "captionTracks": [
+      {
+        "language": "en",
+        "label": "English",
+        "sizeBytes": 8495,
+        "contentType": "text/vtt"
+      }
+    ],
     "warnings": [
-      "User declined video overview generation"
+      "Phase 3.5 skipped: No QA config (.factory/skills/qa/config.yaml missing). Run /install-qa to enable screenshots.",
+      "Brand guide assets 404 at factory-brand-guide.vercel.app; used fallback Factory palette with mono FACTORY label.",
+      "Local TTS via macOS say (Samantha); Kokoro unavailable.",
+      "Draft-quality HyperFrames render at 24fps 1280x720."
     ]
   }
 }

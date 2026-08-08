@@ -4,7 +4,7 @@ Active contributors: Saboor
 
 ## Purpose
 
-Executor adapters isolate transport-specific details behind one packet/result boundary. Direct adapters expose dispatch, status, collect, and cancel. The mediated GitHub/Jules action path exposes dispatch only and returns later through merged-PR intake.
+Executor adapters isolate the runtime from executor-specific transport and lifecycle details. The [Heartbeat](heartbeat.md) builds one immutable [NodePacket](../primitives/node-packet.md), then calls the same dispatch, status, collect, and cancel contract for Jules, local subprocesses, Droid, and Factory mission.
 
 Executor choice never changes graph authority. Adapters return work and evidence; they do not mark nodes complete.
 

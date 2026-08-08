@@ -8,7 +8,7 @@ Conventions that keep GDDP Runtime coherent: graph truth stays outside this repo
 2. **`jobs_status` is runtime-only.** [`scripts/jobs_status.py`](../../scripts/jobs_status.py) may update job/queue state and must never update graph/node status in `gddp-config`.
 3. **Heartbeat entrypoint.** On armed hosts, use [`deploy/mini-heartbeat/bin/`](../../deploy/mini-heartbeat/bin/) (`arm.sh`, `smoke.sh`). Do not call `python -m scripts.runtime.heartbeat.runner` as the operator path; missing env creates failed jobs before any executor launches.
 4. **Explicit node tags.** Classification requires `node: <id>` (or equivalent explicit routing). Do not invent fallback node guesses.
-5. **Human-only acceptance, not read-only config.** `GraphReader` only reads, but `provisional_gate.py` and `frontier.py` currently write scheduler-visible `provisional` and `ready` statuses into config YAML. Runtime must never write `complete`.
+5. **Config repo is read-only from runtime.** Graph YAML is loaded through `GraphReader`; automatic writeback of acceptance is frozen out of the return path.
 
 ## Anti-pattern called out in AGENTS.md
 

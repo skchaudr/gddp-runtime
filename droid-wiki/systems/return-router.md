@@ -16,7 +16,7 @@ Merged PRs do not silently become graph truth. `scripts/runtime/return_router.py
 
 ## How a merged PR becomes a receipt
 
-`handle_merged_pr` is the entry point, called with the normalized event row that represents the merge. Initial fallback-repo, tag, job, and identity checks happen before evaluation and receipt writing. A second project-specific repository check currently happens **after** the receipt is written, so that rejection still leaves durable evaluator evidence.
+`handle_merged_pr` is the entry point, called with the normalized event row that represents the merge. The flow is strictly ordered, and a rejection at any step short-circuits with a reason string and no receipt written.
 
 ```mermaid
 flowchart TD
@@ -52,9 +52,9 @@ Both are extracted with a `(?mi)^node:\s*(.+)$` style regex. If either is missin
 
 ### Repo allowlist
 
-`_FALLBACK_ALLOWED_REPOS` is hardcoded to `skchaudr/vault-doctor`, `skchaudr/test-project`, and `skchaudr/gddp-runtime`. `validate_repo` rejects a PR outside that fallback before evaluation.
+`ALLOWED_REPOS` is a hardcoded list, currently `["skchaudr/vault-doctor", "skchaudr/test-project"]`. `validate_repo` rejects any PR whose `repository.full_name` is not on the list with `repo_not_allowed`. This is a deliberate chokepoint: the return router only acts on repos the runtime is explicitly configured to oversee, so a stray webhook from an unrelated repo cannot create a receipt.
 
-Projects may also declare `execution_policy.allowed_repos`. That secondary check currently runs after evaluation and `write_result`, then returns `repo_not_allowed_by_project`. The ordering is inconsistent: the return is rejected but its receipt remains. Do not describe all repository rejection as pre-admission.
+This is a known limit. Adding a project means editing the source, not a config file. The list is small and changes rarely, but it is the kind of thing that should move to `gddp-config` once the runtime grows a per-project registry.
 
 ### Job load and cross-check
 

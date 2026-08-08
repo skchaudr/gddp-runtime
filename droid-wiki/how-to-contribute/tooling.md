@@ -15,19 +15,18 @@ Runtime state directories (`db/`, `jobs/`, `events/`) are gitignored. Do not com
 ## `jobs_status.py`
 
 ```bash
-python3 scripts/jobs_status.py list
-python3 scripts/jobs_status.py show <job-id-or-node-id> --full
+python3 scripts/jobs_status.py show
 ```
 
 The operator backend for runtime job reads and writes. It may update job and queue state. It must never update graph or node status in `gddp-config`.
 
-Use `list` for the queue snapshot and `show <job-id-or-node-id> --full` for one attempt and its evaluator evidence. The evaluator integration (`test_jobs_status_evaluator.py`) exercises the evaluator-facing surface.
+Subcommands and modes vary; the primary use is `show` for a snapshot of recent jobs, their state, and the associated node IDs. The evaluator integration (`test_jobs_status_evaluator.py`) exercises the evaluator-facing surface.
 
 ## `replay.py`
 
 ```bash
-python3 -m scripts.runtime.replay --result-id res_20260312T21053737
-python3 -m scripts.runtime.replay --job-id job_20260312T21053737
+python3 -m runtime.replay --result-id res_20260312T21053737
+python3 -m runtime.replay --job-id job_20260312T21053737
 ```
 
 Replays failed or partial runtime steps from persisted state.

@@ -73,15 +73,18 @@ There is no configured project linter.
 | `GDDP_FACTORY_MISSION_DIR` | Factory mission state (default `~/.factory/missions`) |
 | `GDDP_INTAKE_INSECURE=1` | Dev-only intake without secret; never expose publicly |
 
-## Local heartbeat check
+## Local heartbeat (development only)
 
-Use the kit even for a one-off check:
+For one-off debugging of the runner module:
 
 ```bash
-bash deploy/mini-heartbeat/bin/smoke.sh
+python3 -m runtime.heartbeat.runner \
+  --project <project-id> \
+  --repo <owner/repo> \
+  --config-path /path/to/gddp-config
 ```
 
-Do not invoke the runner module directly. The kit loads `gddp.env`, spool settings, and executor argv before running its bounded smoke tick.
+Run this from a context that has set `PYTHONPATH` / package layout as tests do. **On any armed control plane, do not use the raw module entrypoint as the operator path.** AGENTS.md requires the mini-heartbeat kit so `gddp.env` loads spool and executor argv. Raw runner calls create failed jobs before any executor starts when those env vars are missing.
 
 ## Mini-heartbeat kit (preferred operator path)
 
@@ -115,8 +118,8 @@ When a job is `awaiting_review`:
 ## Replay
 
 ```bash
-python3 -m scripts.runtime.replay --result-id <result-id>
-python3 -m scripts.runtime.replay --job-id <job-id>   # requires explicit confirmation
+python3 -m runtime.replay --result-id <result-id>
+python3 -m runtime.replay --job-id <job-id>   # requires explicit confirmation
 ```
 
 Treat job redispatch as manual tooling; it bypasses some modern reservation bookkeeping.

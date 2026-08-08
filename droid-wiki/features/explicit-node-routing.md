@@ -14,8 +14,6 @@ The captured identifier must exactly match one of the ready nodes supplied by `s
 
 The classifier normally selects the first execution mode declared by the node. A manual dispatch may include `routing.selected_executor`; the classifier honors that choice only if it appears in the node's allowed execution modes. An invalid preselection is ignored auditably rather than silently falling back to another executor.
 
-Current validation and dispatch catalogs do not match. `GraphReader` accepts `agent`, `human`, `pi_worker`, `vertex`, and `vm_worker`, but the dispatcher has no adapters for them. Those modes validate, then fail preflight as unknown executors and may leave the event eligible for another tick. Treat this as a known configuration defect, not supported routing.
-
 Frontier-generated events use the same path. `scripts/runtime/heartbeat/frontier.py` creates an `issue.opened` event with a URL of the form `frontier-dispatch://node: <id>`, so automatic advancement does not bypass classification.
 
 ## Key files

@@ -9,7 +9,7 @@
 | Flask | 3.0 | Webhook intake and health HTTP server |
 | PyYAML | 6.0 | Project graph, node, and configuration YAML |
 | Pydantic | 2.0 | Typed runtime/evaluator contracts |
-| Anthropic | 0.40 | Retained legacy decision-loop integration; the live evaluator uses Pi |
+| Anthropic | 0.40 | Optional semantic model integration |
 
 Use Python 3.11 or newer. A fresh host commonly creates a virtualenv and installs the requirements; the verified `khoj-38` config CLI environment also installed `rich`.
 

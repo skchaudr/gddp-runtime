@@ -5,7 +5,7 @@ Common failure modes, log locations, and the first questions to ask when `gddp-r
 ## Where to look first
 
 1. **Is the heartbeat armed?** On `sab-mini`, `launchctl list | grep gddp`. On Linux, `systemctl --user status gddp-heartbeat.timer gddp-heartbeat.service`.
-2. **What does `jobs_status` say?** `python3 scripts/jobs_status.py list` gives the runtime view; use `show <job-id-or-node-id> --full` for one attempt. If the job you care about is not in the DB, intake or dispatch never fired.
+2. **What does `jobs_status` say?** `python3 scripts/jobs_status.py show` gives the runtime view. If the job you care about is not in the DB, intake or dispatch never fired.
 3. **Spool lifecycle files.** Each local/Droid adapter attempt writes to its spool dir (default under `jobs/` or `GDDP_LOCAL_SUBPROCESS_SPOOL_DIR`). Look for `exit.json`, `packet.json`, stdout/stderr logs. A missing `exit.json` means the worker died before writing one.
 4. **Mission session state.** `db/mission-sessions/` (or `GDDP_MISSION_SESSION_DIR`). Factory mission has its own durability trail.
 5. **SQLite.** `db/queue.db` (WAL mode). Tables of interest: `events`, `jobs`, `queue_records`, `results`, `decision_results`, `executor_sessions`.
@@ -33,10 +33,12 @@ The local/Droid adapter launches its worker from the JSON-encoded argv in `GDDP_
 
 This is the classic "failed job before any executor launches" failure. It almost always means the operator ran `python -m scripts.runtime.heartbeat.runner` directly instead of using [`deploy/mini-heartbeat/bin/arm.sh`](../../deploy/mini-heartbeat/bin/arm.sh), which sources `deploy/mini-heartbeat/env/gddp.env` and sets the argv.
 
-**Fix:** use the kit; do not run the runner directly:
+**Fix:** arm via the kit. If you must run the runner directly for debugging, source the env first:
 
 ```bash
-bash deploy/mini-heartbeat/bin/smoke.sh
+source deploy/mini-heartbeat/env/gddp.env
+source deploy/mini-heartbeat/bin/common.sh
+python3 -m scripts.runtime.heartbeat.runner --project ... --repo ... --config-path ...
 ```
 
 ## Common failure: `KillMode` on systemd
@@ -56,7 +58,7 @@ On macOS launchd this is not an issue because launchd uses different process-gro
 
 The dispatcher will not dispatch a second job for a node that already has an active or `awaiting_review` job. If a node appears stuck:
 
-1. `python3 scripts/jobs_status.py list` — look for the node in `awaiting_review` or `executing` state; then run `show <job-id-or-node-id> --full`.
+1. `python3 scripts/jobs_status.py show` — look for the node in `awaiting_review` or `executing` state.
 2. If the job is genuinely abandoned (e.g., the executor died and no receipt exists), the human must decide: accept, retry, block, or defer.
 3. Do not silently re-dispatch from outside the review path. The reconciler and completion discipline assume one active attempt per node.
 
@@ -107,9 +109,20 @@ If you see a mission result flagged as `quarantined` unexpectedly:
 2. Check `scripts/adapters/test_mission_push_guard.py` for the expected quarantine behavior.
 3. The absolute `git` binary + `-c core.hooksPath=/dev/null` bypasses PATH shims and pre-push hooks; the post-hoc detection in `mission_evidence._protected_branch_push_reasons` is the active safeguard.
 
-## Debugging the heartbeat
+## Debugging the heartbeat runner
 
-Run `bash deploy/mini-heartbeat/bin/smoke.sh`, then inspect the heartbeat log. The runner logs each tick phase: reconcile, frontier, claim, plan, dispatch, record. Look for the phase where it stops or errors.
+For local debugging (never as the production entrypoint):
+
+```bash
+source deploy/mini-heartbeat/env/gddp.env
+source deploy/mini-heartbeat/bin/common.sh
+python3 -m scripts.runtime.heartbeat.runner \
+  --project <project-id> \
+  --repo <owner/repo> \
+  --config-path /path/to/gddp-config
+```
+
+The runner logs each tick phase: reconcile, frontier, claim, plan, dispatch, record. Look for the phase where it stops or errors.
 
 If the runner hangs, it is almost always a SQLite lock. Check for other writers with `lsof db/queue.db` or `fuser db/queue.db`. The coordinator uses `BEGIN IMMEDIATE` for reservations; if another writer is mid-transaction, the runner waits.
 

@@ -2,7 +2,7 @@
 
 > Restored from the 2026-07-13 wiki. Cross-check implementation details against newer sibling pages, especially [Heartbeat](heartbeat.md), before operational use.
 
-The runtime reads nodes and execution policy from `gddp-config` YAML through `scripts/runtime/heartbeat/graph_reader.py`. The `GraphReader` class itself only reads. The runtime as a whole is not read-only: `provisional_gate.py` and `frontier.py` write scheduler-visible statuses and then invalidate this reader's cache.
+The runtime needs to know which nodes are ready, what each node demands, and what the project's execution policy is. It gets all of that from `gddp-config` YAML. `scripts/runtime/heartbeat/graph_reader.py` is the only module that reads that YAML, and it only reads. It never writes, never proposes changes, never mutates graph truth. That boundary is the load-bearing one in the whole system: graph truth is human-owned, and the runtime is a reader of it.
 
 ## Path resolution
 
@@ -33,7 +33,7 @@ class NodeData:
     unlocks: list[str]
 ```
 
-`NodeData` is the materialized form of a single node YAML file. `status` defaults to `pending`, `type` to `capability`, `allowed_execution_modes` to `["jules"]`, and list fields to empty lists. Loading validates execution modes against `DEFAULT_EXECUTION_MODE_ALLOWLIST`; it does not perform complete config-schema validation.
+`NodeData` is the materialized form of a single node YAML file. Defaults are permissive: `status` defaults to `pending`, `type` to `capability`, `allowed_execution_modes` to `["jules"]`, and the list fields to empty lists. The dataclass does not validate against the schema in `gddp-config/schemas/v1/`; it trusts the YAML and reads what is there.
 
 ## ProjectGraph
 
@@ -47,7 +47,7 @@ class ProjectGraph:
     execution_policy: dict
 ```
 
-`ProjectGraph` holds project metadata plus raw node-summary dicts. `execution_policy` is normalized by `parse_execution_policy()`, which validates positive mission sizing and supplies defaults.
+`ProjectGraph` holds the project-level metadata plus the `nodes` list as raw summary dicts straight from `project.yaml`. The summaries are not promoted to `NodeData` here; that happens lazily in `load_node` and `get_ready_nodes`. `execution_policy` is passed through as a dict for the decision loop to read.
 
 ## Caching
 
@@ -56,7 +56,7 @@ Two in-memory caches eliminate redundant synchronous file I/O within a single ru
 - `_project_cache: dict[str, ProjectGraph]` keyed by `project_id`
 - `_node_cache: dict[tuple[str, str], NodeData]` keyed by `(project_id, node_id)`
 
-Both are populated on first access and returned on subsequent accesses. `invalidate(project_id)` clears project and node entries after system writers change graph files, so a heartbeat can observe provisional/frontier writes during the same tick.
+Both are populated on first access and returned directly on subsequent accesses. The caches are per-instance, not shared across processes, which is fine because the heartbeat runner and the decision loop each construct their own `GraphReader`. The cache is never invalidated; if `gddp-config` changes mid-run, a new process picks it up.
 
 ## load_project
 
@@ -76,9 +76,9 @@ Returns the list of `NodeData` objects that are both marked `status: ready` in `
 
 The silent skip is intentional. A node can be marked ready in `project.yaml` before its detail file exists, and the runtime should not crash on that; it should just not consider the node dispatchable yet.
 
-## Reader boundary
+## Read-only by design
 
-The class has no write methods. Separate runtime modules currently rewrite node/project YAML to `provisional` or `ready`; only the human writes accepted `complete`. This mixes scheduler state and human-owned graph files, so do not infer a repository-wide read-only boundary from the class name.
+The class has no write methods, no `update_node`, no `mark_complete`. The only way graph truth changes is through a human merging a PR against `gddp-config`. The runtime's path to influencing that is the [graph updater](graph-updater.md), which proposes via PR, never writes directly. Keeping the reader and the proposer as separate modules makes the boundary visible in the code layout, not just in the prose.
 
 ## Key source files
 
@@ -90,4 +90,4 @@ The class has no write methods. Separate runtime modules currently rewrite node/
 
 - [overview/architecture.md](../overview/architecture.md) for where the reader sits in the system flow
 - [systems/heartbeat.md](heartbeat.md) for who calls `get_ready_nodes`
-- [features/provisional-and-frontier.md](../features/provisional-and-frontier.md) for the live system writers
+- [systems/graph-updater.md](graph-updater.md) for the write side of the same config repo

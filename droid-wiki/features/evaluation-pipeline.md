@@ -41,15 +41,15 @@ Overall coverage is the worse rating among lanes that ran. Coverage describes th
 
 ## Receipt and integration
 
-The resulting `VerdictReceipt` includes deterministic and semantic evidence, integrity output, lane status and errors, combined verdict, confidence, required next action, provenance, canonical context, and context coverage. Direct results are finalized in `scripts/runtime/heartbeat/reconciler.py` and always route to `awaiting_review` after persistence. Mediated returns use `scripts/runtime/return_router.py`, which alone currently applies the evidence-qualified retry budget.
+The resulting `VerdictReceipt` includes deterministic and semantic evidence, integrity output, lane status and errors, combined verdict, confidence, required next action, provenance, canonical context, and context coverage. Direct results are finalized in `scripts/runtime/heartbeat/reconciler.py`; mediated returns use `scripts/runtime/return_router.py`. Both persist the summary for `scripts/jobs_status.py` and route the job to review or an evidence-qualified retry.
 
 ## Key files and modification points
 
 - `scripts/runtime/verification/bridge.py` — subject pinning, worktree isolation, subprocess containment, and retry.
 - `scripts/runtime/verification/orchestrator.py` — lane orchestration, receipt assembly, and coverage.
-- `scripts/runtime/verification/deterministic/` — deterministic evidence.
+- `scripts/runtime/verification/deterministic.py` — deterministic evidence.
 - `scripts/runtime/verification/semantic/` — read-only semantic criteria harness.
-- `scripts/runtime/verification/semantic/integrity_runner.py` — read-only integrity harness.
+- `scripts/runtime/verification/integrity_runner.py` — read-only integrity harness.
 - `scripts/runtime/verification/decision_engine.py` — criteria verdict matrix.
 - `scripts/runtime/verification/integrity_combiner.py` — worst-of combination.
 - `scripts/runtime/verification/schemas.py` — receipt and lane schemas.

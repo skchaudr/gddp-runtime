@@ -1,6 +1,6 @@
 # Design decisions
 
-> Restored from the 2026-07-13 wiki. This is historical rationale, not an operational specification. Corrections below name current behavior where the old rationale became false.
+> Restored from the 2026-07-13 wiki. Cross-check historical implementation choices against newer doctrine, system, and deployment pages; several executor and heartbeat details have changed.
 
 GDDP Runtime's architecture is the result of specific choices made for specific reasons. This page documents the key decisions and the trade-offs behind them. The unifying theme: the runtime is an intent-preservation and graph-integrity layer, not an executor and not an agent harness. Each decision below serves that boundary.
 
@@ -8,7 +8,7 @@ GDDP Runtime's architecture is the result of specific choices made for specific 
 
 `gddp-config` holds project truth as declarative YAML: schemas, project graphs, nodes, constraints, acceptance criteria. `gddp-runtime` holds the execution machinery: heartbeat runner, executor adapters, webhook intake, SQLite state, receipt handling, verification, decision loop.
 
-The split keeps human acceptance separate from execution. Current runtime code does write scheduler-visible `provisional` and `ready` statuses into config YAML when a project opts into frontier advancement. It never writes `complete`; only the human does that. The older claim that runtime never writes config at all is no longer true.
+The split exists so that graph truth and execution code can evolve independently and so the runtime can never silently rewrite the graph. The runtime reads config. It never writes it. Graph state moves only through human-merged PRs against `gddp-config`. If the runtime had a bug and tried to advance a node, it would have to open a PR and a human would have to merge it, which is the point.
 
 ## 2. Receipt-based return instead of auto-advancement
 
@@ -45,7 +45,7 @@ The runtime does not know or care what executor is doing the work. It builds a j
 
 ## 7. SQLite over Postgres
 
-The runtime uses SQLite for execution state: `events`, `jobs`, `queue_records`, `results`, `artifact_verifications`, `decision_results`, and `executor_sessions`. Seven tables, one file, no server.
+The runtime uses SQLite for all state: `events`, `jobs`, `queue_records`, `results`, `artifact_verifications`, `decision_results`. Six tables, one file, no server.
 
 This is a single-host system running on a Raspberry Pi. SQLite is embedded, has zero operational overhead, and produces a single replayable file. Postgres would add a process to manage, a connection pool to tune, and a failure mode that does not exist with a file-based database. The trade-off is concurrency limits, but the heartbeat uses atomic SQLite claims to handle concurrent runs, and the workload is small enough that SQLite's limits are not the bottleneck.
 
@@ -55,11 +55,11 @@ The heartbeat is a short-lived periodic process, not a long-running scheduler. P
 
 An always-on scheduler would need to manage its own lifecycle, restarts, event loops, and indefinite health. Short ticks recover from durable SQLite and executor-session state. On armed hosts, agents must use `deploy/mini-heartbeat/bin/` entrypoints so the required environment and spool configuration are loaded; direct runner invocation is unsafe.
 
-## 9. graph_updater.py is inactive legacy code
+## 9. graph_updater.py as evidence PR opener
 
-`scripts/runtime/graph_updater.py` still contains an evidence-PR implementation, including branch mutation and a force-push. The live return path does not call it. Its only non-test caller is the untriggered legacy decision-loop power.
+`scripts/runtime/graph_updater.py` opens evidence-packaged PRs against `gddp-config` proposing to mark nodes complete. It never pushes directly. The PR body contains the full evidence packet (source PR reference, acceptance criteria verdicts, scope verification, test status, review metadata) so the human can rubber-stamp or scrutinize.
 
-Treat it as historical implementation evidence, not the supported graph-update path. Current return handling creates receipts and review state; it does not invoke `graph_updater.py`.
+This replaced an earlier design where `graph_updater.py` was a disabled stub. The stub existed because the original instinct was to have the runtime write graph truth directly, and that instinct was wrong. The evidence PR model preserves the invariant (runtime never mutates graph truth) while still giving the human a packaged proposal to review instead of requiring them to assemble the evidence themselves. It aligns with GitOps patterns: git is source of truth, machines propose, humans approve.
 
 ## Related pages
 

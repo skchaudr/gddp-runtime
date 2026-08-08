@@ -27,15 +27,19 @@ Defined in `scripts/runtime/heartbeat/graph_reader.py`:
 
 ### Graph Statuses (gddp-config)
 
-These statuses live in project graph YAML. Only `complete` represents human acceptance. Runtime currently writes scheduler statuses `ready` and `provisional`, creating a real boundary tension because scheduling state and accepted truth share the same files.
+These statuses live in the project graph YAML files and represent **graph truth** — only a human can change them:
 
 | Status | Meaning |
 |--------|---------|
 | `pending` | Node defined but not yet ready for execution |
 | `ready` | Dependencies satisfied; eligible for dispatch |
+| `dispatched` | Job created and sent to executor (transient) |
+| `running` | Executor actively working (transient) |
 | `provisional` | Evaluator passed; awaiting human review |
 | `complete` | Human accepted; node satisfied |
+| `blocked` | Hard blocker (dependency failed, integrity violation) |
 | `deferred` | Human decided to postpone |
+| `abandoned` | Human decided this node is no longer needed |
 
 **Source:** gddp-config YAML files (e.g., `graphs/<project-id>/nodes/<node-id>.yaml`)
 
@@ -58,7 +62,7 @@ These are **separate from graph status** and track executor lifecycle:
 
 **Critical distinction:**
 
-- **Graph truth** = human-accepted completion in gddp-config YAML
+- **Graph truth** = human-accepted node status in gddp-config YAML
 - **Evidence** = everything else (tests, verdicts, commits, artifacts)
 
 **Doctrine from `docs/Tests-can-fail-nodes-can-pass.md`:**
@@ -68,7 +72,7 @@ These are **separate from graph status** and track executor lifecycle:
 **Implications:**
 
 - A node can be `complete` even if some tests fail (if the human accepted it)
-- A node can be `provisional` after a qualifying evaluator pass (awaiting human review)
+- A node can be `provisional` even if all tests pass (awaiting human review)
 - The runtime never marks a node `complete`; only the human does
 - Evaluator verdicts are input to human decision, not autonomous authority
 
@@ -81,12 +85,12 @@ When a node passes evaluation, the runtime marks it `provisional` in the graph Y
 
 **What provisional means:**
 
-- Combined verdict is `pass`, intent is preserved, graph integrity is preserved, and the evaluator did not require human review
+- Evaluator verdict is `pass` or `needs-human-review` (not `fail`)
 - Gate token written to `.gddp/gates/<node-id>.token`
 - Dependents may start execution (if their other dependencies are met)
 - Node is not yet `complete` — human must accept
 
-**Revocation:** A human status change away from `provisional` revokes the gate token and restores dependency blocking as appropriate.
+**Revocation:** If human rejects or defers, the gate token is deleted and the node reverts to a non-provisional status.
 
 **Source:** `scripts/runtime/gates.py` (`write_gate`, `revoke_gate`)
 
@@ -149,8 +153,8 @@ Defined in `scripts/runtime/heartbeat/graph_reader.py`:
 
 ## Key Invariants
 
-1. Only the human writes accepted `complete`
-2. Runtime currently writes scheduler statuses `ready` and `provisional` into graph YAML
-3. Storing scheduler state beside accepted truth is an explicit architecture boundary, not proof that runtime is read-only
+1. Only the human changes graph truth (node status in YAML)
+2. Runtime never marks a node `complete`
+3. Provisional is a graph status in gddp-config, not a runtime-only state
 4. Dependency edges form a DAG; evidence links are separate
 5. Gate tokens are admission signals, not lifecycle gates

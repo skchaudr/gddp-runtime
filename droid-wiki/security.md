@@ -33,4 +33,4 @@ These controls have a known residual bypass: an absolute Git invocation with `-c
 - `/Users/sab-mini/repos/gddp-runtime/deploy/mini-heartbeat/env/gddp.env.example` and service templates are intentionally secret-free.
 - Runtime state (`db/`, `events/`, `jobs/`) is not image content and is excluded from Git.
 
-See [Production hosts](deployment/production-hosts.md) and [Monitoring](how-to-monitor/index.md).
+See [Production hosts](../deployment/production-hosts.md) and [Monitoring](../how-to-monitor/index.md).
