@@ -683,6 +683,20 @@ def _route_engagement_result_to_review(
             else None
         ),
     )
+    quarantine_reason = (
+        getattr(result, "completion_quarantine_reason", None)
+        if result is not None
+        else None
+    )
+    if quarantine_reason is not None:
+        con.execute(
+            """
+            UPDATE executor_sessions
+               SET completion_quarantine_reason = ?
+             WHERE session_db_id = ?
+            """,
+            (quarantine_reason, session["session_db_id"]),
+        )
     mark_jobs_awaiting_review(con, (job["job_id"],))
 
 

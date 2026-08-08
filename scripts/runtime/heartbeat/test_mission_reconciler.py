@@ -154,6 +154,46 @@ def test_reconciler_routes_engagement_review_result_without_commit(
     } == {"evaluated"}
 
 
+def test_reconciler_persists_ancestry_mismatch_quarantine_reason(tmp_path):
+    con = _connection()
+    session = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-1'"
+    ).fetchone()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="completed")
+    quarantine_reason = (
+        f"result {'b' * 40} does not descend from receipt base {'c' * 40}"
+    )
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=False,
+            feature_id="node-alpha",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-alpha.json",
+            completion_quarantine_reason=quarantine_reason,
+            review_required=True,
+            error=quarantine_reason,
+        )
+    ]
+    batch = MagicMock()
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, [session], tmp_path, batch
+    )
+
+    row = con.execute(
+        """
+        SELECT state, completion_quarantine_reason
+          FROM executor_sessions
+         WHERE session_db_id = 'session-1'
+        """
+    ).fetchone()
+    assert row["state"] == "evaluated"
+    assert row["completion_quarantine_reason"] == quarantine_reason
+    batch.add.assert_not_called()
+
+
 def test_reconciler_persists_completion_identity_before_evaluation(
     monkeypatch, tmp_path
 ):
