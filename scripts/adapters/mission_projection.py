@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.adapters.executor_protocol import _thaw_json
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
 DEFAULT_MILESTONE_ID = "gddp-engagement"
@@ -224,4 +225,9 @@ def _item_lines(items: Sequence[object]) -> list[str]:
 def _render_item(item: object) -> str:
     if isinstance(item, str):
         return item
+    # NodePacket freezes nested criteria/constraints as MappingProxyType +
+    # tuples. Thaw at this exact dumps boundary so projection never leaks
+    # frozen packet values into JSON serialization.
+    if isinstance(item, Mapping | tuple):
+        item = _thaw_json(item)  # type: ignore[arg-type]
     return json.dumps(item, ensure_ascii=False, sort_keys=True)

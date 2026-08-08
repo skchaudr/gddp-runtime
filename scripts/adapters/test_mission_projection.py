@@ -292,3 +292,46 @@ def test_post_planning_verification_parks_unverifiable_artifacts(
     assert result.park_for_review is True
     assert result.observed_ids is None
     assert "cannot verify" in result.reason.casefold()
+
+
+def test_projection_serializes_frozen_nodepacket_criteria_without_mappingproxy_error():
+    """Regression for the first live factory_mission dispatch failure
+    (2026-08-08): NodePacket freezes dict criteria as MappingProxyType, and
+    mission projection must thaw before json.dumps."""
+    from types import MappingProxyType
+
+    from scripts.adapters.executor_protocol import NodePacket
+    from scripts.adapters.mission_adapter import _packet_node
+
+    packet = NodePacket(
+        job_id="job_pi-harness",
+        execution_attempt_id="job_pi-harness:attempt:0",
+        node_id="node-01-subagents-audit",
+        title="Audit pi subagents for reliability and traceability",
+        goal="Audit the subagent system",
+        why="Make multi-agent orchestration reliable",
+        constraints=(
+            {"scope": "read-only", "paths": ["agent/agents", "agent/chains"]},
+            "Commit on the result ref only",
+        ),
+        acceptance_criteria=(
+            {"id": "report-exists", "criterion": "report exists and is non-empty"},
+            {"id": "evidence-cited", "criterion": "every finding cites a path"},
+        ),
+        required_artifacts=("reports/pi-harness-execution/subagents-audit.md",),
+        attempt_index=0,
+        previous_findings={"findings": [{"id": "watchdog", "detail": "noise"}]},
+        expected_base_commit_sha="a" * 40,
+    )
+
+    # Prove the packet actually freezes nested maps the way live dispatch does.
+    assert isinstance(packet.acceptance_criteria[0], MappingProxyType)
+    assert isinstance(packet.constraints[0], MappingProxyType)
+    assert isinstance(packet.previous_findings, MappingProxyType)
+
+    mission = project_mission([_packet_node(packet)])
+
+    assert "node-01-subagents-audit" in mission
+    assert '"id": "report-exists"' in mission
+    assert '"scope": "read-only"' in mission
+    assert "mappingproxy" not in mission.casefold()
