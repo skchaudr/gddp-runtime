@@ -50,9 +50,8 @@ The system has:
   job into `awaiting_review`. No silent writeback to graph truth, no
   claiming work is valid, complete, or accepted.
 - **SQLite state persistence**: Every event, job, queue record, and
-  result is a row. State is auditable and replayable;
-  `python3 -m runtime.replay` lets you reprocess return events or
-  re-dispatch jobs from persisted state.
+  result is a row. State is auditable and inspectable from the
+  persisted tables.
 - **Executor adapters**: `adapters/jules_action_adapter.py` is the
   working adapter. Adding a new executor means writing a new adapter
   against the same dispatch contract — not rewriting the orchestration
@@ -84,8 +83,7 @@ This is not a demo. It runs on a live Raspberry Pi control plane, managing work 
 
 - **Schema-driven architecture**: Project graphs, nodes, jobs, and results follow explicit YAML schemas in the config repository. The runtime reads those schemas; it does not invent its own structure.
 - **Frozen boundaries**: This phase is intentionally frozen at receipt routing plus human review. The system does not attempt richer graph states, auto-review logic, or fully autonomous graph state machines. It stops at a stable contract and documents what is incomplete.
-- **Replay and rollback**: Runtime state is replayable. `python3 -m runtime.replay --result-id <id>` recreates receipt/state routing for a recorded return event. `python3 -m runtime.replay --job-id <id>` re-dispatches a specific job after explicit operator confirmation.
-- **Test coverage**: 255 passing tests covering intake, heartbeat modules, state recording, executor adapters, return routing, verification, and runtime-root configuration.
+- **Test coverage**: 633 passing tests covering intake, heartbeat modules, state recording, executor adapters, return routing, verification, and runtime-root configuration.
 - **Operational hardening**: The live deployment has systemd service units, GitHub webhook signature validation (`GITHUB_WEBHOOK_SECRET`), and a documented review workflow. This is not a prototype running in a tmux session.
 
 ---
@@ -137,7 +135,6 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 
 **Operational tooling**:
 - `scripts/rollback.py`: Job rollback utility.
-- `python3 -m runtime.replay`: Replay utilities for reprocessing or retracing state from recorded history.
 
 **Deployment**:
 - `deploy/deploy.sh`: Canonical deploy command. Copies committed runtime snapshot to the runtime install path and writes a deploy marker.
@@ -283,7 +280,7 @@ The `--config-path` flag is optional for local development if `gddp-config` is a
 .venv/bin/python -m pytest -q scripts
 ```
 
-Expected: 255 passing tests.
+Expected: 633 passing tests.
 
 ---
 
@@ -298,22 +295,6 @@ Runtime stops at receipts. When a job lands in `awaiting_review`, the operator r
 5. **reopen** or **supersede**: Revisit or replace the work later if downstream evidence invalidates it.
 
 There is no automatic node advancement, automatic review, or automatic graph writeback in this phase.
-
----
-
-## Replay
-
-Replay reuses persisted runtime state rather than re-receiving or re-classifying events.
-
-**Recreate receipt/state routing for a recorded return event**:
-```bash
-python3 -m runtime.replay --result-id <result-id>
-```
-
-**Re-dispatch a specific job after explicit operator confirmation**:
-```bash
-python3 -m runtime.replay --job-id <job-id>
-```
 
 ---
 
@@ -381,7 +362,7 @@ Canon has audiences: AGENTS.md is canon for *executors* and is deliberately excl
 
 ## Status
 
-- **Tests**: 255 passing (`.venv/bin/python -m pytest -q scripts`)
+- **Tests**: 633 passing (`.venv/bin/python -m pytest -q scripts`)
 - **Live deployment**: Raspberry Pi control plane (pi-big) — webhook intake + 5-minute heartbeat cron, two-lane verification (criteria + integrity), manual review workflow
 - **Current phase**: live intake → dispatch → verification → human review; graph truth advances only by human acceptance
 
