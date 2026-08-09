@@ -308,6 +308,68 @@ class MissionAdapter(EngagementAdapterDefaults):
         return result
 
     def collect_engagement(self, session_ref: SessionRef) -> list[PatchResult]:
+        return self._collect_engagement_results(session_ref)
+
+    def completed_feature_ids(self, session_ref: SessionRef) -> tuple[str, ...]:
+        """Return demanded features reported successfully completed by Factory."""
+        _record_path, record = self._record(session_ref)
+        if record is None:
+            return ()
+        demanded = tuple(str(item) for item in record.get("feature_ids", ()))
+        mission_dir = Path(str(record["mission_dir"]))
+        completed: set[str] = set()
+        try:
+            lines = (mission_dir / "progress_log.jsonl").read_text(
+                errors="replace"
+            ).splitlines()
+        except OSError:
+            return ()
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, Mapping):
+                continue
+            feature_id = event.get("featureId")
+            if (
+                event.get("type") == "worker_completed"
+                and event.get("successState") == "success"
+                and isinstance(feature_id, str)
+            ):
+                completed.add(feature_id)
+        return tuple(feature_id for feature_id in demanded if feature_id in completed)
+
+    def collect_completed_engagement(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect a durable completed subset while the mission keeps running."""
+        return self._collect_engagement_results(
+            session_ref,
+            selected_feature_ids=feature_ids,
+            mission_outcome="running",
+        )
+
+    def collect_engagement_features(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect only remaining feature rows after engagement termination."""
+        return self._collect_engagement_results(
+            session_ref,
+            selected_feature_ids=feature_ids,
+        )
+
+    def _collect_engagement_results(
+        self,
+        session_ref: SessionRef,
+        *,
+        selected_feature_ids: Sequence[str] | None = None,
+        mission_outcome: str | None = None,
+    ) -> list[PatchResult]:
         record_path, record = self._record(session_ref)
         if record is None or record_path is None:
             return [
@@ -323,8 +385,17 @@ class MissionAdapter(EngagementAdapterDefaults):
         if refreshed_record is not None:
             record = refreshed_record
         demanded = tuple(str(item) for item in record.get("feature_ids", ()))
+        selected = demanded
+        if selected_feature_ids is not None:
+            requested = {str(item) for item in selected_feature_ids}
+            selected = tuple(item for item in demanded if item in requested)
+            unknown = requested.difference(demanded)
+            if unknown:
+                raise ValueError(
+                    f"completed feature ids are not demanded: {sorted(unknown)!r}"
+                )
         mission_dir = Path(str(record["mission_dir"]))
-        mission_outcome = _collection_outcome(record)
+        mission_outcome = mission_outcome or _collection_outcome(record)
         mission_failure_reason = (
             terminal_status.error
             if terminal_status.state in {"crashed", "failed"}
@@ -338,7 +409,8 @@ class MissionAdapter(EngagementAdapterDefaults):
             output_dir=record_path.parent / "evidence",
             engagement_id=str(record["engagement_id"]),
             result_ref=str(record["engagement_branch"]),
-            demanded_feature_ids=demanded,
+            demanded_feature_ids=selected,
+            planned_feature_ids=demanded,
             receipts_path=record.get("receipts_path"),
             mission_outcome=mission_outcome,
             mission_failure_reason=mission_failure_reason,
@@ -505,7 +577,9 @@ def _collection_outcome(record: Mapping[str, object]) -> str:
         return "failed"
     mission_dir = Path(str(record["mission_dir"]))
     terminal = _last_progress_event(mission_dir / "progress_log.jsonl")
-    if terminal and terminal.get("type") == "mission_completed":
+    if (
+        terminal and terminal.get("type") == "mission_completed"
+    ) or _factory_state(mission_dir) == "completed":
         return "completed"
     return "crashed"
 

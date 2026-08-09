@@ -673,6 +673,89 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         assert manifest["push_verification"]["verified"] is True
 
 
+def test_running_mission_collects_only_completed_feature_subset(tmp_path, monkeypatch):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record, mission_dir = _interrupt_beta(adapter, ref)
+    alpha_receipt = json.loads(
+        mission_dir.joinpath("receipts.jsonl").read_text().splitlines()[0]
+    )
+    repo = Path(record["repo_path"])
+    subprocess.run(
+        ["git", "reset", "--hard", alpha_receipt["result"]],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "push", "--force", "origin", "HEAD:refs/heads/gddp/eng-status"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: True)
+    monkeypatch.setattr(
+        mission_adapter,
+        "_process_identity",
+        lambda pid: "Sat Aug  8 00:00:00 2026 droid exec --mission",
+    )
+
+    assert adapter.completed_feature_ids(ref) == ("node-alpha",)
+
+    results = adapter.collect_completed_engagement(ref, ("node-alpha",))
+
+    assert [result.feature_id for result in results] == ["node-alpha"]
+    assert results[0].success is True
+    manifest = json.loads(Path(results[0].evidence_manifest_path).read_text())
+    assert manifest["mission_process"]["exit_code"] is None
+    assert manifest["mission_outcome"] == "running"
+    assert "node-beta" not in mission_dir.joinpath("receipts.jsonl").read_text()
+
+
+def test_running_subset_stays_valid_after_engagement_branch_advances(
+    tmp_path, monkeypatch
+):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    _record, _mission_dir = _interrupt_beta(adapter, ref)
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: True)
+    monkeypatch.setattr(
+        mission_adapter,
+        "_process_identity",
+        lambda pid: "Sat Aug  8 00:00:00 2026 droid exec --mission",
+    )
+
+    results = adapter.collect_completed_engagement(ref, ("node-alpha",))
+
+    assert [result.feature_id for result in results] == ["node-alpha"]
+    assert results[0].success is True
+    manifest = json.loads(Path(results[0].evidence_manifest_path).read_text())
+    assert manifest["git_verified"]["verified"] is True
+    assert manifest["engagement_history"] is None
+    assert manifest["review_required"] is False
+
+
+def test_terminal_collection_selects_only_requested_remainder(tmp_path):
+    adapter = _make_adapter(tmp_path)
+    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
+    record = json.loads(
+        (adapter.session_root / ref.session_id / "session.json").read_text()
+    )
+    state_path = Path(record["mission_dir"]) / "state.json"
+    state = json.loads(state_path.read_text())
+    state["state"] = "completed"
+    state_path.write_text(json.dumps(state))
+
+    results = adapter.collect_engagement_features(ref, ("node-beta",))
+
+    assert [result.feature_id for result in results] == ["node-beta"]
+    assert results[0].success is True
+    manifest = json.loads(Path(results[0].evidence_manifest_path).read_text())
+    assert manifest["feature_id"] == "node-beta"
+    assert manifest["mission_outcome"] == "completed"
+    assert manifest["review_required"] is False
+
+
 def test_collect_requires_an_individual_successful_push_for_each_feature(tmp_path):
     adapter = _make_adapter(tmp_path)
     ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])

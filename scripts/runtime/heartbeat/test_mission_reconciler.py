@@ -78,7 +78,7 @@ def test_reconciler_collects_engagement_once_and_fans_out_by_feature_id(
     ).fetchall()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=True,
             feature_id="node-beta",
@@ -103,7 +103,10 @@ def test_reconciler_collects_engagement_once_and_fans_out_by_feature_id(
         con, adapter, sessions, tmp_path, batch
     )
 
-    adapter.collect_engagement.assert_called_once()
+    adapter.collect_engagement_features.assert_called_once_with(
+        reconciler.SessionRef("factory_mission", "engagement-1"),
+        ["node-alpha", "node-beta"],
+    )
     rows = {
         row["job_id"]: row
         for row in con.execute(
@@ -117,6 +120,220 @@ def test_reconciler_collects_engagement_once_and_fans_out_by_feature_id(
     assert batch.add.call_count == 2
 
 
+def test_running_engagement_evaluates_only_completed_feature(
+    monkeypatch, tmp_path
+):
+    con = _connection()
+    sessions = con.execute(
+        "SELECT * FROM executor_sessions ORDER BY session_db_id"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="running")
+    adapter.completed_feature_ids.return_value = ("node-alpha",)
+    adapter.collect_completed_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-alpha",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-alpha.json",
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "b" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, sessions, tmp_path, batch
+    )
+
+    adapter.collect_completed_engagement.assert_called_once_with(
+        reconciler.SessionRef("factory_mission", "engagement-1"),
+        ["node-alpha"],
+    )
+    states = {
+        row["job_id"]: row["state"]
+        for row in con.execute(
+            "SELECT job_id, state FROM executor_sessions ORDER BY session_db_id"
+        )
+    }
+    assert states == {
+        "job-node-alpha": "collected",
+        "job-node-beta": "running",
+    }
+    batch.add.assert_called_once()
+    assert batch.add.call_args.args[1]["node_id"] == "node-alpha"
+
+
+def test_running_engagement_commits_state_transition_before_completion_identity(
+    monkeypatch, tmp_path
+):
+    con = _connection()
+    con.execute("UPDATE executor_sessions SET state = 'dispatched'")
+    con.commit()
+    sessions = con.execute(
+        "SELECT * FROM executor_sessions ORDER BY session_db_id"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="running")
+    adapter.completed_feature_ids.return_value = ("node-alpha",)
+    adapter.collect_completed_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-alpha",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-alpha.json",
+            completion_id="mission:node-alpha:worker",
+            completion_digest_sha256="1" * 64,
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "b" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, sessions, tmp_path, batch
+    )
+
+    alpha = con.execute(
+        "SELECT state, completion_id FROM executor_sessions "
+        "WHERE session_db_id = 'session-1'"
+    ).fetchone()
+    assert tuple(alpha) == ("collected", "mission:node-alpha:worker")
+    batch.add.assert_called_once()
+
+
+def test_running_engagement_defers_incomplete_evidence_until_later_tick(
+    tmp_path,
+):
+    con = _connection()
+    sessions = con.execute(
+        "SELECT * FROM executor_sessions ORDER BY session_db_id"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="running")
+    adapter.completed_feature_ids.return_value = ("node-alpha",)
+    adapter.collect_completed_engagement.return_value = [
+        PatchResult(
+            success=False,
+            feature_id="node-alpha",
+            result_ref="gddp/engagement-1",
+            review_required=True,
+            error="missing_receipt",
+        )
+    ]
+    batch = MagicMock()
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, sessions, tmp_path, batch
+    )
+
+    alpha = con.execute(
+        "SELECT s.state, j.status, j.queue_state "
+        "FROM executor_sessions s JOIN jobs j ON j.job_id = s.job_id "
+        "WHERE s.session_db_id = 'session-1'"
+    ).fetchone()
+    assert tuple(alpha) == ("running", "running", "running")
+    batch.add.assert_not_called()
+
+
+def test_running_engagement_does_not_recollect_already_evaluated_feature(
+    tmp_path,
+):
+    con = _connection()
+    con.execute(
+        "UPDATE executor_sessions SET state = 'evaluated' "
+        "WHERE session_db_id = 'session-1'"
+    )
+    con.commit()
+    remaining = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(state="running")
+    adapter.completed_feature_ids.return_value = ("node-alpha",)
+    batch = MagicMock()
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, remaining, tmp_path, batch
+    )
+
+    adapter.collect_completed_engagement.assert_not_called()
+    batch.add.assert_not_called()
+    state = con.execute(
+        "SELECT state FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchone()["state"]
+    assert state == "running"
+
+
+@pytest.mark.parametrize("terminal_state", ["completed", "failed", "crashed"])
+def test_terminal_engagement_collects_only_unevaluated_remainder(
+    monkeypatch, tmp_path, terminal_state
+):
+    con = _connection()
+    con.execute(
+        "UPDATE executor_sessions SET state = 'evaluated' "
+        "WHERE session_db_id = 'session-1'"
+    )
+    con.commit()
+    remaining = con.execute(
+        "SELECT * FROM executor_sessions WHERE session_db_id = 'session-2'"
+    ).fetchall()
+    adapter = MagicMock()
+    adapter.status.return_value = SessionStatus(
+        state=terminal_state,
+        error=("mission stopped" if terminal_state != "completed" else None),
+    )
+    # A whole-engagement recollect would include alpha and mismatch the one
+    # remaining reserved session. The terminal seam must request beta only.
+    adapter.collect_engagement.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-alpha",
+            result_commit_sha="b" * 40,
+            result_ref="gddp/engagement-1",
+        ),
+        PatchResult(
+            success=True,
+            feature_id="node-beta",
+            result_commit_sha="c" * 40,
+            result_ref="gddp/engagement-1",
+        ),
+    ]
+    adapter.collect_engagement_features.return_value = [
+        PatchResult(
+            success=True,
+            feature_id="node-beta",
+            result_commit_sha="c" * 40,
+            result_ref="gddp/engagement-1",
+            evidence_manifest_path="/evidence/node-beta.json",
+        )
+    ]
+    batch = MagicMock()
+    monkeypatch.setattr(reconciler, "_resolve_ref", lambda *args: "c" * 40)
+    monkeypatch.setattr(reconciler, "_is_ancestor", lambda *args: True)
+    monkeypatch.setattr(reconciler, "_ensure_result_ref", lambda *args: None)
+
+    reconciler._reconcile_engagement_group(
+        con, adapter, remaining, tmp_path, batch
+    )
+
+    adapter.collect_engagement.assert_not_called()
+    adapter.collect_engagement_features.assert_called_once_with(
+        reconciler.SessionRef("factory_mission", "engagement-1"),
+        ["node-beta"],
+    )
+    row = con.execute(
+        "SELECT state, result_commit_sha FROM executor_sessions "
+        "WHERE session_db_id = 'session-2'"
+    ).fetchone()
+    assert tuple(row) == ("collected", "c" * 40)
+    batch.add.assert_called_once()
+
+
 def test_reconciler_routes_engagement_review_result_without_commit(
     monkeypatch, tmp_path
 ):
@@ -126,7 +343,7 @@ def test_reconciler_routes_engagement_review_result_without_commit(
     ).fetchall()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=False,
             feature_id=node_id,
@@ -169,7 +386,7 @@ def test_reconciler_collects_partial_evidence_after_engagement_failure(
         state=terminal_state,
         error="mission process died before mission_completed",
     )
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=True,
             feature_id="node-alpha",
@@ -197,7 +414,10 @@ def test_reconciler_collects_partial_evidence_after_engagement_failure(
         con, adapter, sessions, tmp_path, batch
     )
 
-    adapter.collect_engagement.assert_called_once()
+    adapter.collect_engagement_features.assert_called_once_with(
+        reconciler.SessionRef("factory_mission", "engagement-1"),
+        ["node-alpha", "node-beta"],
+    )
     failed.assert_not_called()
     rows = {
         row["job_id"]: row
@@ -225,7 +445,7 @@ def test_reconciler_persists_ancestry_mismatch_quarantine_reason(tmp_path):
     quarantine_reason = (
         f"result {'b' * 40} does not descend from receipt base {'c' * 40}"
     )
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=False,
             feature_id="node-alpha",
@@ -264,7 +484,7 @@ def test_reconciler_persists_completion_identity_before_evaluation(
     ).fetchall()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=True,
             feature_id=node_id,
@@ -339,7 +559,7 @@ def test_reconciler_exact_duplicate_drives_job_forward_with_first_result(
     ).fetchone()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=True,
             feature_id="node-beta",
@@ -407,7 +627,7 @@ def test_reconciler_quarantined_duplicate_is_not_enqueued_for_evaluation(
     ).fetchone()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=False,
             feature_id="node-beta",
@@ -470,7 +690,7 @@ def test_reconciler_same_session_replay_resumes_first_evaluation(
     ).fetchone()
     adapter = MagicMock()
     adapter.status.return_value = SessionStatus(state="completed")
-    adapter.collect_engagement.return_value = [
+    adapter.collect_engagement_features.return_value = [
         PatchResult(
             success=True,
             feature_id="node-alpha",

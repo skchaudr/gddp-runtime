@@ -542,15 +542,69 @@ def _reconcile_engagement_group(
         session_id=str(sessions[0]["session_id"]),
     )
     status = adapter.status(session_ref)
-    if status.state in {"dispatched", "running"}:
+    if status.state == "running":
         for session in sessions:
-            if session["state"] != status.state:
+            if session["state"] != "running":
                 update_executor_session_state(
-                    con, session["session_db_id"], state=status.state
+                    con, session["session_db_id"], state="running"
+                )
+        # Completion identity comparison takes its own BEGIN IMMEDIATE lock.
+        # Persist any dispatched→running transitions before that discipline
+        # runs later in this method.
+        con.commit()
+        completed_ids = set(adapter.completed_feature_ids(session_ref))
+        completed_by_node = {}
+        for session in sessions:
+            job = con.execute(
+                "SELECT node_id FROM jobs WHERE job_id = ?", (session["job_id"],)
+            ).fetchone()
+            if job is not None and str(job["node_id"]) in completed_ids:
+                completed_by_node[str(job["node_id"])] = session
+        if not completed_by_node:
+            con.commit()
+            return
+
+        observed_results = adapter.collect_completed_engagement(
+            session_ref, list(completed_by_node)
+        )
+        # A worker-completed event can become visible just before its receipt,
+        # handoff, or push audit is durable. While the engagement is live,
+        # defer incomplete evidence to the next tick instead of prematurely
+        # routing that node to review. Terminal reconciliation will make the
+        # final review/evaluation decision for anything that never settles.
+        results = [
+            result
+            for result in observed_results
+            if result.success
+            and not result.review_required
+            and result.result_commit_sha
+            and result.result_ref
+            and result.feature_id in completed_by_node
+        ]
+        ready_ids = {str(result.feature_id) for result in results}
+        deferred_ids = set(completed_by_node).difference(ready_ids)
+        if deferred_ids:
+            print(
+                "[reconcile] engagement features awaiting durable evidence: "
+                f"{sorted(deferred_ids)}"
+            )
+        if not ready_ids:
+            con.commit()
+            return
+        sessions = [
+            completed_by_node[node_id]
+            for node_id in completed_by_node
+            if node_id in ready_ids
+        ]
+    elif status.state == "dispatched":
+        for session in sessions:
+            if session["state"] != "dispatched":
+                update_executor_session_state(
+                    con, session["session_db_id"], state="dispatched"
                 )
         con.commit()
         return
-    if status.state == "missing":
+    elif status.state == "missing":
         for session in sessions:
             job = con.execute(
                 "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
@@ -558,10 +612,19 @@ def _reconcile_engagement_group(
             if job is not None:
                 _handle_failed(con, session, job, status.error, repo_path)
         return
-    if status.state not in {"completed", "failed", "crashed"}:
+    elif status.state in {"completed", "failed", "crashed"}:
+        remaining_node_ids = []
+        for session in sessions:
+            job = con.execute(
+                "SELECT node_id FROM jobs WHERE job_id = ?", (session["job_id"],)
+            ).fetchone()
+            if job is not None:
+                remaining_node_ids.append(str(job["node_id"]))
+        results = adapter.collect_engagement_features(
+            session_ref, remaining_node_ids
+        )
+    else:
         return
-
-    results = adapter.collect_engagement(session_ref)
     by_feature = {
         result.feature_id: result
         for result in results

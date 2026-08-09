@@ -37,6 +37,7 @@ def collect_mission_evidence(
     engagement_id: str,
     result_ref: str,
     demanded_feature_ids: Sequence[str] | None = None,
+    planned_feature_ids: Sequence[str] | None = None,
     receipts_path: str | Path | None = None,
     mission_outcome: str | None = None,
     mission_failure_reason: str | None = None,
@@ -66,6 +67,12 @@ def collect_mission_evidence(
         if demanded_feature_ids is not None
         else observed_ids
     )
+    expected_plan_ids = (
+        tuple(str(feature_id) for feature_id in planned_feature_ids)
+        if planned_feature_ids is not None
+        else feature_ids
+    )
+    collecting_subset = feature_ids != expected_plan_ids
 
     handoffs = _read_handoffs(mission_path / "handoffs")
     progress = _read_progress(mission_path / "progress_log.jsonl")
@@ -88,6 +95,11 @@ def collect_mission_evidence(
         if first_receipt is not None
         else None
     )
+    # Whole-engagement history is a bijection from base..branch-tip. It is
+    # valid only when collecting the whole plan. During incremental subset
+    # collection the branch may already contain later feature commits; each
+    # selected result still gets its own exact receipt/handoff/progress/push
+    # and git-result verification below.
     engagement_history = (
         verify_engagement_history(
             git_repo_path,
@@ -95,7 +107,11 @@ def collect_mission_evidence(
             engagement_branch=result_ref,
             demanded_node_ids=feature_ids,
         )
-        if git_repo_path is not None and engagement_base is not None
+        if (
+            not collecting_subset
+            and git_repo_path is not None
+            and engagement_base is not None
+        )
         else None
     )
     push_records = (
@@ -103,7 +119,7 @@ def collect_mission_evidence(
         if push_audit_path is not None
         else None
     )
-    drift_reason = _feature_drift_reason(feature_ids, observed_ids)
+    drift_reason = _feature_drift_reason(expected_plan_ids, observed_ids)
 
     collected: list[CollectedNodeEvidence] = []
     for feature_id in feature_ids:

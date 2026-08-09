@@ -362,13 +362,15 @@ def test_ready_nodes_reach_review_through_headless_mission_pipeline(
         droid_path=str(fake_droid),
         mission_dir_timeout=5,
     )
-    real_collect = adapter.collect_engagement
+    real_collect = adapter.collect_engagement_features
 
-    def observed_collect(session_ref):
+    def observed_collect(session_ref, feature_ids):
         trace.append("evidence_collection")
-        return real_collect(session_ref)
+        return real_collect(session_ref, feature_ids)
 
-    monkeypatch.setattr(adapter, "collect_engagement", observed_collect)
+    monkeypatch.setattr(
+        adapter, "collect_engagement_features", observed_collect
+    )
     monkeypatch.setitem(
         dispatcher.ADAPTERS,
         "factory_mission",

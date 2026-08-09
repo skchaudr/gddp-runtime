@@ -203,6 +203,30 @@ class EngagementAdapterDefaults:
     def collect_engagement(self, session_ref: SessionRef) -> list[PatchResult]:
         raise NotImplementedError("adapter does not support engagement collection")
 
+    def completed_feature_ids(self, session_ref: SessionRef) -> tuple[str, ...]:
+        """Return feature ids reported successfully completed so far."""
+        return ()
+
+    def collect_completed_engagement(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect a completed subset while the engagement remains active."""
+        raise NotImplementedError(
+            "adapter does not support incremental engagement collection"
+        )
+
+    def collect_engagement_features(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect only the requested terminal engagement remainder."""
+        raise NotImplementedError(
+            "adapter does not support subset engagement collection"
+        )
+
 
 @runtime_checkable
 class ExecutorAdapter(Protocol):
@@ -241,6 +265,26 @@ class ExecutorAdapter(Protocol):
 
     def collect_engagement(self, session_ref: SessionRef) -> list[PatchResult]:
         """Collect one node-scoped result per feature in the engagement."""
+        ...
+
+    def completed_feature_ids(self, session_ref: SessionRef) -> tuple[str, ...]:
+        """Return feature ids reported successfully completed so far."""
+        ...
+
+    def collect_completed_engagement(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect a completed subset while the engagement remains active."""
+        ...
+
+    def collect_engagement_features(
+        self,
+        session_ref: SessionRef,
+        feature_ids: Sequence[str],
+    ) -> list[PatchResult]:
+        """Collect only the requested terminal engagement remainder."""
         ...
 
     # Optional capability, probed with hasattr rather than declared above:
