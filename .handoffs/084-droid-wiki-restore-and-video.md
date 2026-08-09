@@ -23,7 +23,7 @@ none (docs/generated wiki only)
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Branch feat/khoj-idle-shutdown; wiki+video commits local (babf71e lineage). Factory wiki run ed00d79a-b142-41f3-afcf-b923d7210a2b. GitHub wiki tab still uninitialized so GitHub sync not available.
+Branch feat/khoj-idle-shutdown is clean and pushed. Wiki checkpoints and final video remain intact; temporary HyperFrames render frames were removed from reachable branch history. Factory wiki run ed00d79a-b142-41f3-afcf-b923d7210a2b.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
@@ -34,7 +34,7 @@ Branch feat/khoj-idle-shutdown; wiki+video commits local (babf71e lineage). Fact
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
-Push feat/khoj-idle-shutdown (or land wiki commit on desired branch). Optional: /install-qa then re-run Phase 3.5 screenshots; initialize GitHub wiki tab for --upload-to github; regenerate gddp-config wiki from its existing droid-wiki base.
+Review the restored wiki and propose corrections before editing it. Optional: /install-qa then re-run Phase 3.5 screenshots; initialize GitHub wiki tab for --upload-to github; regenerate gddp-config wiki from its existing droid-wiki base.
 
 ------------------------------------------------ Agent Section END
 
