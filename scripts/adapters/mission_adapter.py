@@ -274,11 +274,13 @@ class MissionAdapter(EngagementAdapterDefaults):
         if alive:
             return SessionStatus(state="running")
 
-        terminal = _last_progress_event(
-            Path(str(record["mission_dir"])) / "progress_log.jsonl"
-        )
+        mission_dir = Path(str(record["mission_dir"]))
+        terminal = _last_progress_event(mission_dir / "progress_log.jsonl")
         terminal_type = terminal.get("type") if terminal else None
-        if returncode in {None, 0} and terminal_type == "mission_completed":
+        factory_state = _factory_state(mission_dir)
+        if returncode in {None, 0} and (
+            terminal_type == "mission_completed" or factory_state == "completed"
+        ):
             return SessionStatus(state="completed")
         return SessionStatus(
             state="failed" if returncode not in {None, 0} else "crashed",

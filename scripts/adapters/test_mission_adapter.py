@@ -322,6 +322,23 @@ def test_status_reports_dead_zero_exit_with_terminal_event_completed(
     assert adapter.status(ref).state == "completed"
 
 
+@pytest.mark.parametrize("returncode", [None, 0])
+def test_status_reports_completed_from_factory_state_without_terminal_event(
+    tmp_path, monkeypatch, returncode
+):
+    adapter = _make_adapter(tmp_path)
+    ref = _write_session(
+        adapter,
+        pid=115,
+        returncode=returncode,
+        progress=[{"type": "handoff_items_dismissed"}],
+        state="completed",
+    )
+    monkeypatch.setattr(mission_adapter, "_pid_is_running", lambda pid: False)
+
+    assert adapter.status(ref).state == "completed"
+
+
 def test_status_reports_crashed_despite_stale_running_state(tmp_path, monkeypatch):
     adapter = _make_adapter(tmp_path)
     ref = _write_session(
