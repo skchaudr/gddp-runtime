@@ -24,7 +24,7 @@ from adapters.executor_protocol import (
 )
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
-from adapters.jules_cli_adapter import JulesCliAdapter
+from adapters.session_prompt import build_session_instructions
 from adapters.local_subprocess_adapter import (
     DroidSubprocessAdapter,
     LocalSubprocessAdapter,
@@ -34,7 +34,7 @@ from adapters import local_subprocess_adapter
 from runtime.heartbeat import dispatcher
 
 
-def _persisted_job(*, executor: str = "jules_cli", attempt: int = 2) -> dict:
+def _persisted_job(*, executor: str = "jules_api", attempt: int = 2) -> dict:
     return {
         "job_id": "job-123",
         "node_id": "node-456",
@@ -117,9 +117,9 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
     packet = _packet()
 
     action_body = JulesActionAdapter("owner/repo").build_issue_body(packet)
-    cli_body = JulesCliAdapter("owner/repo")._build_session_instructions(packet)
+    session_body = build_session_instructions(packet)
 
-    for rendered in (action_body, cli_body):
+    for rendered in (action_body, session_body):
         assert "Preserve semantic intent" in rendered
         assert "Executors must receive equivalent work" in rendered
         assert "No shell" in rendered
@@ -142,7 +142,6 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
 
 def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
     api = JulesApiAdapter("owner/repo", api_key="test-key")
-    cli = JulesCliAdapter("owner/repo")
     local = LocalSubprocessAdapter(
         repo="owner/repo",
         argv=(sys.executable, "-c", "pass"),
@@ -157,14 +156,12 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
     mission = MissionAdapter("owner/repo")
 
     assert isinstance(api, ExecutorAdapter)
-    assert isinstance(cli, ExecutorAdapter)
     assert isinstance(local, ExecutorAdapter)
     assert isinstance(droid, ExecutorAdapter)
     assert isinstance(mission, ExecutorAdapter)
     assert not isinstance(action, ExecutorAdapter)
     assert dispatcher.ADAPTERS == {
         "jules_api": JulesApiAdapter,
-        "jules_cli": JulesCliAdapter,
         "local_subprocess": LocalSubprocessAdapter,
         "droid": DroidSubprocessAdapter,
         "factory_mission": MissionAdapter,
@@ -343,7 +340,6 @@ def test_local_subprocess_rejects_parent_directory_session_refs(tmp_path):
     (
         ("jules", JulesActionAdapter, "https://github.com/owner/repo/issues/42"),
         ("jules_api", JulesApiAdapter, None),
-        ("jules_cli", JulesCliAdapter, None),
         ("local_subprocess", LocalSubprocessAdapter, None),
         ("droid", DroidSubprocessAdapter, None),
     ),

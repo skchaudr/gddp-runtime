@@ -19,7 +19,7 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
-from adapters.jules_cli_adapter import JulesCliAdapter
+from adapters.session_prompt import build_session_instructions
 
 _DEFAULT_BASE_URL = "https://jules.googleapis.com/v1alpha"
 
@@ -59,8 +59,8 @@ class JulesApiAdapter(EngagementAdapterDefaults):
 
         try:
             source_name = self._find_source()
-            # Reuse the proven neutral packet rendering without invoking the CLI.
-            prompt = JulesCliAdapter(self.repo)._build_session_instructions(packet)
+            # Neutral packet rendering — not owned by any transport adapter.
+            prompt = build_session_instructions(packet)
             session = self._request_json(
                 "POST",
                 "/sessions",

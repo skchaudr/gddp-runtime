@@ -21,7 +21,6 @@ from adapters.executor_protocol import (
 )
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
-from adapters.jules_cli_adapter import JulesCliAdapter
 from adapters.local_subprocess_adapter import (
     DroidSubprocessAdapter,
     LocalSubprocessAdapter,
@@ -33,7 +32,6 @@ from adapters.mission_adapter import MissionAdapter
 
 ADAPTERS = {
     "jules_api": JulesApiAdapter,
-    "jules_cli": JulesCliAdapter,
     "local_subprocess": LocalSubprocessAdapter,
     "droid": DroidSubprocessAdapter,
     "factory_mission": MissionAdapter,
@@ -99,7 +97,7 @@ def dispatch(
 
     # Allow operator override for canary testing without changing graph truth.
     # Existing graph nodes carry executor: jules; setting
-    # GDDP_EXECUTOR_OVERRIDE=jules_cli reroutes dispatch through the CLI
+    # GDDP_EXECUTOR_OVERRIDE=jules_api reroutes dispatch through the API
     # adapter without mutating the human-owned graph.
     override = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "")
     if override:

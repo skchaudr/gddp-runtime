@@ -5,7 +5,7 @@ Covers the executor-neutral session lifecycle added across three commits:
   2. reconciler: completed / failed / running / needs_operator handling
   3. idempotent collection (no double-apply on already-evaluated sessions)
   4. heartbeat reconcile-when-no-events (the Phase-0 early-exit fix)
-  5. adapter selection (jules action vs jules_cli)
+  5. adapter selection (jules action vs jules_api)
 
 Uses in-memory SQLite for recorder/reconciler tests, a real throwaway git repo
 in a temp dir for worktree/patch-application tests, and mocked subprocess-free
@@ -37,7 +37,7 @@ from adapters.executor_protocol import (
     SessionStatus,
 )
 from adapters.jules_action_adapter import JulesActionAdapter
-from adapters.jules_cli_adapter import JulesCliAdapter
+from adapters.jules_api_adapter import JulesApiAdapter
 from scripts.runtime.heartbeat import dispatcher, reconciler, runner
 from scripts.runtime.heartbeat.dispatcher import dispatch
 from scripts.runtime.heartbeat.state_recorder import (
@@ -1553,13 +1553,14 @@ def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
         con, "job_poll_timeout", "jules_cli", "sess-poll-timeout"
     )
 
-    import adapters.jules_cli_adapter as jca
+    class FakeAdapter:
+        def __init__(self, repo=""):
+            pass
 
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], 30)
+        def status(self, session_ref):
+            return SessionStatus(state="poll_error", error="jules list timed out after 30s")
 
-    monkeypatch.setattr(jca.subprocess, "run", timeout)
-    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": JulesCliAdapter})
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
     retry_dispatch = MagicMock()
     monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
 
@@ -1575,27 +1576,6 @@ def test_reconcile_jules_poll_timeout_does_not_allocate_replacement(
     ).fetchone()[0] == 0
     retry_dispatch.assert_not_called()
 
-
-
-def test_jules_successful_list_without_session_is_missing(monkeypatch):
-    import adapters.jules_cli_adapter as jca
-
-    monkeypatch.setattr(
-        jca.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(
-            returncode=0,
-            stdout="ID  STATUS\nother-session  Running\n",
-            stderr="",
-        ),
-    )
-
-    status = JulesCliAdapter(repo="owner/repo").status(
-        SessionRef("jules_cli", "expected-session")
-    )
-
-    assert status.state == "missing"
-    assert "not found" in (status.error or "")
 
 
 def test_reconcile_fresh_missing_session_stays_active(
@@ -2218,7 +2198,7 @@ def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
         "classify",
         lambda event, nodes: {
             "matched_node_id": "node-1",
-            "executor_recommendation": "jules_cli",
+            "executor_recommendation": "jules_api",
         },
     )
     monkeypatch.setattr(runner, "mark_event_classified", lambda *args: None)
@@ -2234,7 +2214,7 @@ def test_runner_persists_initial_attempt_before_dispatch(con, monkeypatch):
             "repo": "owner/repo",
             "node_id": "node-1",
             "job_type": "implementation",
-            "executor": "jules_cli",
+            "executor": "jules_api",
             "queue_state": "ready",
             "title": "Initial",
             "goal": "Dispatch once",
@@ -2294,32 +2274,6 @@ def _sample_job(job_id="job_x", executor="jules_cli"):
     }
 
 
-def test_dispatcher_selects_jules_cli_adapter(monkeypatch):
-    job = _sample_job(executor="jules_cli")
-
-    cli_dispatch = MagicMock(
-        return_value=ProtocolDispatchResult(
-            success=True,
-            session_ref=SessionRef(
-                executor="jules_cli", session_id="1234567890123456"
-            ),
-        )
-    )
-    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
-    # Guard: the action adapter must not be selected.
-    action_dispatch = MagicMock()
-    monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
-
-    result = dispatch(job, "owner/repo")
-
-    cli_dispatch.assert_called_once()
-    action_dispatch.assert_not_called()
-    assert result.success is True
-    assert result.session_ref is not None
-    assert result.session_ref.executor == "jules_cli"
-    assert result.session_ref.session_id == "1234567890123456"
-
-
 def test_dispatcher_selects_jules_action_adapter(monkeypatch):
     job = _sample_job(executor="jules")
 
@@ -2330,14 +2284,14 @@ def test_dispatcher_selects_jules_action_adapter(monkeypatch):
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
-    # Guard: the CLI adapter must not be selected.
-    cli_dispatch = MagicMock()
-    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
+    # Guard: the API adapter must not be selected.
+    api_dispatch = MagicMock()
+    monkeypatch.setattr(JulesApiAdapter, "dispatch", api_dispatch)
 
     result = dispatch(job, "owner/repo")
 
     action_dispatch.assert_called_once()
-    cli_dispatch.assert_not_called()
+    api_dispatch.assert_not_called()
     assert result.success is True
     assert result.issue_url == "https://github.com/owner/repo/issues/1"
     # Action adapter path produces no durable session_ref.
@@ -2383,112 +2337,33 @@ def test_dispatcher_runs_local_executor_in_target_checkout(monkeypatch, tmp_path
 # 6. Issue #4 — "Awaiting User Feedback" parses as needs_operator
 # =========================================================================== #
 
-def test_jules_cli_status_awaiting_maps_to_needs_operator(monkeypatch):
-    """Live Jules output shows "Awaiting User F" (truncated). It must not fall
-    through to running; it means the executor is blocked on a human."""
-    import adapters.jules_cli_adapter as jca
-    from types import SimpleNamespace
-
-    session_id = "16944924106855934613"
-    list_output = (
-        f"{session_id}\tUpdate old...\tskchaudr/saboorkc.dev\t"
-        "6 days ago\tAwaiting User F\n"
-    )
-
-    def fake_run(cmd, **kwargs):
-        return SimpleNamespace(returncode=0, stdout=list_output, stderr="")
-
-    monkeypatch.setattr(jca.subprocess, "run", fake_run)
-
-    adapter = JulesCliAdapter(repo="skchaudr/saboorkc.dev")
-    status = adapter.status(
-        SessionRef(executor="jules_cli", session_id=session_id)
-    )
-    assert status.state == "needs_operator"
-
-
-def test_jules_cli_status_unknown_keyword_still_running(monkeypatch):
-    """Regression guard: an unrecognized keyword that is not "awaiting" still
-    falls through to running (the original fail-safe behaviour)."""
-    import adapters.jules_cli_adapter as jca
-    from types import SimpleNamespace
-
-    session_id = "16944924106855934614"
-    list_output = f"{session_id}\tsome task\towner/repo\t1 day ago\tIn Review\n"
-
-    def fake_run(cmd, **kwargs):
-        return SimpleNamespace(returncode=0, stdout=list_output, stderr="")
-
-    monkeypatch.setattr(jca.subprocess, "run", fake_run)
-
-    adapter = JulesCliAdapter(repo="owner/repo")
-    status = adapter.status(
-        SessionRef(executor="jules_cli", session_id=session_id)
-    )
-    assert status.state == "running"
-
-
-@pytest.mark.parametrize(
-    "poll_result",
-    [
-        subprocess.TimeoutExpired(["jules", "remote", "list"], 30),
-        FileNotFoundError("jules"),
-        OSError("subprocess unavailable"),
-        SimpleNamespace(returncode=2, stdout="", stderr="service unavailable"),
-    ],
-    ids=["timeout", "missing-binary", "subprocess-error", "nonzero"],
-)
-def test_jules_cli_status_infrastructure_failure_is_transient(
-    monkeypatch, poll_result
-):
-    import adapters.jules_cli_adapter as jca
-
-    def fake_run(*args, **kwargs):
-        if isinstance(poll_result, BaseException):
-            raise poll_result
-        return poll_result
-
-    monkeypatch.setattr(jca.subprocess, "run", fake_run)
-
-    status = JulesCliAdapter(repo="owner/repo").status(
-        SessionRef(executor="jules_cli", session_id="target-session")
-    )
-
-    assert status.state == "poll_error"
-    assert status.error
-
-
-# =========================================================================== #
-# 7. Issue #6 — GDDP_EXECUTOR_OVERRIDE reroutes dispatch without graph changes
-# =========================================================================== #
-
 def test_dispatcher_executor_override_env_var(monkeypatch):
-    """A job carrying executor: jules is rerouted to jules_cli when
-    GDDP_EXECUTOR_OVERRIDE is set, so the canary can test the CLI path
+    """A job carrying executor: jules is rerouted to jules_api when
+    GDDP_EXECUTOR_OVERRIDE is set, so the canary can test the API path
     without mutating the human-owned graph."""
     job = _sample_job(executor="jules")
-    monkeypatch.setenv("GDDP_EXECUTOR_OVERRIDE", "jules_cli")
+    monkeypatch.setenv("GDDP_EXECUTOR_OVERRIDE", "jules_api")
 
-    cli_dispatch = MagicMock(
+    api_dispatch = MagicMock(
         return_value=ProtocolDispatchResult(
             success=True,
             session_ref=SessionRef(
-                executor="jules_cli", session_id="1234567890123456"
+                executor="jules_api", session_id="1234567890123456"
             ),
         )
     )
-    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
+    monkeypatch.setattr(JulesApiAdapter, "dispatch", api_dispatch)
     # Guard: the action adapter must not be selected despite executor: jules.
     action_dispatch = MagicMock()
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
 
     result = dispatch(job, "owner/repo")
 
-    cli_dispatch.assert_called_once()
+    api_dispatch.assert_called_once()
     action_dispatch.assert_not_called()
     assert result.success is True
     assert result.session_ref is not None
-    assert result.session_ref.executor == "jules_cli"
+    assert result.session_ref.executor == "jules_api"
 
 
 def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
@@ -2504,13 +2379,13 @@ def test_dispatcher_executor_override_unset_uses_job_executor(monkeypatch):
         )
     )
     monkeypatch.setattr(JulesActionAdapter, "dispatch", action_dispatch)
-    cli_dispatch = MagicMock()
-    monkeypatch.setattr(JulesCliAdapter, "dispatch", cli_dispatch)
+    api_dispatch = MagicMock()
+    monkeypatch.setattr(JulesApiAdapter, "dispatch", api_dispatch)
 
     result = dispatch(job, "owner/repo")
 
     action_dispatch.assert_called_once()
-    cli_dispatch.assert_not_called()
+    api_dispatch.assert_not_called()
     assert result.success is True
 
 
