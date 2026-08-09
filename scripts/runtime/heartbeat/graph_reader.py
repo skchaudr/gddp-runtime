@@ -27,6 +27,7 @@ DEFAULT_EXECUTION_MODE_ALLOWLIST = frozenset(
         "jules_api",
         "jules_cli",
         "local_subprocess",
+        "pi_rpc",
         "pi_worker",
         "vertex",
         "vm_worker",
