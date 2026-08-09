@@ -354,3 +354,26 @@ def test_projection_mission_readiness_override_replaces_default():
     assert "## Mission readiness" in mission
     assert "Custom validation: `make lint`" in mission
     assert "python3 -m pytest -q" not in mission
+
+
+def test_projection_uses_explicit_report_validation_for_read_only_audits():
+    mission = project_mission(
+        [
+            _node(
+                "audit-one",
+                constraints=["Read-only: only create the required report."],
+                required_artifacts=["reports/audit-one.md"],
+            ),
+            _node(
+                "audit-two",
+                constraints=["Read-only: only create the required report."],
+                required_artifacts=["reports/audit two.md"],
+            ),
+        ]
+    )
+
+    assert "read-only repository audit" in mission
+    assert "test -s reports/audit-one.md" in mission
+    assert "test -s 'reports/audit two.md'" in mission
+    assert "git diff --check" in mission
+    assert "python3 -m pytest -q" not in mission

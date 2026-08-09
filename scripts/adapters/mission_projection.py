@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -24,6 +25,12 @@ DEFAULT_MISSION_READINESS: tuple[str, ...] = (
     "User-facing QA is disabled (`missionModelSettings.skipUserTesting=true`); validators must stay read-only and must not attempt to drive a UI.",
     "Environment is already provisioned; no `init.sh` setup step is required.",
     "Do not block mission planning on a missing start-stack command.",
+)
+
+READ_ONLY_AUDIT_MISSION_READINESS: tuple[str, ...] = (
+    "Mission type: read-only repository audit. Do not implement fixes or modify source/config files.",
+    "No application services need to start or stop; do not invent a start script or `init.sh`.",
+    "User-facing QA and scrutiny are disabled; validation is limited to required report artifacts and a clean diff check.",
 )
 
 
@@ -51,7 +58,7 @@ def project_mission(
     """Return a mission specification containing one feature per node."""
     projected = _topological_nodes(nodes)
     readiness = (
-        DEFAULT_MISSION_READINESS
+        _default_mission_readiness(projected)
         if mission_readiness is None
         else tuple(mission_readiness)
     )
@@ -199,6 +206,30 @@ def verify_planned_feature_ids(
             f"demanded {list(demanded)!r}, observed {list(observed)!r}"
         ),
     )
+
+
+def _default_mission_readiness(nodes: Sequence[NodeData]) -> tuple[str, ...]:
+    """Select an explicit validation path without inventing repo commands."""
+    if nodes and all(
+        any("read-only" in str(item).casefold() for item in node.constraints)
+        for node in nodes
+    ):
+        artifacts = [
+            artifact
+            for node in nodes
+            for artifact in node.required_artifacts
+        ]
+        report_checks = " && ".join(
+            f"test -s {shlex.quote(str(artifact))}" for artifact in artifacts
+        )
+        validation = " && ".join(
+            part for part in (report_checks, "git diff --check") if part
+        )
+        return (
+            *READ_ONLY_AUDIT_MISSION_READINESS,
+            f"Validation command: `{validation}`.",
+        )
+    return DEFAULT_MISSION_READINESS
 
 
 def _topological_nodes(nodes: Sequence[NodeData]) -> list[NodeData]:
