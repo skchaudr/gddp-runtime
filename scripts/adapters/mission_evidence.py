@@ -606,7 +606,14 @@ def _receipt_git_context_reasons(
             f"{git_head}"
         )
     if git_repo_path is not None and git_toplevel is not None:
-        if not _same_git_repository(git_repo_path, git_toplevel):
+        # Factory may remove its worktree immediately after mission exit, before
+        # GDDP collection. When the receipt path still exists, compare Git
+        # common directories. When it is gone, the branch/result ancestry check
+        # below is the durable repository-identity proof.
+        receipt_worktree = Path(git_toplevel).expanduser()
+        if receipt_worktree.exists() and not _same_git_repository(
+            git_repo_path, receipt_worktree
+        ):
             reasons.append(
                 f"receipt git_toplevel {git_toplevel!r} is not the same git "
                 f"repository as engagement repo {str(git_repo_path)!r}"

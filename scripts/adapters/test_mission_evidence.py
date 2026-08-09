@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts.adapters.mission_evidence import collect_mission_evidence
+from scripts.adapters.mission_evidence import (
+    _receipt_git_context_reasons,
+    collect_mission_evidence,
+)
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:
@@ -615,3 +618,68 @@ def test_protected_branch_push_detected_via_ls_remote_when_cache_stale(tmp_path)
     reason = alpha.completion_quarantine_reason or ""
     assert "protected-branch push detected" in reason
     assert "ls-remote" in reason
+
+
+def _git_repo_with_engagement_commit(path: Path) -> tuple[Path, str]:
+    import subprocess
+
+    path.mkdir()
+    subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
+    (path / "base").write_text("base\n")
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-m", "base"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "checkout", "-b", "gddp/eng"],
+        check=True,
+        capture_output=True,
+    )
+    (path / "report").write_text("report\n")
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-m", "report"], check=True, capture_output=True)
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return path, result
+
+
+def test_deleted_receipt_worktree_relies_on_commit_and_branch_identity(tmp_path):
+    repo, result = _git_repo_with_engagement_commit(tmp_path / "repo")
+    deleted_worktree = tmp_path / "deleted-factory-worktree"
+    receipt = {
+        "result": result,
+        "git_head": result,
+        "git_branch": "gddp/eng",
+        "git_toplevel": str(deleted_worktree),
+    }
+
+    reasons = _receipt_git_context_reasons(
+        receipt,
+        git_repo_path=repo,
+        engagement_branch="gddp/eng",
+    )
+
+    assert reasons == []
+
+
+def test_existing_different_receipt_repository_is_rejected(tmp_path):
+    repo, result = _git_repo_with_engagement_commit(tmp_path / "repo")
+    other, _ = _git_repo_with_engagement_commit(tmp_path / "other")
+    receipt = {
+        "result": result,
+        "git_head": result,
+        "git_branch": "gddp/eng",
+        "git_toplevel": str(other),
+    }
+
+    reasons = _receipt_git_context_reasons(
+        receipt,
+        git_repo_path=repo,
+        engagement_branch="gddp/eng",
+    )
+
+    assert any("not the same git repository" in reason for reason in reasons)
