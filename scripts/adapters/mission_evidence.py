@@ -37,6 +37,7 @@ def collect_mission_evidence(
     engagement_id: str,
     result_ref: str,
     demanded_feature_ids: Sequence[str] | None = None,
+    planned_feature_ids: Sequence[str] | None = None,
     receipts_path: str | Path | None = None,
     mission_outcome: str | None = None,
     mission_failure_reason: str | None = None,
@@ -103,7 +104,12 @@ def collect_mission_evidence(
         if push_audit_path is not None
         else None
     )
-    drift_reason = _feature_drift_reason(feature_ids, observed_ids)
+    expected_plan_ids = (
+        tuple(str(feature_id) for feature_id in planned_feature_ids)
+        if planned_feature_ids is not None
+        else feature_ids
+    )
+    drift_reason = _feature_drift_reason(expected_plan_ids, observed_ids)
 
     collected: list[CollectedNodeEvidence] = []
     for feature_id in feature_ids:

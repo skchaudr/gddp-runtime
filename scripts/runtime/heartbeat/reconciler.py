@@ -548,15 +548,39 @@ def _reconcile_engagement_group(
         session_id=str(sessions[0]["session_id"]),
     )
     status = adapter.status(session_ref)
-    if status.state in {"dispatched", "running"}:
+    if status.state == "running":
+        completed_ids = set(adapter.completed_feature_ids(session_ref))
+        completed_sessions = []
+        completed_node_ids = []
         for session in sessions:
-            if session["state"] != status.state:
+            job = con.execute(
+                "SELECT node_id FROM jobs WHERE job_id = ?", (session["job_id"],)
+            ).fetchone()
+            if job is not None and str(job["node_id"]) in completed_ids:
+                completed_sessions.append(session)
+                completed_node_ids.append(str(job["node_id"]))
+        if completed_sessions:
+            results = adapter.collect_completed_engagement(
+                session_ref, completed_node_ids
+            )
+            sessions = completed_sessions
+        else:
+            for session in sessions:
+                if session["state"] != "running":
+                    update_executor_session_state(
+                        con, session["session_db_id"], state="running"
+                    )
+            con.commit()
+            return
+    elif status.state == "dispatched":
+        for session in sessions:
+            if session["state"] != "dispatched":
                 update_executor_session_state(
-                    con, session["session_db_id"], state=status.state
+                    con, session["session_db_id"], state="dispatched"
                 )
         con.commit()
         return
-    if status.state == "missing":
+    elif status.state == "missing":
         for session in sessions:
             job = con.execute(
                 "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
@@ -564,10 +588,10 @@ def _reconcile_engagement_group(
             if job is not None:
                 _handle_failed(con, session, job, status.error, repo_path)
         return
-    if status.state not in {"completed", "failed", "crashed"}:
+    elif status.state in {"completed", "failed", "crashed"}:
+        results = adapter.collect_engagement(session_ref)
+    else:
         return
-
-    results = adapter.collect_engagement(session_ref)
     by_feature = {
         result.feature_id: result
         for result in results
