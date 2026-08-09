@@ -10,6 +10,7 @@ from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.schemas import SemanticOutput, Verdict, VerdictReceipt
 from scripts.runtime.verification.semantic.agent import LLMResponse
 from scripts.runtime.verification.semantic.tools import SemanticToolbox
+from scripts.runtime.verification.deterministic.probes import CHECK_PROBES
 
 
 class MockRunner:
@@ -61,7 +62,7 @@ def _clean_pass_fixtures(tmp_path: Path) -> tuple[dict, dict]:
     node_yaml = {
         "node_id": "dry-run-clean",
         "acceptance_criteria": [
-            {"id": "aa-root-and-state-paths", "criterion": "roots exist"},
+            {"id": "fixture-symbol-roots", "criterion": "roots exist"},
         ],
         "constraints": ["preserve targets.conf wiring"],
         "depends_on": ["dep-a"],
@@ -97,7 +98,27 @@ def _indeterminate_fixtures(tmp_path: Path) -> tuple[dict, dict]:
     return node_yaml, project_yaml
 
 
-def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(tmp_path: Path) -> None:
+def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Neutral fixture probe: keeps coverage of the deterministic-only PASS path
+    # (semantic never invoked). No live graph currently hits this path without
+    # per-project CHECK_PROBES data; this tests the mechanism, not project data.
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-symbol-roots",
+        {
+            "type": "symbol",
+            "files": ["lib/common.zsh"],
+            "patterns": [
+                r"\bAA_ROOT\b",
+                r"\bAA_DATA_HOME\b",
+                r"\bAA_STATE_HOME\b",
+                r"\bAA_SCHEMA\b",
+            ],
+            "all": True,
+        },
+    )
     node_yaml, project_yaml = _clean_pass_fixtures(tmp_path)
     runner = MockRunner("{}")
 

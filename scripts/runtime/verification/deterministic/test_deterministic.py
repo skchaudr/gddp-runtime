@@ -23,7 +23,22 @@ def _eval(
     return evaluate_criterion(item, repo, node_id, config_root=config_root)
 
 
-def test_probe_symbol_pass(tmp_path: Path):
+def test_probe_symbol_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-symbol-roots",
+        {
+            "type": "symbol",
+            "files": ["lib/common.zsh"],
+            "patterns": [
+                r"\bAA_ROOT\b",
+                r"\bAA_DATA_HOME\b",
+                r"\bAA_STATE_HOME\b",
+                r"\bAA_SCHEMA\b",
+            ],
+            "all": True,
+        },
+    )
     lib = tmp_path / "lib"
     lib.mkdir()
     (lib / "common.zsh").write_text(
@@ -31,13 +46,23 @@ def test_probe_symbol_pass(tmp_path: Path):
     )
     result = _eval(
         tmp_path,
-        {"id": "aa-root-and-state-paths", "criterion": "roots exist"},
+        {"id": "fixture-symbol-roots", "criterion": "roots exist"},
     )
     assert result.status == "pass"
     assert result.method == "symbol"
 
 
-def test_probe_func_pass(tmp_path: Path):
+def test_probe_func_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-func-require-tool",
+        {
+            "type": "func",
+            "files": ["lib/common.zsh"],
+            "name": "aa_require_jq",
+            "patterns": ["command -v jq", "aa_die"],
+        },
+    )
     lib = tmp_path / "lib"
     lib.mkdir()
     (lib / "common.zsh").write_text(
@@ -45,34 +70,68 @@ def test_probe_func_pass(tmp_path: Path):
     )
     result = _eval(
         tmp_path,
-        {"id": "aa-require-jq-errors", "criterion": "jq required"},
+        {"id": "fixture-func-require-tool", "criterion": "jq required"},
     )
     assert result.status == "pass"
     assert result.method == "func"
 
 
-def test_probe_path_pass(tmp_path: Path):
+def test_probe_path_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-path-acceptance",
+        {
+            "type": "path",
+            "path": "tests/acceptance.zsh",
+            "also_grep": [r"\bgrk\b|grok"],
+            "needs_evidence_when_absent": True,
+            "evidence_what": "tests/acceptance.zsh grk/sync-target smoke path",
+        },
+    )
     tests = tmp_path / "tests"
     tests.mkdir()
     (tests / "acceptance.zsh").write_text("# grk sync smoke\n")
     result = _eval(
         tmp_path,
-        {"id": "acceptance-test-covers-grk", "criterion": "grk test"},
+        {"id": "fixture-path-acceptance", "criterion": "grk test"},
     )
     assert result.status == "pass"
     assert result.method == "path"
 
 
-def test_probe_path_absent_needs_evidence(tmp_path: Path):
+def test_probe_path_absent_needs_evidence(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-path-acceptance",
+        {
+            "type": "path",
+            "path": "tests/acceptance.zsh",
+            "also_grep": [r"\bgrk\b|grok"],
+            "needs_evidence_when_absent": True,
+            "evidence_what": "tests/acceptance.zsh grk/sync-target smoke path",
+        },
+    )
     result = _eval(
         tmp_path,
-        {"id": "acceptance-test-covers-grk", "criterion": "grk test"},
+        {"id": "fixture-path-acceptance", "criterion": "grk test"},
     )
     assert result.status == "indeterminate"
     assert result.needs_evidence is True
 
 
-def test_probe_paths_pass(tmp_path: Path):
+def test_probe_paths_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-paths-example-folder",
+        {
+            "type": "paths",
+            "paths": [
+                "incoming/_example/description.txt",
+                "incoming/_example/meta.yaml",
+                "incoming/_example/photos/.gitkeep",
+            ],
+        },
+    )
     for rel in [
         "incoming/_example/description.txt",
         "incoming/_example/meta.yaml",
@@ -83,32 +142,74 @@ def test_probe_paths_pass(tmp_path: Path):
         p.write_text("x")
     result = _eval(
         tmp_path,
-        {"id": "example-folder-present", "criterion": "example folder"},
+        {"id": "fixture-paths-example-folder", "criterion": "example folder"},
     )
     assert result.status == "pass"
     assert result.method == "paths"
 
 
-def test_probe_paths_fail(tmp_path: Path):
+def test_probe_paths_fail(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-paths-example-folder",
+        {
+            "type": "paths",
+            "paths": [
+                "incoming/_example/description.txt",
+                "incoming/_example/meta.yaml",
+                "incoming/_example/photos/.gitkeep",
+            ],
+        },
+    )
     result = _eval(
         tmp_path,
-        {"id": "example-folder-present", "criterion": "example folder"},
+        {"id": "fixture-paths-example-folder", "criterion": "example folder"},
     )
     assert result.status == "fail"
     assert result.mismatch_kind == "source_path"
 
 
-def test_probe_tier_distinct_pass(tmp_path: Path):
+def test_probe_tier_distinct_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-tier-default-present",
+        {
+            "type": "tier_distinct",
+            "target": "grk",
+            "file": "targets.conf",
+            "require_present": ["default"],
+            "also_check_files": ["lib/targets.zsh"],
+            "patterns": ["aa_target_lookup"],
+            "mismatch_kind": "source_path",
+        },
+    )
     (tmp_path / "targets.conf").write_text("grk default sync grk\n")
     result = _eval(
         tmp_path,
-        {"id": "grk-default-tier", "criterion": "default tier present"},
+        {"id": "fixture-tier-default-present", "criterion": "default tier present"},
     )
     assert result.status == "pass"
     assert result.method == "tier_distinct"
 
 
-def test_probe_tier_distinct_indeterminate(tmp_path: Path):
+def test_probe_tier_distinct_indeterminate(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-tier-variants",
+        {
+            "type": "tier_distinct",
+            "target": "grk",
+            "file": "targets.conf",
+            "require_distinct": ["default", "speed", "frontier"],
+            "marker": "--model grok-frontier",
+            "mismatch_kind": "tier_distinct",
+            "human_question": (
+                "grk speed tier is identical to default in targets.conf "
+                "(no --model). Is that intended, or should speed map to a "
+                "distinct grok variant?"
+            ),
+        },
+    )
     (tmp_path / "targets.conf").write_text(
         "grk default sync grk\n"
         "grk speed sync grk\n"
@@ -116,31 +217,57 @@ def test_probe_tier_distinct_indeterminate(tmp_path: Path):
     )
     result = _eval(
         tmp_path,
-        {"id": "grk-tier-variants", "criterion": "distinct tiers"},
+        {"id": "fixture-tier-variants", "criterion": "distinct tiers"},
     )
     assert result.status == "indeterminate"
     assert result.mismatch_kind == "tier_distinct"
 
 
-def test_probe_human_review(tmp_path: Path):
+def test_probe_human_review(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-human-review",
+        {
+            "type": "human_review",
+            "reason": (
+                "No Publish click scaffold should be enabled until selector "
+                "approval exists; confirm whether a commented final-step "
+                "placeholder is desired before treating this as missing."
+            ),
+            "human_question": (
+                "Should the graph require a commented Publish-click "
+                "placeholder, or is the stronger not-implemented submit "
+                "guard the intended evidence?"
+            ),
+        },
+    )
     result = _eval(
         tmp_path,
-        {"id": "publish-click-scaffold", "criterion": "publish scaffold"},
+        {"id": "fixture-human-review", "criterion": "publish scaffold"},
     )
     assert result.status == "indeterminate"
     assert result.method == "human_review"
     assert result.human_question
 
 
-def test_probe_project_policy_pass(tmp_path: Path):
-    policy = tmp_path / "graphs" / "sell-valuables"
+def test_probe_project_policy_pass(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-project-policy",
+        {
+            "type": "project_policy",
+            "path": "graphs/demo-project/project.yaml",
+            "patterns": [r"require_human_review_before_overnight:\s*true"],
+        },
+    )
+    policy = tmp_path / "graphs" / "demo-project"
     policy.mkdir(parents=True)
     (policy / "project.yaml").write_text(
         "require_human_review_before_overnight: true\n"
     )
     result = _eval(
         tmp_path,
-        {"id": "human-review-required-policy", "criterion": "policy"},
+        {"id": "fixture-project-policy", "criterion": "policy"},
         config_root=tmp_path,
     )
     assert result.status == "pass"
@@ -588,7 +715,22 @@ def test_dependency_status():
     assert deps == {"a": "complete", "b": "pending", "missing": "unknown"}
 
 
-def test_assemble_returns_deterministic_result(tmp_path: Path):
+def test_assemble_returns_deterministic_result(monkeypatch, tmp_path: Path):
+    monkeypatch.setitem(
+        CHECK_PROBES,
+        "fixture-symbol-roots",
+        {
+            "type": "symbol",
+            "files": ["lib/common.zsh"],
+            "patterns": [
+                r"\bAA_ROOT\b",
+                r"\bAA_DATA_HOME\b",
+                r"\bAA_STATE_HOME\b",
+                r"\bAA_SCHEMA\b",
+            ],
+            "all": True,
+        },
+    )
     lib = tmp_path / "lib"
     lib.mkdir()
     (lib / "common.zsh").write_text("AA_ROOT=1\nAA_DATA_HOME=2\nAA_STATE_HOME=3\nAA_SCHEMA=4\n")
@@ -597,7 +739,7 @@ def test_assemble_returns_deterministic_result(tmp_path: Path):
     node_yaml = {
         "node_id": "test-node",
         "acceptance_criteria": [
-            {"id": "aa-root-and-state-paths", "criterion": "roots"},
+            {"id": "fixture-symbol-roots", "criterion": "roots"},
         ],
         "constraints": ["do not source executor-specific modules"],
         "depends_on": ["dep-a"],
