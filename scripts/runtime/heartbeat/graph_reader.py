@@ -193,7 +193,7 @@ class GraphReader:
     def invalidate(self, project_id: str) -> None:
         """Drop cached project/node state after external graph-file writes.
 
-        System writers (provisional_gate, frontier) rewrite node/project
+        System writers (provisional_status, frontier) rewrite node/project
         YAML on disk; the runner must see fresh state within the same tick.
         """
         self._project_cache.pop(project_id, None)

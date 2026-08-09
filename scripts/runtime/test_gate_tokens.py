@@ -1,5 +1,5 @@
 """
-test_gates.py — Tests for the gate-token writer/reader/satisfaction checker.
+test_gate_tokens.py — Tests for the gate-token writer/reader/satisfaction checker.
 
 These tests prove the actual contracts: atomic concurrent writes never
 produce invalid JSON, hook fires on pass (not fail), schema validation
@@ -18,7 +18,7 @@ from pathlib import Path
 # Make scripts/ importable when run as a module from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runtime.gates import gate_satisfied, read_gate, revoke_gate, write_gate
+from runtime.gate_tokens import gate_satisfied, read_gate, revoke_gate, write_gate
 
 
 def test_write_gate_roundtrip(tmp_path: Path) -> None:
@@ -193,7 +193,7 @@ def test_hook_fires_on_pass_and_writes_gate(tmp_path: Path) -> None:
     only test (below) covers the negative case.
     """
     from unittest.mock import patch, MagicMock
-    from runtime.heartbeat.provisional_gate import maybe_mark_provisional
+    from runtime.heartbeat.provisional_status import maybe_mark_provisional
 
     config = tmp_path / "config"
     proj_dir = config / "graphs" / "test-proj" / "nodes"
@@ -231,10 +231,10 @@ def test_hook_fires_on_pass_and_writes_gate(tmp_path: Path) -> None:
     )
 
     with patch(
-        "runtime.heartbeat.provisional_gate.resolve_project_repo_checkout",
+        "runtime.heartbeat.provisional_status.resolve_project_repo_checkout",
         return_value=repo,
     ), patch(
-        "runtime.heartbeat.provisional_gate._load_node_cli",
+        "runtime.heartbeat.provisional_status._load_node_cli",
         return_value=mock_cli,
     ):
         result = maybe_mark_provisional(
@@ -262,7 +262,7 @@ def test_hook_fires_on_pass_and_writes_gate(tmp_path: Path) -> None:
 def test_hook_does_not_write_gate_on_fail(tmp_path: Path) -> None:
     """A fail verdict never writes a gate token."""
     from unittest.mock import patch
-    from runtime.heartbeat.provisional_gate import maybe_mark_provisional
+    from runtime.heartbeat.provisional_status import maybe_mark_provisional
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -270,7 +270,7 @@ def test_hook_does_not_write_gate_on_fail(tmp_path: Path) -> None:
     (repo / ".gddp" / "gates").mkdir(parents=True, exist_ok=True)
 
     with patch(
-        "runtime.heartbeat.provisional_gate.resolve_project_repo_checkout",
+        "runtime.heartbeat.provisional_status.resolve_project_repo_checkout",
         return_value=repo,
     ):
         result = maybe_mark_provisional(

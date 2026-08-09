@@ -19,7 +19,7 @@ import yaml
 from scripts.runtime.heartbeat.frontier import advance_frontier
 from scripts.runtime.heartbeat.graph_reader import GraphReader
 
-# Same pattern as test_provisional_gate.py: the writer uses gddp-config's
+# Same pattern as test_provisional_status.py: the writer uses gddp-config's
 # node_cli for surgical status rewrites; copy the real module so fixture
 # and production share one implementation.
 _REAL_CONFIG = Path(

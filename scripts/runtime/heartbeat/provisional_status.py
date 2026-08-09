@@ -1,5 +1,5 @@
 """
-provisional_gate.py — System writer for the `provisional` node status.
+provisional_status.py — System writer for the `provisional` node status.
 
 Doctrine (docs/GDDP-rebuild.md, "Provisional flow — two review modes"):
 `complete` is human-only graph truth; this module never writes it.
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from ..gates import read_gate, write_gate
+from ..gate_tokens import read_gate, write_gate
 from ..repo_resolver import resolve_project_repo_checkout
 from .graph_reader import GraphReader
 

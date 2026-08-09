@@ -1,5 +1,5 @@
 """
-gates.py — Per-node gate tokens for mission-mode execution.
+gate_tokens.py — Per-node gate tokens for mission-mode execution.
 
 A gate token is a tiny JSON file written into the target repo's .gddp/gates/
 directory when a node passes evaluation and is marked provisional. A

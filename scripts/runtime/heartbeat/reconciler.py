@@ -31,7 +31,7 @@ from ..results_store import write_result
 from ..verification.bridge import verify_job_return
 from .completion_discipline import submit_completion
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
-from .provisional_gate import maybe_mark_provisional
+from .provisional_status import maybe_mark_provisional
 from .state_recorder import (
     allocate_plumbing_retry,
     allocate_retry_attempt,

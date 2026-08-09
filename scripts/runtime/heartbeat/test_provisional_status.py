@@ -1,5 +1,5 @@
 """
-test_provisional_gate.py — Tests for the provisional-flow system writer.
+test_provisional_status.py — Tests for the provisional-flow system writer.
 
 Doctrine: provisional is scheduler-visible evidence, never graph truth.
 complete stays human-only; human_gate nodes never move without the operator.
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.runtime.heartbeat.provisional_gate import (
+from scripts.runtime.heartbeat.provisional_status import (
     maybe_mark_provisional,
     provisional_eligible,
 )
