@@ -1901,25 +1901,28 @@ def test_persisted_local_cancellation_is_terminal_across_reconciler_restart(
     assert FakeLocal.collect_calls == 0
 
 
-def test_jules_cancellation_persists_unsupported_without_claiming_remote_success(
+def test_refused_remote_cancellation_persists_without_claiming_remote_success(
     con, monkeypatch
 ):
+    """A remote executor that refuses cancellation must not be recorded as
+    cancelled. The session closes as cancel_failed and the job still reads
+    cancelled locally — the remote may keep running, and we say so."""
     _insert_job(con, job_id="job_cancel_jules", status="running")
     session_id = insert_executor_session(
         con,
         "job_cancel_jules",
-        "jules_cli",
+        "jules_api",
         "jules-session",
     )
     FakeJules = _make_fake_adapter(status_state="running", cancel_result=False)
-    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeJules})
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_api": FakeJules})
 
     result = reconciler.cancel_executor_session(con, session_id)
 
-    assert result == "cancel_unsupported"
+    assert result == "cancel_failed"
     row = get_executor_session_by_id(con, session_id)
-    assert row["state"] == "cancel_unsupported"
-    assert "unsupported" in row["error"].lower()
+    assert row["state"] == "cancel_failed"
+    assert "not accepted" in row["error"].lower()
     assert "cancelled" not in row["error"].lower()
     assert get_active_executor_sessions(con) == []
     assert con.execute(
@@ -2022,7 +2025,11 @@ def test_dispatch_finalization_loses_to_cancellation_and_cancels_late_session(
         MagicMock(),
     ) == []
     output = capsys.readouterr().out.lower()
-    assert "unsupported" in output
+    # The durable invariant: a refused cancellation must be reported as such
+    # and must warn the remote may still be running. It must never read as
+    # success.
+    assert "not accepted" in output
+    assert "remote may continue" in output
     assert "cancellation accepted" not in output
 
 

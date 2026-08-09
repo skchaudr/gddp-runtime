@@ -208,8 +208,6 @@ def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str
         return False, f"late session cancellation failed: {exc}; remote may continue"
     if accepted:
         return True, "late session cancellation accepted"
-    if session_ref.executor == "jules_cli":
-        return False, "Jules CLI cancellation is unsupported; remote may continue"
     return False, "late session cancellation was not accepted; remote may continue"
 
 

@@ -372,16 +372,10 @@ def cancel_executor_session(con, session_db_id: str) -> str:
                 return "cancelled"
             result_state = "cancelled"
             error = "local executor cancellation accepted"
-        elif executor == "jules_cli":
-            result_state = "cancel_unsupported"
-            error = (
-                "Jules CLI cancellation is unsupported; remote execution "
-                "may continue and its result will not be collected"
-            )
         elif not error.startswith("cancellation failed: "):
             error = "local executor cancellation was not accepted"
 
-        if not accepted and executor != "jules_cli":
+        if not accepted:
             try:
                 durable_status = adapter.status(session_ref)
             except Exception:

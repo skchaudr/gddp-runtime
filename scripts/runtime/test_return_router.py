@@ -378,7 +378,7 @@ class TestReturnRouterRetry(unittest.TestCase):
         job = self._base_job()
         retried_job = dict(job, attempt=1)
         verification = self._fail_verdict_with_evidence()
-        session_ref = SessionRef("jules_cli", "late-return-session")
+        session_ref = SessionRef("jules_api", "late-return-session")
         with (
             patch.object(return_router, "_connect", return_value=mock_con),
             patch.object(
@@ -399,7 +399,7 @@ class TestReturnRouterRetry(unittest.TestCase):
                 "scripts.runtime.heartbeat.dispatcher.cancel_remote_session",
                 return_value=(
                     False,
-                    "Jules CLI cancellation is unsupported; remote may continue",
+                    "late session cancellation was not accepted; remote may continue",
                 ),
             ) as mock_cancel,
             patch.object(return_router, "mark_job_running") as mock_running,
