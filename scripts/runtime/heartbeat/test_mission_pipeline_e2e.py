@@ -339,6 +339,12 @@ def test_ready_nodes_reach_review_through_headless_mission_pipeline(
     monkeypatch.setenv("GDDP_CONFIG_PATH", str(config_root))
     monkeypatch.setenv("GDDP_FACTORY_MISSION_DIR", str(mission_root))
     monkeypatch.setenv("GDDP_MISSION_SESSION_DIR", str(session_root))
+    monkeypatch.setenv("GDDP_MISSION_MODEL", "gpt-5.6-sol")
+    monkeypatch.setenv("GDDP_MISSION_REASONING_EFFORT", "high")
+    monkeypatch.setenv("GDDP_MISSION_WORKER_MODEL", "grok-4.5")
+    monkeypatch.setenv("GDDP_MISSION_WORKER_REASONING_EFFORT", "high")
+    monkeypatch.setenv("GDDP_MISSION_VALIDATOR_MODEL", "gpt-5.6-terra")
+    monkeypatch.setenv("GDDP_MISSION_VALIDATOR_REASONING_EFFORT", "high")
     monkeypatch.setattr(init_db, "DB_PATH", db_path)
     monkeypatch.setattr(runner, "DB_PATH", db_path)
     monkeypatch.setattr(runner, "RUNTIME_ROOT", runtime_root)
@@ -501,8 +507,28 @@ def test_ready_nodes_reach_review_through_headless_mission_pipeline(
         (session_root / session_ref.session_id / "session.json").read_text()
     )
     assert record["process_returncode"] == 0
+    assert record["model_profile"] == {
+        "orchestrator": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+        "worker": {"model": "grok-4.5", "reasoning_effort": "high"},
+        "validator": {"model": "gpt-5.6-terra", "reasoning_effort": "high"},
+    }
+    assert record["launch_argv"] == spawn["argv"]
     io = json.loads((Path(record["mission_dir"]) / "io.json").read_text())
     assert io["argv"][1:4] == ["exec", "--mission", "-f"]
+    assert io["argv"][-12:] == [
+        "-m",
+        "gpt-5.6-sol",
+        "-r",
+        "high",
+        "--worker-model",
+        "grok-4.5",
+        "--worker-reasoning-effort",
+        "high",
+        "--validator-model",
+        "gpt-5.6-terra",
+        "--validator-reasoning-effort",
+        "high",
+    ]
     assert io["stdin_tty"] is False
     assert io["stdout_tty"] is False
     assert io["stderr_tty"] is False

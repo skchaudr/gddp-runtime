@@ -47,6 +47,11 @@ class MissionAdapter(EngagementAdapterDefaults):
         droid_path: str = "droid",
         mission_dir_timeout: float = 10,
         model: str | None = None,
+        reasoning_effort: str | None = None,
+        worker_model: str | None = None,
+        worker_reasoning_effort: str | None = None,
+        validator_model: str | None = None,
+        validator_reasoning_effort: str | None = None,
     ) -> None:
         self.repo = repo
         self.cwd = Path(cwd).resolve() if cwd else None
@@ -64,6 +69,22 @@ class MissionAdapter(EngagementAdapterDefaults):
         self.droid_path = droid_path
         self.mission_dir_timeout = mission_dir_timeout
         self.model = model or os.environ.get("GDDP_MISSION_MODEL")
+        self.reasoning_effort = reasoning_effort or os.environ.get(
+            "GDDP_MISSION_REASONING_EFFORT"
+        )
+        self.worker_model = worker_model or os.environ.get(
+            "GDDP_MISSION_WORKER_MODEL"
+        )
+        self.worker_reasoning_effort = worker_reasoning_effort or os.environ.get(
+            "GDDP_MISSION_WORKER_REASONING_EFFORT"
+        )
+        self.validator_model = validator_model or os.environ.get(
+            "GDDP_MISSION_VALIDATOR_MODEL"
+        )
+        self.validator_reasoning_effort = (
+            validator_reasoning_effort
+            or os.environ.get("GDDP_MISSION_VALIDATOR_REASONING_EFFORT")
+        )
         self._processes: dict[str, subprocess.Popen] = {}
 
     def dispatch(self, packet: NodePacket) -> DispatchResult:
@@ -168,6 +189,28 @@ class MissionAdapter(EngagementAdapterDefaults):
                     ]
                     if self.model:
                         mission_argv.extend(["-m", self.model])
+                    if self.reasoning_effort:
+                        mission_argv.extend(["-r", self.reasoning_effort])
+                    if self.worker_model:
+                        mission_argv.extend(["--worker-model", self.worker_model])
+                    if self.worker_reasoning_effort:
+                        mission_argv.extend(
+                            [
+                                "--worker-reasoning-effort",
+                                self.worker_reasoning_effort,
+                            ]
+                        )
+                    if self.validator_model:
+                        mission_argv.extend(
+                            ["--validator-model", self.validator_model]
+                        )
+                    if self.validator_reasoning_effort:
+                        mission_argv.extend(
+                            [
+                                "--validator-reasoning-effort",
+                                self.validator_reasoning_effort,
+                            ]
+                        )
                     process = subprocess.Popen(
                         mission_argv,
                         cwd=str(self.cwd),
@@ -197,6 +240,21 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "stderr_path": str(stderr_path),
                 "receipts_path": str(receipts_path),
                 "push_audit_path": str(push_audit_path),
+                "launch_argv": list(mission_argv),
+                "model_profile": {
+                    "orchestrator": {
+                        "model": self.model,
+                        "reasoning_effort": self.reasoning_effort,
+                    },
+                    "worker": {
+                        "model": self.worker_model,
+                        "reasoning_effort": self.worker_reasoning_effort,
+                    },
+                    "validator": {
+                        "model": self.validator_model,
+                        "reasoning_effort": self.validator_reasoning_effort,
+                    },
+                },
                 "cancelled": False,
             }
             # Capture immediate exits before the adapter returns success.

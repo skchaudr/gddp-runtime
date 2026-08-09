@@ -1009,11 +1009,16 @@ def test_dispatcher_batches_jobs_through_engagement_capability(
     assert all(isinstance(packet, NodePacket) for packet in packets)
 
 
-def test_dispatch_inserts_model_flag_when_configured(tmp_path, monkeypatch):
+def test_dispatch_launches_and_records_complete_model_profile(tmp_path, monkeypatch):
     adapter = _make_adapter(
         tmp_path,
         droid_path="/opt/factory/droid",
-        model="custom:Grok-4.5-sub-(Hermes)-0",
+        model="custom:Codex-5.6-Sol-sub-(Hermes)-0",
+        reasoning_effort="high",
+        worker_model="custom:Grok-4.5-sub-(Hermes)-0",
+        worker_reasoning_effort="high",
+        validator_model="custom:Codex-5.6-Terra-sub-(Hermes)-0",
+        validator_reasoning_effort="high",
     )
     launched = _FakeProcess()
     popen = MagicMock(return_value=launched)
@@ -1025,15 +1030,55 @@ def test_dispatch_inserts_model_flag_when_configured(tmp_path, monkeypatch):
     monkeypatch.setattr(mission_adapter, "_git_head", lambda path: None)
     monkeypatch.setattr(mission_adapter, "_process_identity", lambda pid: None)
     monkeypatch.setattr(mission_adapter.subprocess, "Popen", launch)
-    adapter.dispatch_engagement([_packet("node-alpha")])
+    result = adapter.dispatch_engagement([_packet("node-alpha")])
 
     argv = popen.call_args.args[0]
-    assert "-m" in argv
-    assert argv[argv.index("-m") + 1] == "custom:Grok-4.5-sub-(Hermes)-0"
+    assert argv[-12:] == [
+        "-m",
+        "custom:Codex-5.6-Sol-sub-(Hermes)-0",
+        "-r",
+        "high",
+        "--worker-model",
+        "custom:Grok-4.5-sub-(Hermes)-0",
+        "--worker-reasoning-effort",
+        "high",
+        "--validator-model",
+        "custom:Codex-5.6-Terra-sub-(Hermes)-0",
+        "--validator-reasoning-effort",
+        "high",
+    ]
+    record = json.loads(
+        (adapter.session_root / result.engagement_id / "session.json").read_text()
+    )
+    assert record["launch_argv"] == argv
+    assert record["model_profile"] == {
+        "orchestrator": {
+            "model": "custom:Codex-5.6-Sol-sub-(Hermes)-0",
+            "reasoning_effort": "high",
+        },
+        "worker": {
+            "model": "custom:Grok-4.5-sub-(Hermes)-0",
+            "reasoning_effort": "high",
+        },
+        "validator": {
+            "model": "custom:Codex-5.6-Terra-sub-(Hermes)-0",
+            "reasoning_effort": "high",
+        },
+    }
 
 
-def test_dispatch_omits_model_flag_when_not_configured(tmp_path, monkeypatch):
-    monkeypatch.delenv("GDDP_MISSION_MODEL", raising=False)
+def test_dispatch_omits_model_profile_flags_when_not_configured(
+    tmp_path, monkeypatch
+):
+    for name in (
+        "GDDP_MISSION_MODEL",
+        "GDDP_MISSION_REASONING_EFFORT",
+        "GDDP_MISSION_WORKER_MODEL",
+        "GDDP_MISSION_WORKER_REASONING_EFFORT",
+        "GDDP_MISSION_VALIDATOR_MODEL",
+        "GDDP_MISSION_VALIDATOR_REASONING_EFFORT",
+    ):
+        monkeypatch.delenv(name, raising=False)
     adapter = _make_adapter(tmp_path, droid_path="/opt/factory/droid")
     launched = _FakeProcess()
     popen = MagicMock(return_value=launched)
@@ -1048,12 +1093,34 @@ def test_dispatch_omits_model_flag_when_not_configured(tmp_path, monkeypatch):
     adapter.dispatch_engagement([_packet("node-alpha")])
 
     argv = popen.call_args.args[0]
-    assert "-m" not in argv
+    for flag in (
+        "-m",
+        "-r",
+        "--worker-model",
+        "--worker-reasoning-effort",
+        "--validator-model",
+        "--validator-reasoning-effort",
+    ):
+        assert flag not in argv
 
 
-def test_adapter_model_defaults_from_env(monkeypatch, tmp_path):
-    monkeypatch.setenv("GDDP_MISSION_MODEL", "custom:env-model-0")
+def test_adapter_model_profile_defaults_from_env(monkeypatch, tmp_path):
+    env = {
+        "GDDP_MISSION_MODEL": "custom:orchestrator-0",
+        "GDDP_MISSION_REASONING_EFFORT": "max",
+        "GDDP_MISSION_WORKER_MODEL": "custom:worker-0",
+        "GDDP_MISSION_WORKER_REASONING_EFFORT": "high",
+        "GDDP_MISSION_VALIDATOR_MODEL": "custom:validator-0",
+        "GDDP_MISSION_VALIDATOR_REASONING_EFFORT": "medium",
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
 
     adapter = _make_adapter(tmp_path)
 
-    assert adapter.model == "custom:env-model-0"
+    assert adapter.model == "custom:orchestrator-0"
+    assert adapter.reasoning_effort == "max"
+    assert adapter.worker_model == "custom:worker-0"
+    assert adapter.worker_reasoning_effort == "high"
+    assert adapter.validator_model == "custom:validator-0"
+    assert adapter.validator_reasoning_effort == "medium"
