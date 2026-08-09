@@ -122,7 +122,8 @@ Runtime does not mutate graph truth automatically. Merged PRs and executor outpu
 
 **Executor adapters**:
 - `scripts/adapters/jules_action_adapter.py`: Dispatches Jules work through GitHub issues with the `jules` label. Requires `GITHUB_TOKEN` or `GH_TOKEN`.
-- `scripts/adapters/jules_cli_adapter.py`: CLI adapter stub (not implemented).
+- `scripts/adapters/jules_api_adapter.py`: Dispatches Jules work directly through the REST API. Requires a Jules API key.
+- `scripts/adapters/session_prompt.py`: Neutral packet-to-prompt rendering, owned by no transport.
 - `scripts/adapters/local_subprocess_adapter.py`: Runs one executor-neutral node packet per durable local subprocess; its `DroidSubprocessAdapter` specialization invokes `droid exec`.
 - `scripts/adapters/mission_adapter.py`: Runs a selected subgraph as one Factory headless mission (`droid exec --mission`) and exposes engagement-level dispatch, status, collect, and cancel operations.
 
@@ -339,7 +340,7 @@ This phase is intentionally frozen at receipt routing plus human review.
 - Automatic return-path graph mutation
 - Fully autonomous graph state machines
 - Worker-host cutover (documented in `docs/host-roles.md` as pending)
-- `scripts/adapters/jules_cli_adapter.py` is a stub
+- The Jules CLI adapter is retired (archived under `scripts/_archive/`); dispatch is Action-mediated or direct API only
 - `return_router.py` still has a hardcoded allowlist for `skchaudr/vault-doctor`
 
 **Why this matters**: These limits are documented, not hidden. The system operates within a stable contract and does not attempt features that contradict the frozen runtime boundary.
