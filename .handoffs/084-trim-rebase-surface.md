@@ -68,7 +68,10 @@ Archived to `scripts/_archive/` (inert; `pytest.ini` excludes the directory):
 `test_replay.py`, and the canary trio.
 
 Deleted outright (zero importers): `scripts/runtime/decision_loop/` (12 files),
-`scripts/node_status_history.py`, `patch.diff`.
+`patch.diff`.
+
+`scripts/node_status_history.py` was deleted in `c4f0bab` and **restored** — see
+the lesson below. It is live. Do not cut it again.
 
 If a rebase reintroduces any of these, that is your branch resurrecting them —
 drop the hunk.
@@ -117,11 +120,32 @@ It would move `shape_profiles/` and `retry_budget.py` — more churn in
 `feat/pi-rpc-adapter` lands. Phase 4 (`test_executor_sessions.py`, still the
 largest test file) after that.
 
-## Lesson recorded from this trim
+## Lessons recorded from this trim
 
-"Zero importers" is the right test for a library module and the **wrong** test
-for a CLI entrypoint. `replay.py` had no importers and was correctly identified
-as an orphan — but README documented `python3 -m runtime.replay` in five places,
-including its own section with copy-pasteable commands. Nothing caught that until
-a post-rebase grep. Before archiving anything with a `__main__` block, grep the
-docs, `deploy/`, and the runbook, not just the imports.
+Both are the same failure with different blast radius: **"zero importers" is a
+test about this repo's import graph, and the import graph is not the call graph.**
+
+**1. A CLI entrypoint has callers that are not imports.** `replay.py` had no
+importers and was correctly identified as an orphan — but README documented
+`python3 -m runtime.replay` in five places, including its own section with
+copy-pasteable commands. Cost: stale docs. Fixed in `faa6885`.
+
+**2. A cross-repo dynamic load is invisible to every grep you would think to
+run.** `scripts/node_status_history.py` was cut as an orphan. Its only caller is
+in the *other* repo: `gddp-config/scripts/node_cli.py:104` loads it by **file
+path** via `importlib.util.spec_from_file_location`, resolved at runtime from
+`runtime_root()`. The string `node_status_history` therefore appears nowhere in
+gddp-runtime's imports, and no test in either repo went red — gddp-config's
+tests copy their own `_test_support_node_status_history.py` into a fake runtime,
+so they never touch the real file.
+
+What it broke: `node set-status`, the human acceptance path — the one transition
+GDDP doctrine reserves for the human. `node_cli.py:1755` fails closed
+(`ERROR: runtime node_status_history module missing ... no files written`,
+exit 1), so no graph was corrupted; the human was simply blocked from moving a
+node to complete. Restored intact, byte-identical to pre-trim.
+
+The check that would have caught it: before deleting any file under `scripts/`,
+grep the **sibling repo** for its basename, not just this one. gddp-config
+reaches into `gddp-runtime/scripts/` by path in at least this one place — assume
+there are others until proven otherwise.

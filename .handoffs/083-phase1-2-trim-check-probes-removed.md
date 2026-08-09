@@ -27,6 +27,7 @@ Nothing is pushed because mission 1 is in flight on the VM. Sab's ruling: "once 
 ### Scope touched (gddp-runtime, all in `53b1ffb`)
 
 - **Deleted** `scripts/runtime/decision_loop/` (12 files, 1,446 LOC incl. 4 test files), `scripts/node_status_history.py` (193), `patch.diff` (81) — zero importers, verified by grep before cut
+  - **CORRECTION (2026-08-09):** `node_status_history.py` was **not** an orphan and has been restored. Its caller is cross-repo and dynamic — `gddp-config/scripts/node_cli.py:104` loads it by file path via `spec_from_file_location`, so it has zero *importers* while having a live caller. Grepping this repo could not have found it. See `084` for the corrected lesson.
 - **Archived** to `scripts/_archive/`: canary trio (`canary_local_executor.py`, `canary_local_executor_slow.py`, `canary_stabilization_reset.py`, 160 LOC), `replay.py` (137), `test_replay.py` (107)
 - **`probes.py`** −431: `CHECK_PROBES` data removed, binding kept as `CHECK_PROBES: dict[str, dict] = {}`, `probe_for` body unchanged
 - **`pytest.ini`** NEW: `norecursedirs = *.egg .* _darcs build CVS dist node_modules venv {arch} scripts/_archive`

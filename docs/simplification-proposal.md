@@ -79,9 +79,16 @@ live `scripts/runtime/verification/decision_engine.py` (referenced from
 module read as the same thing at a glance. **Proposed: delete the package,
 retain `docs/decision-loop-spec.md` under `docs/archive/`.**
 
-### 2.2 `scripts/node_status_history.py` — ORPHAN
+### 2.2 `scripts/node_status_history.py` — ~~ORPHAN~~ **WRONG — LIVE**
 
-No external non-test reference. Note the adjacent breakage in §5.1.
+~~No external non-test reference.~~ Note the adjacent breakage in §5.1.
+
+**Corrected 2026-08-09.** This finding was wrong and the deletion it authorized
+(`c4f0bab`) has been reverted. The analysis searched *this* repo for importers;
+the caller lives in the sibling repo and does not import at all —
+`gddp-config/scripts/node_cli.py:104` loads the file by path via
+`importlib.util.spec_from_file_location`. It backs `node set-status`, the human
+acceptance ledger. Do not re-propose. See `.handoffs/084`.
 
 ### 2.3 Canary family — ORPHAN
 
