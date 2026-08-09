@@ -31,6 +31,7 @@ from adapters.local_subprocess_adapter import (
 )
 from adapters.mission_adapter import MissionAdapter
 from adapters import local_subprocess_adapter
+from adapters.pi_rpc_adapter import PiRpcAdapter
 from runtime.heartbeat import dispatcher
 
 
@@ -165,6 +166,7 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
         "local_subprocess": LocalSubprocessAdapter,
         "droid": DroidSubprocessAdapter,
         "factory_mission": MissionAdapter,
+        "pi_rpc": PiRpcAdapter,
     }
     assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
 

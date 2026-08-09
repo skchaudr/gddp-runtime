@@ -26,6 +26,7 @@ from adapters.local_subprocess_adapter import (
     LocalSubprocessAdapter,
 )
 from adapters.mission_adapter import MissionAdapter
+from adapters.pi_rpc_adapter import PiRpcAdapter
 
 
 
@@ -35,13 +36,14 @@ ADAPTERS = {
     "local_subprocess": LocalSubprocessAdapter,
     "droid": DroidSubprocessAdapter,
     "factory_mission": MissionAdapter,
+    "pi_rpc": PiRpcAdapter,
 }
 
 # Executors that run inside a local checkout and therefore receive repo_path
 # as their cwd. Name-keyed (not class-keyed) so tests can substitute
 # duck-typed adapter doubles into ADAPTERS.
 _LOCAL_TRANSPORT_EXECUTORS = frozenset(
-    {"local_subprocess", "droid", "factory_mission"}
+    {"local_subprocess", "droid", "factory_mission", "pi_rpc"}
 )
 
 MEDIATED_ADAPTERS = {
