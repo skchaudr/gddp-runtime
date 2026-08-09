@@ -292,6 +292,7 @@ If Sab approves this proposal, the execution should follow this order to preserv
 
 1. **Phase 1: Hygiene & Deletes (Immediate, lowest risk)**
    - Delete `decision_loop/`, `gddp_runtime.egg-info/`, `node_status_history.py`, and `patch.diff`.
+   - Delete the `CHECK_PROBES` registry (`probes.py:12-434`, 423 LOC) — see item 5 below for why this is Phase 1 and not a later gated phase.
    - Archive the canary family, `replay.py`, and stale docs/session artifacts.
    - Fix `AGENTS.md` line 39 to acknowledge `requirements.txt`.
 2. **Phase 2: Adapters & Gate Renames (Low-Medium risk)**
@@ -304,20 +305,30 @@ If Sab approves this proposal, the execution should follow this order to preserv
 4. **Phase 4: Test Pruning**
    - After deleting dead code and collapsing boundaries, split the gravity well `test_executor_sessions.py` (2,577 LOC) along its section boundaries (e.g., `test_reconciler.py`) and aggressively prune it along with `test_orchestrator.py` to cover only the surviving loop and contracts.
    - **PROTECTED:** Do not touch `deterministic/test_deterministic.py`. It has the highest assert density in the repo, cleanly maps to its module, and is the counter-example of good testing. It is explicitly protected from this pruning.
-5. **Phase 5: `CHECK_PROBES` extraction (§7.1–7.2) — gated on Sab, not sequenced with the rest**
+5. **`CHECK_PROBES` removal (§7.1–7.2) — belongs in Phase 1 (revised)**
 
-   Added by Claude after round 2; the largest single proposal in this document
-   and the only one that crosses repo boundaries. Extract the 423-line
-   `CHECK_PROBES` registry (`probes.py:12-434`) out of the runtime and into
-   per-project data under `gddp-config/graphs/<project>/`, loaded by project.
+   *Originally filed by Claude as a gated, unsequenced "Phase 5." Sab rejected
+   that ordering and was right; the revision is recorded here rather than
+   silently applied.*
 
-   This phase is **deliberately not ordered** against Phases 1–4, because it is
-   not a cleanup — it changes what the deterministic lane can do. Today 88% of
-   live criteria already fall through to heuristics and `gddp-runtime`'s own 130
-   criteria hit the registry zero times (§7.2), so extraction removes no
-   coverage that exists. But it makes that gap explicit, and whether GDDP should
-   sit with a visible unfixed gap or close it first is a human decision. **Do
-   not begin Phase 5 without an explicit ruling from Sab.**
+   Delete the 423-line `CHECK_PROBES` registry (`probes.py:12-434`) from the
+   runtime, preserving its 59 entries as inert reference data beside
+   `gddp-config/graphs/sell-valuables/`. `probe_for` then returns `None` on
+   every lookup and every criterion takes the fallback branch it already takes
+   88% of the time (§7.2).
+
+   The gating was a mistake of framing: "extract" implies first building a
+   per-project loader in `gddp-config`, and that loader *is* a design question
+   worth deferring. Deleting the dict is not. The only dependents are
+   `sell-valuables` (50 hits, all 10 nodes `pending`, dormant) and `aa-cli`
+   (9 hits, 11/12 nodes `complete`). Neither is on the active mission path.
+   Build the loader when a project needs it, against real requirements.
+
+   Two things remain true and are for Sab, not for an agent: removal makes the
+   deterministic lane's coverage gap visible rather than closing it, and the
+   already-working mechanism for closing it — a `command:` field on a
+   criterion, which runs before any probe lookup — is used by exactly **1 of
+   493** live criteria across all 14 graphs.
 
 ---
 
@@ -486,7 +497,7 @@ real numbers on what Phases 1–4 actually remove:
 | Source | LOC | Confidence |
 |---|---:|---|
 | `decision_loop/` package (incl. `powers/`, incl. its 572 LOC of tests) | 1,446 | verified |
-| `CHECK_PROBES` extracted from `probes.py` | 423 | verified |
+| `CHECK_PROBES` deleted from `probes.py` | 423 | verified |
 | `shape_profiles/` package + its test | 101 | verified |
 | Canary trio, `node_status_history.py`, `replay.py` + `test_replay.py` | ~400 | approximate |
 | **Removed from the runtime** | **≈2,370** | **~8% of 29,779** |
