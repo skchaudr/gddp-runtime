@@ -492,6 +492,14 @@ class _RpcClient:
         self.events_path = events_path
         self._req = 0
         self._lock = threading.Lock()
+        # Raw-fd line buffer. Never mix select() with buffered TextIOWrapper
+        # reads: readline() can pull several JSONL records into the wrapper's
+        # buffer in one syscall, leaving later records invisible to select
+        # (fd looks empty) — the reader then waits forever with complete
+        # events stranded in userspace.
+        assert self.proc.stdout is not None
+        self._fd = self.proc.stdout.fileno()
+        self._buf = b""
 
     def send(self, obj: dict, *, wait_response: bool = True, timeout: float = 60.0) -> dict | None:
         with self._lock:
@@ -555,14 +563,27 @@ class _RpcClient:
                 return
         raise _PlumbingError("timed out waiting for agent_end")
 
+    def _pop_line(self) -> str | None:
+        idx = self._buf.find(b"\n")
+        if idx < 0:
+            return None
+        line = self._buf[:idx]
+        self._buf = self._buf[idx + 1 :]
+        return line.decode("utf-8", errors="replace")
+
     def _read_one(self, *, timeout: float) -> dict | None:
-        assert self.proc.stdout is not None
-        ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
-        if not ready:
-            return None
-        line = self.proc.stdout.readline()
-        if not line:
-            return None
+        line = self._pop_line()
+        if line is None:
+            ready, _, _ = select.select([self._fd], [], [], timeout)
+            if not ready:
+                return None
+            chunk = os.read(self._fd, 65536)
+            if not chunk:
+                return None
+            self._buf += chunk
+            line = self._pop_line()
+            if line is None:
+                return None
         line = line.strip()
         if not line:
             return None
