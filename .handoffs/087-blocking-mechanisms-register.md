@@ -21,7 +21,7 @@ none
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-Pre-existing tracked edits remain in `scripts/runtime/heartbeat/graph_reader.py` and `scripts/runtime/heartbeat/test_mission_config.py`; pre-existing `.factory/` remains untracked. This session did not modify or stage them.
+The previously inherited runtime edits landed independently as `56ebcd3`, and the related config validator deletion landed as `953406a`; both are reflected as resolved register entries. Pre-existing `.factory/` remains untracked; this session did not modify or stage it.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
