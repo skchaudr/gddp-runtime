@@ -81,7 +81,8 @@ def test_base_must_be_ancestor_of_result(tmp_path):
     assert mismatch.commit_exists is True
     assert mismatch.ancestry_holds is False
     assert mismatch.reachable is True
-    assert "does not descend" in (mismatch.completion_quarantine_reason or "")
+    assert mismatch.review_required is False
+    assert mismatch.completion_quarantine_reason is None
 
 
 def test_result_must_be_reachable_from_exact_engagement_branch(tmp_path):
@@ -104,7 +105,8 @@ def test_result_must_be_reachable_from_exact_engagement_branch(tmp_path):
     assert unreachable.commit_exists is True
     assert unreachable.ancestry_holds is True
     assert unreachable.reachable is False
-    assert "not reachable" in (unreachable.completion_quarantine_reason or "")
+    assert unreachable.review_required is False
+    assert unreachable.completion_quarantine_reason is None
 
 
 def test_result_must_be_reachable_from_origin_engagement_ref(tmp_path):
@@ -126,9 +128,8 @@ def test_result_must_be_reachable_from_origin_engagement_ref(tmp_path):
     assert local_only.reachable is True
     assert local_only.origin_reachable is False
     assert local_only.verified is False
-    assert "origin/gddp/engagement" in (
-        local_only.completion_quarantine_reason or ""
-    )
+    assert local_only.review_required is False
+    assert local_only.completion_quarantine_reason is None
 
     _git(
         repo,
@@ -189,9 +190,8 @@ def test_result_commit_must_have_exact_node_trailer(tmp_path):
     assert verification.trailer_node_ids == ("node-beta",)
     assert verification.trailer_matches is False
     assert verification.verified is False
-    assert "GDDP-Node-Id" in (
-        verification.completion_quarantine_reason or ""
-    )
+    assert verification.review_required is False
+    assert verification.completion_quarantine_reason is None
 
 
 def test_engagement_history_is_one_topological_commit_per_node(tmp_path):
@@ -228,12 +228,7 @@ def test_engagement_history_is_one_topological_commit_per_node(tmp_path):
     )
 
     assert invalid.verified is False
-    assert "exactly one commit per demanded node" in (
-        invalid.completion_quarantine_reason or ""
-    )
-    assert "exactly one GDDP-Node-Id trailer" in (
-        invalid.completion_quarantine_reason or ""
-    )
+    assert invalid.completion_quarantine_reason is None
 
 
 def _write_collect_fixture(
@@ -344,7 +339,7 @@ def _write_collect_fixture(
     return adapter, SessionRef("factory_mission", "engagement")
 
 
-def test_collect_quarantines_real_ancestry_mismatch(tmp_path):
+def test_collect_records_ancestry_mismatch_without_suppressing(tmp_path):
     repo, root = _repo(tmp_path)
     base = _commit(repo, "base line", "base\n")
     _git(repo, "switch", "-c", "gddp/engagement", root)
@@ -364,15 +359,14 @@ def test_collect_quarantines_real_ancestry_mismatch(tmp_path):
     collected = adapter.collect_engagement(session_ref)[0]
     manifest = json.loads(Path(collected.evidence_manifest_path).read_text())
 
-    assert collected.success is False
-    assert collected.review_required is True
+    assert collected.success is True
+    assert collected.review_required is False
     assert collected.result_commit_sha == result
-    assert collected.completion_quarantine_reason
+    assert collected.completion_quarantine_reason is None
     assert manifest["result_sha"] == result
     assert manifest["git_verified"]["commit_exists"] is True
     assert manifest["git_verified"]["ancestry_holds"] is False
     assert manifest["git_verified"]["reachable"] is True
-    assert manifest["completion_quarantine_reason"]
 
 
 def test_collect_missing_commit_preserves_claim_and_reviews(tmp_path):
@@ -398,7 +392,7 @@ def test_collect_missing_commit_preserves_claim_and_reviews(tmp_path):
     assert manifest["git_verified"]["commit_exists"] is False
 
 
-def test_collect_rejects_feature_commit_that_is_local_only(tmp_path):
+def test_collect_records_local_only_commit_without_suppressing(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "switch", "-c", "gddp/engagement")
     result = _commit(
@@ -418,12 +412,10 @@ def test_collect_rejects_feature_commit_that_is_local_only(tmp_path):
     collected = adapter.collect_engagement(session_ref)[0]
     manifest = json.loads(Path(collected.evidence_manifest_path).read_text())
 
-    assert collected.success is False
-    assert collected.review_required is True
+    assert collected.success is True
+    assert collected.review_required is False
     assert manifest["git_verified"]["origin_reachable"] is False
-    assert "origin/gddp/engagement" in (
-        collected.completion_quarantine_reason or ""
-    )
+    assert collected.completion_quarantine_reason is None
 
 
 def test_collect_quarantines_handoff_result_disagreement(tmp_path):
