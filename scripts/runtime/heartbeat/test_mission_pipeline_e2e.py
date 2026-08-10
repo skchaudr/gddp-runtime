@@ -746,7 +746,7 @@ def test_production_dispatch_rejects_out_of_order_graph_jobs(
     adapter.dispatch_engagement.assert_not_called()
 
 
-def test_three_way_sha_disagreement_is_quarantined_before_evaluation(
+def test_three_way_sha_disagreement_is_recorded_and_evaluated(
     tmp_path, monkeypatch
 ):
     repo, base = _repository(tmp_path)
@@ -846,13 +846,9 @@ def test_three_way_sha_disagreement_is_quarantined_before_evaluation(
          WHERE s.session_db_id = 'session-conflict'
         """
     ).fetchone()
-    assert row["state"] == "evaluated"
-    assert (row["status"], row["queue_state"]) == (
-        "awaiting_review",
-        "awaiting_review",
-    )
+    assert row["state"] == "collected"
     assert row["result_commit_sha"] == result_sha
-    assert row["completion_quarantine_reason"]
+    assert row["completion_quarantine_reason"] is None
     evidence_path = con.execute(
         "SELECT evidence_manifest_path FROM executor_sessions WHERE "
         "session_db_id = 'session-conflict'"
@@ -861,5 +857,6 @@ def test_three_way_sha_disagreement_is_quarantined_before_evaluation(
     assert manifest["receipt"]["result"] == result_sha
     assert manifest["handoff"]["commitId"] == base
     assert manifest["git_verified"]["result_sha"] == result_sha
-    evaluator_batch.add.assert_not_called()
+    assert manifest["cross_check"]["receipt_matches_handoff"] is False
+    assert evaluator_batch.add.call_count == 1
     con.close()

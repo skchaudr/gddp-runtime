@@ -660,7 +660,7 @@ def test_collect_fans_out_node_scoped_results_with_manifests(tmp_path):
         assert manifest["handoff"]["commitId"] == result.result_commit_sha
         assert manifest["progress"]["outcome"] == "success"
         assert manifest["git_verified"]["verified"] is True
-        assert manifest["push_verification"]["verified"] is True
+        assert manifest["push_audit_records"] is not None
 
 
 def test_running_mission_collects_only_completed_feature_subset(tmp_path, monkeypatch):
@@ -746,51 +746,6 @@ def test_terminal_collection_selects_only_requested_remainder(tmp_path):
     assert manifest["review_required"] is False
 
 
-def test_collect_requires_an_individual_successful_push_for_each_feature(tmp_path):
-    adapter = _make_adapter(tmp_path)
-    ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
-    record = json.loads(
-        (adapter.session_root / ref.session_id / "session.json").read_text()
-    )
-    audit_path = Path(record["push_audit_path"])
-    only_beta = [
-        line
-        for line in audit_path.read_text().splitlines()
-        if json.loads(line)["commit_sha"]
-        != json.loads(
-            Path(record["mission_dir"], "handoffs", "0.json").read_text()
-        )["commitId"]
-    ]
-    audit_path.write_text("".join(line + "\n" for line in only_beta))
-
-    alpha, beta = adapter.collect_engagement(ref)
-
-    assert alpha.success is False
-    assert alpha.review_required is True
-    alpha_manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
-    assert alpha_manifest["push_verification"]["verified"] is False
-    assert "feature_push_not_verified" in (alpha.error or "")
-    assert beta.success is True
-
-
-def test_collect_rejects_push_recorded_after_feature_reported_success(tmp_path):
-    adapter = _make_adapter(tmp_path)
-    ref = _completed_fixture(adapter, ["node-alpha"])
-    record = json.loads(
-        (adapter.session_root / ref.session_id / "session.json").read_text()
-    )
-    audit_path = Path(record["push_audit_path"])
-    audit = json.loads(audit_path.read_text())
-    audit["timestamp_utc"] = "2026-08-07T00:00:40Z"
-    audit_path.write_text(json.dumps(audit) + "\n")
-
-    result = adapter.collect_engagement(ref)[0]
-    manifest = json.loads(Path(result.evidence_manifest_path).read_text())
-
-    assert result.success is False
-    assert manifest["progress"]["completed_at"] == "2026-08-07T00:00:30Z"
-    assert manifest["push_verification"]["verified"] is False
-    assert "feature_push_not_verified" in (result.error or "")
 
 
 def test_crash_collection_keeps_completed_evidence_and_reviews_partial_node(
@@ -811,7 +766,7 @@ def test_crash_collection_keeps_completed_evidence_and_reviews_partial_node(
     beta_manifest = json.loads(Path(beta.evidence_manifest_path).read_text())
     assert beta_manifest["result_sha"] is None
     assert beta_manifest["mission_failure_reason"]
-    assert "crashed" in (beta.error or "")
+    assert beta.error == "no result commit claimed in receipt or handoff"
 
 
 def test_nonzero_exit_preserves_completed_evidence_and_records_failure(tmp_path):
@@ -832,7 +787,7 @@ def test_nonzero_exit_preserves_completed_evidence_and_records_failure(tmp_path)
     assert "exit code 23" in beta_manifest["mission_failure_reason"]
 
 
-def test_failed_feature_handoff_routes_only_that_node_to_review(tmp_path):
+def test_failed_feature_handoff_is_recorded_without_blocking(tmp_path):
     adapter = _make_adapter(tmp_path)
     ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
     record_path = adapter.session_root / ref.session_id / "session.json"
@@ -849,11 +804,11 @@ def test_failed_feature_handoff_routes_only_that_node_to_review(tmp_path):
 
     alpha, beta = adapter.collect_engagement(ref)
 
-    assert alpha.success is False
-    assert alpha.review_required is True
+    assert alpha.success is True
+    assert alpha.review_required is False
     manifest = json.loads(Path(alpha.evidence_manifest_path).read_text())
     assert manifest["handoff"]["successState"] == "failure"
-    assert "handoff_failure" in (alpha.error or "")
+    assert manifest["node_complete"] is False
     assert beta.success is True
 
 
@@ -877,7 +832,7 @@ def test_dirty_crash_worktree_is_reported_without_becoming_a_result(tmp_path):
         "tracked.txt",
         "untracked-draft.txt",
     ]
-    assert "dirty_worktree" in (beta.error or "")
+    assert beta.error == "no result commit claimed in receipt or handoff"
 
 
 def test_collect_proceeds_when_factory_adds_validator_features(tmp_path):

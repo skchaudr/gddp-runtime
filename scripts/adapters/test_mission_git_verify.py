@@ -418,7 +418,7 @@ def test_collect_records_local_only_commit_without_suppressing(tmp_path):
     assert collected.completion_quarantine_reason is None
 
 
-def test_collect_quarantines_handoff_result_disagreement(tmp_path):
+def test_collect_records_handoff_result_disagreement(tmp_path):
     repo, root = _repo(tmp_path)
     _git(repo, "switch", "-c", "gddp/engagement")
     result = _commit(
@@ -449,8 +449,6 @@ def test_collect_quarantines_handoff_result_disagreement(tmp_path):
     manifest = json.loads(Path(collected.evidence_manifest_path).read_text())
 
     assert manifest["git_verified"]["verified"] is True
-    assert collected.success is False
-    assert collected.review_required is True
-    assert "handoff commitId" in (
-        collected.completion_quarantine_reason or ""
-    )
+    assert collected.success is True
+    assert collected.review_required is False
+    assert manifest["cross_check"]["receipt_matches_handoff"] is False

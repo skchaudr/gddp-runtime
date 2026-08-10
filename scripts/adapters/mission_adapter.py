@@ -495,9 +495,6 @@ class MissionAdapter(EngagementAdapterDefaults):
                     evidence_manifest_path=str(item.manifest_path),
                     completion_id=item.completion_id,
                     completion_digest_sha256=item.completion_digest_sha256,
-                    completion_quarantine_reason=(
-                        item.completion_quarantine_reason
-                    ),
                     review_required=review_required,
                     error=error,
                 )
@@ -545,12 +542,17 @@ class MissionAdapter(EngagementAdapterDefaults):
         return record_path, record if isinstance(record, dict) else None
 
 def _packet_node(packet: NodePacket) -> NodeData:
+    why = f"Goal: {packet.goal}\n\nWhy: {packet.why or 'Not supplied.'}"
+    if packet.previous_findings:
+        # §4: retry findings must reach the executor. The mission planner
+        # reads mission.md; anything not rendered here does not exist.
+        why += "\n\n" + _render_previous_findings(packet.previous_findings)
     return NodeData(
         node_id=packet.node_id,
         title=packet.title,
         status="ready",
         type="capability",
-        why=f"Goal: {packet.goal}\n\nWhy: {packet.why or 'Not supplied.'}",
+        why=why,
         depends_on=[],
         acceptance_criteria=list(packet.acceptance_criteria),
         constraints=list(packet.constraints),
@@ -559,6 +561,20 @@ def _packet_node(packet: NodePacket) -> NodeData:
         priority="normal",
         unlocks=[],
     )
+
+
+def _render_previous_findings(findings: Mapping[str, object]) -> str:
+    lines = [
+        "Previous attempt findings (fix these; do not relitigate the verdict):",
+        f"- Verdict: {findings.get('verdict', 'unknown')}",
+    ]
+    for finding in findings.get("findings", ()) or ():
+        if isinstance(finding, Mapping):
+            lines.append(
+                f"- [{finding.get('severity', '?')}] "
+                f"{finding.get('summary', '')}"
+            )
+    return "\n".join(lines)
 
 
 def _mission_directories(root: Path) -> set[Path]:

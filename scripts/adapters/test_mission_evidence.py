@@ -191,7 +191,7 @@ def test_complete_evidence_is_joined_only_by_exact_feature_id(tmp_path):
 
 
 @pytest.mark.parametrize("missing_channel", ["receipt", "handoff", "progress"])
-def test_missing_channels_write_partial_manifest_and_route_to_review(
+def test_missing_channels_write_partial_manifest_without_review(
     tmp_path, missing_channel
 ):
     mission_dir, output_dir = _mission_fixture(tmp_path)
@@ -213,16 +213,16 @@ def test_missing_channels_write_partial_manifest_and_route_to_review(
     )
 
     assert len(collected) == 2
-    assert all(item.review_required for item in collected)
+    assert not any(item.review_required for item in collected)
     for item in collected:
         manifest = json.loads(item.manifest_path.read_text())
         assert manifest[missing_channel] is None
         assert missing_channel in manifest["missing_channels"]
-        assert manifest["review_required"] is True
-        assert missing_channel in manifest["review_reason"]
+        assert manifest["review_required"] is False
+        assert manifest["review_reason"] is None
 
 
-def test_missing_optional_handoff_field_is_preserved_as_null_and_reviewed(tmp_path):
+def test_missing_optional_handoff_field_is_preserved_as_null_and_recorded(tmp_path):
     mission_dir, output_dir = _mission_fixture(tmp_path)
     _write_complete_channels(mission_dir)
     alpha_path = mission_dir / "handoffs" / "1.json"
@@ -241,8 +241,8 @@ def test_missing_optional_handoff_field_is_preserved_as_null_and_reviewed(tmp_pa
     alpha_result = collected[0]
     alpha_manifest = json.loads(alpha_result.manifest_path.read_text())
     assert alpha_manifest["handoff"]["repoPath"] is None
-    assert alpha_result.review_required is True
-    assert "handoff.repoPath" in alpha_result.review_reason
+    assert alpha_result.review_required is False
+    assert "handoff.repoPath" in alpha_manifest["missing_channels"]
 
 
 def test_malformed_artifacts_do_not_crash_or_fabricate_values(tmp_path):
@@ -270,7 +270,7 @@ def test_malformed_artifacts_do_not_crash_or_fabricate_values(tmp_path):
         assert manifest["result_sha"] is None
 
 
-def test_conflicting_receipts_are_preserved_but_route_only_that_node_to_review(
+def test_conflicting_receipts_are_preserved_as_recorded_evidence(
     tmp_path,
 ):
     mission_dir, output_dir = _mission_fixture(tmp_path)
@@ -296,9 +296,10 @@ def test_conflicting_receipts_are_preserved_but_route_only_that_node_to_review(
         demanded_feature_ids=("node-alpha", "node-beta"),
     )
 
-    assert alpha.review_required is True
-    assert "conflicting_receipts" in (alpha.review_reason or "")
-    assert json.loads(alpha.manifest_path.read_text())["base_sha"] == "9" * 40
+    assert alpha.review_required is False
+    alpha_manifest = json.loads(alpha.manifest_path.read_text())
+    assert alpha_manifest["receipts_conflict"] is True
+    assert alpha_manifest["base_sha"] == "9" * 40
     assert beta.review_required is False
 
 
@@ -345,14 +346,17 @@ def test_crash_preserves_completed_node_and_reviews_incomplete_node(tmp_path):
     assert beta_manifest["worker_session_id"] == "worker-beta"
     assert beta_manifest["result_sha"] is None
     assert beta_manifest["mission_outcome"] == "crashed"
-    assert "crashed" in beta.review_reason
+    assert beta.review_reason == (
+        "no result commit claimed in receipt or handoff"
+    )
 
 
-def test_receipt_result_mismatching_git_head_is_quarantined(tmp_path):
-    """Evidence collection catches self-inconsistent receipts.
+def test_receipt_result_mismatching_git_head_is_recorded(tmp_path):
+    """Self-inconsistent receipts are recorded as evidence, not quarantined.
 
     The receipt CLI may still *write* a mismatched claim (observed context is
-    independent of --result). Collection must quarantine at evidence time.
+    independent of --result). Collection records the disagreement in the
+    manifest; evaluation proceeds (BM-035 demote).
     """
     mission_dir, output_dir = _mission_fixture(tmp_path)
     _write_complete_channels(mission_dir)
@@ -373,9 +377,12 @@ def test_receipt_result_mismatching_git_head_is_quarantined(tmp_path):
         result_ref="gddp/eng-1",
         demanded_feature_ids=("node-alpha", "node-beta"),
     )
-    assert alpha.review_required is True
-    assert alpha.completion_quarantine_reason is not None
-    assert "does not match observed git_head" in alpha.completion_quarantine_reason
+    alpha_manifest = json.loads(alpha.manifest_path.read_text())
+    assert alpha.review_required is False
+    assert any(
+        "does not match observed git_head" in observation
+        for observation in alpha_manifest["receipt_git_context"]
+    )
     assert beta.review_required is False
 
 
@@ -483,8 +490,12 @@ def test_protected_branch_push_is_detected_post_hoc(tmp_path):
         demanded_feature_ids=("node-alpha", "node-beta"),
         git_repo_path=repo,
     )
-    assert alpha.review_required is True
-    assert "protected-branch push detected" in (alpha.completion_quarantine_reason or "")
+    alpha_manifest = json.loads(alpha.manifest_path.read_text())
+    assert alpha.review_required is False
+    assert any(
+        "protected-branch push detected" in observation
+        for observation in alpha_manifest["protected_branch_push"]
+    )
 
 
 def test_protected_branch_push_detected_via_ls_remote_when_cache_stale(tmp_path):
@@ -614,10 +625,11 @@ def test_protected_branch_push_detected_via_ls_remote_when_cache_stale(tmp_path)
         demanded_feature_ids=("node-alpha", "node-beta"),
         git_repo_path=repo,
     )
-    assert alpha.review_required is True
-    reason = alpha.completion_quarantine_reason or ""
-    assert "protected-branch push detected" in reason
-    assert "ls-remote" in reason
+    alpha_manifest = json.loads(alpha.manifest_path.read_text())
+    assert alpha.review_required is False
+    reasons = alpha_manifest["protected_branch_push"]
+    assert any("protected-branch push detected" in reason for reason in reasons)
+    assert any("ls-remote" in reason for reason in reasons)
 
 
 def _git_repo_with_engagement_commit(path: Path) -> tuple[Path, str]:
