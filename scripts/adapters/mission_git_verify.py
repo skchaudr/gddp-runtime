@@ -110,41 +110,17 @@ def verify_git_result(
         else None
     )
 
-    reasons: list[str] = []
+    # HC-07: only an unresolvable or non-commit result flags review.
+    # Ancestry, reachability, and trailer shape are recorded observations
+    # above — integration evidence, never an evaluation block (BM-030/031/032).
+    reason: str | None = None
     if not commit_exists:
         if object_type is None:
-            reasons.append(f"result commit {result_sha} does not exist")
+            reason = f"result commit {result_sha} does not exist"
         else:
-            reasons.append(
+            reason = (
                 f"result {result_sha} resolves to {object_type}, not a commit"
             )
-    else:
-        if not ancestry_holds:
-            reasons.append(
-                f"result {result_sha} does not descend from base {base_sha}"
-            )
-        if branch_tip is None:
-            reasons.append(
-                f"engagement branch {engagement_branch} cannot be resolved"
-            )
-        elif not reachable:
-            reasons.append(
-                f"result {result_sha} is not reachable from engagement "
-                f"branch {engagement_branch}"
-            )
-        if expected_origin_ref is not None and not origin_reachable:
-            reasons.append(
-                f"result {result_sha} is not reachable from origin ref "
-                f"{expected_origin_ref}"
-            )
-        if trailer_matches is False:
-            reasons.append(
-                f"result {result_sha} must have exactly one "
-                f"GDDP-Node-Id trailer for {expected_node_id}; observed "
-                f"{list(trailer_node_ids)!r}"
-            )
-
-    quarantine_reason = "; ".join(reasons) if reasons else None
     return GitVerification(
         result_sha=result_sha,
         result_object_type=object_type,
@@ -155,8 +131,8 @@ def verify_git_result(
         origin_containing_refs=origin_containing_refs,
         trailer_node_ids=trailer_node_ids,
         trailer_matches=trailer_matches,
-        review_required=quarantine_reason is not None,
-        completion_quarantine_reason=quarantine_reason,
+        review_required=reason is not None,
+        completion_quarantine_reason=reason,
     )
 
 
@@ -181,42 +157,25 @@ def verify_engagement_history(
     node_ids = tuple(
         values[0] if len(values) == 1 else None for values in trailers
     )
-    reasons: list[str] = []
-    if branch_tip is None:
-        reasons.append(
-            f"engagement branch {engagement_branch} cannot be resolved"
-        )
-    if len(commits) != len(demanded_node_ids):
-        reasons.append(
-            "engagement history must contain exactly one commit per demanded "
-            f"node; observed {len(commits)} commits for "
-            f"{len(demanded_node_ids)} nodes"
-        )
-    malformed = [
-        commit_sha
-        for commit_sha, values in zip(commits, trailers, strict=True)
-        if len(values) != 1
-    ]
-    if malformed:
-        reasons.append(
-            "every engagement commit must have exactly one GDDP-Node-Id "
-            f"trailer; malformed commits {malformed!r}"
-        )
-    if node_ids != demanded_node_ids:
-        reasons.append(
-            "engagement commit trailers must match demanded node ids in "
-            f"topological order; demanded {list(demanded_node_ids)!r}, "
-            f"observed {list(node_ids)!r}"
-        )
-    reason = "; ".join(reasons) if reasons else None
+    # BM-033 (SOFTEN): commit shape is recorded, never enforced. Only
+    # genuinely inseparable outputs are an identity question, and that is
+    # answered by the per-feature receipt/handoff join, not ceremony.
+    # BM-033 (SOFTEN): commit shape is recorded, never enforced. Only
+    # genuinely inseparable outputs are an identity question, and that is
+    # answered by the per-feature receipt/handoff join, not ceremony.
+    shape_ok = (
+        branch_tip is not None
+        and len(commits) == len(demanded_node_ids)
+        and node_ids == demanded_node_ids
+    )
     return EngagementHistoryVerification(
         base_sha=base_sha,
         engagement_branch=engagement_branch,
         demanded_node_ids=demanded_node_ids,
         commit_shas=commits,
         node_ids=node_ids,
-        verified=reason is None,
-        completion_quarantine_reason=reason,
+        verified=shape_ok,
+        completion_quarantine_reason=None,
     )
 
 
