@@ -451,7 +451,8 @@ def _plan_dispatches(
         # (evaluator-passed, awaiting operator review) must build on that
         # dependency's result commit — its work is not in HEAD yet.
         node_base, chain_reason = _chained_base(
-            con, node, project_id, reader, expected_base_commit_sha
+            con, node, project_id, reader, expected_base_commit_sha,
+            repo_path=repo_path,
         )
         if chain_reason is not None:
             con.execute(
@@ -719,6 +720,7 @@ def _chained_base(
     project_id: str,
     reader: GraphReader,
     head_sha: str | None,
+    repo_path: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Resolve a node's dispatch base, chaining to a provisional dependency's
     result commit when that dependency's work is not yet in HEAD.
@@ -766,7 +768,34 @@ def _chained_base(
             f"base-chaining deferred: provisional dep '{dep}' has no "
             "recorded result commit yet"
         )
+    if head_sha and repo_path and _is_ancestor(repo_path, result_sha, head_sha):
+        # The dep's result is already reachable from the checkout tip — e.g.
+        # sibling fan-out whose parents landed as a commit chain on one
+        # branch. Build on the tip so siblings share one engagement base;
+        # chaining each to its own parent's commit can never co-dispatch.
+        return head_sha, None
     return result_sha, None
+
+
+def _is_ancestor(repo_path: str | None, maybe_ancestor: str, descendant: str) -> bool:
+    """True if maybe_ancestor is an ancestor of descendant in repo_path.
+
+    Any git failure (missing objects, shallow clone, not a repo) returns
+    False, preserving the conservative chain-to-result behavior.
+    """
+    if not repo_path:
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", maybe_ancestor, descendant],
+            cwd=str(repo_path),
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
 
 
 def _get_head_sha(repo_path: str | None) -> str | None:

@@ -126,3 +126,72 @@ def test_missing_graph_falls_back_to_head(con):
 
     base, reason = _chained_base(con, _node("dep-a"), "proj", _Missing(), HEAD)
     assert base == HEAD and reason is None
+
+
+# --- Ancestor normalization: sibling fan-out on one result branch ---
+
+
+def _git(repo, *args):
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+@pytest.fixture()
+def chain_repo(tmp_path):
+    """A repo with HEAD two commits past the dep's result commit."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "f.txt").write_text("one")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "parent result")
+    parent_sha = _git(repo, "rev-parse", "HEAD")
+    (repo / "f.txt").write_text("two")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "sibling result")
+    tip_sha = _git(repo, "rev-parse", "HEAD")
+    return str(repo), parent_sha, tip_sha
+
+
+def test_provisional_result_ancestor_of_head_uses_tip(con, chain_repo):
+    repo, parent_sha, tip_sha = chain_repo
+    _record_result(con, "dep-a", parent_sha)
+    base, reason = _chained_base(
+        con, _node("dep-a"), "proj",
+        _reader({"dep-a": "provisional"}), tip_sha, repo_path=repo,
+    )
+    assert base == tip_sha and reason is None
+
+
+def test_provisional_result_not_ancestor_keeps_result(con, chain_repo):
+    repo, parent_sha, tip_sha = chain_repo
+    _git(repo, "checkout", "-q", "--orphan", "disjoint")
+    import pathlib
+
+    (pathlib.Path(repo) / "g.txt").write_text("diverged")
+    _git(repo, "add", "g.txt")
+    _git(repo, "commit", "-qm", "disjoint root")
+    diverged_tip = _git(repo, "rev-parse", "HEAD")
+    _record_result(con, "dep-a", parent_sha)
+    base, reason = _chained_base(
+        con, _node("dep-a"), "proj",
+        _reader({"dep-a": "provisional"}), diverged_tip, repo_path=repo,
+    )
+    assert base == parent_sha and reason is None
+
+
+def test_provisional_result_without_repo_path_keeps_result(con, chain_repo):
+    _, parent_sha, tip_sha = chain_repo
+    _record_result(con, "dep-a", parent_sha)
+    base, reason = _chained_base(
+        con, _node("dep-a"), "proj",
+        _reader({"dep-a": "provisional"}), tip_sha,
+    )
+    assert base == parent_sha and reason is None

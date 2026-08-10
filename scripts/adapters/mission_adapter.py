@@ -125,10 +125,18 @@ class MissionAdapter(EngagementAdapterDefaults):
             if packet.expected_base_commit_sha
         }
         if len(expected_bases) > 1:
+            bases = sorted(expected_bases)
             return EngagementDispatchResult(
                 success=False,
                 feature_ids=feature_ids,
-                error="factory mission engagement requires one common git base",
+                error=(
+                    "factory mission engagement requires one common git base; "
+                    f"got {len(bases)} distinct expected bases: "
+                    + ", ".join(b[:12] for b in bases)
+                    + ". Reconcile: re-derive bases so all packets share one "
+                    "base (e.g. normalize to the checkout tip when the "
+                    "expected bases are ancestors of it), then re-dispatch."
+                ),
             )
         checkout_head = _git_head(self.cwd)
         if (
@@ -136,12 +144,16 @@ class MissionAdapter(EngagementAdapterDefaults):
             and expected_bases
             and checkout_head not in expected_bases
         ):
+            expected = next(iter(expected_bases))
             return EngagementDispatchResult(
                 success=False,
                 feature_ids=feature_ids,
                 error=(
                     f"target checkout is at {checkout_head}, but engagement "
-                    f"expects {next(iter(expected_bases))}"
+                    f"expects {expected}. Reconcile: cd {self.cwd} && "
+                    f"git checkout {expected}  (moves the checkout to the "
+                    "expected base), or re-dispatch after the node's base "
+                    "is re-derived to match the checkout."
                 ),
             )
 
