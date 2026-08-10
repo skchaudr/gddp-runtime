@@ -304,9 +304,19 @@ Named in advance so it is recognisable while it is happening:
 3. ~~Where the demolition lands~~ — **CLOSED: branch off `main`**, created at
    Stage 1, one commit per stage, merged after Stage 4. Stage 0's map is a review
    document and sits on `main` (`3772243`), not on the branch.
-4. **NEW — `mission_push_guard.py`. See §9.** Strip it, keep it, or replace the
-   fragile layer and keep the dependable one? This is a genuine operator
-   decision and is no longer part of Stage 1.
+4. ~~`mission_push_guard.py`~~ — **RULED 2026-08-10: ARCHIVE.** Not kept in
+   production, not deleted. *"Until a real use case is identified, this CANNOT
+   live in production… if this becomes a pain point down the road, we bring it
+   out of archive."* Operator doctrine accompanying the ruling: **prevent
+   dangerous pushes where practical, detect bypasses independently, never let
+   post-hoc detection silence evaluation.** The archived layer failed the first
+   clause — a PATH shim plus a pre-push hook that rebuilds its parent command
+   through `ps` is not prevention "where practical," and it shipped with its own
+   bypass documented in `AGENTS.md`. Archiving removes it from the production
+   surface, so Stage 1 returns to ≈ −375 and combined Stages 1–3 to ≈ −790.
+   Archive ≠ strip: the live integration points still come out
+   (`mission_adapter.py:29/166/188/254`), and `mission_evidence.py:118` must
+   tolerate a missing `push-audit.jsonl` once the producer is gone.
 
 ---
 
