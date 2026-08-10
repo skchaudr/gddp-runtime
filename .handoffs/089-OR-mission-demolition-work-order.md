@@ -218,15 +218,13 @@ The map ends with a projected net line delta. Sab reviews one page instead of
 
 ### Stage 1 — the free removals
 
-`mission_push_guard.py` (352 lines) and BM-020.
+**AMENDED 2026-08-10, see §9. This stage originally included
+`mission_push_guard.py`. It does not.**
 
-The push guard is the cleanest case in the register: the review documents its own
-bypass (absolute git + `-c core.hooksPath=/dev/null`), post-hoc detection already
-exists in `mission_evidence`, and its pre-push hook reconstructs the parent command
-through `ps` and `shlex.split` — fragile machinery guarding a door with a known
-hole in the wall. BM-020 is a written **REMOVE**.
+BM-020 (exact checkout HEAD, written **REMOVE**) and BM-019 (differing expected
+bases, written **SOFTEN**), both in `mission_adapter.py::dispatch_engagement`.
 
-Expected delta: −350 to −550 production, plus tests.
+Expected delta: ≈ −25 production, plus tests.
 
 ### Stage 2 — git verification demoted to evidence **[OR: audit checkpoint]**
 
@@ -299,9 +297,71 @@ Named in advance so it is recognisable while it is happening:
 
 ## 8. Open for the operator
 
-1. **Sign-off on the §2.3 keep line** before Stage 0 — the whole map depends on it.
-2. **BM-037/038 scope:** if the minimal HC-06 guard is materially smaller than 245
-   lines, is trimming `completion_discipline.py` in or out of this work order?
-   Drafted as **out** — it is a genuine KEEP and shrinking it is a separate call.
-3. **Where the demolition lands.** Drafted as a branch off `main`, one commit per
-   stage, merged after Stage 4. Not directly on `main`.
+1. ~~Sign-off on the §2.3 keep line~~ — **SIGNED 2026-08-10.**
+2. ~~BM-037/038 scope~~ — **CLOSED: out of scope.** Kimi's Stage 0 measurement:
+   a minimal HC-06 digest-conflict guard costs ~45–55 lines against the current
+   245. That ~190-line finding is recorded, not acted on.
+3. ~~Where the demolition lands~~ — **CLOSED: branch off `main`**, created at
+   Stage 1, one commit per stage, merged after Stage 4. Stage 0's map is a review
+   document and sits on `main` (`3772243`), not on the branch.
+4. **NEW — `mission_push_guard.py`. See §9.** Strip it, keep it, or replace the
+   fragile layer and keep the dependable one? This is a genuine operator
+   decision and is no longer part of Stage 1.
+
+---
+
+## 9. Amendment — 2026-08-10, after Stage 0 verification
+
+**§5 Stage 1 was wrong and this section corrects it.**
+
+The original text called `mission_push_guard.py` "the cleanest case in the
+register." **It is not in the register.** It has no BM row and no written
+disposition — all 46 rows checked. The work order asserted register backing
+that does not exist, and Kimi executed it faithfully in `090` because §3 says
+the register is the spec.
+
+The register in fact argues the other way. HC-09: *"An operation is about to
+mutate a protected/shared branch without explicit authority → **Prevent that
+push/mutation.**"* And BM-036's own disposition text: *"HC-09 justified
+prevention before mutation; post-hoc suppression cannot undo the push."*
+
+The register's position is that **prevention is correct** and *post-hoc
+suppression* is the defect. `mission_push_guard.py` is the prevention layer.
+Stripping it runs against HC-09, not with it.
+
+The case *for* stripping is still real and belongs in the operator's decision:
+the review documents a working bypass (absolute git + `-c
+core.hooksPath=/dev/null`); the pre-push hook reconstructs its parent command
+through `ps` and `shlex.split`, which the review calls fragile; and the review
+judges the PATH wrapper "the more dependable layer" of the two. A defensible
+third option is to strip the hook layer and keep the PATH wrapper.
+
+But that is a judgment about how much prevention is worth, not the execution
+of a verdict already written. It is §2.2 out-of-scope until the operator rules.
+
+**Consequences of the amendment:**
+
+| | Original | Amended |
+|---|---|---|
+| Stage 1 | ≈ −375 | ≈ −25 |
+| Combined Stages 1–3 | ≈ −790 | ≈ −440 |
+
+The governing no-net-increase rule still holds comfortably.
+
+**Two Stage 0 findings that survive verification unchanged:**
+
+- Every line count in `090` matches the files exactly (851 / 215 / 900 / 340 /
+  352 / 245 / 204). Measured, not estimated.
+- `_protected_branch_push_reasons` does **not** consume `push_audit` — it
+  queries git directly via `ls-remote`, `_is_ancestor`, `_remote_branch_tip`.
+  BM-036 detection therefore survives a push-guard strip regardless of the
+  ruling. Kimi's Stage 1 reasoning on that point was sound.
+
+**Residual to handle whenever `push_guard` is ruled on:** `mission_evidence.py:118`
+reads `push_audit_path`, produced at `mission_adapter.py:166/188/254` through the
+guard install. Strip the guard and the producer goes with it. `090` already marks
+`_push_verification` STRIP, which is consistent, but the manifest read at `:118`
+must tolerate a missing file rather than assume one.
+
+**`090` is not amended.** It is an accurate record of what the spec said when it
+was written. The error was in `089`.
