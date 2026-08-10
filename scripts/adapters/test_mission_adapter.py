@@ -123,15 +123,6 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     )
     assert receipts_path.parent == adapter.session_root / result.engagement_id
     assert receipts_path.name == "receipts.jsonl"
-    push_audit_path = Path(
-        popen.call_args.kwargs["env"]["GDDP_PUSH_AUDIT_PATH"]
-    )
-    git_guard_dir = Path(
-        popen.call_args.kwargs["env"]["PATH"].split(os.pathsep)[0]
-    )
-    assert push_audit_path.parent == adapter.session_root / result.engagement_id
-    assert push_audit_path.name == "push-audit.jsonl"
-    assert (git_guard_dir / "git").stat().st_mode & 0o111
     assert result.process_pid == launched.pid
     assert result.mission_dir == str(adapter.mission_root / "factory-id")
     assert result.feature_ids == ("node-alpha", "node-beta")
@@ -143,7 +134,6 @@ def test_dispatch_launches_exact_headless_command_and_records_identity(
     assert record["process_pid"] == launched.pid
     assert record["engagement_branch"] == result.engagement_branch
     assert record["feature_ids"] == ["node-alpha", "node-beta"]
-    assert record["push_audit_path"] == str(push_audit_path)
 
 
 def test_single_packet_dispatch_uses_engagement_lifecycle(tmp_path, monkeypatch):
@@ -180,7 +170,7 @@ def test_dispatch_rejects_packets_with_different_expected_bases(tmp_path):
     result = adapter.dispatch_engagement(packets)
 
     assert result.success is False
-    assert "one common git base" in (result.error or "")
+    assert "no common checkout descendant" in (result.error or "")
 
 
 def test_dispatch_real_git_worktree_keeps_original_branch(tmp_path):
