@@ -15,6 +15,19 @@ from .graph_reader import NodeData
 
 
 _NODE_TAG_RE = re.compile(r"(?i)node[:\s-]+([a-z0-9_-]+)")
+_ABSTRACT_EXECUTION_MODES = frozenset({"agent", "human"})
+
+
+def _executor_allowed(selected: str, modes: list[str]) -> bool:
+    """Validate a concrete plan choice against explicit or neutral modes.
+
+    Adapter registration belongs to dispatcher preflight. Classification only
+    decides whether the node declaration permits the plan's concrete choice.
+    """
+    return (
+        selected not in _ABSTRACT_EXECUTION_MODES
+        and (selected in modes or "agent" in modes)
+    )
 
 
 def _tag_sources(event) -> list[str]:
@@ -79,7 +92,9 @@ def classify(event: sqlite3.Row, ready_nodes: list[NodeData]) -> Optional[dict]:
         if selected:
             # Operator preselection (gddp dispatch). Never fall back silently:
             # an executor the node does not allow ignores the event auditably.
-            if selected not in target.allowed_execution_modes:
+            if not _executor_allowed(
+                selected, target.allowed_execution_modes
+            ):
                 return None
             recommendation = selected
 

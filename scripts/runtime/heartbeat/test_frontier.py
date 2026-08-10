@@ -8,6 +8,7 @@ jobs and pending frontier events; one tick advances one graph layer.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
@@ -36,6 +37,7 @@ project_name: Test Project
 repo: owner/repo
 execution_policy:
   frontier_auto_advance: true
+  default_executor: local_subprocess
 nodes:
   - id: node-a
     status: complete
@@ -76,6 +78,8 @@ node_id: {node_id}
 title: {node_id}
 {body}
 priority: medium
+allowed_execution_modes:
+  - agent
 unlocks: []
 """
 
@@ -157,6 +161,20 @@ def test_advances_unblocked_and_injects_events(config_root, con):
     assert events == [
         ("frontier-dispatch://node: node-c", "received"),
         ("frontier-dispatch://node: node-g", "received"),
+    ]
+
+
+def test_frontier_events_persist_project_executor(config_root, con):
+    reader = GraphReader(config_path=str(config_root))
+    advance_frontier(con, reader, "proj")
+
+    routing = con.execute(
+        "SELECT routing FROM events WHERE source = 'frontier_auto' "
+        "AND event_id != 'evt_seed' ORDER BY url"
+    ).fetchall()
+    assert [json.loads(row[0]) for row in routing] == [
+        {"selected_executor": "local_subprocess"},
+        {"selected_executor": "local_subprocess"},
     ]
 
 

@@ -202,7 +202,7 @@ def _inject_dispatch_event(
     """Insert one dispatch event in the same schema the gddp CLI uses, so the
     classify/scope/plan pipeline processes it identically to an
     operator-injected dispatch (classifier routes on the `node: <id>` url
-    tag; routing stays NULL so the node's configured executor applies)."""
+    tag; routing persists the project's concrete default executor)."""
     event_id = (
         f"evt_frontier_{now.strftime('%Y%m%dT%H%M%S')}_"
         f"{node_id}_{secrets.token_hex(3)}"
@@ -220,7 +220,11 @@ def _inject_dispatch_event(
             f"frontier-dispatch://node: {node_id}",
             project.project_id,
             json.dumps([node_id]),
-            None,
+            json.dumps({
+                "selected_executor": (
+                    project.execution_policy.get("default_executor") or "jules"
+                )
+            }),
             project.repo,
         ),
     )

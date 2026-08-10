@@ -76,6 +76,14 @@ def test_valid_preselection_overrides_default(con):
     assert result["executor_recommendation"] == "jules_api"
 
 
+def test_agent_neutral_mode_accepts_concrete_preselection(con):
+    result = classify(
+        _event(con, routing={"selected_executor": "local_subprocess"}),
+        [_node(modes=("agent",))],
+    )
+    assert result["executor_recommendation"] == "local_subprocess"
+
+
 def test_disallowed_preselection_ignores_event(con):
     result = classify(
         _event(con, routing={"selected_executor": "droid"}), [_node()]
