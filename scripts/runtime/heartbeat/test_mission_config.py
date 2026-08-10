@@ -39,9 +39,14 @@ def test_runtime_node_validator_accepts_factory_mission_by_default(tmp_path):
     assert node.allowed_execution_modes == ["factory_mission"]
 
 
-def test_runtime_node_validator_rejects_factory_mission_removed_from_allowlist(
-    tmp_path,
+def test_runtime_node_validator_warns_but_loads_unregistered_mode(
+    tmp_path, capsys
 ):
+    """Unknown modes load with a loud warning; dispatch fails at point of use.
+
+    The reader must not crash the project scan over an unregistered mode —
+    that converts a contained dispatch-time error into a tick-time outage.
+    """
     _write_factory_mission_node(tmp_path)
     injected_allowlist = {"jules"}
     reader = GraphReader(
@@ -49,13 +54,12 @@ def test_runtime_node_validator_rejects_factory_mission_removed_from_allowlist(
         execution_mode_allowlist=injected_allowlist,
     )
 
-    with pytest.raises(
-        ValueError,
-        match=r"disallowed execution mode.*factory_mission",
-    ):
-        reader.load_node("mission-project", "mission-node")
+    node = reader.load_node("mission-project", "mission-node")
 
-    assert ("mission-project", "mission-node") not in reader._node_cache
+    assert node.allowed_execution_modes == ["factory_mission"]
+    err = capsys.readouterr().err
+    assert "UNREGISTERED EXECUTION MODE" in err
+    assert "factory_mission" in err
 
 
 def test_execution_policy_accepts_mission_sizing_fields():

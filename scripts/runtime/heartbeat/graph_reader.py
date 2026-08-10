@@ -7,6 +7,7 @@ On the Pi: set GDDP_CONFIG_PATH env var or pass explicitly.
 """
 
 import os
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from itertools import islice
@@ -39,7 +40,15 @@ def validate_node_execution_modes(
     value: object,
     allowed_modes: Iterable[str] = DEFAULT_EXECUTION_MODE_ALLOWLIST,
 ) -> list[str]:
-    """Return declared modes after enforcing the runtime allowlist."""
+    """Return declared modes; unknown modes get a LOUD warning, not a crash.
+
+    Historical: this raised ValueError on unregistered modes. That converted
+    a dispatch-time, one-job, self-explaining error ("unknown executor") into
+    a tick-time, project-wide scan crash — the enforcement failed harder than
+    the condition it guarded. The reader reads. Dispatch fails at the point
+    of use with context. The allowlist remains as the registry of known
+    executors so the warning can name exactly what is unregistered.
+    """
     if not isinstance(value, list):
         raise ValueError("allowed_execution_modes must be a list")
 
@@ -50,7 +59,19 @@ def validate_node_execution_modes(
         if not isinstance(mode, str) or mode not in allowlist
     ]
     if disallowed:
-        raise ValueError(f"disallowed execution mode(s): {disallowed}")
+        banner = "!" * 72
+        print(
+            f"\n{banner}\n"
+            f"!! UNREGISTERED EXECUTION MODE(S) DECLARED: {disallowed}\n"
+            f"!! Registered executors: {sorted(allowlist)}\n"
+            f"!! The node is being loaded anyway. If the mode is a typo, or the\n"
+            f"!! adapter is not registered in dispatcher.ADAPTERS, dispatch of\n"
+            f"!! this node WILL FAIL with 'Unknown executor'. A job will be lost.\n"
+            f"!! Fix the node or register the executor. This fires on every read.\n"
+            f"{banner}",
+            file=sys.stderr,
+            flush=True,
+        )
     return list(value)
 
 
