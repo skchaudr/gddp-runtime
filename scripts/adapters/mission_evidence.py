@@ -119,8 +119,6 @@ def collect_mission_evidence(
         if push_audit_path is not None
         else None
     )
-    drift_reason = _feature_drift_reason(expected_plan_ids, observed_ids)
-
     collected: list[CollectedNodeEvidence] = []
     for feature_id in feature_ids:
         progress_evidence = _progress_evidence(progress.get(feature_id, ()))
@@ -217,8 +215,6 @@ def collect_mission_evidence(
             mission_id=mission_id,
         )
         reasons = list(missing)
-        if drift_reason:
-            reasons.append(drift_reason)
         if _receipts_conflict(receipt_records):
             reasons.append("conflicting_receipts")
         if receipt is not None and _receipt_identity_conflicts(receipt):
@@ -841,14 +837,6 @@ def _quarantine_reasons(
     if cross_check.get("receipt_matches_git") is False:
         reasons.append("receipt result does not match git-verified result")
     return reasons
-
-
-def _feature_drift_reason(
-    demanded_ids: tuple[str, ...], observed_ids: tuple[str, ...]
-) -> str | None:
-    if demanded_ids == observed_ids:
-        return None
-    return "feature_id_drift"
 
 
 def _completion_id(

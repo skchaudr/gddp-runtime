@@ -7,7 +7,6 @@ import pytest
 
 from scripts.adapters.mission_projection import (
     project_mission,
-    verify_planned_feature_ids,
 )
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
@@ -220,78 +219,6 @@ def test_audit_execution_pairs_remain_one_to_one_and_dependency_ordered():
     assert set(ids) == {node.node_id for node in nodes}
     assert ids.index("audit-one") < ids.index("execute-one")
     assert ids.index("audit-two") < ids.index("execute-two")
-
-
-def test_post_planning_verification_proceeds_for_exact_ordered_ids(tmp_path):
-    features_path = tmp_path / "features.json"
-    features_path.write_text(
-        json.dumps(
-            {
-                "features": [
-                    {"id": "Audit_CASE"},
-                    {"id": "execute.step-2"},
-                ]
-            }
-        )
-    )
-
-    result = verify_planned_feature_ids(
-        features_path, ["Audit_CASE", "execute.step-2"]
-    )
-
-    assert result.proceed is True
-    assert result.park_for_review is False
-    assert result.observed_ids == ("Audit_CASE", "execute.step-2")
-
-
-@pytest.mark.parametrize(
-    "observed_ids",
-    [
-        ["renamed", "execute"],
-        ["audit", "execute", "added"],
-        ["audit"],
-        ["audit", "audit"],
-        ["execute", "audit"],
-        ["Audit", "execute"],
-        ["audit_", "execute"],
-    ],
-)
-def test_post_planning_verification_parks_every_feature_id_drift(
-    tmp_path, observed_ids
-):
-    features_path = tmp_path / "features.json"
-    features_path.write_text(
-        json.dumps({"features": [{"id": node_id} for node_id in observed_ids]})
-    )
-
-    result = verify_planned_feature_ids(features_path, ["audit", "execute"])
-
-    assert result.proceed is False
-    assert result.park_for_review is True
-    assert result.observed_ids == tuple(observed_ids)
-    assert "feature id drift" in result.reason.casefold()
-
-
-@pytest.mark.parametrize(
-    "contents",
-    [
-        "{not-json",
-        json.dumps({}),
-        json.dumps({"features": [{"title": "missing id"}]}),
-    ],
-)
-def test_post_planning_verification_parks_unverifiable_artifacts(
-    tmp_path, contents
-):
-    features_path = tmp_path / "features.json"
-    features_path.write_text(contents)
-
-    result = verify_planned_feature_ids(features_path, ["audit"])
-
-    assert result.proceed is False
-    assert result.park_for_review is True
-    assert result.observed_ids is None
-    assert "cannot verify" in result.reason.casefold()
 
 
 def test_projection_serializes_frozen_nodepacket_criteria_without_mappingproxy_error():

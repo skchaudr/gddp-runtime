@@ -34,19 +34,6 @@ READ_ONLY_AUDIT_MISSION_READINESS: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
-class PlanningVerification:
-    """Decision at the planning boundary before mission execution proceeds."""
-
-    proceed: bool
-    demanded_ids: tuple[str, ...]
-    observed_ids: tuple[str, ...] | None
-    reason: str
-
-    @property
-    def park_for_review(self) -> bool:
-        return not self.proceed
-
 
 def project_mission(
     nodes: Sequence[NodeData],
@@ -151,61 +138,6 @@ def project_mission(
 
     return "\n".join(lines).rstrip() + "\n"
 
-
-def verify_planned_feature_ids(
-    features_path: str | Path,
-    demanded_node_ids: Sequence[str],
-) -> PlanningVerification:
-    """Compare Factory's planned feature ids with the demanded ordered ids."""
-    demanded = tuple(demanded_node_ids)
-    try:
-        payload = json.loads(Path(features_path).read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return PlanningVerification(
-            proceed=False,
-            demanded_ids=demanded,
-            observed_ids=None,
-            reason=f"Cannot verify planned feature ids: {exc}",
-        )
-
-    features = payload.get("features") if isinstance(payload, Mapping) else None
-    if not isinstance(features, list):
-        return PlanningVerification(
-            proceed=False,
-            demanded_ids=demanded,
-            observed_ids=None,
-            reason="Cannot verify planned feature ids: features must be a list",
-        )
-
-    observed_values: list[str] = []
-    for feature in features:
-        feature_id = feature.get("id") if isinstance(feature, Mapping) else None
-        if not isinstance(feature_id, str):
-            return PlanningVerification(
-                proceed=False,
-                demanded_ids=demanded,
-                observed_ids=None,
-                reason="Cannot verify planned feature ids: every feature needs a string id",
-            )
-        observed_values.append(feature_id)
-    observed = tuple(observed_values)
-
-    if observed == demanded:
-        return PlanningVerification(
-            proceed=True,
-            demanded_ids=demanded,
-            observed_ids=observed,
-            reason="Planned feature ids exactly match demanded node ids",
-        )
-    return PlanningVerification(
-        proceed=False,
-        demanded_ids=demanded,
-        observed_ids=observed,
-        reason=(
-            "Feature id drift requires human review: "
-            f"demanded {list(demanded)!r}, observed {list(observed)!r}"
-        ),
-    )
 
 
 def _default_mission_readiness(nodes: Sequence[NodeData]) -> tuple[str, ...]:

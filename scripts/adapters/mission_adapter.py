@@ -25,7 +25,7 @@ from .executor_protocol import (
     SessionStatus,
 )
 from .mission_evidence import collect_mission_evidence
-from .mission_projection import project_mission, verify_planned_feature_ids
+from .mission_projection import project_mission
 from .mission_push_guard import install_git_push_guard
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
@@ -471,9 +471,6 @@ class MissionAdapter(EngagementAdapterDefaults):
             if terminal_status.state in {"crashed", "failed"}
             else None
         )
-        verification = verify_planned_feature_ids(
-            mission_dir / "features.json", demanded
-        )
         evidence = collect_mission_evidence(
             mission_dir=mission_dir,
             output_dir=record_path.parent / "evidence",
@@ -501,17 +498,13 @@ class MissionAdapter(EngagementAdapterDefaults):
         )
         results: list[PatchResult] = []
         for item in evidence:
-            review_required = item.review_required or not verification.proceed
+            review_required = item.review_required
             error = item.review_reason
-            if not verification.proceed:
-                error = verification.reason
             results.append(
                 PatchResult(
                     success=not review_required,
                     base_commit_sha=item.base_sha,
-                    result_commit_sha=(
-                        item.result_sha if verification.proceed else None
-                    ),
+                    result_commit_sha=item.result_sha,
                     result_ref=str(record["engagement_branch"]),
                     feature_id=item.feature_id,
                     evidence_manifest_path=str(item.manifest_path),

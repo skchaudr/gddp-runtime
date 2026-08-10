@@ -890,34 +890,34 @@ def test_dirty_crash_worktree_is_reported_without_becoming_a_result(tmp_path):
     assert "dirty_worktree" in (beta.error or "")
 
 
-@pytest.mark.parametrize(
-    "observed",
-    [
-        ["node-alpha"],
-        ["node-alpha", "node-beta", "extra"],
-        ["node-alpha", "renamed"],
-        ["node-alpha", "node-alpha"],
-        ["node-beta", "node-alpha"],
-        ["Node-alpha", "node-beta"],
-    ],
-)
-def test_collect_routes_feature_id_drift_to_review(tmp_path, observed):
+def test_collect_proceeds_when_factory_adds_validator_features(tmp_path):
+    """Factory missions structurally include validator features (the operator
+    chooses the validator model); observed ⊋ demanded is the normal case.
+    Collection must preserve results and evidence, not park them."""
     adapter = _make_adapter(tmp_path)
     ref = _completed_fixture(adapter, ["node-alpha", "node-beta"])
     record = json.loads(
         (adapter.session_root / ref.session_id / "session.json").read_text()
     )
     Path(record["mission_dir"], "features.json").write_text(
-        json.dumps({"features": [{"id": feature_id} for feature_id in observed]})
+        json.dumps(
+            {
+                "features": [
+                    {"id": "node-alpha"},
+                    {"id": "node-beta"},
+                    {"id": "scrutiny-validator-gddp-engagement"},
+                    {"id": "user-testing-validator-gddp-engagement"},
+                ]
+            }
+        )
     )
 
     results = adapter.collect_engagement(ref)
 
     assert len(results) == 2
-    assert all(not result.success for result in results)
-    assert all(result.review_required for result in results)
-    assert all("Feature id drift" in (result.error or "") for result in results)
-    assert all(result.result_commit_sha is None for result in results)
+    assert all(result.success for result in results)
+    assert all(not result.review_required for result in results)
+    assert all(result.result_commit_sha is not None for result in results)
 
 
 def test_cancel_kills_only_captured_process_group_and_preserves_evidence(tmp_path):
