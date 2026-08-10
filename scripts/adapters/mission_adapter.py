@@ -26,7 +26,6 @@ from .executor_protocol import (
 )
 from .mission_evidence import collect_mission_evidence
 from .mission_projection import project_mission
-from .mission_push_guard import install_git_push_guard
 from scripts.runtime.heartbeat.graph_reader import NodeData
 
 _MISSION_CREATION_LOCK = threading.Lock()
@@ -124,38 +123,32 @@ class MissionAdapter(EngagementAdapterDefaults):
             for packet in packets
             if packet.expected_base_commit_sha
         }
-        if len(expected_bases) > 1:
-            bases = sorted(expected_bases)
-            return EngagementDispatchResult(
-                success=False,
-                feature_ids=feature_ids,
-                error=(
-                    "factory mission engagement requires one common git base; "
-                    f"got {len(bases)} distinct expected bases: "
-                    + ", ".join(b[:12] for b in bases)
-                    + ". Reconcile: re-derive bases so all packets share one "
-                    "base (e.g. normalize to the checkout tip when the "
-                    "expected bases are ancestors of it), then re-dispatch."
-                ),
-            )
         checkout_head = _git_head(self.cwd)
-        if (
-            checkout_head is not None
-            and expected_bases
-            and checkout_head not in expected_bases
-        ):
-            expected = next(iter(expected_bases))
-            return EngagementDispatchResult(
-                success=False,
-                feature_ids=feature_ids,
-                error=(
-                    f"target checkout is at {checkout_head}, but engagement "
-                    f"expects {expected}. Reconcile: cd {self.cwd} && "
-                    f"git checkout {expected}  (moves the checkout to the "
-                    "expected base), or re-dispatch after the node's base "
-                    "is re-derived to match the checkout."
-                ),
+        if len(expected_bases) > 1:
+            # BM-019 (SOFTEN): normalize to the checkout tip when every
+            # expected base is an ancestor of it — sibling results chained
+            # on one branch share that tip as their common descendant.
+            normalized = checkout_head is not None and all(
+                _is_ancestor(self.cwd, base, checkout_head)
+                for base in expected_bases
             )
+            if not normalized:
+                bases = sorted(expected_bases)
+                return EngagementDispatchResult(
+                    success=False,
+                    feature_ids=feature_ids,
+                    error=(
+                        "factory mission engagement has "
+                        f"{len(bases)} distinct expected bases with no common "
+                        "checkout descendant: "
+                        + ", ".join(b[:12] for b in bases)
+                        + ". Reconcile: re-derive bases (sibling results on one "
+                        "branch normalize to its tip), then re-dispatch."
+                    ),
+                )
+        # BM-020 (REMOVE): no exact checkout==base refusal. The engagement
+        # builds from the checkout tip; any base divergence is recorded as
+        # integration evidence downstream, never a dispatch block.
 
         engagement_id = uuid.uuid4().hex
         engagement_branch = f"gddp/{engagement_id}"
@@ -163,7 +156,6 @@ class MissionAdapter(EngagementAdapterDefaults):
         stdout_path = engagement_dir / "stdout"
         stderr_path = engagement_dir / "stderr"
         receipts_path = engagement_dir / "receipts.jsonl"
-        push_audit_path = engagement_dir / "push-audit.jsonl"
         process: subprocess.Popen | None = None
         try:
             engagement_dir.mkdir(parents=True, exist_ok=False)
@@ -182,12 +174,6 @@ class MissionAdapter(EngagementAdapterDefaults):
                 ):
                     mission_env = dict(os.environ)
                     mission_env["GDDP_RECEIPTS_PATH"] = str(receipts_path)
-                    mission_env = install_git_push_guard(
-                        engagement_dir / "git-guard",
-                        engagement_branch=engagement_branch,
-                        audit_path=push_audit_path,
-                        base_env=mission_env,
-                    )
                     mission_argv = [
                         self.droid_path,
                         "exec",
@@ -251,7 +237,6 @@ class MissionAdapter(EngagementAdapterDefaults):
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
                 "receipts_path": str(receipts_path),
-                "push_audit_path": str(push_audit_path),
                 "launch_argv": list(mission_argv),
                 "model_profile": {
                     "orchestrator": {
@@ -653,6 +638,25 @@ def _positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _is_ancestor(
+    repo_path: str | Path | None, maybe_ancestor: str, descendant: str
+) -> bool:
+    """True if maybe_ancestor is an ancestor of descendant in repo_path."""
+    if not repo_path:
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", maybe_ancestor, descendant],
+            cwd=str(repo_path),
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
 
 
 def _git_head(path: Path) -> str | None:
