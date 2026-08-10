@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import hashlib
 import json
 import uuid
@@ -27,7 +26,6 @@ class CollectedNodeEvidence:
     completion_digest_sha256: str | None
     review_required: bool
     review_reason: str | None
-    completion_quarantine_reason: str | None
 
 
 def collect_mission_evidence(
@@ -133,6 +131,10 @@ def collect_mission_evidence(
         worker_session_id = _worker_session_id(progress_evidence, handoff)
         base_sha = _string(receipt.get("base")) if receipt else None
         result_sha = _string(receipt.get("result")) if receipt else None
+        if result_sha is None and handoff is not None:
+            # No receipt: evaluate the executor's own claimed commit rather
+            # than routing to review for a missing channel (BM-035 demote).
+            result_sha = _string(handoff.get("commitId"))
         selected_handoff = _select_handoff_fields(handoff)
         selected_progress = (
             {
@@ -163,21 +165,17 @@ def collect_mission_evidence(
                 expected_node_id=feature_id,
             ).to_manifest()
         cross_check = _cross_check(receipt, handoff, selected_verification)
-        push_verification = (
-            _push_verification(
-                push_records,
-                result_sha=result_sha,
-                result_ref=result_ref,
-                completed_at=(
-                    _string(selected_progress.get("completed_at"))
-                    if selected_progress is not None
-                    else None
-                ),
-            )
+        push_audit_records = (
+            [
+                dict(record)
+                for record in push_records
+                if result_sha is not None
+                and record.get("commit_sha") == result_sha
+            ]
             if push_records is not None
             else None
         )
-        receipt_context_reasons = (
+        receipt_context_observations = (
             _receipt_git_context_reasons(
                 receipt,
                 git_repo_path=git_repo_path,
@@ -186,7 +184,7 @@ def collect_mission_evidence(
             if receipt is not None
             else []
         )
-        protected_push_reasons = (
+        protected_push_observations = (
             _protected_branch_push_reasons(
                 git_repo_path,
                 result_sha=result_sha,
@@ -195,65 +193,28 @@ def collect_mission_evidence(
             if git_repo_path is not None and result_sha is not None
             else []
         )
-        quarantine_reasons = _quarantine_reasons(
-            cross_check, selected_verification
-        )
-        quarantine_reasons.extend(receipt_context_reasons)
-        quarantine_reasons.extend(protected_push_reasons)
-        if (
-            engagement_history is not None
-            and not engagement_history.verified
-            and engagement_history.completion_quarantine_reason
-        ):
-            quarantine_reasons.append(
-                engagement_history.completion_quarantine_reason
-            )
         missing = _missing_channels(
             receipt=receipt,
             handoff=selected_handoff,
             progress=selected_progress,
             mission_id=mission_id,
         )
-        reasons = list(missing)
-        if _receipts_conflict(receipt_records):
-            reasons.append("conflicting_receipts")
-        if receipt is not None and _receipt_identity_conflicts(receipt):
-            reasons.append("conflicting_receipt_feature_ids")
-        reasons.extend(_disagreement_reasons(cross_check))
-        reasons.extend(receipt_context_reasons)
-        reasons.extend(protected_push_reasons)
-        reasons.extend(quarantine_reasons)
-        if (
-            push_verification is not None
-            and push_verification["verified"] is not True
-        ):
-            reasons.append("feature_push_not_verified")
-            if result_sha is not None:
-                quarantine_reasons.append(
-                    f"feature commit {result_sha} lacks a successful individual "
-                    f"push to origin/{result_ref}"
-                )
         node_complete = _node_complete(
             receipt, selected_handoff, selected_progress, cross_check
         )
-        handoff_state = (
-            _string(selected_handoff.get("successState"))
-            if selected_handoff is not None
+        # Everything above is recorded evidence for the evaluator. The only
+        # questions that still route to a human before evaluation: is there
+        # a claimed result commit at all, and does that object exist as a
+        # commit (HC-07). Ceremony gaps are manifest facts, not verdicts.
+        verification_reason = (
+            _string(selected_verification.get("completion_quarantine_reason"))
+            if selected_verification is not None
             else None
         )
-        if handoff_state is not None and handoff_state != "success":
-            reasons.append(f"handoff_{handoff_state}")
-        if mission_outcome in {"crashed", "failed"} and not node_complete:
-            reasons.append(f"mission_{mission_outcome}")
-            if worktree is not None and worktree.get("dirty") is True:
-                reasons.append("dirty_worktree")
-        reasons = list(dict.fromkeys(reasons))
-        review_reason = ", ".join(reasons) if reasons else None
-        completion_quarantine_reason = (
-            "; ".join(dict.fromkeys(quarantine_reasons))
-            if quarantine_reasons
-            else None
-        )
+        if result_sha is None:
+            review_reason = "no result commit claimed in receipt or handoff"
+        else:
+            review_reason = verification_reason
         completion_id = _completion_id(
             mission_id=mission_id,
             feature_id=feature_id,
@@ -295,12 +256,18 @@ def collect_mission_evidence(
                 if engagement_history is not None
                 else None
             ),
-            "push_verification": push_verification,
+            "push_audit_records": push_audit_records,
             "cross_check": cross_check,
+            "receipt_git_context": receipt_context_observations,
+            "protected_branch_push": protected_push_observations,
+            "receipts_conflict": _receipts_conflict(receipt_records),
+            "receipt_identity_conflicts": bool(
+                receipt is not None and _receipt_identity_conflicts(receipt)
+            ),
+            "node_complete": node_complete,
             "missing_channels": missing,
             "review_required": review_reason is not None,
             "review_reason": review_reason,
-            "completion_quarantine_reason": completion_quarantine_reason,
             "mission_outcome": mission_outcome,
             "mission_failure_reason": mission_failure_reason,
             "mission_process": (
@@ -321,7 +288,6 @@ def collect_mission_evidence(
                 completion_digest_sha256=completion_digest_sha256,
                 review_required=review_reason is not None,
                 review_reason=review_reason,
-                completion_quarantine_reason=completion_quarantine_reason,
             )
         )
     return collected
@@ -374,65 +340,6 @@ def _read_receipts(path: Path) -> dict[str, list[dict[str, object]]]:
         if feature_id is not None:
             receipts.setdefault(feature_id, []).append(receipt)
     return receipts
-
-
-def _push_verification(
-    records: Sequence[Mapping[str, object]],
-    *,
-    result_sha: str | None,
-    result_ref: str,
-    completed_at: str | None,
-) -> dict[str, object]:
-    expected_argv = [
-        "git",
-        "push",
-        "origin",
-        f"HEAD:refs/heads/{result_ref}",
-    ]
-    expected_origin_ref = f"origin/{result_ref}"
-    matching = [
-        dict(record)
-        for record in records
-        if result_sha is not None and record.get("commit_sha") == result_sha
-    ]
-    successful = next(
-        (
-            record
-            for record in reversed(matching)
-            if record.get("allowed") is True
-            and record.get("returncode") == 0
-            and record.get("argv") == expected_argv
-            and expected_origin_ref
-            in (record.get("origin_containing_refs") or ())
-            and _timestamp_at_or_before(
-                _string(record.get("timestamp_utc")),
-                completed_at,
-            )
-        ),
-        None,
-    )
-    return {
-        "verified": successful is not None,
-        "expected_argv": expected_argv,
-        "expected_origin_ref": expected_origin_ref,
-        "feature_completed_at": completed_at,
-        "matching_attempts": matching,
-        "successful_attempt": successful,
-    }
-
-
-def _timestamp_at_or_before(
-    observed: str | None,
-    boundary: str | None,
-) -> bool:
-    if observed is None or boundary is None:
-        return False
-    try:
-        observed_at = dt.datetime.fromisoformat(observed.replace("Z", "+00:00"))
-        boundary_at = dt.datetime.fromisoformat(boundary.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    return observed_at <= boundary_at
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
@@ -599,11 +506,10 @@ def _receipt_git_context_reasons(
     git_repo_path: str | Path | None,
     engagement_branch: str,
 ) -> list[str]:
-    """Quarantine when receipt self-description disagrees with claimed result.
+    """Observed disagreements between receipt self-description and result.
 
-    The receipt CLI records observed git_head/branch/toplevel independently of
-    the claimed --result. Collection must reject envelopes where the cargo
-    (result) does not match the label (observed context).
+    Recorded in the manifest as evidence (BM-035 demote): the evaluator sees
+    them; they never route the node away from evaluation.
     """
     reasons: list[str] = []
     result_sha = _string(receipt.get("result"))
@@ -811,32 +717,6 @@ def _node_complete(
         and cross_check.get("receipt_matches_handoff") is True
         and cross_check.get("receipt_matches_git") is not False
     )
-
-
-def _disagreement_reasons(cross_check: Mapping[str, bool | None]) -> list[str]:
-    return [
-        key
-        for key, matches in cross_check.items()
-        if matches is False
-    ]
-
-
-def _quarantine_reasons(
-    cross_check: Mapping[str, bool | None],
-    git_verified: Mapping[str, object] | None,
-) -> list[str]:
-    reasons: list[str] = []
-    if git_verified is not None:
-        verification_reason = _string(
-            git_verified.get("completion_quarantine_reason")
-        )
-        if verification_reason is not None:
-            reasons.append(verification_reason)
-    if cross_check.get("receipt_matches_handoff") is False:
-        reasons.append("receipt result does not match handoff commitId")
-    if cross_check.get("receipt_matches_git") is False:
-        reasons.append("receipt result does not match git-verified result")
-    return reasons
 
 
 def _completion_id(

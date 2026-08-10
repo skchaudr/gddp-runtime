@@ -638,15 +638,28 @@ def _reconcile_engagement_group(
         if job is not None:
             jobs_by_node[str(job["node_id"])] = (session, job)
 
-    if len(by_feature) != len(results) or set(by_feature) != set(jobs_by_node):
-        reason = (
-            "engagement collect feature ids do not match reserved node ids; "
-            "human review required"
+    # BM-034 (SOFTEN): exact matches reconcile independently. Only nodes
+    # with no collected result route to review; one missing mapping never
+    # parks the whole engagement.
+    unmatched = {
+        feature_id: pair
+        for feature_id, pair in jobs_by_node.items()
+        if feature_id not in by_feature
+    }
+    for feature_id, (session, job) in unmatched.items():
+        _route_engagement_result_to_review(
+            con,
+            session,
+            job,
+            None,
+            f"no collected engagement result for reserved node {feature_id}",
         )
-        for session, job in jobs_by_node.values():
-            _route_engagement_result_to_review(
-                con, session, job, None, reason
-            )
+    jobs_by_node = {
+        feature_id: pair
+        for feature_id, pair in jobs_by_node.items()
+        if feature_id in by_feature
+    }
+    if not jobs_by_node:
         con.commit()
         return
 
@@ -722,41 +735,13 @@ def _reconcile_engagement_group(
             )
             continue
 
-        branch_tip = _resolve_ref(repo_path, result.result_ref)
-        base = session["expected_base_commit_sha"]
-        if branch_tip is None:
+        if _resolve_ref(repo_path, result.result_ref) is None:
             _route_engagement_result_to_review(
                 con,
                 session,
                 job,
                 result,
                 f"engagement result ref {result.result_ref} cannot be resolved",
-            )
-            continue
-        if not _is_ancestor(repo_path, result.result_commit_sha, branch_tip):
-            _route_engagement_result_to_review(
-                con,
-                session,
-                job,
-                result,
-                (
-                    f"result {result.result_commit_sha} is not reachable from "
-                    f"engagement ref {result.result_ref}"
-                ),
-            )
-            continue
-        if not base or not _is_ancestor(
-            repo_path, base, result.result_commit_sha
-        ):
-            _route_engagement_result_to_review(
-                con,
-                session,
-                job,
-                result,
-                (
-                    f"result {result.result_commit_sha} does not descend from "
-                    f"expected base {base or 'missing'}"
-                ),
             )
             continue
 
