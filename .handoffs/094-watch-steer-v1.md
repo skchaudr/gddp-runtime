@@ -31,9 +31,13 @@ Branch: main, clean and synced with origin (both repos)
 
 - Steer only lands on attempts launched by the NEW supervisor (running
   attempts from before `57ca4ec` never drain steer.jsonl; the file just sits).
-- Follow-up wait assumes a steered prompt produces another agent_end; if a
-  build consumes the steer in-turn, the follow-up wait burns until timeout —
-  delayed collection, never lost work (first agent_end result persists after).
+- Delivery mechanism verified live (2026-08-13, `bb88be5`): mid-turn
+  `{"type":"prompt"}` is REJECTED by pi RPC (success=False); native
+  `{"type":"steer"}` is accepted and consumed by the running turn before
+  agent_end (probe: agent obeyed the steer, single clean agent_end).
+  Steers arriving after agent_end go as fresh prompts and get follow-up waits.
+- Rejected deliveries land in `steer.error.txt` in the attempt dir; watch does
+  not surface it yet — check the file if a steer seems ignored.
 - watch is read-only except the single steer append; it cannot gate anything.
 
 ## Resume point
