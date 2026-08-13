@@ -135,6 +135,27 @@ def test_receipt_provenance_fields_round_trip() -> None:
     assert restored.merge_commit_sha == "abc123commit"
 
 
+def test_evaluation_timing_defaults_none_and_round_trips() -> None:
+    legacy = VerdictReceipt.model_validate(_receipt_payload())
+    assert legacy.evaluation_timing is None
+
+    payload = _receipt_payload(
+        evaluation_timing={
+            "started_at": "2026-08-13T00:00:00+00:00",
+            "finished_at": "2026-08-13T00:01:00+00:00",
+            "wall_s": 60.0,
+            "criteria": {"status": "completed", "elapsed_s": 40.0, "tool_calls": 3},
+            "integrity": {"status": "timed-out", "elapsed_s": 20.0, "tool_calls": 1},
+        }
+    )
+    receipt = VerdictReceipt.model_validate(payload)
+    restored = VerdictReceipt.model_validate_json(receipt.model_dump_json())
+    assert restored.evaluation_timing is not None
+    assert restored.evaluation_timing.wall_s == 60.0
+    assert restored.evaluation_timing.criteria.tool_calls == 3
+    assert restored.evaluation_timing.integrity.status == "timed-out"
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [

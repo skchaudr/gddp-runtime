@@ -69,6 +69,12 @@ def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys
     }
     assert output["lane_status"] == {"criteria": "not_run", "integrity": "not_run"}
     assert output["harness_error"] == {"criteria": None, "integrity": None}
+    timing = output["evaluation_timing"]
+    assert timing["criteria"]["status"] == "not_run"
+    assert timing["integrity"]["status"] == "not_run"
+    assert timing["wall_s"] >= 0
+    assert receipt.evaluation_timing is not None
+    assert receipt.evaluation_timing.wall_s == timing["wall_s"]
 
 
 def test_live_runner_auto_prefers_deepseek(monkeypatch) -> None:

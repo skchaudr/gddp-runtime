@@ -145,6 +145,26 @@ def parse_check(row):
         return {}
 
 
+def _format_lane_clock(lane: dict | None) -> str:
+    lane = lane or {}
+    status = lane.get("status") or "n/a"
+    elapsed = lane.get("elapsed_s")
+    tools = lane.get("tool_calls")
+    clock = "-" if elapsed is None else f"{elapsed}s"
+    calls = "0" if tools is None else str(tools)
+    return f"{status} {clock} {calls} tools"
+
+
+def _format_evaluation_timing(timing: dict) -> str:
+    wall = timing.get("wall_s")
+    wall_s = "-" if wall is None else f"{wall}s"
+    return (
+        f"timing: wall={wall_s}  "
+        f"criteria={_format_lane_clock(timing.get('criteria'))}  "
+        f"integrity={_format_lane_clock(timing.get('integrity'))}"
+    )
+
+
 def print_evaluation(check, full=False):
     """Print the evaluator's output for one result row — the thing under review."""
     if not check:
@@ -209,6 +229,9 @@ def print_evaluation(check, full=False):
             print(f"  harness error: {lane}={harness_error[lane]}")
     if check.get("receipt_path"):
         print(f"  receipt: {check['receipt_path']}")
+    timing = check.get("evaluation_timing")
+    if isinstance(timing, dict) and timing:
+        print(f"  {_format_evaluation_timing(timing)}")
 
 
 def _read_local_subprocess_status(session_id: str) -> tuple[str | None, str | None]:

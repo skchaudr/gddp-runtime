@@ -441,6 +441,8 @@ def main(argv: list[str] | None = None) -> int:
         "criteria": receipt.semantic.harness_error if receipt.semantic else None,
         "integrity": receipt.integrity.harness_error if receipt.integrity else None,
     }
+    if receipt.evaluation_timing is not None:
+        summary["evaluation_timing"] = receipt.evaluation_timing.model_dump()
     # Surface criteria-lane findings (non-pass judgments) so the return_router
     # can use them for retry decisions alongside integrity findings.
     criteria_findings = []

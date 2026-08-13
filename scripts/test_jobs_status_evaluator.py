@@ -21,6 +21,13 @@ def test_evaluation_summary_uses_coverage_ratings_and_lane_errors(capsys) -> Non
         },
         "lane_status": {"criteria": "completed", "integrity": "timed-out"},
         "harness_error": {"criteria": None, "integrity": "pi timed out after 1200s"},
+        "evaluation_timing": {
+            "started_at": "2026-08-01T00:00:00Z",
+            "finished_at": "2026-08-01T00:20:01Z",
+            "wall_s": 1201.0,
+            "criteria": {"status": "completed", "elapsed_s": 1.2, "tool_calls": 4},
+            "integrity": {"status": "timed-out", "elapsed_s": 1200.0, "tool_calls": 1},
+        },
         "evaluated_tree_sha": "legacy-tree",
         "evaluated_commit_sha": "evaluated-commit",
         "merge_commit_sha": "different-merge-commit",
@@ -30,6 +37,7 @@ def test_evaluation_summary_uses_coverage_ratings_and_lane_errors(capsys) -> Non
     assert "coverage: criteria=medium  integrity=low  overall=low" in output
     assert "lane status: criteria=completed  integrity=timed-out" in output
     assert "harness error: integrity=pi timed out after 1200s" in output
+    assert "timing: wall=1201.0s  criteria=completed 1.2s 4 tools  integrity=timed-out 1200.0s 1 tools" in output
     assert "commit=evaluated-commit  merge=different-merge-commit  (mismatch)" in output
 
 

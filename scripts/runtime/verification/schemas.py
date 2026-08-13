@@ -158,6 +158,22 @@ class ContextCoverage(BaseModel):
     overall: Literal["none", "low", "medium", "high"]
 
 
+class LaneTiming(BaseModel):
+    """Wall-clock and tool-call counts for one evaluator lane."""
+    status: str
+    elapsed_s: float | None = None
+    tool_calls: int = 0
+
+
+class EvaluationTiming(BaseModel):
+    """Clocks for one verify() run. Optional on legacy receipts."""
+    started_at: str
+    finished_at: str
+    wall_s: float
+    criteria: LaneTiming
+    integrity: LaneTiming
+
+
 class VerdictReceipt(BaseModel):
     project_id: str
     node_id: str
@@ -194,6 +210,8 @@ class VerdictReceipt(BaseModel):
     # Phase 2: canonical context offered + per-lane coverage signal.
     canonical_context: dict[str, str] | None = None
     context_coverage: ContextCoverage | None = None
+    # Written at verify() time. Absent on receipts minted before this field.
+    evaluation_timing: EvaluationTiming | None = None
 
     @model_validator(mode="before")
     @classmethod

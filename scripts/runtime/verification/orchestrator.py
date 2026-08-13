@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
 from . import decision_engine, deterministic, integrity_combiner
-from .schemas import ContextCoverage, IntegrityOutput, LaneCoverage, SemanticOutput, VerdictReceipt
+from .schemas import (
+    ContextCoverage,
+    EvaluationTiming,
+    IntegrityOutput,
+    LaneCoverage,
+    LaneTiming,
+    SemanticOutput,
+    VerdictReceipt,
+)
 from .semantic.agent import SemanticAgent
 from .semantic.context_builder import build_canonical_pointers
 
@@ -37,6 +46,8 @@ def verify(
     .datetime.now(__import__("datetime").timezone.utc)
     .isoformat(),
 ) -> VerdictReceipt:
+    started_at = now()
+    wall_t0 = time.perf_counter()
     det = deterministic.assemble(
         node_yaml=node_yaml,
         project_yaml=project_yaml,
@@ -45,6 +56,7 @@ def verify(
         expected_base_commit_sha=expected_base_commit_sha,
     )
     semantic = None
+    criteria_elapsed: float | None = None
     if _should_run_semantic(det):
         # The built-in SemanticAgent fallback was removed: pi is the only
         # evaluator path. If no pi harness is wired, hard-fail rather than
@@ -54,6 +66,7 @@ def verify(
                 "semantic_harness (pi) is required — the built-in agent "
                 "fallback was removed. Wire PiHarnessRunner in the bridge."
             )
+        lane_t0 = time.perf_counter()
         semantic = semantic_harness(
             node=node_yaml,
             graph=project_yaml,
@@ -61,6 +74,7 @@ def verify(
             shape_profile=shape_profile,
             repo=repo,
         )
+        criteria_elapsed = time.perf_counter() - lane_t0
 
     verdict, signals, action = decision_engine.decide(det, semantic)
 
@@ -70,7 +84,9 @@ def verify(
     # the live bridge will default this ON.
     criteria_verdict = verdict
     integrity = None
+    integrity_elapsed: float | None = None
     if integrity_harness is not None:
+        lane_t0 = time.perf_counter()
         integrity = integrity_harness(
             node=node_yaml,
             graph=project_yaml,
@@ -78,6 +94,7 @@ def verify(
             repo=repo,
             config_root=config_root,
         )
+        integrity_elapsed = time.perf_counter() - lane_t0
         verdict, action = integrity_combiner.combine(criteria_verdict, integrity, action)
 
     # Phase 2: build canonical context and compute per-lane coverage.
@@ -85,6 +102,15 @@ def verify(
         node=node_yaml, graph=project_yaml, repo=repo, config_root=config_root,
     )
     coverage = _compute_context_coverage(canonical, semantic, integrity, repo)
+
+    finished_at = now()
+    evaluation_timing = EvaluationTiming(
+        started_at=started_at,
+        finished_at=finished_at,
+        wall_s=round(time.perf_counter() - wall_t0, 3),
+        criteria=_lane_timing(semantic, elapsed_s=criteria_elapsed, semantic=True),
+        integrity=_lane_timing(integrity, elapsed_s=integrity_elapsed, semantic=False),
+    )
 
     return VerdictReceipt(
         project_id=project_yaml.get("project_id", ""),
@@ -113,6 +139,7 @@ def verify(
         mission_receipt_id=mission_receipt_id,
         canonical_context=canonical,
         context_coverage=coverage,
+        evaluation_timing=evaluation_timing,
     )
 
 
@@ -173,6 +200,34 @@ def _should_run_semantic(det) -> bool:
     constraint_violated = any(constraint.status == "violated" for constraint in det.constraints)
     criterion_failed = any(criterion.status == "fail" for criterion in det.criteria)
     return has_indeterminate and not deps_incomplete and not constraint_violated and not criterion_failed
+
+
+def _lane_timing(output, *, elapsed_s: float | None, semantic: bool) -> LaneTiming:
+    if output is None:
+        return LaneTiming(status="not_run", elapsed_s=None, tool_calls=0)
+    status = getattr(output, "lane_status", None)
+    return LaneTiming(
+        status=status.value if status is not None else "completed",
+        elapsed_s=None if elapsed_s is None else round(elapsed_s, 3),
+        tool_calls=_tool_call_count(output, semantic=semantic),
+    )
+
+
+def _tool_call_count(output, *, semantic: bool) -> int:
+    if semantic:
+        trace = output.budget_trace if isinstance(getattr(output, "budget_trace", None), dict) else {}
+        entries = trace.get("tool_calls") or []
+    else:
+        entries = getattr(output, "tool_trace", None) or []
+    if not isinstance(entries, list):
+        return 0
+    return sum(
+        1
+        for entry in entries
+        if isinstance(entry, dict)
+        and entry.get("tool")
+        and entry.get("event") != "tool_execution_end"
+    )
 
 
 def _completeness_status(semantic) -> str:

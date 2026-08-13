@@ -117,6 +117,16 @@ def test_clean_deterministic_pass_skips_semantic(monkeypatch, tmp_path: Path) ->
     assert receipt.completeness_status == "not-run"
     assert receipt.project_id == "project-clean"
     assert receipt.node_id == "node-clean"
+    timing = receipt.evaluation_timing
+    assert timing is not None
+    assert timing.started_at == "2026-06-30T00:00:00+00:00"
+    assert timing.finished_at == "2026-06-30T00:00:00+00:00"
+    assert timing.wall_s >= 0
+    assert timing.criteria.status == "not_run"
+    assert timing.criteria.elapsed_s is None
+    assert timing.criteria.tool_calls == 0
+    assert timing.integrity.status == "not_run"
+    assert timing.integrity.elapsed_s is None
 
 
 def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch, tmp_path: Path) -> None:
@@ -158,6 +168,13 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
         risks=None,
         followup_candidates=None,
         budget_exhausted=False,
+        budget_trace={
+            "tool_calls": [
+                {"tool": "read", "path": "module.py"},
+                {"tool": "grep", "path": "module.py"},
+                {"event": "tool_execution_end", "tool": "read", "ok": True},
+            ]
+        },
     )
     harness_calls = 0
 
@@ -184,6 +201,13 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
     assert receipt.completeness_status == "complete"
     assert receipt.decision_reasoning == "Semantic mock passed."
     assert receipt.required_next_action == "Proceed to accept_node (open evidence PR)."
+    timing = receipt.evaluation_timing
+    assert timing is not None
+    assert timing.criteria.status == "completed"
+    assert timing.criteria.elapsed_s is not None
+    assert timing.criteria.elapsed_s >= 0
+    assert timing.criteria.tool_calls == 2
+    assert timing.integrity.status == "not_run"
 
 
 def test_orchestrator_passes_correct_args_to_semantic_harness(monkeypatch, tmp_path: Path) -> None:
