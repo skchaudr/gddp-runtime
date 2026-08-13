@@ -12,6 +12,8 @@ This is the current predicament of this project right now that I am in. And it m
 
 ---- 
 
+
+
 Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
 
 `gddp` is the single operator-facing control plane. Runtime job reads and

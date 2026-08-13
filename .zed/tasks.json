@@ -1,0 +1,72 @@
+[
+  {
+    "label": "GDDP evaluator: current test file",
+    "command": "python3",
+    "args": ["-m", "pytest", "-q", "$ZED_RELATIVE_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: verification suite",
+    "command": "python3",
+    "args": ["-m", "pytest", "-q", "scripts/runtime/verification"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: bridge tests",
+    "command": "python3",
+    "args": ["-m", "pytest", "-q", "scripts/runtime/verification/test_bridge.py"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: harness tests",
+    "command": "python3",
+    "args": [
+      "-m",
+      "pytest",
+      "-q",
+      "scripts/runtime/verification/test_integrity_runner.py",
+      "scripts/runtime/verification/semantic/test_pi_environment.py",
+      "scripts/runtime/verification/test_orchestrator.py"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: reconciliation tests",
+    "command": "python3",
+    "args": ["-m", "pytest", "-q", "scripts/runtime/heartbeat/test_executor_sessions.py"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: operator output tests",
+    "command": "python3",
+    "args": ["-m", "pytest", "-q", "scripts/test_jobs_status_evaluator.py"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "GDDP evaluator: CLI help",
+    "command": "python3",
+    "args": ["-m", "scripts.runtime.verification.cli", "--help"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "none",
+    "reveal": "always",
+    "hide": "never"
+  }
+]
