@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -173,9 +174,17 @@ def persist_result(worktree: Path, packet: dict[str, Any]) -> dict[str, Any]:
     commit_msg = f"result(job={job_id}, attempt={attempt})"
 
     try:
-        add = _run_git(["git", "add", "-A"], cwd=worktree)
-        if add.returncode != 0:
-            raise RuntimeError(f"git add failed: {add.stderr.strip()}")
+        # git add can collide with a transient index.lock (a concurrent or
+        # crashed git process refreshing the index). Retry briefly before
+        # stranding a completed attempt; the lock is almost always short-lived.
+        add = None
+        for _attempt in range(6):
+            add = _run_git(["git", "add", "-A"], cwd=worktree)
+            if add.returncode == 0 or "index.lock" not in (add.stderr or ""):
+                break
+            time.sleep(1.5)
+        if add is None or add.returncode != 0:
+            raise RuntimeError(f"git add failed: {(add.stderr if add else '').strip()}")
 
         # Empty tree: allow empty commit so the attempt still has a durable SHA.
         staged = _run_git(["git", "diff", "--cached", "--quiet"], cwd=worktree)

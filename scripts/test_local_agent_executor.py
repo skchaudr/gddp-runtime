@@ -440,3 +440,33 @@ def test_worktree_correlation_never_raises(tmp_path, monkeypatch):
     monkeypatch.setenv(lae._WORKTREE_MAP_ENV, str(unwritable / "nested" / "map.ndjson"))
 
     lae.record_worktree_correlation(tmp_path / "gddp-agent-wt-x", {"job_id": "j"})
+
+
+def test_persist_result_retries_transient_index_lock(tmp_path, monkeypatch):
+    """A short-lived index.lock must not strand a completed attempt."""
+    import subprocess, threading, time
+    from local_agent_executor import persist_result
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "base"], cwd=repo, check=True)
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+
+    (repo / "work.txt").write_text("real work output\n")
+    lock = repo / ".git" / "index.lock"
+    lock.write_text("")
+
+    def drop_lock():
+        time.sleep(1.0)
+        lock.unlink()
+
+    threading.Thread(target=drop_lock, daemon=True).start()
+    packet = {
+        "job_id": "job_test_lock",
+        "execution_attempt_id": "job_test_lock-attempt-0",
+        "expected_base_commit_sha": base,
+    }
+    handoff = persist_result(repo, packet)
+    assert handoff.get("error") is None
+    assert handoff["result_commit_sha"]
