@@ -31,7 +31,10 @@ from typing import Any
 
 from scripts.runtime.verification.schemas import LaneExecutionStatus, SemanticOutput
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
-from scripts.runtime.verification.semantic.pi_environment import build_pi_environment
+from scripts.runtime.verification.semantic.pi_environment import (
+    build_pi_environment,
+    evaluator_pi_argv0,
+)
 from scripts.runtime.verification.semantic.prompt import build_prompt_messages
 from scripts.runtime.verification.semantic.subprocess_utils import (
     read_tail as _read_tail,
@@ -138,8 +141,6 @@ class PiHarnessRunner:
         repo: Path,
         system_prompt: str | None = None,
     ) -> SemanticOutput:
-        if not shutil.which(self.pi_binary):
-            raise RuntimeError(f"pi binary not found on PATH: {self.pi_binary}")
         if not EXTENSION_PATH.exists():
             raise RuntimeError(f"gddp_verifier extension missing: {EXTENSION_PATH}")
 
@@ -174,7 +175,10 @@ class PiHarnessRunner:
             env = build_pi_environment(self.provider, Path(sandbox_home))
             env["GDDP_VERDICT_OUT"] = verdict_path
             env["GDDP_TOOL_TRACE"] = trace_path
-            cmd = self._build_command(sys_prompt, user_prompt, repo)
+            argv0 = evaluator_pi_argv0(self.pi_binary, env)
+            if not Path(argv0).is_file() and not shutil.which(argv0):
+                raise RuntimeError(f"pi binary not found: {argv0}")
+            cmd = self._build_command(sys_prompt, user_prompt, repo, argv0)
             # Tee the investigator stream while preserving failure evidence.
             stdout_path = tempfile.mktemp(prefix="gddp-pi-stdout-")
             stderr_path = tempfile.mktemp(prefix="gddp-pi-stderr-")
@@ -234,9 +238,11 @@ class PiHarnessRunner:
         _cleanup_logs(stdout_path, stderr_path)
         return SemanticOutput.model_validate(raw)
 
-    def _build_command(self, system_prompt: str, user_prompt: str, repo: Path) -> list[str]:
+    def _build_command(
+        self, system_prompt: str, user_prompt: str, repo: Path, argv0: str
+    ) -> list[str]:
         cmd: list[str] = [
-            self.pi_binary,
+            argv0,
             "--print",
             "--mode", "text",
             # Keep the run clean: only our explicit -e extensions, no discovered

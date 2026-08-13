@@ -97,9 +97,43 @@ def test_empty_integrity_accepts_lane_status_and_harness_error() -> None:
     assert result_clean.harness_error is None
 
 
+def test_runner_argv0_uses_pinned_real_bin(monkeypatch, tmp_path: Path) -> None:
+    real_pi = tmp_path / "real-pi"
+    real_pi.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    real_pi.chmod(0o755)
+    captured: dict[str, object] = {}
+
+    def fake_tee(cmd, env, *args, **kwargs):
+        captured["cmd"] = cmd
+        captured["env"] = env
+
+        class Proc:
+            returncode = 1
+
+        return Proc()
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("PI_REAL_BIN", str(real_pi))
+    monkeypatch.setattr(pi_runner, "_tee_subprocess", fake_tee)
+
+    pi_runner.PiHarnessRunner(provider="deepseek").run(
+        node={"node_id": "node-a"},
+        graph={"project_id": "project-a"},
+        deterministic_result={},
+        repo=tmp_path,
+    )
+
+    assert captured["cmd"][0] == str(real_pi)
+    assert captured["env"]["PI_REAL_BIN"] == str(real_pi)
+
+
 def test_integrity_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> None:
     """A timed-out integrity subprocess becomes receipt evidence, not a crash."""
-    monkeypatch.setattr(integrity_runner.shutil, "which", lambda _: "/usr/bin/pi")
+    real_pi = tmp_path / "real-pi"
+    real_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    real_pi.chmod(0o755)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("PI_REAL_BIN", str(real_pi))
     monkeypatch.setattr(
         integrity_runner,
         "_tee_subprocess",
@@ -120,7 +154,11 @@ def test_integrity_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> 
 
 def test_semantic_timeout_returns_typed_output(monkeypatch, tmp_path: Path) -> None:
     """The criteria lane uses the same typed timeout contract."""
-    monkeypatch.setattr(pi_runner.shutil, "which", lambda _: "/usr/bin/pi")
+    real_pi = tmp_path / "real-pi"
+    real_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    real_pi.chmod(0o755)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("PI_REAL_BIN", str(real_pi))
     monkeypatch.setattr(
         pi_runner,
         "_tee_subprocess",
