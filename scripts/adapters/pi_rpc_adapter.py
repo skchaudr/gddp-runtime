@@ -400,21 +400,32 @@ def run_attempt(attempt_dir: Path) -> int:
         steer_offset = [0]
         steer_sent = [0]
 
-        def _drain_steer() -> None:
-            nonlocal client
+        def _drain_steer(kind: str = "steer") -> None:
+            # kind="steer": native RPC steer — delivered into the running turn
+            # (verified: accepted mid-turn, consumed before agent_end, no
+            # follow-up wait needed). kind="prompt": used after agent_end while
+            # the session is idle; starts a follow-up turn the caller waits on.
+            # A bare "prompt" mid-turn is REJECTED by pi (success=False) —
+            # never use it for mid-turn delivery.
             messages, steer_offset[0] = _read_steer_messages(
                 steer_path, steer_offset[0]
             )
             for msg in messages:
                 try:
-                    client.send(
-                        {"type": "prompt", "message": f"[operator steer] {msg}"},
+                    resp = client.send(
+                        {"type": kind, "message": f"[operator steer] {msg}"},
                         timeout=30.0,
                     )
-                    steer_sent[0] += 1
                 except Exception as exc:  # delivery failure must not kill the turn
                     (attempt_dir / "steer.error.txt").write_text(str(exc))
                     return
+                if resp and resp.get("success"):
+                    if kind == "prompt":
+                        steer_sent[0] += 1
+                else:
+                    (attempt_dir / "steer.error.txt").write_text(
+                        f"{kind} rejected: {resp}"
+                    )
 
         # Settle + readiness probe (matches spike).
         time.sleep(0.4)
@@ -442,12 +453,13 @@ def run_attempt(attempt_dir: Path) -> int:
                 client.prompt_and_wait_agent_end(
                     prompt, timeout=turn_timeout_s, on_poll=_drain_steer
                 )
-                # Operator steers may queue follow-up turns. Keep collecting
-                # until a full agent_end passes with no new operator input, so
-                # the persisted handoff reflects the steered work, not the
-                # pre-steer snapshot. Bounded against a steer storm.
+                # Operator steers sent mid-turn are consumed by the running
+                # turn. Steers that arrive after agent_end are sent as fresh
+                # prompts (session idle), each producing a follow-up turn;
+                # keep collecting until a full agent_end passes with no new
+                # operator input. Bounded against a steer storm.
                 for _ in range(_MAX_STEER_FOLLOWUPS):
-                    _drain_steer()
+                    _drain_steer("prompt")
                     if steer_sent[0] == 0 or proc.poll() is not None:
                         break
                     steer_sent[0] = 0
