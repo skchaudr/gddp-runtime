@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from adapters.executor_protocol import (
@@ -391,6 +391,31 @@ def run_attempt(attempt_dir: Path) -> int:
         client = _RpcClient(proc, events_path=events_path)
         threading.Thread(target=_cancel_watcher, args=(proc,), daemon=True).start()
 
+        # Operator steer channel: `gddp steer` appends lines to steer.jsonl in
+        # this attempt dir; the drain below runs on the supervisor's single
+        # reader thread (via on_poll) and delivers each message as an RPC
+        # prompt. Plain lines are accepted as raw message text; JSON objects
+        # take their "message" field.
+        steer_path = attempt_dir / "steer.jsonl"
+        steer_offset = [0]
+        steer_sent = [0]
+
+        def _drain_steer() -> None:
+            nonlocal client
+            messages, steer_offset[0] = _read_steer_messages(
+                steer_path, steer_offset[0]
+            )
+            for msg in messages:
+                try:
+                    client.send(
+                        {"type": "prompt", "message": f"[operator steer] {msg}"},
+                        timeout=30.0,
+                    )
+                    steer_sent[0] += 1
+                except Exception as exc:  # delivery failure must not kill the turn
+                    (attempt_dir / "steer.error.txt").write_text(str(exc))
+                    return
+
         # Settle + readiness probe (matches spike).
         time.sleep(0.4)
         if proc.poll() is not None:
@@ -414,7 +439,21 @@ def run_attempt(attempt_dir: Path) -> int:
                 f"{packet_raw}"
             )
             try:
-                client.prompt_and_wait_agent_end(prompt, timeout=turn_timeout_s)
+                client.prompt_and_wait_agent_end(
+                    prompt, timeout=turn_timeout_s, on_poll=_drain_steer
+                )
+                # Operator steers may queue follow-up turns. Keep collecting
+                # until a full agent_end passes with no new operator input, so
+                # the persisted handoff reflects the steered work, not the
+                # pre-steer snapshot. Bounded against a steer storm.
+                for _ in range(_MAX_STEER_FOLLOWUPS):
+                    _drain_steer()
+                    if steer_sent[0] == 0 or proc.poll() is not None:
+                        break
+                    steer_sent[0] = 0
+                    client.wait_agent_end(
+                        timeout=turn_timeout_s, on_poll=_drain_steer
+                    )
             except _PlumbingError as exc:
                 plumbing = True
                 error = str(exc)
@@ -534,15 +573,26 @@ class _RpcClient:
             return {}
         return data
 
-    def prompt_and_wait_agent_end(self, message: str, *, timeout: float) -> None:
+    def prompt_and_wait_agent_end(
+        self, message: str, *, timeout: float, on_poll: Callable[[], None] | None = None
+    ) -> None:
         resp = self.send({"type": "prompt", "message": message}, timeout=min(60.0, timeout))
         if not resp or not resp.get("success"):
             # Some builds accept via event stream only; tolerate missing success
             # if the process is still alive and we can wait for agent_end.
             if self.proc.poll() is not None:
                 raise _PlumbingError(f"prompt rejected and process dead: {resp}")
+        self.wait_agent_end(timeout=timeout, on_poll=on_poll)
+
+    def wait_agent_end(
+        self, *, timeout: float, on_poll: Callable[[], None] | None = None
+    ) -> None:
+        """Wait for the next agent_end. on_poll runs each read cycle so the
+        caller can inject operator input from the single reader thread."""
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if on_poll is not None:
+                on_poll()
             evt = self._read_one(timeout=max(0.1, min(1.0, deadline - time.time())))
             if evt is None:
                 if self.proc.poll() is not None:
@@ -603,6 +653,44 @@ class _RpcClient:
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+# Operator steer channel bounds: max queued follow-up turns collected per
+# attempt (each steer turn runs with the full turn timeout).
+_MAX_STEER_FOLLOWUPS = 10
+
+
+def _read_steer_messages(path: Path, offset: int) -> tuple[list[str], int]:
+    """Read new steer lines from path at byte offset.
+
+    Returns (messages, new_offset). JSON lines take their "message" field;
+    anything else is treated as raw message text. Pure file IO — testable
+    without a live pi process.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return [], offset
+    if size <= offset:
+        return [], offset
+    messages: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        handle.seek(offset)
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("{"):
+                try:
+                    msg = json.loads(stripped).get("message")
+                except json.JSONDecodeError:
+                    msg = None
+                if isinstance(msg, str) and msg.strip():
+                    messages.append(msg.strip())
+            else:
+                messages.append(stripped)
+        return messages, handle.tell()
+    return messages, offset
 
 
 def _configured_spool_root(spool_root: str | Path | None) -> Path:
