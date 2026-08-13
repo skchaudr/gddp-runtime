@@ -50,6 +50,11 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 
 ## Canonical node workflow
 
+**Start at [`LOOP.md`](LOOP.md)** — the five-step operating loop, the watch/steer
+surface, and the frozen-infrastructure list. Frozen surfaces (intake server,
+jules adapters, rig1 deploy, rollback/export) get no investment unless a node
+names them.
+
 The draft canonical graph begins with `neutral-executor-contract`, followed by
 `direct-executor-round-trip` and `immediate-evaluator-round-trip`.
 `concurrent-node-flow` and `graph-frontier-operations` build on the usable
