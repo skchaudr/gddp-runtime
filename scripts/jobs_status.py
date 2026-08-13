@@ -48,6 +48,12 @@ JOB_STATUSES = {
     "awaiting_review",
     "complete",
     "failed",
+    # Terminal operator-recovery states. Without these, `jobs set cancelled`
+    # updated queue_state but left status active — and dispatch_blockers
+    # checks BOTH columns, so the "settle and redispatch" path could never
+    # actually clear a blocker.
+    "cancelled",
+    "deferred",
 }
 
 
