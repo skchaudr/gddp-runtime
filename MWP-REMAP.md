@@ -1,5 +1,7 @@
 # MWP Remap — gddp-runtime against the Model Workspace Protocol shape
 
+This is unsettled, and not authoritative, it is a direction being considered - Sab 
+
 Date: 2026-08-12 · Post-demolition state (work orders 089–093) · main @ 21c4ac2
 
 MWP shape: numbered folders = stages · markdown = role/context · local scripts =
