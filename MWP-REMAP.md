@@ -27,8 +27,8 @@ Proven: 22-node dogfood run, 4.5h unattended, 2026-08-11.
 |---|---|
 | `AGENTS.md` | Operating contract + doctrine; already encodes the failure pattern |
 | `PROJECT-BRIEF.md` | Intent anchor |
-| `docs/GDDP-becomes-small-and-real.md` | Doctrine: GDDP constrains/verifies the loop, doesn't rebuild it |
-| `docs/Tests-can-fail-nodes-can-pass.md` | Doctrine: only human acceptance is graph truth |
+| *Ideally*: `docs/GDDP-becomes-small-and-real.md` | Doctrine: GDDP constrains/verifies the loop, doesn't rebuild it |
+| *Ideally*: `docs/Tests-can-fail-nodes-can-pass.md` | Doctrine: only human acceptance is graph truth |
 | `scripts/jobs_status.py` | Job/queue state backend (mechanical work, script-shaped) |
 | `scripts/gddp_node_receipt.py` | The receipt — unit of returned evidence |
 | `scripts/runtime/verification/` | The evaluator. The one justified thing MWP lacks. |
