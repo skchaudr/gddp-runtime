@@ -41,7 +41,7 @@ _BINARY_ENV = "GDDP_PI_RPC_BINARY"
 _TOOLS_ENV = "GDDP_PI_RPC_TOOLS"
 _TIMEOUT_ENV = "GDDP_PI_RPC_TURN_TIMEOUT_S"
 _DEFAULT_MODEL = "xai/grok-4.5"
-_DEFAULT_TOOLS = "read,bash,edit,write,grep,find,ls"
+_DEFAULT_TOOLS = "read,bash,edit,write,grep,find,ls,subagent"
 _DEFAULT_TIMEOUT_S = 1800.0
 
 _PACKET_PREAMBLE = (
