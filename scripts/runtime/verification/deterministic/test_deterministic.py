@@ -315,6 +315,38 @@ def test_mentioned_paths_recognizes_txt_and_unknown_extensions():
     assert "out/data.csv" in paths
 
 
+def test_mentioned_paths_does_not_truncate_jsonl_to_js():
+    from .probes import mentioned_paths_from_text
+    paths = mentioned_paths_from_text(
+        "01-decisions/output/decisions-canonical.jsonl conforms to decision-schema.md"
+    )
+    assert paths == [
+        "01-decisions/output/decisions-canonical.jsonl",
+        "decision-schema.md",
+    ]
+
+
+def test_probe_resolves_bare_filename_beside_explicit_artifact(tmp_path: Path):
+    output = tmp_path / "01-decisions" / "output"
+    output.mkdir(parents=True)
+    (output / "decisions-canonical.jsonl").write_text('{"id":"D01"}\n')
+    (output / "decision-schema.md").write_text("# Decision schema\n")
+    result = _eval(
+        tmp_path,
+        {
+            "id": "all-conform",
+            "criterion": (
+                "01-decisions/output/decisions-canonical.jsonl has one object per raw "
+                "object, each conforming to decision-schema.md"
+            ),
+        },
+    )
+    assert result.method == "keyword_scan_source"
+    assert result.mismatch_kind == ""
+    assert result.mismatch_detail == ""
+    assert all("absent" not in item for item in result.evidence)
+
+
 def test_path_content_check_exact_pass(tmp_path: Path):
     smoke = tmp_path / "gate-smoke"
     smoke.mkdir()

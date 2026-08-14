@@ -42,7 +42,7 @@ def collect_constraint_files(node_yaml: dict, repo: Path) -> list[str]:
                 )
                 continue
             mentioned = mentioned_paths_from_text(criterion)
-            existing = [p for p in mentioned if (repo / p).is_file()]
+            existing = existing_paths_from_text(repo, criterion)
             if mentioned:
                 files.update(existing)
             else:

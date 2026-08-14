@@ -66,8 +66,11 @@ def mentioned_paths_from_text(text: str) -> list[str]:
     # Slash-containing relative paths, any extension.
     for raw in re.findall(r"[\w.-]+(?:/[\w.-]+)+\.\w+", text):
         paths.append(raw.strip("`'\".,);:"))
-    # Bare filenames with known extensions.
-    for raw in re.findall(r"[\w./-]+\.(?:py|ts|tsx|js|json|toml|yaml|yml|zsh|md)", text):
+    # Bare filenames with known extensions. Require the complete suffix so a
+    # shorter alternative (for example ``js``) cannot match the prefix of a
+    # longer extension (``jsonl``).
+    known_extensions = r"jsonl|json|toml|yaml|tsx|yml|zsh|py|ts|js|md"
+    for raw in re.findall(rf"[\w./-]+\.(?:{known_extensions})(?![\w.])", text):
         paths.append(raw.strip("`'\".,);:"))
     return sorted(set(paths))
 
@@ -130,9 +133,43 @@ def _path_content_check(cid: str, text: str, repo: Path,
     )
 
 
+def resolve_mentioned_paths(repo: Path, text: str) -> tuple[list[str], list[str]]:
+    """Resolve criterion paths into existing and missing repo-relative paths.
+
+    A bare filename may describe a sibling of an explicit artifact path in the
+    same criterion (for example ``output/data.jsonl`` and ``schema.md``). When
+    exactly one such sibling exists, use its full path. Ambiguous names remain
+    missing so the verifier never guesses between files.
+    """
+    mentioned = mentioned_paths_from_text(text)
+    explicit_parents = {
+        Path(rel).parent
+        for rel in mentioned
+        if "/" in rel and (repo / rel).is_file()
+    }
+    existing: set[str] = set()
+    missing: list[str] = []
+    for rel in mentioned:
+        if (repo / rel).is_file():
+            existing.add(rel)
+            continue
+        if "/" not in rel:
+            sibling_matches = {
+                (parent / rel).as_posix()
+                for parent in explicit_parents
+                if (repo / parent / rel).is_file()
+            }
+            if len(sibling_matches) == 1:
+                existing.update(sibling_matches)
+                continue
+        missing.append(rel)
+    return sorted(existing), missing
+
+
 def existing_paths_from_text(repo: Path, text: str) -> list[str]:
     """Return existing repo-relative paths mentioned in criterion text."""
-    return sorted({p for p in mentioned_paths_from_text(text) if (repo / p).is_file()})
+    existing, _missing = resolve_mentioned_paths(repo, text)
+    return existing
 
 
 def fallback_scan_files(repo: Path, text: str = "") -> list[str]:
@@ -284,8 +321,7 @@ def evaluate_criterion(
         # Fallback: keyword probe across files implied by the repo layout.
         kws = slug_keywords(text)
         mentioned_paths = mentioned_paths_from_text(text)
-        existing_paths = [p for p in mentioned_paths if (repo / p).is_file()]
-        missing_paths = [p for p in mentioned_paths if not (repo / p).is_file()]
+        existing_paths, missing_paths = resolve_mentioned_paths(repo, text)
         if mentioned_paths and not existing_paths:
             return CriterionCheck(
                 id=cid, criterion=text, status="indeterminate",
