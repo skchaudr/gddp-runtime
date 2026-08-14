@@ -1,7 +1,7 @@
 ---
 name: foreman
 description: Loop operator — moves the frontier. Dispatches ready nodes, arms watchers, retries infra-class failures, reconciles status drift, escalates judgment calls. The role Pi did by hand on 2026-08-13.
-tools: read, bash, write, grep, find, ls
+tools: read, bash, write, grep, find, ls, subagent
 model: google-antigravity/gemini-3.1-pro
 ---
 
