@@ -108,6 +108,41 @@ class JobsStatusTests(unittest.TestCase):
         self.assertEqual(queue, ("failed",))
         self.assertEqual(audit, ("manual_status_change", "executor failed"))
 
+    def test_retry_command_audits_human_rejection_and_redispatch(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            "UPDATE jobs SET status = 'awaiting_review', queue_state = 'awaiting_review' "
+            "WHERE job_id = 'job-1'"
+        )
+        con.execute(
+            "UPDATE queue_records SET queue = 'awaiting_review' WHERE job_id = 'job-1'"
+        )
+        con.commit()
+        con.close()
+
+        with patch.object(jobs_status, "DB_PATH", self.db_path), patch(
+            "scripts.runtime.return_router.retry_reviewed_job",
+            return_value={"status": "redispatched", "dispatch_success": True},
+        ) as retry:
+            jobs_status.main([
+                "retry",
+                "job-1",
+                "--reason",
+                "new clean user is ready",
+                "--yes",
+            ])
+
+        retry.assert_called_once_with("job-1", "new clean user is ready")
+        con = sqlite3.connect(self.db_path)
+        audit = con.execute(
+            "SELECT action, reason FROM decision_results"
+        ).fetchone()
+        con.close()
+        self.assertEqual(
+            audit,
+            ("reject_and_retry", "new clean user is ready"),
+        )
+
     def test_show_accepts_unique_node_id(self):
         with patch.object(jobs_status, "DB_PATH", self.db_path):
             jobs_status.main(["show", "node-1"])

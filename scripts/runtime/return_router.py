@@ -108,6 +108,75 @@ def _mark_job_awaiting_review(job_id: str) -> None:
         con.close()
 
 
+def _latest_job_verification(
+    job_id: str,
+) -> tuple[str, dict, str | None] | None:
+    """Return the latest result id, evaluator receipt, and retry base commit."""
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT result_id, acceptance_check FROM results "
+            "WHERE job_id = ? ORDER BY received_at DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        if result is None or not result["acceptance_check"]:
+            return None
+        try:
+            verification = json.loads(result["acceptance_check"])
+        except json.JSONDecodeError:
+            return None
+        session = con.execute(
+            "SELECT result_commit_sha FROM executor_sessions "
+            "WHERE job_id = ? AND result_commit_sha IS NOT NULL "
+            "ORDER BY attempt_index DESC, updated_at DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        session_commit = session["result_commit_sha"] if session else None
+        retry_base = verification.get("evaluated_commit_sha") or session_commit
+        return str(result["result_id"]), verification, retry_base
+    finally:
+        con.close()
+
+
+def retry_reviewed_job(job_id: str, human_reason: str) -> dict:
+    """Reject one reviewed result and retry the same job with a human fix-list."""
+    reason = human_reason.strip()
+    if not reason:
+        return {"status": "retry_rejected", "reason": "reason_required"}
+    job = _load_job(job_id)
+    if job is None:
+        return {"status": "retry_rejected", "reason": "job_not_found"}
+    if (
+        job.get("status") != "awaiting_review"
+        or job.get("queue_state") != "awaiting_review"
+    ):
+        return {
+            "status": "retry_rejected",
+            "reason": "job_not_awaiting_review",
+        }
+    latest = _latest_job_verification(job_id)
+    if latest is None:
+        return {"status": "retry_rejected", "reason": "result_missing"}
+    result_id, verification, retry_base = latest
+    if not retry_base:
+        return {"status": "retry_rejected", "reason": "result_commit_missing"}
+
+    verification = dict(verification)
+    verification["human_fix_list"] = {
+        "reason": reason,
+        "source": "human_review",
+    }
+    job = dict(job)
+    job["_retry_base_commit_sha"] = retry_base
+    return _redispatch_with_findings(
+        job_id,
+        job,
+        str(job["node_id"]),
+        verification,
+        result_id,
+    )
+
+
 def handle_merged_pr(event: sqlite3.Row) -> dict:
     """
     Main entry point for merged PR handling.
@@ -213,6 +282,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
 
     criteria_findings = verification.get("criteria_findings") if verification.get("verification_status") == "ok" else None
     if should_retry(verdict=verdict, integrity=integrity, job=job, project_yaml=project_yaml, criteria_findings=criteria_findings):
+        job["_retry_base_commit_sha"] = merge_commit_sha
         result = _redispatch_with_findings(job_id, job, node_id, verification, result_id)
         return result
 
@@ -236,7 +306,31 @@ def _config_root():
 
 def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     """Persist a correction attempt before dispatch and retain its evidence."""
-    from .heartbeat.dispatcher import cancel_remote_session, dispatch
+    from .heartbeat.dispatcher import (
+        cancel_remote_session,
+        dispatch,
+        executor_preflight_error,
+    )
+
+    repo_value = str(job["repo"])
+    repo_path = repo_value if Path(repo_value).is_dir() else None
+    preflight_error = executor_preflight_error(
+        str(job["executor"]),
+        repo_value,
+        repo_path=repo_path,
+    )
+    if preflight_error:
+        _mark_job_awaiting_review(job_id)
+        return {
+            "status": "needs_review",
+            "result_id": result_id,
+            "job_id": job_id,
+            "node_id": node_id,
+            "verification": verification,
+            "dispatch_attempted": False,
+            "dispatch_success": False,
+            "dispatch_error": preflight_error,
+        }
 
     integrity = (
         verification.get("integrity", {})
@@ -254,12 +348,15 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
             else []
         ),
     }
+    if verification.get("human_fix_list"):
+        previous_findings["human_fix_list"] = verification["human_fix_list"]
 
     con = _connect()
     allocated = allocate_retry_attempt(
         con,
         job,
         executor=job["executor"],
+        expected_base_commit_sha=job.get("_retry_base_commit_sha"),
         previous_findings=previous_findings,
     )
     if allocated is None:
@@ -278,7 +375,11 @@ def _redispatch_with_findings(job_id, job, node_id, verification, result_id):
     job_with_findings, session_db_id = allocated
     con.commit()
     try:
-        dispatch_result = dispatch(job_with_findings, job["repo"])
+        dispatch_result = dispatch(
+            job_with_findings,
+            repo_value,
+            repo_path=repo_path,
+        )
     except Exception as exc:
         dispatch_result = None
         dispatch_error = f"retry dispatch raised exception: {exc}"

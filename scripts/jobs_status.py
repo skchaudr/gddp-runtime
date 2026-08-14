@@ -6,6 +6,7 @@ Usage:
     python3 scripts/jobs_status.py show <job_id | node_id> [--full]
     python3 scripts/jobs_status.py results [--all]
     python3 scripts/jobs_status.py set <job_id | node_id> <state> --reason "..."
+    python3 scripts/jobs_status.py retry <job_id | node_id> --reason "..."
 
 This module owns runtime job state only. It never writes graph/node status.
 """
@@ -497,6 +498,90 @@ def cmd_set(args):
         con.close()
 
 
+def apply_retry(*, ref: str, reason: str) -> int:
+    """Reject the reviewed result and dispatch the next attempt."""
+    reason_text = reason.strip()
+    if not reason_text:
+        raise ValueError("A reason is required for reject + retry.")
+
+    con = connect()
+    try:
+        job = resolve_job(con, ref)
+        job_id = str(job["job_id"])
+        node_id = str(job["node_id"])
+        project_id = str(job["project_id"])
+        if (
+            job["status"] != "awaiting_review"
+            or job["queue_state"] != "awaiting_review"
+        ):
+            print(
+                f"ERROR: {job_id} is {job['queue_state']}; "
+                "reject + retry requires awaiting_review."
+            )
+            return 2
+    finally:
+        con.close()
+
+    from scripts.runtime.return_router import retry_reviewed_job
+
+    result = retry_reviewed_job(job_id, reason_text)
+    status = str(result.get("status") or "retry_failed")
+    if status == "retry_rejected":
+        print(f"ERROR: retry rejected — {result.get('reason', 'unknown reason')}")
+        return 1
+
+    action = (
+        "reject_and_retry"
+        if status == "redispatched"
+        else "reject_and_retry_failed"
+    )
+    con = connect()
+    try:
+        con.execute(
+            "INSERT INTO decision_results "
+            "(result_id, action, node_id, project_id, reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                f"dec_{uuid.uuid4().hex[:12]}",
+                action,
+                node_id,
+                project_id,
+                reason_text,
+                now(),
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    if status == "redispatched":
+        print(f"Done: rejected reviewed result; {job_id} retry dispatched.")
+        return 0
+    print(
+        f"ERROR: reviewed result rejected; retry dispatch failed — "
+        f"{result.get('dispatch_error', status)}"
+    )
+    return 1
+
+
+def cmd_retry(args):
+    reason = args.reason.strip()
+    if not reason:
+        sys.exit("A reason is required for reject + retry.")
+
+    con = connect()
+    try:
+        job = resolve_job(con, args.ref)
+        print(f"{job['job_id']}  ({job['node_id']})")
+        print(f"  {job['queue_state']}  ->  reject result + retry")
+    finally:
+        con.close()
+    if not args.yes:
+        if input("Proceed? [y/N] ").strip().lower() != "y":
+            sys.exit("Aborted.")
+    return apply_retry(ref=args.ref, reason=reason)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -523,6 +608,16 @@ def main(argv=None):
     p_set.add_argument("--reason", required=True, help="why — stored in the audit row")
     p_set.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     p_set.set_defaults(fn=cmd_set)
+
+    p_retry = sub.add_parser(
+        "retry", help="reject a reviewed result and retry the same job"
+    )
+    p_retry.add_argument("ref", help="job ID or uniquely matching node ID")
+    p_retry.add_argument(
+        "--reason", required=True, help="human fix-list injected into the retry"
+    )
+    p_retry.add_argument("--yes", action="store_true", help="skip confirmation")
+    p_retry.set_defaults(fn=cmd_retry)
 
     args = p.parse_args(argv)
     args.fn(args)

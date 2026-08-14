@@ -249,6 +249,7 @@ class TestReturnRouterRetry(unittest.TestCase):
                 "body": "node: auth-node\njob: job_123",
                 "merged_at": "2024-03-20T10:00:00Z",
                 "html_url": "https://github.com/skchaudr/vault-doctor/pull/12",
+                "merge_commit_sha": "abc123retrybase",
             },
         }
 
@@ -313,6 +314,10 @@ class TestReturnRouterRetry(unittest.TestCase):
                     "previous_findings"
                 ]
                 self.assertEqual(allocated_findings["verdict"], "fail")
+                self.assertEqual(
+                    mock_allocate.call_args.kwargs["expected_base_commit_sha"],
+                    "abc123retrybase",
+                )
                 dispatched_job = mock_dispatch.call_args.args[0]
                 self.assertEqual(dispatched_job["attempt"], 1)
                 from scripts.runtime.heartbeat.dispatcher import _build_node_packet
@@ -332,6 +337,79 @@ class TestReturnRouterRetry(unittest.TestCase):
                 )
                 mock_running.assert_called_once_with(mock_con, "job_123")
                 mock_mark.assert_not_called()
+
+    def test_operator_retry_injects_human_fix_list_and_uses_evaluated_commit(self):
+        from scripts.runtime import return_router
+
+        job = dict(
+            self._base_job(),
+            status="awaiting_review",
+            queue_state="awaiting_review",
+        )
+        verification = self._fail_verdict_with_evidence()
+        verification["evaluated_commit_sha"] = "result123"
+        with (
+            patch.object(return_router, "_load_job", return_value=job),
+            patch.object(
+                return_router,
+                "_latest_job_verification",
+                return_value=("res_latest", verification, "result123"),
+            ),
+            patch.object(
+                return_router,
+                "_redispatch_with_findings",
+                return_value={"status": "redispatched", "dispatch_success": True},
+            ) as redispatch,
+        ):
+            result = return_router.retry_reviewed_job(
+                "job_123", "new clean Khoj user is ready"
+            )
+
+        self.assertEqual(result["status"], "redispatched")
+        args = redispatch.call_args.args
+        self.assertEqual(args[1]["_retry_base_commit_sha"], "result123")
+        self.assertEqual(
+            args[3]["human_fix_list"]["reason"],
+            "new clean Khoj user is ready",
+        )
+
+    def test_operator_retry_requires_awaiting_review_job(self):
+        from scripts.runtime import return_router
+
+        with patch.object(
+            return_router, "_load_job", return_value=self._base_job()
+        ):
+            result = return_router.retry_reviewed_job("job_123", "try again")
+
+        self.assertEqual(result["status"], "retry_rejected")
+        self.assertEqual(result["reason"], "job_not_awaiting_review")
+
+    def test_retry_preflight_failure_does_not_consume_attempt(self):
+        from scripts.runtime import return_router
+
+        job = self._base_job()
+        job["_retry_base_commit_sha"] = "result123"
+        with (
+            patch(
+                "scripts.runtime.heartbeat.dispatcher.executor_preflight_error",
+                return_value="pi_rpc spool root is required",
+            ),
+            patch.object(return_router, "allocate_retry_attempt") as allocate,
+            patch.object(return_router, "_mark_job_awaiting_review") as mark_review,
+        ):
+            result = return_router._redispatch_with_findings(
+                "job_123",
+                job,
+                "auth-node",
+                self._fail_verdict_with_evidence(),
+                "res_123",
+            )
+
+        self.assertEqual(result["status"], "needs_review")
+        self.assertFalse(result["dispatch_attempted"])
+        self.assertEqual(result["dispatch_error"], "pi_rpc spool root is required")
+        allocate.assert_not_called()
+        mark_review.assert_called_once_with("job_123")
 
     def test_retry_dispatch_failure_keeps_allocated_attempt_visible(self):
         with tempfile.TemporaryDirectory() as tmpdir:
