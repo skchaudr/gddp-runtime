@@ -1393,6 +1393,17 @@ def _ensure_result_ref(
             )
         if ref_proc.returncode != 0:
             print(f"  ⚠ ref creation failed: {ref_proc.stderr.strip()}")
+        else:
+            push = subprocess.run(
+                ["git", "push", "origin", f"refs/heads/{ref_name}:refs/heads/{ref_name}"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if push.returncode != 0 and "No such remote" not in (push.stderr or ""):
+                print(f"  ⚠ result ref push failed (evidence local-only): {push.stderr.strip()}")
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"  ⚠ ref creation failed: {exc}")
 

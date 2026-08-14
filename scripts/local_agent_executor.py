@@ -257,6 +257,11 @@ def persist_result(worktree: Path, packet: dict[str, Any]) -> dict[str, Any]:
                 f"git update-ref {ref_name} failed: {update_ref.stderr.strip()}"
             )
 
+        # Local-only evidence is discardable evidence: push the attempt ref
+        # best-effort so the work survives this host. A push failure never
+        # fails the persist - the local ref stands and a later sync can push.
+        _push_ref_best_effort(worktree, ref_name)
+
         return {
             "schema": HANDOFF_SCHEMA,
             "result_commit_sha": result_sha,
@@ -273,6 +278,23 @@ def persist_result(worktree: Path, packet: dict[str, Any]) -> dict[str, Any]:
             "worktree_path": str(worktree),
             "error": str(exc),
         }
+
+
+def _push_ref_best_effort(worktree: Path, ref_name: str) -> None:
+    """Push refs/heads/<ref_name> to origin; warn on failure, never raise."""
+    for _attempt in range(3):
+        push = _run_git(
+            ["git", "push", "origin", f"refs/heads/{ref_name}:refs/heads/{ref_name}"],
+            cwd=worktree,
+        )
+        if push.returncode == 0:
+            return
+        # No origin (scratch/local-only repo) is a legitimate topology.
+        err = (push.stderr or "").strip()
+        if "No such remote" in err or "does not appear to be a git repository" in err:
+            return
+        time.sleep(2)
+    print(f"  ⚠ attempt ref push failed (evidence local-only): {err}", file=sys.stderr)
 
 
 def write_handoff(handoff: dict[str, Any]) -> None:
