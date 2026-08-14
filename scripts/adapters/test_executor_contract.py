@@ -6,8 +6,9 @@ import signal
 import sqlite3
 import sys
 import time
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
+from typing import get_args, get_type_hints
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,7 +21,9 @@ from adapters.executor_protocol import (
     DispatchResult,
     ExecutorAdapter,
     NodePacket,
+    PatchResult,
     SessionRef,
+    SessionStatus,
 )
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
@@ -694,3 +697,102 @@ def test_local_subprocess_normal_exit_ignores_stale_cancel_marker(
         "cancelled": False,
         "returncode": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Wire-shape lock — neutral-executor-contract criteria
+# ---------------------------------------------------------------------------
+
+NODE_PACKET_WIRE_KEYS = frozenset(
+    {
+        "job_id",
+        "execution_attempt_id",
+        "node_id",
+        "title",
+        "goal",
+        "why",
+        "constraints",
+        "acceptance_criteria",
+        "required_artifacts",
+        "attempt_index",
+        "previous_findings",
+        "expected_base_commit_sha",
+    }
+)
+
+PATCH_RESULT_FIELDS = (
+    "success",
+    "patch_text",
+    "patch_path",
+    "base_commit_sha",
+    "result_commit_sha",
+    "result_ref",
+    "worktree_path",
+    "feature_id",
+    "evidence_manifest_path",
+    "completion_id",
+    "completion_digest_sha256",
+    "completion_quarantine_reason",
+    "review_required",
+    "error",
+)
+
+SESSION_STATES = frozenset(
+    {
+        "dispatched",
+        "running",
+        "awaiting_reply",
+        "needs_operator",
+        "completed",
+        "crashed",
+        "failed",
+        "missing",
+        "poll_error",
+    }
+)
+
+
+def test_node_packet_wire_shape_is_stable_and_attempt_id_is_executor_free():
+    packet = _packet(attempt=2)
+    payload = packet.to_json_value()
+
+    assert set(payload) == NODE_PACKET_WIRE_KEYS
+    assert payload["execution_attempt_id"] == "job-123:attempt:2"
+    assert payload["attempt_index"] == 2
+    # Round-trip JSON must not invent executor-specific keys.
+    restored = json.loads(packet.to_json())
+    assert set(restored) == NODE_PACKET_WIRE_KEYS
+    assert "executor" not in restored
+    assert restored == json.loads(packet.to_json())  # deterministic
+
+
+def test_shared_result_shapes_expose_one_collect_contract():
+    assert tuple(f.name for f in fields(PatchResult)) == PATCH_RESULT_FIELDS
+    assert tuple(f.name for f in fields(DispatchResult)) == (
+        "success",
+        "session_ref",
+        "issue_url",
+        "error",
+    )
+    assert tuple(f.name for f in fields(SessionStatus)) == ("state", "error")
+
+    # Both handoff modes are expressible on the same type.
+    patch_handoff = PatchResult(
+        success=True,
+        patch_text="diff --git a/x b/x\n",
+        patch_path="/tmp/x.patch",
+        base_commit_sha="abc",
+    )
+    commit_handoff = PatchResult(
+        success=True,
+        result_commit_sha="def",
+        result_ref="gddp/attempt-job-123-attempt-2",
+    )
+    assert patch_handoff.patch_text and not patch_handoff.result_commit_sha
+    assert commit_handoff.result_commit_sha and not commit_handoff.patch_text
+
+
+def test_session_status_states_are_the_shared_vocabulary():
+    # Literal annotation is the contract; keep the frozenset in lockstep.
+    hints = get_type_hints(SessionStatus)
+    assert set(get_args(hints["state"])) == SESSION_STATES
