@@ -18,7 +18,7 @@ Today’s principle:
 
 Duplicated state is not trustworthy
 just because both representations are individually valid.
-Agreement is itself an invariant.
+Agreement is itself an invarint.
 
 Keep AI closed until the critique section.
 
