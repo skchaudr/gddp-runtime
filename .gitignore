@@ -40,7 +40,9 @@ graphify-out/cache/
 graphify-out.pi-local-backup
 
 # Local agent/tooling state
-.pi/
+.pi/*
+!.pi/agents/
+!.pi/settings.json
 .serena/
 
 # ByteRover — .brv/context-tree/ contains a nested .git managed by brv vc.
