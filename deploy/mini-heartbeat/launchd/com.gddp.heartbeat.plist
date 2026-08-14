@@ -48,6 +48,8 @@
     <string>__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__</string>
     <key>GDDP_PI_RPC_MODEL</key>
     <string>__GDDP_PI_RPC_MODEL__</string>
+    <key>GDDP_PI_RPC_TURN_TIMEOUT_S</key>
+    <string>__GDDP_PI_RPC_TURN_TIMEOUT_S__</string>
     <key>PYTHONPATH</key>
     <string>__GDDP_RUNTIME_ROOT__</string>
 

@@ -59,13 +59,14 @@ _sed_replacement_escape() {
 render_plist() {
   local src="$1"
   local dest="$2"
-  local deepseek_cmd droid_argv jules_cmd local_argv local_spool webhook_cmd pi_rpc_model
+  local deepseek_cmd droid_argv jules_cmd local_argv local_spool webhook_cmd pi_rpc_model pi_rpc_turn_timeout
   deepseek_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DEEPSEEK_KEY_CMD:-pass show api/deepseek}")")"
   droid_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DROID_SUBPROCESS_ARGV:-}")")"
   jules_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_JULES_KEY_CMD:-pass show api/jules}")")"
   local_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_ARGV:-}")")"
   local_spool="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$GDDP_RUNTIME_ROOT/jobs/local-subprocess-spool}")")"
   pi_rpc_model="$(_sed_replacement_escape "$(_xml_escape "${GDDP_PI_RPC_MODEL:-}")")"
+  pi_rpc_turn_timeout="$(_sed_replacement_escape "$(_xml_escape "${GDDP_PI_RPC_TURN_TIMEOUT_S:-}")")"
   webhook_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_WEBHOOK_SECRET_CMD:-pass show gddp/webhook-secret}")")"
   sed \
     -e "s|__HOME__|${HOME}|g" \
@@ -81,6 +82,7 @@ render_plist() {
     -e "s|__GDDP_LOCAL_SUBPROCESS_ARGV__|${local_argv}|g" \
     -e "s|__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__|${local_spool}|g" \
     -e "s|__GDDP_PI_RPC_MODEL__|${pi_rpc_model}|g" \
+    -e "s|__GDDP_PI_RPC_TURN_TIMEOUT_S__|${pi_rpc_turn_timeout}|g" \
     -e "s|__GDDP_WEBHOOK_SECRET_CMD__|${webhook_cmd}|g" \
     "$src" >"$dest"
 }
