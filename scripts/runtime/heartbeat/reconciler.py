@@ -27,7 +27,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from adapters.executor_protocol import PatchResult, SessionRef
 
-from ..cumulative_branch import schedule_rebuild
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
 from .completion_discipline import submit_completion
@@ -779,7 +778,6 @@ def _reconcile_engagement_group(
             evidence_manifest_path=result.evidence_manifest_path,
             mission_receipt_id=result.completion_id,
         )
-        schedule_rebuild(job["project_id"] if job["project_id"] else None)
     con.commit()
 
 
@@ -888,7 +886,6 @@ def _handle_completed(
                 repo_path, job_id, session_id, result_sha
             )
             evaluation_batch.add(session, job_row, result_sha)
-            schedule_rebuild(job_row["project_id"] if job_row["project_id"] else None)
             print(
                 f"[reconcile] {session_db_id}: result commit {result_sha[:12]} "
                 f"(commit-ref), job {job_id} queued for evaluation"
@@ -934,7 +931,6 @@ def _handle_completed(
             # 6. Queue evaluation. Worker threads run only the verifier; the
             #    heartbeat coordinator later serializes all state writes.
             evaluation_batch.add(session, job_row, result_sha)
-            schedule_rebuild(job_row["project_id"] if job_row["project_id"] else None)
 
             print(
                 f"[reconcile] {session_db_id}: result commit {result_sha[:12]}, "
