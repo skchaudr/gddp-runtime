@@ -1,6 +1,6 @@
 # AGENTS.md — gddp-runtime
 
-MAJOR WARNING 7/30/2026 
+Common Failure Pattern 7/30/2026 
 
 This project is rife with an incredibly unfortunate failure pattern and that failure pattern goes exactly like this. 
 1. An agent assumes that a certain behavior exists. 
@@ -8,15 +8,13 @@ This project is rife with an incredibly unfortunate failure pattern and that fai
 3. The system fails because the assumption was false.
 4. More machinery was proposed to fix the failure and that invented workaround becomes architecture.
 
-This is the current predicament of this project right now that I am in. And it means that none of the architecture or implementation is considered sacred or unchallengeable. And every agent needs to know that.
+None of the architecture or implementation is considered sacred or unchallengeable. 
 
 ---- 
 
-
-
 Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
 
-`gddp` is the single operator-facing control plane. Runtime job reads and
+`gddp` is the operator-facing control plane. Runtime job reads and
 writes route through `scripts/jobs_status.py`; that backend may update runtime
 job/queue state but must never update graph/node status.
 
@@ -29,9 +27,9 @@ create failed jobs before any executor launches.
 
 The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to drift from user intent or project integrity. 
 
-Not spec-driven-development; the mission here is create a agentic harness that oversees the execution of a graph of project nodes. It's entire purpose is to detect drift, both of intent or project integrity. 
+Not spec-driven-development; the mission here is create a agentic development system with the goal of legible, observable, and long horizon tasks. Drift prevention both of intent or project integrity, are crucial. 
 
-The tools it will need in a "production" environment are per-project capabilities, but the baseline capabilities it will need are read-only tooling. 
+The evaluator's harness: per-project capabilities, but the baseline capabilities it will need are read-only tooling. 
 
 Harness design and implementation + running nodes through the loop and creating project graphs is the current stage with ambition of overnight runs resulting in a continuous, semi-automated pipeline, with human intervention only when necessary.
 
