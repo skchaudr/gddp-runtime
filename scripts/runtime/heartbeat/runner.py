@@ -60,6 +60,7 @@ from .state_recorder import (
     reconcile_reviewed_jobs,
 )
 
+from ..cumulative_branch import wait_for_publication
 from ..repo_resolver import resolution_candidates, resolve_repo_checkout
 from ..return_router import handle_merged_pr
 
@@ -258,7 +259,12 @@ def run_heartbeat(
             except Exception as exc:  # never mask tick results
                 print(f"  → frontier re-check failed: {exc}", file=sys.stderr)
     finally:
-        con.close()
+        # One-shot heartbeat must not exit while a review-branch worker
+        # is still publishing or cleaning temporary refs.
+        try:
+            wait_for_publication()
+        finally:
+            con.close()
 
 
 def _active_projects(reader: GraphReader) -> list:
