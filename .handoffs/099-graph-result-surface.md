@@ -8,7 +8,7 @@ Branch: feat/graph-result-surface
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
-A durable result offloads a non-daemon rebuild of `origin/gddp/review/<project_id>`. Heartbeat waits for publication before exit. A merge conflict fails the whole publish, leaves the previous review branch, and skips cleanup. Remote temp-ref deletion is SHA-leased; a moved retry ref survives.
+A durable result offloads a non-daemon rebuild of `origin/gddp/review/<project_id>`. Heartbeat waits for publication before exit. Publish/cleanup is flock-serialized across heartbeat processes; a lock loser returns incomplete and does not overwrite or clean. Worker exit consume-or-successors so wait_for_publication cannot hang.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 

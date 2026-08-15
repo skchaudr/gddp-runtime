@@ -11,6 +11,7 @@ evidence delivery only.
 
 from __future__ import annotations
 
+import fcntl
 import os
 import sqlite3
 import subprocess
@@ -24,7 +25,7 @@ from typing import Iterable
 import yaml
 
 from .repo_resolver import resolve_project_repo_checkout
-from .results_store import DB_PATH
+from .results_store import DB_PATH, RUNTIME_ROOT
 
 REVIEW_REF_PREFIX = "gddp/review/"
 RESULT_REF_PREFIX = "gddp/result-"
@@ -40,6 +41,7 @@ _pending: set[str] = set()
 _workers: dict[str, threading.Thread] = {}
 _publish_locks_guard = threading.Lock()
 _publish_locks: dict[str, threading.Lock] = {}
+_LOCK_DIR_ENV = "GDDP_REVIEW_LOCK_DIR"
 
 
 @dataclass(frozen=True)
@@ -78,11 +80,17 @@ class RebuildReport:
     local_cleaned_refs: list[str] = field(default_factory=list)
     skipped_cleanup_refs: list[str] = field(default_factory=list)
     published: bool = False
+    incomplete: bool = False
     error: str | None = None
 
     @property
     def ok(self) -> bool:
-        return self.error is None and self.published and bool(self.review_sha)
+        return (
+            self.error is None
+            and self.published
+            and not self.incomplete
+            and bool(self.review_sha)
+        )
 
 
 def review_ref_name(project_id: str) -> str:
@@ -465,11 +473,85 @@ def _fetch_target(repo_path: Path, target_branch: str) -> str | None:
     return None
 
 
-def _publish_lock_for(project_id: str) -> threading.Lock:
+def lock_dir() -> Path:
+    configured = os.environ.get(_LOCK_DIR_ENV)
+    if configured:
+        return Path(configured)
+    return RUNTIME_ROOT / "locks" / "review-branch"
+
+
+def project_lock_path(project_id: str, *, directory: Path | None = None) -> Path:
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in project_id)
+    return (directory or lock_dir()) / f"{safe}.lock"
+
+
+class ProcessPublishLock:
+    """Cross-process exclusive lock for one project's publish/cleanup."""
+
+    def __init__(self, project_id: str, *, directory: Path | None = None):
+        self.project_id = project_id
+        self.path = project_lock_path(project_id, directory=directory)
+        self._handle = None
+
+    def acquire(self, *, blocking: bool = False) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(self.path, "a+")
+        flags = fcntl.LOCK_EX
+        if not blocking:
+            flags |= fcntl.LOCK_NB
+        try:
+            fcntl.flock(handle.fileno(), flags)
+        except BlockingIOError:
+            handle.close()
+            return False
+        except OSError:
+            handle.close()
+            raise
+        self._handle = handle
+        return True
+
+    def release(self) -> None:
+        handle = self._handle
+        self._handle = None
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
+class ProjectPublishGuard:
+    """Thread lock plus flock so one publisher exists in-process and across processes."""
+
+    def __init__(self, project_id: str, *, directory: Path | None = None):
+        self._thread = threading.Lock()
+        self._process = ProcessPublishLock(project_id, directory=directory)
+
+    def acquire(self, *, blocking: bool = False) -> bool:
+        if not self._thread.acquire(blocking=blocking):
+            return False
+        try:
+            if self._process.acquire(blocking=blocking):
+                return True
+        except Exception:
+            self._thread.release()
+            raise
+        self._thread.release()
+        return False
+
+    def release(self) -> None:
+        try:
+            self._process.release()
+        finally:
+            self._thread.release()
+
+
+def _publish_lock_for(project_id: str) -> ProjectPublishGuard:
     with _publish_locks_guard:
         lock = _publish_locks.get(project_id)
         if lock is None:
-            lock = threading.Lock()
+            lock = ProjectPublishGuard(project_id)
             _publish_locks[project_id] = lock
         return lock
 
@@ -515,6 +597,7 @@ def rebuild_review_branch(
     )
     lock = _publish_lock_for(project_id)
     if not lock.acquire(blocking=False):
+        report.incomplete = True
         report.error = f"rebuild already publishing for {project_id}"
         return report
     tmpdir = None
@@ -554,17 +637,25 @@ def rebuild_review_branch(
             report.error = "could not read rebuilt HEAD"
             return report
         report.review_sha = head.stdout.strip()
-        push = _run_git(
-            [
+        dest = _heads_ref(review_ref)
+        if previous:
+            push_args = [
                 "push",
-                "--force",
+                f"--force-with-lease={dest}:{previous}",
                 "origin",
-                f"HEAD:refs/heads/{review_ref}",
-            ],
+                f"HEAD:{dest}",
+            ]
+        else:
+            # Creating the review ref is exclusive via the process lock.
+            push_args = ["push", "origin", f"HEAD:{dest}"]
+        push = _run_git(
+            push_args,
             cwd=worktree,
             timeout=_PUSH_TIMEOUT,
         )
         if push.returncode != 0:
+            report.published = False
+            report.incomplete = True
             report.error = f"force-push failed: {(push.stderr or push.stdout).strip()}"
             report.review_sha = previous
             return report
@@ -625,12 +716,19 @@ def rebuild_project(
     )
 
 
+_after_empty_check_hook = None
+
+
 def _reset_scheduler_state_for_tests() -> None:
     """Drop scheduler bookkeeping between unit tests."""
+    global _after_empty_check_hook
     with _rebuild_lock:
         _in_flight.clear()
         _pending.clear()
         _workers.clear()
+    with _publish_locks_guard:
+        _publish_locks.clear()
+    _after_empty_check_hook = None
 
 
 def publication_in_progress() -> bool:
@@ -638,15 +736,41 @@ def publication_in_progress() -> bool:
         return bool(_in_flight or _pending or any(t.is_alive() for t in _workers.values()))
 
 
+def _forget_worker_locked(project_id: str) -> None:
+    if _workers.get(project_id) is threading.current_thread():
+        _workers.pop(project_id, None)
+
+
+def _start_worker_locked(project_id: str) -> None:
+    existing = _workers.get(project_id)
+    if existing is not None and existing.is_alive():
+        return
+    worker = threading.Thread(
+        target=_worker_loop,
+        args=(project_id,),
+        name=f"gddp-review-{project_id}",
+        daemon=False,
+    )
+    _workers[project_id] = worker
+    worker.start()
+
+
+def _ensure_workers_locked() -> None:
+    for project_id in list(_pending):
+        _start_worker_locked(project_id)
+
+
 def wait_for_publication(*, timeout: float | None = None) -> None:
     """Block until every scheduled rebuild has finished publishing/cleanup.
 
     Heartbeat is one-shot. The process must not exit while a review-branch
-    worker still holds publish/cleanup ownership.
+    worker still holds publish/cleanup ownership. Pending work with no live
+    worker is a lost-wakeup; this wait starts a successor instead of hanging.
     """
     deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         with _rebuild_lock:
+            _ensure_workers_locked()
             workers = [thread for thread in _workers.values() if thread.is_alive()]
             pending = bool(_pending or _in_flight)
         if not workers and not pending:
@@ -667,10 +791,28 @@ def _worker_loop(owner_project_id: str) -> None:
     try:
         while True:
             with _rebuild_lock:
-                if owner_project_id not in _pending:
+                if owner_project_id in _pending:
+                    _pending.discard(owner_project_id)
+                    _in_flight.add(owner_project_id)
+                    exiting = False
+                else:
+                    exiting = True
+            if exiting:
+                hook = _after_empty_check_hook
+                if hook is not None:
+                    # Test seam: schedule during this window. Production
+                    # schedule either lands in _pending for this worker to
+                    # consume, or starts a successor after we forget ourselves.
+                    hook(owner_project_id)
+                with _rebuild_lock:
+                    still_owner = (
+                        _workers.get(owner_project_id) is threading.current_thread()
+                    )
+                    if owner_project_id in _pending and still_owner:
+                        continue
+                    if still_owner:
+                        _forget_worker_locked(owner_project_id)
                     return
-                _pending.discard(owner_project_id)
-                _in_flight.add(owner_project_id)
             try:
                 report = rebuild_project(owner_project_id)
                 if report.ok:
@@ -689,16 +831,18 @@ def _worker_loop(owner_project_id: str) -> None:
                 print(
                     f"[review-branch] {owner_project_id}: rebuild crashed: {exc}"
                 )
-            with _rebuild_lock:
-                _in_flight.discard(owner_project_id)
-                if owner_project_id not in _pending:
-                    return
+            finally:
+                with _rebuild_lock:
+                    _in_flight.discard(owner_project_id)
     finally:
         with _rebuild_lock:
             _in_flight.discard(owner_project_id)
-            current = _workers.get(owner_project_id)
-            if current is threading.current_thread():
-                _workers.pop(owner_project_id, None)
+            if owner_project_id in _pending:
+                if _workers.get(owner_project_id) is threading.current_thread():
+                    _workers.pop(owner_project_id, None)
+                _start_worker_locked(owner_project_id)
+            else:
+                _forget_worker_locked(owner_project_id)
 
 
 def schedule_rebuild(project_id: str | None) -> None:
@@ -712,14 +856,4 @@ def schedule_rebuild(project_id: str | None) -> None:
         return
     with _rebuild_lock:
         _pending.add(project_id)
-        existing = _workers.get(project_id)
-        if existing is not None and existing.is_alive():
-            return
-        worker = threading.Thread(
-            target=_worker_loop,
-            args=(project_id,),
-            name=f"gddp-review-{project_id}",
-            daemon=False,
-        )
-        _workers[project_id] = worker
-        worker.start()
+        _start_worker_locked(project_id)

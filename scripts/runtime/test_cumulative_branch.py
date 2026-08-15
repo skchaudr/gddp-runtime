@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import sqlite3
 import subprocess
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.runtime.cumulative_branch import (
     ActiveResult,
+    ProcessPublishLock,
     cleanup_preserved_refs,
     delete_remote_temporary_ref,
     load_target_branch,
@@ -437,6 +439,155 @@ def test_one_rebuild_per_project_serializes_publish_and_cleanup():
         gate.set()
         wait_for_publication(timeout=2)
         assert max_seen["n"] == 1
+
+
+def _hold_process_lock(lock_path: str, ready: object, release: object) -> None:
+    lock = ProcessPublishLock("demo", directory=Path(lock_path).parent)
+    assert lock.acquire(blocking=False)
+    ready.set()
+    release.wait(timeout=10)
+    lock.release()
+
+
+def test_cross_process_lock_loser_does_not_publish_or_cleanup(tmp_path: Path, monkeypatch):
+    cb._reset_scheduler_state_for_tests()
+    lock_dir = tmp_path / "locks"
+    lock_dir.mkdir()
+    monkeypatch.setenv("GDDP_REVIEW_LOCK_DIR", str(lock_dir))
+    ctx = multiprocessing.get_context("spawn")
+    ready = ctx.Event()
+    release = ctx.Event()
+    holder = ctx.Process(
+        target=_hold_process_lock,
+        args=(str(lock_dir / "demo.lock"), ready, release),
+    )
+    holder.start()
+    assert ready.wait(timeout=5)
+
+    _remote, work, _base = _bare_pair(tmp_path)
+    _git(work, "checkout", "-b", "feat-a")
+    sha_a = _commit(work, "a.txt", "A\n", "node a")
+    _git(work, "push", "origin", "HEAD:refs/heads/gddp/review/demo")
+    _git(work, "push", "origin", "HEAD:refs/heads/gddp/result-job-a-sess-a")
+    _git(work, "update-ref", "refs/heads/gddp/result-job-a-sess-a", sha_a)
+    previous = sha_a
+    _git(work, "checkout", "main")
+
+    blocked = ProcessPublishLock("demo", directory=lock_dir)
+    assert blocked.acquire(blocking=False) is False
+
+    report = rebuild_review_branch(
+        work,
+        "demo",
+        [ActiveResult("node-a", "job-a", "sess-a", sha_a)],
+        target_branch="main",
+    )
+    assert report.incomplete
+    assert not report.published
+    assert report.cleaned_refs == []
+    _git(work, "fetch", "origin")
+    current = _git(work, "rev-parse", "origin/gddp/review/demo").stdout.strip()
+    assert current == previous
+    remote_heads = _git(work, "ls-remote", "--heads", "origin").stdout
+    assert "gddp/result-job-a-sess-a" in remote_heads
+    release.set()
+    holder.join(timeout=5)
+    assert holder.exitcode == 0
+
+
+def test_schedule_during_worker_exit_is_consumed_or_succeeded():
+    cb._reset_scheduler_state_for_tests()
+    rebuilt = []
+    scheduled_during_exit = []
+
+    def fake_rebuild(project_id):
+        rebuilt.append(threading.current_thread().ident)
+        return cb.RebuildReport(
+            project_id=project_id,
+            review_ref=review_ref_name(project_id),
+            target_branch="main",
+            review_sha="c" * 40,
+            published=True,
+        )
+
+    def during_empty(project_id):
+        if scheduled_during_exit:
+            return
+        scheduled_during_exit.append(True)
+        schedule_rebuild(project_id)
+
+    with (
+        patch.dict("os.environ", {"GDDP_REVIEW_BRANCH_IN_TESTS": "1"}, clear=False),
+        patch("scripts.runtime.cumulative_branch.rebuild_project", side_effect=fake_rebuild),
+    ):
+        cb._after_empty_check_hook = during_empty
+        schedule_rebuild("demo")
+        wait_for_publication(timeout=2)
+        assert scheduled_during_exit == [True]
+        assert len(rebuilt) == 2
+        assert not publication_in_progress()
+        assert "demo" not in cb._pending
+
+
+def test_schedule_during_exit_after_forget_starts_successor():
+    cb._reset_scheduler_state_for_tests()
+    rebuilt = []
+    scheduled_during_exit = []
+
+    def fake_rebuild(project_id):
+        rebuilt.append(threading.current_thread().ident)
+        return cb.RebuildReport(
+            project_id=project_id,
+            review_ref=review_ref_name(project_id),
+            target_branch="main",
+            review_sha="d" * 40,
+            published=True,
+        )
+
+    def during_empty(project_id):
+        if scheduled_during_exit:
+            return
+        scheduled_during_exit.append(True)
+        with cb._rebuild_lock:
+            if cb._workers.get(project_id) is threading.current_thread():
+                cb._workers.pop(project_id, None)
+        schedule_rebuild(project_id)
+
+    with (
+        patch.dict("os.environ", {"GDDP_REVIEW_BRANCH_IN_TESTS": "1"}, clear=False),
+        patch("scripts.runtime.cumulative_branch.rebuild_project", side_effect=fake_rebuild),
+    ):
+        cb._after_empty_check_hook = during_empty
+        schedule_rebuild("demo")
+        wait_for_publication(timeout=2)
+        assert scheduled_during_exit == [True]
+        assert len(rebuilt) == 2
+        assert not publication_in_progress()
+
+
+def test_wait_for_publication_starts_successor_for_orphan_pending():
+    cb._reset_scheduler_state_for_tests()
+    rebuilt = []
+
+    def fake_rebuild(project_id):
+        rebuilt.append(project_id)
+        return cb.RebuildReport(
+            project_id=project_id,
+            review_ref=review_ref_name(project_id),
+            target_branch="main",
+            review_sha="e" * 40,
+            published=True,
+        )
+
+    with (
+        patch.dict("os.environ", {"GDDP_REVIEW_BRANCH_IN_TESTS": "1"}, clear=False),
+        patch("scripts.runtime.cumulative_branch.rebuild_project", side_effect=fake_rebuild),
+    ):
+        with cb._rebuild_lock:
+            cb._pending.add("demo")
+        wait_for_publication(timeout=2)
+        assert rebuilt == ["demo"]
+        assert not publication_in_progress()
 
 
 def test_moved_retry_ref_survives_lease_delete(tmp_path: Path):

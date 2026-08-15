@@ -2,6 +2,7 @@
 db/
 jobs/
 events/
+locks/
 *.db
 *.sqlite
 *.sqlite3
