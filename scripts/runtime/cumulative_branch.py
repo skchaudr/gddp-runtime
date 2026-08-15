@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -36,7 +37,9 @@ _PUSH_TIMEOUT = 90
 _rebuild_lock = threading.Lock()
 _in_flight: set[str] = set()
 _pending: set[str] = set()
-_worker_pool: list[threading.Thread] = []
+_workers: dict[str, threading.Thread] = {}
+_publish_locks_guard = threading.Lock()
+_publish_locks: dict[str, threading.Lock] = {}
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,19 @@ class ActiveResult:
 
 
 @dataclass
+class CleanupOutcome:
+    """Separate remote lease-delete success from local cleanup."""
+
+    remote_deleted: list[str] = field(default_factory=list)
+    local_deleted: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+
+    @property
+    def cleaned_refs(self) -> list[str]:
+        return list(self.remote_deleted)
+
+
+@dataclass
 class RebuildReport:
     project_id: str
     review_ref: str
@@ -59,11 +75,14 @@ class RebuildReport:
     merged_shas: list[str] = field(default_factory=list)
     skipped_shas: list[str] = field(default_factory=list)
     cleaned_refs: list[str] = field(default_factory=list)
+    local_cleaned_refs: list[str] = field(default_factory=list)
+    skipped_cleanup_refs: list[str] = field(default_factory=list)
+    published: bool = False
     error: str | None = None
 
     @property
     def ok(self) -> bool:
-        return self.error is None and bool(self.review_sha)
+        return self.error is None and self.published and bool(self.review_sha)
 
 
 def review_ref_name(project_id: str) -> str:
@@ -314,54 +333,118 @@ def ref_commit(repo_path: Path, ref_name: str) -> str | None:
     return None
 
 
-def delete_temporary_ref(repo_path: Path, ref_name: str) -> bool:
-    """Delete a temporary transport ref locally and on origin. Best-effort."""
+def remote_ref_sha(repo_path: Path, ref_name: str) -> str | None:
+    remote = _run_git(
+        ["ls-remote", "--heads", "origin", ref_name],
+        cwd=repo_path,
+        timeout=_FETCH_TIMEOUT,
+    )
+    if remote.returncode != 0:
+        return None
+    wanted = _heads_ref(ref_name)
+    for line in remote.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        sha, ref = parts[0].strip(), parts[1].strip()
+        if sha and ref in {wanted, ref_name, f"refs/heads/{ref_name}"}:
+            return sha
+    return None
+
+
+def delete_local_temporary_ref(repo_path: Path, ref_name: str) -> bool:
     if not (
         ref_name.startswith(RESULT_REF_PREFIX)
         or ref_name.startswith(ATTEMPT_REF_PREFIX)
     ):
         return False
     local = _run_git(["update-ref", "-d", _heads_ref(ref_name)], cwd=repo_path)
-    if local.returncode != 0:
-        _run_git(["branch", "-D", ref_name], cwd=repo_path)
-    remote = _run_git(
-        ["push", "origin", "--delete", ref_name],
+    if local.returncode == 0:
+        return True
+    fallback = _run_git(["branch", "-D", ref_name], cwd=repo_path)
+    return fallback.returncode == 0
+
+
+def delete_remote_temporary_ref(
+    repo_path: Path, ref_name: str, expected_sha: str
+) -> bool:
+    """Delete origin/<ref> only if it still points at expected_sha."""
+    if not (
+        ref_name.startswith(RESULT_REF_PREFIX)
+        or ref_name.startswith(ATTEMPT_REF_PREFIX)
+    ):
+        return False
+    if not expected_sha:
+        return False
+    current = remote_ref_sha(repo_path, ref_name)
+    if current is None:
+        return False
+    if current != expected_sha:
+        return False
+    dest = _heads_ref(ref_name)
+    push = _run_git(
+        [
+            "push",
+            f"--force-with-lease={dest}:{expected_sha}",
+            "origin",
+            f":{dest}",
+        ],
         cwd=repo_path,
         timeout=_PUSH_TIMEOUT,
     )
-    remote_err = (remote.stderr or "") + (remote.stdout or "")
-    remote_ok = remote.returncode == 0 or any(
-        token in remote_err
-        for token in (
-            "remote ref does not exist",
-            "does not exist",
-            "No such remote",
-            "not a git repository",
-        )
-    )
-    return remote_ok or local.returncode == 0
+    if push.returncode == 0:
+        return True
+    # The lease lost or the ref moved; never treat that as success.
+    return False
+
+
+def delete_temporary_ref(
+    repo_path: Path, ref_name: str, expected_sha: str | None = None
+) -> bool:
+    """Backward-compatible helper: remote lease-delete is the success signal."""
+    sha = expected_sha or remote_ref_sha(repo_path, ref_name) or ref_commit(repo_path, ref_name)
+    if not sha:
+        return False
+    return delete_remote_temporary_ref(repo_path, ref_name, sha)
 
 
 def cleanup_preserved_refs(
     repo_path: Path,
     review_sha: str,
     extra_refs: Iterable[str] = (),
-) -> list[str]:
-    """Delete temp refs whose commit is already on the review branch."""
-    cleaned: list[str] = []
+) -> CleanupOutcome:
+    """Lease-delete remote temp refs whose observed SHA is on the review branch."""
+    outcome = CleanupOutcome()
     seen: set[str] = set()
     for ref_name in list(extra_refs) + list_temporary_refs(repo_path):
         if ref_name in seen:
             continue
         seen.add(ref_name)
-        sha = ref_commit(repo_path, ref_name)
+        observed = remote_ref_sha(repo_path, ref_name)
+        local_sha = ref_commit(repo_path, ref_name)
+        sha = observed or local_sha
         if not sha:
             continue
         if not commit_is_ancestor(repo_path, sha, review_sha):
+            outcome.skipped.append(ref_name)
             continue
-        if delete_temporary_ref(repo_path, ref_name):
-            cleaned.append(ref_name)
-    return cleaned
+        if observed and delete_remote_temporary_ref(repo_path, ref_name, observed):
+            outcome.remote_deleted.append(ref_name)
+            if delete_local_temporary_ref(repo_path, ref_name):
+                outcome.local_deleted.append(ref_name)
+            continue
+        if observed and observed != sha:
+            outcome.skipped.append(ref_name)
+            continue
+        if observed:
+            # Remote still present but lease lost (retry moved the tip).
+            outcome.skipped.append(ref_name)
+            continue
+        if local_sha and delete_local_temporary_ref(repo_path, ref_name):
+            outcome.local_deleted.append(ref_name)
+        else:
+            outcome.skipped.append(ref_name)
+    return outcome
 
 
 def _fetch_target(repo_path: Path, target_branch: str) -> str | None:
@@ -382,7 +465,20 @@ def _fetch_target(repo_path: Path, target_branch: str) -> str | None:
     return None
 
 
-def _merge_commit(worktree: Path, sha: str) -> bool:
+def _publish_lock_for(project_id: str) -> threading.Lock:
+    with _publish_locks_guard:
+        lock = _publish_locks.get(project_id)
+        if lock is None:
+            lock = threading.Lock()
+            _publish_locks[project_id] = lock
+        return lock
+
+
+def _remote_review_sha(repo_path: Path, review_ref: str) -> str | None:
+    return remote_ref_sha(repo_path, review_ref)
+
+
+def _merge_commit(worktree: Path, sha: str) -> tuple[bool, str | None]:
     merge = _run_git(
         [
             "-c",
@@ -396,9 +492,10 @@ def _merge_commit(worktree: Path, sha: str) -> bool:
         cwd=worktree,
     )
     if merge.returncode == 0:
-        return True
+        return True, None
     _run_git(["merge", "--abort"], cwd=worktree)
-    return False
+    detail = (merge.stderr or merge.stdout or "").strip()
+    return False, detail or "merge conflict"
 
 
 def rebuild_review_branch(
@@ -416,28 +513,42 @@ def rebuild_review_branch(
         review_ref=review_ref,
         target_branch=branch,
     )
-    base_sha = _fetch_target(repo_path, branch)
-    if not base_sha:
-        report.error = f"could not resolve origin/{branch}"
+    lock = _publish_lock_for(project_id)
+    if not lock.acquire(blocking=False):
+        report.error = f"rebuild already publishing for {project_id}"
         return report
-
-    ordered = topological_merge_order(results)
-    tmpdir = tempfile.mkdtemp(prefix=f"gddp-review-{project_id}-")
-    os.rmdir(tmpdir)
-    add = _run_git(
-        ["worktree", "add", "--detach", tmpdir, base_sha],
-        cwd=repo_path,
-    )
-    if add.returncode != 0:
-        report.error = f"worktree add failed: {(add.stderr or add.stdout).strip()}"
-        return report
-    worktree = Path(tmpdir)
+    tmpdir = None
     try:
+        base_sha = _fetch_target(repo_path, branch)
+        if not base_sha:
+            report.error = f"could not resolve origin/{branch}"
+            return report
+
+        ordered = topological_merge_order(results)
+        tmpdir = tempfile.mkdtemp(prefix=f"gddp-review-{project_id}-")
+        os.rmdir(tmpdir)
+        add = _run_git(
+            ["worktree", "add", "--detach", tmpdir, base_sha],
+            cwd=repo_path,
+        )
+        if add.returncode != 0:
+            report.error = f"worktree add failed: {(add.stderr or add.stdout).strip()}"
+            return report
+        worktree = Path(tmpdir)
+        previous = _remote_review_sha(repo_path, review_ref)
         for item in ordered:
-            if _merge_commit(worktree, item.commit_sha):
+            merged, detail = _merge_commit(worktree, item.commit_sha)
+            if merged:
                 report.merged_shas.append(item.commit_sha)
-            else:
-                report.skipped_shas.append(item.commit_sha)
+                continue
+            report.skipped_shas.append(item.commit_sha)
+            report.error = (
+                f"merge conflict on {item.node_id} ({item.commit_sha[:12]}); "
+                f"previous {review_ref} preserved"
+            )
+            if detail:
+                report.error = f"{report.error}: {detail}"
+            return report
         head = _run_git(["rev-parse", "HEAD"], cwd=worktree)
         if head.returncode != 0 or not head.stdout.strip():
             report.error = "could not read rebuilt HEAD"
@@ -455,15 +566,22 @@ def rebuild_review_branch(
         )
         if push.returncode != 0:
             report.error = f"force-push failed: {(push.stderr or push.stdout).strip()}"
+            report.review_sha = previous
             return report
+        report.published = True
         extra = [result_ref_name(item.job_id, item.session_id) for item in ordered]
-        report.cleaned_refs = cleanup_preserved_refs(
+        cleanup = cleanup_preserved_refs(
             repo_path, report.review_sha, extra_refs=extra
         )
+        report.cleaned_refs = list(cleanup.remote_deleted)
+        report.local_cleaned_refs = list(cleanup.local_deleted)
+        report.skipped_cleanup_refs = list(cleanup.skipped)
         return report
     finally:
-        _run_git(["worktree", "remove", "--force", tmpdir], cwd=repo_path)
-        _run_git(["worktree", "prune", "--expire", "now"], cwd=repo_path)
+        lock.release()
+        if tmpdir is not None:
+            _run_git(["worktree", "remove", "--force", tmpdir], cwd=repo_path)
+            _run_git(["worktree", "prune", "--expire", "now"], cwd=repo_path)
 
 
 def rebuild_project(
@@ -507,38 +625,84 @@ def rebuild_project(
     )
 
 
-def _worker_loop() -> None:
+def _reset_scheduler_state_for_tests() -> None:
+    """Drop scheduler bookkeeping between unit tests."""
+    with _rebuild_lock:
+        _in_flight.clear()
+        _pending.clear()
+        _workers.clear()
+
+
+def publication_in_progress() -> bool:
+    with _rebuild_lock:
+        return bool(_in_flight or _pending or any(t.is_alive() for t in _workers.values()))
+
+
+def wait_for_publication(*, timeout: float | None = None) -> None:
+    """Block until every scheduled rebuild has finished publishing/cleanup.
+
+    Heartbeat is one-shot. The process must not exit while a review-branch
+    worker still holds publish/cleanup ownership.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         with _rebuild_lock:
-            if not _pending:
-                return
-            project_id = next(iter(_pending))
-            _pending.discard(project_id)
-            _in_flight.add(project_id)
-        try:
-            report = rebuild_project(project_id)
-            if report.ok:
+            workers = [thread for thread in _workers.values() if thread.is_alive()]
+            pending = bool(_pending or _in_flight)
+        if not workers and not pending:
+            return
+        remaining = None
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("review-branch publication still running")
+        if workers:
+            workers[0].join(timeout=remaining)
+        else:
+            time.sleep(0.01)
+
+
+def _worker_loop(owner_project_id: str) -> None:
+    """One worker owns one project until that project's queue is empty."""
+    try:
+        while True:
+            with _rebuild_lock:
+                if owner_project_id not in _pending:
+                    return
+                _pending.discard(owner_project_id)
+                _in_flight.add(owner_project_id)
+            try:
+                report = rebuild_project(owner_project_id)
+                if report.ok:
+                    print(
+                        f"[review-branch] {owner_project_id}: "
+                        f"{report.review_ref} @ {report.review_sha[:12]} "
+                        f"(merged={len(report.merged_shas)} "
+                        f"cleaned={len(report.cleaned_refs)})"
+                    )
+                else:
+                    print(
+                        f"[review-branch] {owner_project_id}: "
+                        f"rebuild failed: {report.error}"
+                    )
+            except Exception as exc:  # noqa: BLE001 — never break the caller
                 print(
-                    f"[review-branch] {project_id}: "
-                    f"{report.review_ref} @ {report.review_sha[:12]} "
-                    f"(merged={len(report.merged_shas)} "
-                    f"skipped={len(report.skipped_shas)} "
-                    f"cleaned={len(report.cleaned_refs)})"
+                    f"[review-branch] {owner_project_id}: rebuild crashed: {exc}"
                 )
-            else:
-                print(
-                    f"[review-branch] {project_id}: rebuild failed: {report.error}"
-                )
-        except Exception as exc:  # noqa: BLE001 — never break the caller
-            print(f"[review-branch] {project_id}: rebuild crashed: {exc}")
+            with _rebuild_lock:
+                _in_flight.discard(owner_project_id)
+                if owner_project_id not in _pending:
+                    return
+    finally:
         with _rebuild_lock:
-            _in_flight.discard(project_id)
-            if not _pending:
-                return
+            _in_flight.discard(owner_project_id)
+            current = _workers.get(owner_project_id)
+            if current is threading.current_thread():
+                _workers.pop(owner_project_id, None)
 
 
 def schedule_rebuild(project_id: str | None) -> None:
-    """Offload a rebuild. Coalesces in-flight work for the same project."""
+    """Queue one rebuild per project. At most one publisher/cleaner runs."""
     if not project_id:
         return
     # Existing unit tests must not rebuild against the live runtime DB.
@@ -547,17 +711,15 @@ def schedule_rebuild(project_id: str | None) -> None:
     ):
         return
     with _rebuild_lock:
-        if project_id in _in_flight:
-            _pending.add(project_id)
-            return
-        if project_id in _pending:
-            return
         _pending.add(project_id)
-        _worker_pool[:] = [thread for thread in _worker_pool if thread.is_alive()]
+        existing = _workers.get(project_id)
+        if existing is not None and existing.is_alive():
+            return
         worker = threading.Thread(
             target=_worker_loop,
+            args=(project_id,),
             name=f"gddp-review-{project_id}",
-            daemon=True,
+            daemon=False,
         )
-        _worker_pool.append(worker)
+        _workers[project_id] = worker
         worker.start()

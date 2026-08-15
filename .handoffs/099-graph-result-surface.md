@@ -8,7 +8,7 @@ Branch: feat/graph-result-surface
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
-A durable result now offloads a rebuild of `origin/gddp/review/<project_id>` from `origin/<target_branch>` plus active node result commits, then deletes `gddp/result-*` / `gddp/attempt-*` refs whose commits are already on that review branch. Existing evaluation/retry concurrency is unchanged; pytest still skips live rebuilds unless `GDDP_REVIEW_BRANCH_IN_TESTS=1`.
+A durable result offloads a non-daemon rebuild of `origin/gddp/review/<project_id>`. Heartbeat waits for publication before exit. A merge conflict fails the whole publish, leaves the previous review branch, and skips cleanup. Remote temp-ref deletion is SHA-leased; a moved retry ref survives.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 
