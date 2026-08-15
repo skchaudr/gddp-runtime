@@ -11,6 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from .cumulative_branch import schedule_rebuild
 from .results_store import DB_PATH, write_result
 from .verification.bridge import verify_job_return
 from .heartbeat.state_recorder import (
@@ -252,6 +253,7 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
             "raw_payload_path": str(Path(raw_path)),
         },
     )
+    schedule_rebuild(job.get("project_id"))
 
     # Live wire: refresh verification/<project>/evaluations.yaml so
     # every reading surface (jobs_status.py, graph viewer) sees this result
