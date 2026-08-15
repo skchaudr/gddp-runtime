@@ -90,10 +90,17 @@ def write_result(
     risks=None,
     followup_candidates=None,
     github_action=None,
+    con: sqlite3.Connection | None = None,
 ):
-    """Insert or update a structured review receipt in the canonical results table."""
-    init_db()
-    con = _connect()
+    """Insert or update a structured review receipt in the canonical results table.
+
+    When a coordinator connection is supplied, the caller owns its transaction.
+    This lets session state and its evaluator receipt commit atomically.
+    """
+    owns_connection = con is None
+    if owns_connection:
+        init_db()
+        con = _connect()
     try:
         cur = con.cursor()
         cur.execute("SELECT 1 FROM results WHERE result_id = ?", (result_id,))
@@ -156,9 +163,11 @@ def write_result(
                 """,
                 payload,
             )
-        con.commit()
+        if owns_connection:
+            con.commit()
     finally:
-        con.close()
+        if owns_connection:
+            con.close()
 
 
 def init_decision_results() -> None:

@@ -66,6 +66,26 @@ def test_write_result_insert(temp_db):
     assert json.loads(row["github_action"]) == {"source": "merged_pr"}
 
 
+def test_write_result_with_coordinator_connection_defers_commit(temp_db):
+    init_db()
+    con = sqlite3.connect(temp_db)
+    write_result(
+        result_id="res_coordinated",
+        job_id="job_123",
+        executor="pi_rpc",
+        outcome="pass",
+        status="awaiting_review",
+        con=con,
+    )
+
+    # Caller-owned transactions must remain atomic with session updates.
+    con.rollback()
+    assert sqlite3.connect(temp_db).execute(
+        "SELECT 1 FROM results WHERE result_id = ?", ("res_coordinated",)
+    ).fetchone() is None
+    con.close()
+
+
 def test_write_result_update_replaces_existing_receipt(temp_db):
     write_result(
         result_id="res_update",

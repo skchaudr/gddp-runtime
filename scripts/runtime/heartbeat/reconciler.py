@@ -1254,29 +1254,28 @@ def _finalize_evaluation(
     # routing state. A verification error is still routed to awaiting_review
     # — the human is the final gate.
     outcome = verification.get("verdict") or v_status
-    try:
-        write_result(
-            result_id=result_id,
-            job_id=pending.job_id,
-            executor=pending.executor,
-            outcome=outcome,
-            status="awaiting_review",
-            changed_files=verification.get("changed_files", []),
-            # The CLI summary has no top-level "acceptance_check" key — it
-            # returns verdict/criteria_verdict/integrity/lane_status/etc.
-            # directly. The mediated path (return_router.py) stores the
-            # whole verification dict as acceptance_check; mirror that here
-            # so jobs_status.py show has something to display instead of
-            # silently storing None on every direct-path result.
-            acceptance_check=verification,
-            risks=verification.get("risks"),
-            followup_candidates=verification.get("followup_candidates"),
-            github_action=verification.get("github_action"),
-        )
-    except Exception as exc:
-        # Non-fatal: the verdict is already printed; a missing results row
-        # is a display gap, not a graph-truth issue.
-        print(f"  → write_result ERROR (non-fatal): {exc}")
+    # Use the coordinator connection so the receipt, executor-session state,
+    # and runtime review routing commit together. If receipt persistence fails,
+    # EvaluationBatch rolls back and leaves the session collected for replay.
+    write_result(
+        result_id=result_id,
+        job_id=pending.job_id,
+        executor=pending.executor,
+        outcome=outcome,
+        status="awaiting_review",
+        changed_files=verification.get("changed_files", []),
+        # The CLI summary has no top-level "acceptance_check" key — it
+        # returns verdict/criteria_verdict/integrity/lane_status/etc.
+        # directly. The mediated path (return_router.py) stores the
+        # whole verification dict as acceptance_check; mirror that here
+        # so jobs_status.py show has something to display instead of
+        # silently storing None on every direct-path result.
+        acceptance_check=verification,
+        risks=verification.get("risks"),
+        followup_candidates=verification.get("followup_candidates"),
+        github_action=verification.get("github_action"),
+        con=con,
+    )
 
     # Update session to evaluated.
     update_executor_session_state(

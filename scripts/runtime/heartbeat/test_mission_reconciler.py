@@ -47,6 +47,23 @@ def _connection() -> sqlite3.Connection:
         CREATE UNIQUE INDEX idx_completion_id
             ON executor_sessions(completion_id)
             WHERE completion_id IS NOT NULL;
+        CREATE TABLE results (
+            result_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            executor TEXT NOT NULL,
+            received_at TEXT NOT NULL,
+            execution_duration_seconds INTEGER,
+            outcome TEXT NOT NULL,
+            status TEXT NOT NULL,
+            changed_files TEXT,
+            patch_path TEXT,
+            summary_path TEXT,
+            logs_path TEXT,
+            acceptance_check TEXT,
+            risks TEXT,
+            followup_candidates TEXT,
+            github_action TEXT
+        );
         """
     )
     for index, node_id in enumerate(("node-alpha", "node-beta"), start=1):
@@ -716,6 +733,82 @@ def test_reconciler_same_session_replay_resumes_first_evaluation(
     assert row["state"] == "collected"
     assert row["result_commit_sha"] == "a" * 40
     batch.add.assert_called_once()
+
+
+def test_evaluation_receipt_and_runtime_state_commit_atomically(monkeypatch):
+    con = _connection()
+    pending = reconciler.PendingEvaluation(
+        session_db_id="session-1",
+        session_id="engagement-1",
+        executor="factory_mission",
+        project_id="project",
+        node_id="node-alpha",
+        job_id="job-node-alpha",
+        attempt=0,
+        result_commit_sha="b" * 40,
+    )
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **_kwargs: False)
+
+    # The coordinator already has a write transaction, the condition that used
+    # to lock a second write_result connection.
+    con.execute("UPDATE jobs SET status = status WHERE job_id = ?", (pending.job_id,))
+    reconciler._finalize_evaluation(
+        con, pending, {"verification_status": "ok", "verdict": "pass"}
+    )
+
+    result = con.execute(
+        "SELECT outcome, status FROM results WHERE result_id = ?",
+        ("res_session-1",),
+    ).fetchone()
+    session = con.execute(
+        "SELECT state FROM executor_sessions WHERE session_db_id = ?",
+        (pending.session_db_id,),
+    ).fetchone()
+    job = con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", (pending.job_id,)
+    ).fetchone()
+    assert tuple(result) == ("pass", "awaiting_review")
+    assert session["state"] == "evaluated"
+    assert job["status"] == "awaiting_review"
+
+
+def test_evaluation_persistence_failure_keeps_session_collected(monkeypatch):
+    con = _connection()
+    pending = reconciler.PendingEvaluation(
+        session_db_id="session-1",
+        session_id="engagement-1",
+        executor="factory_mission",
+        project_id="project",
+        node_id="node-alpha",
+        job_id="job-node-alpha",
+        attempt=0,
+        result_commit_sha="b" * 40,
+    )
+    con.execute(
+        "UPDATE executor_sessions SET state = 'collected' WHERE session_db_id = ?",
+        (pending.session_db_id,),
+    )
+    con.commit()
+
+    def _locked_result_write(**_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(reconciler, "write_result", _locked_result_write)
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        reconciler._finalize_evaluation(
+            con, pending, {"verification_status": "ok", "verdict": "pass"}
+        )
+    con.rollback()
+
+    assert con.execute(
+        "SELECT state FROM executor_sessions WHERE session_db_id = ?",
+        (pending.session_db_id,),
+    ).fetchone()["state"] == "collected"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?", (pending.job_id,)
+    ).fetchone()["status"] == "running"
+    assert con.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0
 
 
 def test_mission_evaluation_success_and_error_route_only_to_review(
