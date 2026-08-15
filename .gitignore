@@ -43,6 +43,7 @@ graphify-out.pi-local-backup
 # Local agent/tooling state
 .pi/*
 !.pi/agents/
+!.pi/prompts/
 !.pi/settings.json
 .serena/
 
