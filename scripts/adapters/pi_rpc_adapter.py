@@ -6,20 +6,14 @@ Verified transport (scripts/runtime/spike/pi_rpc_persistent_spike.py):
   - Multi-turn context survives in one process / session file
 
 Fork A (2026-08-16): one long-lived `pi --mode rpc` process is spawned PER
-PROJECT, not per node. dispatch() drops each NodePacket into that project's
-"orchestrator" inbox; a single background loop (run_orchestrator) claims
-EVERY packet currently queued (not just the oldest one) and runs them as
-ONE shared RPC turn: one prompt, one agent_end, N NodePackets fanned out to
-N top-level subagents inside pi, each pointed at its own git worktree
-created at that packet's own base commit (_claim_ready_set / _run_one_turn).
-Packets that arrive mid-turn queue for the NEXT turn; they are never
-injected into a running one. A project's effective fan-out is however many
-packets happen to be queued together when a turn starts — execution_policy
-(max_concurrent_jobs) is not currently plumbed down to this adapter, see
-the fan-out-ceiling comment in _run_one_turn. The orchestrator's own cwd is
-the repo root; per-node isolation moves inside the session as a worktree
-each packet's subagent is pointed at via the prompt (see _PACKET_PREAMBLE
-and the per-packet worktree_path lines built in _run_one_turn).
+PROJECT, not per node — that process is the project's single orchestrator.
+dispatch() drops each NodePacket into that project's inbox;
+run_orchestrator claims every packet currently queued and runs them as ONE
+shared RPC turn (one prompt, one agent_end). Each packet gets its own git
+worktree at that packet's base commit. The orchestrator itself runs the
+operating protocol across those worktrees; worker-subagent count is a
+separate budget in _PACKET_PREAMBLE, not 1:1 with packet or worktree
+count. Packets that arrive mid-turn queue for the NEXT turn.
 
 Only a pi-health failure (dead process, broken protocol, turn timeout) ends
 the whole session. A worktree/persist failure OR an operator cancel is
@@ -94,28 +88,25 @@ _PACKET_PREAMBLE = (
     "deepseek/deepseek-v4-pro), each assigned a different explicit focus "
     "(criteria coverage, evidence integrity, constraint compliance). "
     "Resolve their findings before finishing.\n\n"
-    "This session is long-lived and handles one project across many "
-    "packets. A turn may carry more than one packet at once — when it "
-    "does, treat the operating protocol above as the job of a PER-PACKET "
-    "subagent, not your own: for each packet below, dispatch one top-level "
-    "subagent (model xai/grok-4.6) as that packet's own orchestrator, "
-    "handing it only that packet's JSON and instructing it to run steps "
-    "1-5 above scoped to that packet alone, up to the fan-out ceiling "
-    "stated below. Your own working directory never changes and is NOT a "
-    "worktree — never edit files there yourself, and never do a packet's "
-    "own work directly no matter how many packets this turn carries. Each "
-    "packet's trailing lines name its own worktree_path, already created "
-    "at that packet's own base commit; the subagent for a packet must be "
-    "pointed at that path and must read and edit only there — never in "
-    "your own cwd, never in another packet's worktree from this same "
-    "turn, and never in a worktree left over from a previous turn. Create "
-    "each packet's required artifacts in its own worktree, run relevant "
-    "checks there, then stop. Never modify graph truth or runtime "
-    "databases. Leave your changes as ordinary git working-tree edits in "
-    "each worktree — do not commit and do not push; the runtime persists "
-    "each packet's result deterministically and independently after you "
-    "stop. A failure or cancellation on one packet must never stop you "
-    "from finishing the others."
+    "This session is long-lived and is the ONE orchestrator for this "
+    "project across many packets. A turn may carry more than one packet; "
+    "you still run steps 1-5 yourself. Do not spawn a per-packet "
+    "orchestrator. Worker-subagent count is the concurrent cap in step 2 "
+    "— a shared budget across every packet in this turn, not one worker "
+    "per packet and not one worker per worktree. Your own working "
+    "directory never changes and is NOT a worktree — never edit files "
+    "there yourself. Each packet's trailing lines name its own "
+    "worktree_path, already created at that packet's own base commit; "
+    "point workers at the worktree that belongs to the packet they are "
+    "serving, and never at your own cwd, another packet's worktree, or a "
+    "worktree left over from a previous turn. Create each packet's "
+    "required artifacts in its own worktree, run relevant checks there, "
+    "then stop. Never modify graph truth or runtime databases. Leave "
+    "changes as ordinary git working-tree edits — do not commit and do "
+    "not push; the runtime persists each packet's result "
+    "deterministically and independently after you stop. A failure or "
+    "cancellation on one packet must never stop you from finishing the "
+    "others."
 )
 
 
@@ -421,11 +412,10 @@ def _observability_env(
     packet or the first turn — that staleness is not fixed here by trying
     to mutate env later; it is removed by dropping node/job/attempt from
     this env entirely. OBS_NAME/OBS_TAG identify the PROJECT-level session
-    only (gddp-<project_id>); per-node identity is carried instead by each
-    subagent's own pi session reporting into the fleet hub (see the
-    per-packet subagent framing in _PACKET_PREAMBLE / handoff 097), which
-    can express it truthfully turn over turn in a way this parent env
-    cannot.
+    only (gddp-<project_id>); per-node identity belongs on the worker
+    subagent sessions the orchestrator dispatches into each worktree,
+    which can express it truthfully turn over turn in a way this parent
+    env cannot.
     """
     env_file = env_file or (Path.home() / ".config" / "pi-observability" / "env")
     obs: dict[str, str] = {}
@@ -479,8 +469,8 @@ def _run_one_turn(
 ) -> tuple[list[_TurnOutcome], bool]:
     """Run ONE shared RPC turn against an already-running pi session,
     covering every packet in `attempt_dirs` at once: one prompt, one
-    agent_end, N NodePackets fanned out to N top-level subagents inside
-    pi, each in its own worktree.
+    agent_end, N NodePackets each in its own worktree, all served by
+    this session's single orchestrator.
 
     Returns (outcomes, terminate_session): `outcomes` has exactly one
     entry per input attempt_dir, same order. `terminate_session` is a
@@ -531,14 +521,6 @@ def _run_one_turn(
         return [outcomes[d] for d in attempt_dirs], False
 
     n = len(active)
-    # Fan-out ceiling: ideally execution_policy.max_concurrent_jobs from
-    # the graph, but that is not plumbed through NodePacket / dispatcher /
-    # runner down to this adapter today (see module docstring). The only
-    # value available here without inventing one is the batch's own size —
-    # how many packets actually queued together for THIS turn — which is
-    # what we use. A real ceiling read from the graph would go here once
-    # that plumbing exists.
-    fan_out_ceiling = n
 
     # Operator steer channel: `gddp steer` appends lines to steer.jsonl in
     # an attempt dir; the drain below runs on the client's single reader
@@ -595,9 +577,9 @@ def _run_one_turn(
         for idx, (attempt_dir, packet, packet_raw, worktree) in enumerate(active, start=1)
     ]
     batch_header = (
-        f"### BATCH TURN — {n} packet(s) this turn, fan out up to "
-        f"{fan_out_ceiling} top-level subagents concurrently (one per "
-        "packet, per the final paragraph above).\n"
+        f"### TURN — {n} packet(s). You are the single orchestrator. "
+        "Each packet has its own worktree. Worker-subagent count is the "
+        "step-2 cap, shared across these packets, not one per packet.\n"
     )
     prompt = f"{_PACKET_PREAMBLE}\n\n{batch_header}\n" + "\n\n".join(packet_blocks)
 
@@ -1075,12 +1057,10 @@ def _enqueue_attempt(orchestrator_dir: Path, attempt_dir: Path) -> None:
 def _claim_ready_set(orchestrator_dir: Path) -> list[Path]:
     """Drain EVERY currently-queued attempt_dir, oldest first, as a list.
 
-    Fork A's batch turn (task item 1): a turn must carry every packet
-    sitting in the inbox at the moment it is claimed, not just the oldest
-    one, so `max_concurrent_jobs`-wide graphs fan out inside one RPC turn
-    instead of serializing one attempt per turn. Packets that land in the
-    inbox AFTER this snapshot is taken queue for the next call, never get
-    injected into a turn already in flight.
+    A turn carries every packet sitting in the inbox at the moment it is
+    claimed, not just the oldest one, so concurrent ready nodes share one
+    orchestrator turn instead of waiting in series. Packets that land in
+    the inbox AFTER this snapshot is taken queue for the next call.
 
     Single-consumer (only the owning orchestrator loop calls this outside
     the lock-protected idle-exit check), so no lock is needed here.

@@ -580,7 +580,7 @@ def _seed_attempt(
 def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
     """N packets queued together before the orchestrator's first claim are
     served by exactly ONE prompt/turn, and each gets its own persisted
-    result — proving fan-out inside a shared turn, not N serial turns."""
+    result — proving N packets share one orchestrator turn, not N serial turns."""
     from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
 
     repo, base = git_repo
