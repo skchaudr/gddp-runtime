@@ -534,10 +534,10 @@ def test_observability_env_off_when_unconfigured(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Fork A batch turns: N packets claimed together run as ONE shared turn.
+# Session worktree: N queued packets share ONE worktree for the session.
 # These call run_orchestrator() directly against a hand-built inbox so the
-# batch is deterministic (no race against a spawned supervisor's own claim
-# timing — see the dispatch()-based tests above for that path instead).
+# claim set is deterministic (no race against a spawned supervisor's own
+# claim timing — see the dispatch()-based tests above for that path).
 # ---------------------------------------------------------------------------
 
 
@@ -577,10 +577,10 @@ def _seed_attempt(
     return attempt_dir
 
 
-def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
-    """N packets queued together before the orchestrator's first claim are
-    served by exactly ONE prompt/turn, and each gets its own persisted
-    result — proving N packets share one orchestrator turn, not N serial turns."""
+def test_queued_packets_reuse_one_session_worktree(fake_pi, git_repo, tmp_path):
+    """N packets queued before the first claim share ONE session worktree,
+    each persist their own result, and the worktree is removed when the
+    session exits."""
     from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
 
     repo, base = git_repo
@@ -588,8 +588,8 @@ def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
     spool.mkdir()
     orchestrator_dir = spool / "_orchestrators" / "batch-proj"
     os.environ["FAKE_PI_MODE"] = "ok"
-    prompt_marker = tmp_path / "prompts.txt"
-    os.environ["FAKE_PI_PROMPT_MARKER"] = str(prompt_marker)
+    boot_marker = tmp_path / "boots.txt"
+    os.environ["FAKE_PI_BOOT_MARKER"] = str(boot_marker)
     try:
         attempt_dirs = [
             _seed_attempt(spool, orchestrator_dir, repo, fake_pi, base, name=f"a{i}", attempt=i)
@@ -602,8 +602,10 @@ def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
         rc = run_orchestrator(orchestrator_dir)
         assert rc == 0
 
-        prompts = [ln for ln in prompt_marker.read_text().splitlines() if ln.strip()]
-        assert len(prompts) == 1, f"expected exactly one turn/prompt, got {prompts}"
+        paths = [(d / "worktree_path").read_text().strip() for d in attempt_dirs]
+        assert len(set(paths)) == 1, paths
+        session_wt = Path(paths[0])
+        assert not session_wt.exists(), "session worktree must be removed on exit"
 
         for attempt_dir in attempt_dirs:
             exit_state = json.loads((attempt_dir / "exit.json").read_text())
@@ -615,16 +617,19 @@ def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
             }, exit_state
             result = json.loads((attempt_dir / "result.json").read_text())
             assert result.get("result_commit_sha"), result
+
+        boots = [ln for ln in boot_marker.read_text().splitlines() if ln.strip()]
+        assert len(boots) == 1, f"expected one pi process, got {boots}"
     finally:
-        os.environ.pop("FAKE_PI_PROMPT_MARKER", None)
+        os.environ.pop("FAKE_PI_BOOT_MARKER", None)
 
 
 def test_batch_partial_failure_does_not_stop_other_packets_or_session(
     fake_pi, git_repo, tmp_path
 ):
-    """One packet with an unreachable base commit fails in isolation; the
-    other packets in the SAME batch still persist real results, and the
-    session (and the shared pi process) runs to completion normally."""
+    """A packet whose base commit cannot be checked out fails in isolation
+    at session-worktree setup; later packets still open the session and
+    persist, and the shared pi process survives."""
     from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
 
     repo, base = git_repo
@@ -645,7 +650,7 @@ def test_batch_partial_failure_does_not_stop_other_packets_or_session(
             spool, orchestrator_dir, repo, fake_pi, "deadbeef00deadbeef00deadbeef00deadbeef",
             name="bad0", attempt=2,
         )
-        attempt_dirs = [good_dirs[0], bad_dir, good_dirs[1]]
+        attempt_dirs = [bad_dir, good_dirs[0], good_dirs[1]]
         with _orchestrator_lock(orchestrator_dir):
             for attempt_dir in attempt_dirs:
                 _enqueue_attempt(orchestrator_dir, attempt_dir)
@@ -673,9 +678,8 @@ def test_batch_partial_failure_does_not_stop_other_packets_or_session(
 
 
 def test_batch_cancel_of_one_packet_does_not_terminate_session(fake_pi, git_repo, tmp_path):
-    """A cancel.requested marker on ONE attempt in a batch cancels only that
-    node's result; the other N-1 packets in the same turn still complete
-    and the shared session survives."""
+    """A cancel.requested marker on ONE attempt cancels only that node's
+    result; the other packets still complete and the session survives."""
     from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
 
     repo, base = git_repo

@@ -7,13 +7,12 @@ Verified transport (scripts/runtime/spike/pi_rpc_persistent_spike.py):
 
 Fork A (2026-08-16): one long-lived `pi --mode rpc` process is spawned PER
 PROJECT, not per node — that process is the project's single orchestrator.
-dispatch() drops each NodePacket into that project's inbox;
-run_orchestrator claims every packet currently queued and runs them as ONE
-shared RPC turn (one prompt, one agent_end). Each packet gets its own git
-worktree at that packet's base commit. The orchestrator itself runs the
-operating protocol across those worktrees; worker-subagent count is a
-separate budget in _PACKET_PREAMBLE, not 1:1 with packet or worktree
-count. Packets that arrive mid-turn queue for the NEXT turn.
+dispatch() drops each NodePacket into that project's inbox.
+run_orchestrator opens ONE git worktree for the session (at the first
+packet's base commit) and keeps it until the session exits. Each claimed
+packet is one RPC turn against that same worktree; persist_result commits
+the node boundary. Worker-subagent count is a separate budget in
+_PACKET_PREAMBLE. Packets that arrive mid-turn queue for the NEXT turn.
 
 Only a pi-health failure (dead process, broken protocol, turn timeout) ends
 the whole session. A worktree/persist failure OR an operator cancel is
@@ -89,24 +88,19 @@ _PACKET_PREAMBLE = (
     "(criteria coverage, evidence integrity, constraint compliance). "
     "Resolve their findings before finishing.\n\n"
     "This session is long-lived and is the ONE orchestrator for this "
-    "project across many packets. A turn may carry more than one packet; "
-    "you still run steps 1-5 yourself. Do not spawn a per-packet "
-    "orchestrator. Worker-subagent count is the concurrent cap in step 2 "
-    "— a shared budget across every packet in this turn, not one worker "
-    "per packet and not one worker per worktree. Your own working "
-    "directory never changes and is NOT a worktree — never edit files "
-    "there yourself. Each packet's trailing lines name its own "
-    "worktree_path, already created at that packet's own base commit; "
-    "point workers at the worktree that belongs to the packet they are "
-    "serving, and never at your own cwd, another packet's worktree, or a "
-    "worktree left over from a previous turn. Create each packet's "
-    "required artifacts in its own worktree, run relevant checks there, "
-    "then stop. Never modify graph truth or runtime databases. Leave "
-    "changes as ordinary git working-tree edits — do not commit and do "
-    "not push; the runtime persists each packet's result "
-    "deterministically and independently after you stop. A failure or "
-    "cancellation on one packet must never stop you from finishing the "
-    "others."
+    "project across many packets. The session owns one worktree for its "
+    "whole life — the worktree_path named below. Point every worker at "
+    "that path. Do not create another worktree, and do not spawn a "
+    "per-packet orchestrator. Worker-subagent count is the concurrent "
+    "cap in step 2, a shared budget, not one worker per packet. Your "
+    "own working directory never changes and is NOT the worktree — "
+    "never edit files there yourself. Create this packet's required "
+    "artifacts in the session worktree, run relevant checks there, then "
+    "stop. Never modify graph truth or runtime databases. Leave changes "
+    "as ordinary git working-tree edits — do not commit and do not "
+    "push; the runtime persists this packet's result after you stop. A "
+    "failure or cancellation on one packet must never stop you from "
+    "finishing later packets in this session."
 )
 
 
@@ -165,8 +159,7 @@ class PiRpcAdapter:
             if execution_cwd is None:
                 # Fall back to the process cwd (dispatcher sets repo_path as cwd
                 # for local transports). This becomes the orchestrator session's
-                # own cwd — never a worktree (fork A: per-node isolation moves
-                # inside the session; see _PACKET_PREAMBLE).
+                # own cwd — never the session worktree (see _PACKET_PREAMBLE).
                 execution_cwd = Path.cwd()
             (attempt_dir / "packet.json").write_text(packet.to_json())
 
@@ -320,10 +313,9 @@ class PiRpcAdapter:
         # per-packet abort in the RPC protocol, so we never signal or kill
         # that process here. _run_one_turn checks this marker for THIS
         # attempt_dir twice: once before the packet is ever sent to pi
-        # (skips it, never spawns/sends anything for it) and once more
-        # right before persisting its result (discards whatever the
-        # worktree holds). Every other packet in the batch, and the shared
-        # session itself, runs to completion undisturbed either way.
+        # (skips it, never sends it to pi) and once more right before
+        # persisting its result (skips persist). The session worktree and
+        # every other packet stay up either way.
         return True
 
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
@@ -459,34 +451,26 @@ def _run_one_turn(
     attempt_dirs: list[Path],
     proc: subprocess.Popen[str],
     client: "_RpcClient",
-    repo: Path,
+    worktree: Path,
     turn_timeout_s: float,
-    create_worktree: Callable[[Path, str], Path],
     load_packet: Callable[[str], dict],
     persist_result: Callable[[Path, dict], dict],
     record_worktree_correlation: Callable[[Path, dict], None],
-    remove_worktree: Callable[[Path, Path], None],
 ) -> tuple[list[_TurnOutcome], bool]:
-    """Run ONE shared RPC turn against an already-running pi session,
-    covering every packet in `attempt_dirs` at once: one prompt, one
-    agent_end, N NodePackets each in its own worktree, all served by
-    this session's single orchestrator.
+    """Run ONE RPC turn against an already-running pi session on the
+    session-owned worktree. Caller should pass one attempt_dir so
+    persist_result is one node commit; a list is still accepted so a
+    pre-cancelled packet can be skipped without a prompt.
 
-    Returns (outcomes, terminate_session): `outcomes` has exactly one
-    entry per input attempt_dir, same order. `terminate_session` is a
-    single batch-level flag.
-
-    Only a pi-health failure (dead process, broken protocol, timed out
-    waiting for agent_end) sets terminate_session=True. A worktree-
-    creation failure, a persist_result failure, or an operator cancel is
-    scoped to that one packet's attempt_dir — the caller's loop keeps the
-    session alive for the next queued packet regardless of how many
-    packets in THIS batch failed or were cancelled.
+    Returns (outcomes, terminate_session). Only a pi-health failure
+    (dead process, broken protocol, timed out waiting for agent_end)
+    sets terminate_session=True. A persist failure or operator cancel
+    is scoped to that packet — the session and its worktree stay up.
     """
     outcomes: dict[Path, _TurnOutcome] = {}
-    # (attempt_dir, packet dict, raw packet json, worktree) for every
-    # packet that actually makes it into this turn's prompt.
-    active: list[tuple[Path, dict, str, Path]] = []
+    # (attempt_dir, packet dict, raw packet json) for every packet that
+    # actually makes it into this turn's prompt.
+    active: list[tuple[Path, dict, str]] = []
 
     for attempt_dir in attempt_dirs:
         cancel_path = attempt_dir / "cancel.requested"
@@ -503,16 +487,9 @@ def _run_one_turn(
             _write_exit(attempt_dir, returncode=1, cancelled=False, plumbing=True, error=error)
             outcomes[attempt_dir] = _TurnOutcome(attempt_dir, 1, True, False, error)
             continue
-        try:
-            worktree = create_worktree(repo, str(packet["expected_base_commit_sha"]))
-            record_worktree_correlation(worktree, packet)
-            (attempt_dir / "worktree_path").write_text(str(worktree))
-        except Exception as exc:
-            error = f"pi_rpc worktree setup failed: {exc}"
-            _write_exit(attempt_dir, returncode=1, cancelled=False, plumbing=True, error=error)
-            outcomes[attempt_dir] = _TurnOutcome(attempt_dir, 1, True, False, error)
-            continue
-        active.append((attempt_dir, packet, packet_raw, worktree))
+        record_worktree_correlation(worktree, packet)
+        (attempt_dir / "worktree_path").write_text(str(worktree))
+        active.append((attempt_dir, packet, packet_raw))
 
     if not active:
         # Every packet in this batch was pre-cancelled or failed setup in
@@ -530,7 +507,7 @@ def _run_one_turn(
     # steer.jsonl, tagging each delivered message with which packet it
     # came from so the operator can steer any node in the batch.
     steer_state: dict[Path, dict[str, int]] = {
-        attempt_dir: {"offset": 0, "sent": 0} for attempt_dir, *_ in active
+        attempt_dir: {"offset": 0, "sent": 0} for attempt_dir, _packet, _raw in active
     }
 
     def _drain_steer(kind: str = "steer") -> None:
@@ -539,7 +516,7 @@ def _run_one_turn(
         # used after agent_end while idle; starts a follow-up turn the
         # caller waits on. A bare "prompt" mid-turn is REJECTED by pi —
         # never use it for mid-turn delivery.
-        for attempt_dir, *_ in active:
+        for attempt_dir, _packet, _raw in active:
             state = steer_state[attempt_dir]
             steer_path = attempt_dir / "steer.jsonl"
             messages, state["offset"] = _read_steer_messages(steer_path, state["offset"])
@@ -574,12 +551,11 @@ def _run_one_turn(
         f"execution_attempt_id: {packet.get('execution_attempt_id')}\n"
         f"worktree_path: {worktree}\n\n"
         f"{packet_raw}"
-        for idx, (attempt_dir, packet, packet_raw, worktree) in enumerate(active, start=1)
+        for idx, (attempt_dir, packet, packet_raw) in enumerate(active, start=1)
     ]
     batch_header = (
-        f"### TURN — {n} packet(s). You are the single orchestrator. "
-        "Each packet has its own worktree. Worker-subagent count is the "
-        "step-2 cap, shared across these packets, not one per packet.\n"
+        f"### TURN — {n} packet(s) on the session worktree {worktree}. "
+        "Worker-subagent count is the step-2 cap, not one per packet.\n"
     )
     prompt = f"{_PACKET_PREAMBLE}\n\n{batch_header}\n" + "\n\n".join(packet_blocks)
 
@@ -607,8 +583,8 @@ def _run_one_turn(
         turn_error = str(exc)
     except Exception as exc:
         # Turn may have completed with a non-zero agent outcome — still
-        # try to persist whatever is in each worktree below rather than
-        # treating the whole session as unhealthy.
+        # try to persist whatever is in the session worktree below rather
+        # than treating the whole session as unhealthy.
         turn_error = str(exc)
         if proc.poll() is None:
             try:
@@ -621,13 +597,13 @@ def _run_one_turn(
             shared_events = (active[0][0] / "events.jsonl").read_bytes()
         except OSError:
             shared_events = b""
-        for attempt_dir, *_ in active[1:]:
+        for attempt_dir, _packet, _raw in active[1:]:
             try:
                 (attempt_dir / "events.jsonl").write_bytes(shared_events)
             except OSError:
                 pass
 
-    for attempt_dir, packet, _packet_raw, worktree in active:
+    for attempt_dir, packet, _packet_raw in active:
         if plumbing:
             _write_exit(attempt_dir, returncode=1, cancelled=False, plumbing=True, error=turn_error)
             outcomes[attempt_dir] = _TurnOutcome(attempt_dir, 1, True, False, turn_error)
@@ -638,8 +614,6 @@ def _run_one_turn(
             cancel_error = "cancelled during this packet's turn"
             _write_exit(attempt_dir, returncode=130, cancelled=True, plumbing=False, error=cancel_error)
             outcomes[attempt_dir] = _TurnOutcome(attempt_dir, 130, False, True, cancel_error)
-            with contextlib.suppress(Exception):
-                remove_worktree(repo, worktree)
             continue
 
         handoff = persist_result(worktree, packet)
@@ -647,8 +621,6 @@ def _run_one_turn(
             json.dumps(handoff, sort_keys=True, separators=(",", ":"))
         )
         if handoff.get("result_commit_sha"):
-            with contextlib.suppress(Exception):
-                remove_worktree(repo, worktree)
             _write_exit(attempt_dir, returncode=0, cancelled=False, plumbing=False, error=None)
             outcomes[attempt_dir] = _TurnOutcome(attempt_dir, 0, False, False, None)
         else:
@@ -661,11 +633,12 @@ def _run_one_turn(
 
 def run_orchestrator(orchestrator_dir: Path) -> int:
     """Persistent per-project loop: claim packets from an inbox and run each
-    as an RPC turn against one long-lived `pi --mode rpc` process.
+    as an RPC turn against one long-lived `pi --mode rpc` process and ONE
+    session worktree.
 
-    Exits (and kills pi) only on idle timeout or a pi-health plumbing
-    failure — never unconditionally after a turn, and never because one
-    packet in a batch was cancelled or failed to persist.
+    Exits (and kills pi, then removes the session worktree) only on idle
+    timeout or a pi-health plumbing failure — never unconditionally after
+    a turn, and never because one packet was cancelled or failed to persist.
     """
     from local_agent_executor import (  # noqa: PLC0415 - scripts/ on path
         create_worktree,
@@ -693,6 +666,7 @@ def run_orchestrator(orchestrator_dir: Path) -> int:
 
     proc: subprocess.Popen[str] | None = None
     active_attempt_dirs: list[Path] | None = first_batch
+    session_worktree: Path | None = None
 
     def _kill_pi() -> None:
         if proc is None or proc.poll() is not None:
@@ -774,42 +748,74 @@ def run_orchestrator(orchestrator_dir: Path) -> int:
             # Non-fatal: some builds emit bootstrap noise first.
             (orchestrator_dir / "get_state_error.txt").write_text(str(exc))
 
-        batch: list[Path] | None = first_batch
-        while batch is not None:
-            active_attempt_dirs = batch
-            _atomic_write(orchestrator_dir / "state", "busy")
-            _atomic_write(
-                orchestrator_dir / "current_attempt",
-                "\n".join(str(d) for d in batch),
+        ready: list[Path] = []
+        for attempt_dir in first_batch:
+            if (attempt_dir / "cancel.requested").exists():
+                error = "cancelled before this packet's turn started"
+                _write_exit(
+                    attempt_dir, returncode=130, cancelled=True, plumbing=False, error=error
+                )
+                continue
+            try:
+                packet = load_packet((attempt_dir / "packet.json").read_text())
+            except Exception as exc:
+                error = f"pi_rpc packet load failed: {exc}"
+                _write_exit(
+                    attempt_dir, returncode=1, cancelled=False, plumbing=True, error=error
+                )
+                continue
+            if session_worktree is None:
+                try:
+                    session_worktree = create_worktree(
+                        repo, str(packet["expected_base_commit_sha"])
+                    )
+                    record_worktree_correlation(session_worktree, packet)
+                    _atomic_write(orchestrator_dir / "worktree_path", str(session_worktree))
+                except Exception as exc:
+                    error = f"pi_rpc worktree setup failed: {exc}"
+                    _write_exit(
+                        attempt_dir, returncode=1, cancelled=False, plumbing=True, error=error
+                    )
+                    continue
+            ready.append(attempt_dir)
+
+        if session_worktree is None:
+            _drain_inbox(
+                "pi_rpc session worktree setup failed", plumbing=True, cancelled=False
             )
+            return 1
+
+        batch: list[Path] | None = ready or None
+        while batch is not None:
             for attempt_dir in batch:
+                active_attempt_dirs = [attempt_dir]
+                _atomic_write(orchestrator_dir / "state", "busy")
+                _atomic_write(orchestrator_dir / "current_attempt", str(attempt_dir))
                 _atomic_write(attempt_dir / "pid", str(proc.pid))
                 if session_file_value:
                     _atomic_write(attempt_dir / "session_file", str(session_file_value))
 
-            outcomes, terminate_session = _run_one_turn(
-                attempt_dirs=batch,
-                proc=proc,
-                client=client,
-                repo=repo,
-                turn_timeout_s=turn_timeout_s,
-                create_worktree=create_worktree,
-                load_packet=load_packet,
-                persist_result=persist_result,
-                record_worktree_correlation=record_worktree_correlation,
-                remove_worktree=remove_worktree,
-            )
-            active_attempt_dirs = None
-
-            if terminate_session:
-                plumbing_outcome = next((o for o in outcomes if o.plumbing), None)
-                reason = (
-                    (plumbing_outcome.error if plumbing_outcome else None)
-                    or "session terminated"
+                outcomes, terminate_session = _run_one_turn(
+                    attempt_dirs=[attempt_dir],
+                    proc=proc,
+                    client=client,
+                    worktree=session_worktree,
+                    turn_timeout_s=turn_timeout_s,
+                    load_packet=load_packet,
+                    persist_result=persist_result,
+                    record_worktree_correlation=record_worktree_correlation,
                 )
-                returncode = plumbing_outcome.returncode if plumbing_outcome else 1
-                _drain_inbox(reason, plumbing=True, cancelled=False)
-                return returncode
+                active_attempt_dirs = None
+
+                if terminate_session:
+                    plumbing_outcome = next((o for o in outcomes if o.plumbing), None)
+                    reason = (
+                        (plumbing_outcome.error if plumbing_outcome else None)
+                        or "session terminated"
+                    )
+                    returncode = plumbing_outcome.returncode if plumbing_outcome else 1
+                    _drain_inbox(reason, plumbing=True, cancelled=False)
+                    return returncode
 
             _atomic_write(orchestrator_dir / "state", "idle")
             batch = _claim_ready_set(orchestrator_dir) or None
@@ -843,8 +849,12 @@ def run_orchestrator(orchestrator_dir: Path) -> int:
         return 1
     finally:
         _kill_pi()
+        if session_worktree is not None:
+            with contextlib.suppress(Exception):
+                remove_worktree(repo, session_worktree)
         with contextlib.suppress(OSError):
             (orchestrator_dir / "pid").unlink()
+            (orchestrator_dir / "worktree_path").unlink()
         _atomic_write(orchestrator_dir / "state", "exited")
 
 
