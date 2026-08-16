@@ -35,6 +35,9 @@ from adapters.pi_rpc_adapter import (  # noqa: E402
 # FAKE_PI_BOOT_MARKER, if set, gets one line (this process's pid) appended on
 # startup — lets tests prove how many times pi was actually spawned across
 # multiple packets.
+# FAKE_PI_PROMPT_MARKER, if set, gets one line appended each time a "prompt"
+# request is received — lets tests prove a batch of N packets was handled by
+# exactly ONE prompt/turn rather than N.
 # ---------------------------------------------------------------------------
 
 _FAKE_PI = r'''#!/usr/bin/env python3
@@ -48,6 +51,7 @@ boot_marker = os.environ.get("FAKE_PI_BOOT_MARKER")
 if boot_marker:
     with open(boot_marker, "a") as fh:
         fh.write(f"{os.getpid()}\n")
+prompt_marker = os.environ.get("FAKE_PI_PROMPT_MARKER")
 # Bootstrap: nothing required. Loop on stdin.
 while True:
     line = sys.stdin.readline()
@@ -74,23 +78,32 @@ while True:
                           "data": {"messages": []}}), flush=True)
     elif rtype == "prompt":
         print(json.dumps({"type": "response", "id": rid, "success": True}), flush=True)
+        if prompt_marker:
+            with open(prompt_marker, "a") as fh:
+                fh.write(f"{os.getpid()}\n")
         if mode == "die_mid":
             sys.exit(9)
         if mode == "slow_ok":
             time.sleep(0.3)
-        # Simulate a subagent following the orchestrator preamble: write into
-        # the worktree_path line carried in the prompt, not into our own cwd
-        # (our own cwd is the repo root under fork A and must stay untouched).
+        # Simulate a subagent (or, under a batch turn, one subagent per
+        # packet) following the orchestrator preamble: write into every
+        # worktree_path line carried in the prompt, not into our own cwd
+        # (our own cwd is the repo root under fork A and must stay
+        # untouched). A batch prompt carries one worktree_path line per
+        # packet; a single-packet prompt carries exactly one.
         msg = req.get("message") or ""
-        target = os.getcwd()
-        for ln in msg.splitlines():
-            if ln.startswith("worktree_path: "):
-                target = ln[len("worktree_path: "):].strip()
-                break
-        try:
-            open(os.path.join(target, "RESULT.txt"), "w").write("pi-rpc-ok\n")
-        except OSError:
-            pass
+        targets = [
+            ln[len("worktree_path: "):].strip()
+            for ln in msg.splitlines()
+            if ln.startswith("worktree_path: ")
+        ]
+        if not targets:
+            targets = [os.getcwd()]
+        for target in targets:
+            try:
+                open(os.path.join(target, "RESULT.txt"), "w").write("pi-rpc-ok\n")
+            except OSError:
+                pass
         print(json.dumps({"type": "message_update", "assistant": "done"}), flush=True)
         print(json.dumps({"type": "agent_end", "reason": "stop"}), flush=True)
     elif rtype == "abort":
@@ -474,7 +487,12 @@ def test_idle_timeout_exits_session_then_new_dispatch_spawns_fresh(fake_pi, git_
 # ---------------------------------------------------------------------------
 
 
-def test_observability_env_tags_attempt(tmp_path):
+def test_observability_env_tags_project_not_attempt(tmp_path):
+    """Fork A + batch turns: OBS_NAME/OBS_TAG identify the project-level
+    orchestrator session only. node:/job:/attempt: are dropped rather than
+    mutated mid-session, because a single long-lived process (and a single
+    batch turn) can now cover many nodes/jobs/attempts at once — a fixed
+    per-node tag set at spawn time would just be stale for all of them."""
     from adapters.pi_rpc_adapter import _observability_env
 
     env_file = tmp_path / "env"
@@ -496,14 +514,14 @@ def test_observability_env_tags_attempt(tmp_path):
     assert obs["OBS_SERVER_URL"] == "http://100.93.242.91:43190"
     assert obs["OBS_TOKEN"] == "sekret"  # env only, never argv
     assert obs["OBS_POOL"] == "gddp"  # overridden from fleet
-    assert obs["OBS_NAME"] == "gddp-node-01b-contract-review"
+    assert obs["OBS_NAME"] == "gddp-myapi-part2"
     tags = obs["OBS_TAG"].split(",")
     assert "gddp" in tags
     assert "project:myapi-part2" in tags
-    assert "node:node-01b-contract-review" in tags
-    assert "job:job_123" in tags
-    assert "attempt:0" in tags
     assert any(t.startswith("host:") for t in tags)
+    assert not any(t.startswith("node:") for t in tags)
+    assert not any(t.startswith("job:") for t in tags)
+    assert not any(t.startswith("attempt:") for t in tags)
 
 
 def test_observability_env_off_when_unconfigured(tmp_path):
@@ -513,6 +531,200 @@ def test_observability_env_off_when_unconfigured(tmp_path):
     env_file = tmp_path / "env"
     env_file.write_text("export OBS_POOL='fleet'\n")  # no server URL
     assert _observability_env({"node_id": "n"}, env_file=env_file) == {}
+
+
+# ---------------------------------------------------------------------------
+# Fork A batch turns: N packets claimed together run as ONE shared turn.
+# These call run_orchestrator() directly against a hand-built inbox so the
+# batch is deterministic (no race against a spawned supervisor's own claim
+# timing — see the dispatch()-based tests above for that path instead).
+# ---------------------------------------------------------------------------
+
+
+def _seed_attempt(
+    spool: Path,
+    orchestrator_dir: Path,
+    repo: Path,
+    fake_pi: Path,
+    base_sha: str,
+    *,
+    name: str,
+    attempt: int = 0,
+    idle_timeout_s: float = 0.5,
+    turn_timeout_s: float = 20.0,
+) -> Path:
+    """Build one attempt_dir's packet.json + command.json without going
+    through dispatch(), so several can be enqueued together before
+    run_orchestrator() ever takes its first claim. `attempt` must be unique
+    across packets sharing a git_repo fixture so each gets its own
+    attempt-ref name (persist_result refuses to overwrite an existing ref
+    pointed at unrelated evidence)."""
+    attempt_dir = spool / name
+    attempt_dir.mkdir(parents=True)
+    packet = _packet(base_sha, attempt=attempt, project_id="batch-proj")
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    config = {
+        "pi_binary": str(fake_pi),
+        "model": "fake/model",
+        "tools": "read,bash,edit,write,grep,find,ls,subagent",
+        "turn_timeout_s": turn_timeout_s,
+        "idle_timeout_s": idle_timeout_s,
+        "repo_cwd": str(repo),
+        "orchestrator_dir": str(orchestrator_dir),
+        "resume_session_file": None,
+    }
+    (attempt_dir / "command.json").write_text(json.dumps(config))
+    return attempt_dir
+
+
+def test_batch_claims_run_as_one_turn_not_n(fake_pi, git_repo, tmp_path):
+    """N packets queued together before the orchestrator's first claim are
+    served by exactly ONE prompt/turn, and each gets its own persisted
+    result — proving fan-out inside a shared turn, not N serial turns."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "batch-proj"
+    os.environ["FAKE_PI_MODE"] = "ok"
+    prompt_marker = tmp_path / "prompts.txt"
+    os.environ["FAKE_PI_PROMPT_MARKER"] = str(prompt_marker)
+    try:
+        attempt_dirs = [
+            _seed_attempt(spool, orchestrator_dir, repo, fake_pi, base, name=f"a{i}", attempt=i)
+            for i in range(3)
+        ]
+        with _orchestrator_lock(orchestrator_dir):
+            for attempt_dir in attempt_dirs:
+                _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+        rc = run_orchestrator(orchestrator_dir)
+        assert rc == 0
+
+        prompts = [ln for ln in prompt_marker.read_text().splitlines() if ln.strip()]
+        assert len(prompts) == 1, f"expected exactly one turn/prompt, got {prompts}"
+
+        for attempt_dir in attempt_dirs:
+            exit_state = json.loads((attempt_dir / "exit.json").read_text())
+            assert exit_state == {
+                "returncode": 0,
+                "cancelled": False,
+                "plumbing": False,
+                "error": None,
+            }, exit_state
+            result = json.loads((attempt_dir / "result.json").read_text())
+            assert result.get("result_commit_sha"), result
+    finally:
+        os.environ.pop("FAKE_PI_PROMPT_MARKER", None)
+
+
+def test_batch_partial_failure_does_not_stop_other_packets_or_session(
+    fake_pi, git_repo, tmp_path
+):
+    """One packet with an unreachable base commit fails in isolation; the
+    other packets in the SAME batch still persist real results, and the
+    session (and the shared pi process) runs to completion normally."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "batch-proj"
+    os.environ["FAKE_PI_MODE"] = "ok"
+    boot_marker = tmp_path / "boots.txt"
+    os.environ["FAKE_PI_BOOT_MARKER"] = str(boot_marker)
+    try:
+        good_dirs = [
+            _seed_attempt(
+                spool, orchestrator_dir, repo, fake_pi, base, name=f"good{i}", attempt=i
+            )
+            for i in range(2)
+        ]
+        bad_dir = _seed_attempt(
+            spool, orchestrator_dir, repo, fake_pi, "deadbeef00deadbeef00deadbeef00deadbeef",
+            name="bad0", attempt=2,
+        )
+        attempt_dirs = [good_dirs[0], bad_dir, good_dirs[1]]
+        with _orchestrator_lock(orchestrator_dir):
+            for attempt_dir in attempt_dirs:
+                _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+        rc = run_orchestrator(orchestrator_dir)
+        assert rc == 0, "session must not terminate on a single packet's setup failure"
+
+        bad_exit = json.loads((bad_dir / "exit.json").read_text())
+        assert bad_exit["returncode"] != 0
+        assert bad_exit["plumbing"] is True
+        assert bad_exit["cancelled"] is False
+        assert "worktree" in (bad_exit["error"] or "").lower()
+        assert not (bad_dir / "result.json").exists()
+
+        for good_dir in good_dirs:
+            exit_state = json.loads((good_dir / "exit.json").read_text())
+            assert exit_state["returncode"] == 0, exit_state
+            result = json.loads((good_dir / "result.json").read_text())
+            assert result.get("result_commit_sha"), result
+
+        boots = [ln for ln in boot_marker.read_text().splitlines() if ln.strip()]
+        assert len(boots) == 1, f"expected the one shared pi process to survive, got {boots}"
+    finally:
+        os.environ.pop("FAKE_PI_BOOT_MARKER", None)
+
+
+def test_batch_cancel_of_one_packet_does_not_terminate_session(fake_pi, git_repo, tmp_path):
+    """A cancel.requested marker on ONE attempt in a batch cancels only that
+    node's result; the other N-1 packets in the same turn still complete
+    and the shared session survives."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "batch-proj"
+    os.environ["FAKE_PI_MODE"] = "ok"
+    boot_marker = tmp_path / "boots.txt"
+    os.environ["FAKE_PI_BOOT_MARKER"] = str(boot_marker)
+    try:
+        keep_dirs = [
+            _seed_attempt(
+                spool, orchestrator_dir, repo, fake_pi, base, name=f"keep{i}", attempt=i
+            )
+            for i in range(2)
+        ]
+        cancel_dir = _seed_attempt(
+            spool, orchestrator_dir, repo, fake_pi, base, name="cancelled0", attempt=2
+        )
+        (cancel_dir / "cancel.requested").write_text("")
+
+        attempt_dirs = [keep_dirs[0], cancel_dir, keep_dirs[1]]
+        with _orchestrator_lock(orchestrator_dir):
+            for attempt_dir in attempt_dirs:
+                _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+        rc = run_orchestrator(orchestrator_dir)
+        assert rc == 0, "session must not terminate on a single packet's cancel"
+
+        cancel_exit = json.loads((cancel_dir / "exit.json").read_text())
+        assert cancel_exit["cancelled"] is True
+        assert cancel_exit["returncode"] == 130
+        assert not (cancel_dir / "result.json").exists()
+
+        for keep_dir in keep_dirs:
+            exit_state = json.loads((keep_dir / "exit.json").read_text())
+            assert exit_state == {
+                "returncode": 0,
+                "cancelled": False,
+                "plumbing": False,
+                "error": None,
+            }, exit_state
+            result = json.loads((keep_dir / "result.json").read_text())
+            assert result.get("result_commit_sha"), result
+
+        boots = [ln for ln in boot_marker.read_text().splitlines() if ln.strip()]
+        assert len(boots) == 1, f"expected the one shared pi process to survive, got {boots}"
+    finally:
+        os.environ.pop("FAKE_PI_BOOT_MARKER", None)
 
 
 def test_observability_env_project_tag_from_production_packet(tmp_path):
