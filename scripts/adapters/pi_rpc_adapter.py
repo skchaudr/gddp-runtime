@@ -60,9 +60,12 @@ _IDLE_TIMEOUT_ENV = "GDDP_PI_RPC_IDLE_TIMEOUT_S"
 _DEFAULT_MODEL = "xai/grok-4.5"
 _DEFAULT_TOOLS = "read,bash,edit,write,grep,find,ls,subagent"
 _DEFAULT_TIMEOUT_S = 1800.0
-# Heartbeat cron ticks every ~300s (deploy/rig1-heartbeat, mini-heartbeat).
-# Default idle grace is 3 missed ticks; env-tunable per deployment cadence.
-_DEFAULT_IDLE_TIMEOUT_S = 900.0
+# Idle grace is sized for a session to survive a working day, not a
+# heartbeat gap: the point of fork A is one orchestrator per project held
+# across a whole graph, including long human-review pauses between nodes.
+# A short grace turns every gap into a cold respawn, which is the failure
+# this fork exists to remove. Env-tunable via GDDP_PI_RPC_IDLE_TIMEOUT_S.
+_DEFAULT_IDLE_TIMEOUT_S = 43200.0  # 12h
 
 _PACKET_PREAMBLE = (
     "Treat the following JSON as the authoritative GDDP NodePacket.\n\n"
