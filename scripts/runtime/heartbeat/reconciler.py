@@ -1003,6 +1003,25 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
     session_db_id = session["session_db_id"]
     job_id = session["job_id"]
 
+    # Operator-cancelled jobs are terminal: never resurrect them via retry.
+    # jobs_status 'set cancelled' is the operator-recovery path; without this
+    # check a killed session looks like a crash and the job is redispatched
+    # on the next tick, undoing the cancellation.
+    job_state = str(job["queue_state"] or job["status"] or "")
+    if job_state == "cancelled":
+        update_executor_session_state(
+            con,
+            session_db_id,
+            state="failed",
+            error=error or "job cancelled by operator",
+        )
+        con.commit()
+        print(
+            f"[reconcile] {session_db_id}: job {job_id} is operator-cancelled; "
+            "session marked failed, no retry allocated"
+        )
+        return
+
     if classify_executor_failure(error) == "auth_blocked":
         if session["state"] == "needs_operator":
             return  # already parked; stay quiet between ticks
