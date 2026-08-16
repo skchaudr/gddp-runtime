@@ -266,3 +266,49 @@ def test_cancel_marks_request(fake_pi, git_repo, tmp_path):
     while status.state in {"dispatched", "running"} and time.time() < deadline:
         time.sleep(0.1)
         status = adapter.status(result.session_ref)
+
+
+# ---------------------------------------------------------------------------
+# _observability_env
+# ---------------------------------------------------------------------------
+
+
+def test_observability_env_tags_attempt(tmp_path):
+    from adapters.pi_rpc_adapter import _observability_env
+
+    env_file = tmp_path / "env"
+    env_file.write_text(
+        "# comment\n"
+        "export OBS_SERVER_URL='http://100.93.242.91:43190'\n"
+        "export OBS_TOKEN=\"sekret\"\n"
+        "export OBS_POOL='fleet'\n"
+    )
+    obs = _observability_env(
+        {
+            "node_id": "node-01b-contract-review",
+            "job_id": "job_123",
+            "attempt_index": 0,
+            "project_id": "myapi-part2",
+        },
+        env_file=env_file,
+    )
+    assert obs["OBS_SERVER_URL"] == "http://100.93.242.91:43190"
+    assert obs["OBS_TOKEN"] == "sekret"  # env only, never argv
+    assert obs["OBS_POOL"] == "gddp"  # overridden from fleet
+    assert obs["OBS_NAME"] == "gddp-node-01b-contract-review"
+    tags = obs["OBS_TAG"].split(",")
+    assert "gddp" in tags
+    assert "project:myapi-part2" in tags
+    assert "node:node-01b-contract-review" in tags
+    assert "job:job_123" in tags
+    assert "attempt:0" in tags
+    assert any(t.startswith("host:") for t in tags)
+
+
+def test_observability_env_off_when_unconfigured(tmp_path):
+    from adapters.pi_rpc_adapter import _observability_env
+
+    assert _observability_env({"node_id": "n"}, env_file=tmp_path / "missing") == {}
+    env_file = tmp_path / "env"
+    env_file.write_text("export OBS_POOL='fleet'\n")  # no server URL
+    assert _observability_env({"node_id": "n"}, env_file=env_file) == {}

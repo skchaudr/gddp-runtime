@@ -18,6 +18,7 @@ import json
 import os
 import select
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -328,6 +329,47 @@ def read_pi_rpc_status(spool_root: Path, session_id: str) -> SessionStatus:
 # ---------------------------------------------------------------------------
 
 
+def _observability_env(
+    packet: dict, env_file: Path | None = None
+) -> dict[str, str]:
+    """Child env for the pi-observability extension, tagged per attempt.
+
+    The extension loads globally via ~/.pi/agent/settings.json. Without
+    OBS_* it defaults to localhost with no token and spams post_failed
+    into the session stream. Token stays in env, never argv. Returns an
+    empty dict when the fleet client is not configured (feature off).
+    """
+    env_file = env_file or (Path.home() / ".config" / "pi-observability" / "env")
+    obs: dict[str, str] = {}
+    try:
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or not line.startswith("export "):
+                continue
+            key, _, value = line[len("export "):].partition("=")
+            obs[key.strip()] = value.strip().strip("'").strip('"')
+    except OSError:
+        return {}
+    if not obs.get("OBS_SERVER_URL"):
+        return {}
+    node_id = str(packet.get("node_id") or "unknown")
+    job_id = str(packet.get("job_id") or "unknown")
+    attempt = str(packet.get("attempt_index") or "0")
+    tags = [
+        f"host:{socket.gethostname().split('.')[0]}",
+        "gddp",
+        f"node:{node_id}",
+        f"job:{job_id}",
+        f"attempt:{attempt}",
+    ]
+    if packet.get("project_id"):
+        tags.insert(2, f"project:{packet['project_id']}")
+    obs["OBS_POOL"] = "gddp"
+    obs["OBS_NAME"] = f"gddp-{node_id}"
+    obs["OBS_TAG"] = ",".join(tags)
+    return obs
+
+
 def run_attempt(attempt_dir: Path) -> int:
     """Drive one packet turn to agent_end, then persist a commit-ref handoff."""
     from local_agent_executor import (  # noqa: PLC0415 - scripts/ on path
@@ -402,6 +444,7 @@ def run_attempt(attempt_dir: Path) -> int:
             text=True,
             bufsize=1,
             cwd=str(worktree),
+            env={**os.environ, **_observability_env(packet)},
             start_new_session=True,
         )
         _atomic_write(attempt_dir / "pid", str(proc.pid))
