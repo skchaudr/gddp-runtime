@@ -1,5 +1,5 @@
 ---
-description: Multi-agent orchestration loop: dispatch Medic, Foreman, Steward, Sweep, Janitor, Bridgekeeper
+description: "Multi-agent orchestration loop: dispatch Medic, Foreman, Steward, Sweep, Janitor, Bridgekeeper"
 argument-hint: "<project>"
 ---
 
