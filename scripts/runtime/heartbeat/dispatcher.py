@@ -252,6 +252,7 @@ def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
             if job.get("expected_base_commit_sha")
             else None
         ),
+        project_id=str(job.get("project_id") or ""),
     )
 
 

@@ -312,3 +312,32 @@ def test_observability_env_off_when_unconfigured(tmp_path):
     env_file = tmp_path / "env"
     env_file.write_text("export OBS_POOL='fleet'\n")  # no server URL
     assert _observability_env({"node_id": "n"}, env_file=env_file) == {}
+
+
+def test_observability_env_project_tag_from_production_packet(tmp_path):
+    """Build the packet through the real dispatcher builder (job-row shape,
+    no synthetic project_id shortcut) and assert the tag survives."""
+    from adapters.pi_rpc_adapter import _observability_env
+    from runtime.heartbeat.dispatcher import _build_node_packet
+
+    job = {
+        "job_id": "job_prod",
+        "node_id": "node-02-chat-path-scorer",
+        "project_id": "myapi-part2",
+        "title": "t",
+        "goal": "g",
+        "why": "w",
+        "constraints": "[]",
+        "acceptance_criteria": "[]",
+        "required_artifacts": "[]",
+        "attempt": 0,
+        "project_id": "myapi-part2",
+    }
+    packet = _build_node_packet(job)
+    assert packet.project_id == "myapi-part2"
+    # packet.json round trip: run_attempt sees the serialized dict
+    packet_dict = json.loads(packet.to_json())
+    env_file = tmp_path / "env"
+    env_file.write_text("export OBS_SERVER_URL='http://hub:43190'\n")
+    obs = _observability_env(packet_dict, env_file=env_file)
+    assert "project:myapi-part2" in obs["OBS_TAG"].split(",")

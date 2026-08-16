@@ -64,6 +64,7 @@ class NodePacket:
     attempt_index: int
     previous_findings: Mapping[str, FrozenJSON] | None = None
     expected_base_commit_sha: str | None = None
+    project_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -104,6 +105,7 @@ class NodePacket:
                 else None
             ),
             "expected_base_commit_sha": self.expected_base_commit_sha,
+            "project_id": self.project_id,
         }
 
     def to_json(self) -> str:
