@@ -114,6 +114,15 @@ while True:
 '''
 
 
+@pytest.fixture(autouse=True)
+def _isolate_fake_pi_env(monkeypatch):
+    """Keep FAKE_PI_* off the process after each test. Tests still set them
+    with os.environ; teardown restores the pre-test values."""
+    monkeypatch.delenv("FAKE_PI_MODE", raising=False)
+    monkeypatch.delenv("FAKE_PI_BOOT_MARKER", raising=False)
+    monkeypatch.delenv("FAKE_PI_PROMPT_MARKER", raising=False)
+
+
 @pytest.fixture
 def fake_pi(tmp_path: Path) -> Path:
     path = tmp_path / "fake-pi"
