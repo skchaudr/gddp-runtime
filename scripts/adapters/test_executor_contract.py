@@ -140,6 +140,9 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
         assert "docs/usage.md is absent" in rendered
         assert "The required usage guide was not created" in rendered
 
+    assert session_body.startswith("[GDDP] node execution request")
+    assert "## Node\nRepair transport" in session_body
+
 
 def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
     api = JulesApiAdapter("owner/repo", api_key="test-key")

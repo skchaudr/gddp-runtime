@@ -18,9 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from adapters.executor_protocol import NodePacket, SessionRef  # noqa: E402
 from adapters.pi_rpc_adapter import (  # noqa: E402
     PiRpcAdapter,
+    _PACKET_PREAMBLE,
+    _assemble_turn_prompt,
     _pid_is_running,
     read_pi_rpc_status,
 )
+from adapters.session_prompt import split_packet_zones  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -767,3 +770,41 @@ def test_observability_env_project_tag_from_production_packet(tmp_path):
     env_file.write_text("export OBS_SERVER_URL='http://hub:43190'\n")
     obs = _observability_env(packet_dict, env_file=env_file)
     assert "project:myapi-part2" in obs["OBS_TAG"].split(",")
+
+
+def _zone_packet(*, attempt: int) -> dict:
+    return {
+        "node_id": "node-01",
+        "title": "T",
+        "goal": "G",
+        "why": "W",
+        "constraints": [],
+        "acceptance_criteria": [],
+        "required_artifacts": [],
+        "job_id": "job-a",
+        "execution_attempt_id": f"job-a:attempt:{attempt}",
+        "attempt_index": attempt,
+        "expected_base_commit_sha": "abc",
+        "previous_findings": None,
+    }
+
+
+def test_split_packet_zones_stable_across_retries():
+    stable0, vol0 = split_packet_zones(_zone_packet(attempt=0))
+    stable1, vol1 = split_packet_zones(_zone_packet(attempt=1))
+    assert stable0 == stable1
+    assert "execution_attempt_id" not in stable0
+    assert vol0 != vol1
+    assert stable0.startswith('{"node_id":')
+    assert '"job_id":' in vol0
+
+
+def test_turn_prompt_puts_node_json_before_attempt_envelope():
+    packet = _zone_packet(attempt=0)
+    stable, _volatile = split_packet_zones(packet)
+    prompt = _assemble_turn_prompt(worktree=Path("/tmp/wt"), packets=[packet])
+    assert prompt.startswith(_PACKET_PREAMBLE)
+    assert prompt.index(stable) < prompt.index("### ATTEMPT ENVELOPE")
+    assert prompt.index(stable) < prompt.index("execution_attempt_id")
+    assert prompt.index(stable) < prompt.index("worktree_path:")
+    assert "worktree_path: /tmp/wt" in prompt

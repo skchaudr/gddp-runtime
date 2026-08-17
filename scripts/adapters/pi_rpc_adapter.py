@@ -49,6 +49,7 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
+from adapters.session_prompt import split_packet_zones
 
 _EXECUTOR = "pi_rpc"
 _SPOOL_ENV = "GDDP_PI_RPC_SPOOL_DIR"
@@ -434,6 +435,38 @@ def _observability_env(
     return obs
 
 
+def _assemble_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> str:
+    """Preamble + stable node JSON first; attempt ids and worktree last.
+
+    Prefix caches only discount a byte-identical prefix. Putting
+    execution_attempt_id or worktree_path above the node body busts the
+    cache for the whole packet on every attempt.
+    """
+    n = len(packets)
+    node_blocks: list[str] = []
+    envelopes: list[str] = []
+    for idx, packet in enumerate(packets, start=1):
+        stable_zone, volatile_zone = split_packet_zones(packet)
+        node_blocks.append(
+            f"### NODE {idx} (authoritative GDDP NodePacket)\n{stable_zone}"
+        )
+        envelopes.append(
+            f"### ATTEMPT ENVELOPE {idx}\n{volatile_zone}\n"
+            f"worktree_path: {worktree}"
+        )
+    turn_note = (
+        f"### TURN — {n} packet(s) on the session worktree {worktree}. "
+        "Worker-subagent count is the step-2 cap, not one per packet."
+    )
+    return (
+        f"{_PACKET_PREAMBLE}\n\n"
+        + "\n\n".join(node_blocks)
+        + "\n\n"
+        + "\n\n".join(envelopes)
+        + f"\n\n{turn_note}\n"
+    )
+
+
 @dataclass(frozen=True)
 class _TurnOutcome:
     """Result of persisting exactly one NodePacket's slot within a (possibly
@@ -546,18 +579,10 @@ def _run_one_turn(
     # attempt below once the turn ends, since it is the SAME shared turn.
     client.events_path = active[0][0] / "events.jsonl"
 
-    packet_blocks = [
-        f"--- packet {idx} of {n} ---\n"
-        f"execution_attempt_id: {packet.get('execution_attempt_id')}\n"
-        f"worktree_path: {worktree}\n\n"
-        f"{packet_raw}"
-        for idx, (attempt_dir, packet, packet_raw) in enumerate(active, start=1)
-    ]
-    batch_header = (
-        f"### TURN — {n} packet(s) on the session worktree {worktree}. "
-        "Worker-subagent count is the step-2 cap, not one per packet.\n"
+    prompt = _assemble_turn_prompt(
+        worktree=worktree,
+        packets=[packet for _attempt_dir, packet, _packet_raw in active],
     )
-    prompt = f"{_PACKET_PREAMBLE}\n\n{batch_header}\n" + "\n\n".join(packet_blocks)
 
     plumbing = False
     turn_error: str | None = None

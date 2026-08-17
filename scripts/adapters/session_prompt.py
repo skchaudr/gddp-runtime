@@ -7,9 +7,53 @@ transport modules.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 
 from adapters.executor_protocol import NodePacket
+
+# Prefix caching only discounts a byte-identical prompt prefix. Per-attempt
+# identifiers must therefore be serialized AFTER the node content, never sorted
+# into the middle of it (which is what json.dumps(sort_keys=True) does: it
+# hoists attempt_index and execution_attempt_id to keys 2 and 4). Key order
+# below is explicit and load-bearing — do not alphabetize.
+_STABLE_PROMPT_KEYS = (
+    "node_id",
+    "title",
+    "goal",
+    "why",
+    "constraints",
+    "acceptance_criteria",
+    "required_artifacts",
+)
+_VOLATILE_PROMPT_KEYS = (
+    "job_id",
+    "execution_attempt_id",
+    "attempt_index",
+    "expected_base_commit_sha",
+    "previous_findings",
+)
+
+
+def split_packet_zones(packet: Mapping[str, object]) -> tuple[str, str]:
+    """Split a transport packet mapping into (stable, volatile) JSON zones.
+
+    The stable zone is byte-identical across retries of the same node, so a
+    retry reuses the cached prefix instead of re-billing the whole packet.
+    Unknown keys fall into the volatile zone so a future packet field is never
+    silently dropped from the prompt.
+    """
+
+    def _dump(keys: tuple[str, ...]) -> str:
+        return json.dumps(
+            {key: packet[key] for key in keys if key in packet},
+            sort_keys=False,
+            separators=(",", ":"),
+        )
+
+    known = set(_STABLE_PROMPT_KEYS) | set(_VOLATILE_PROMPT_KEYS)
+    extra = tuple(sorted(key for key in packet if key not in known))
+    return _dump(_STABLE_PROMPT_KEYS), _dump(_VOLATILE_PROMPT_KEYS + extra)
 
 
 def flatten(item) -> str:
@@ -74,9 +118,13 @@ def build_session_instructions(packet: NodePacket) -> str:
             f"\n### Criteria Findings\n{criteria_findings_list}\n"
         )
 
-    header = f"[GDDP] {packet.title}" if packet.title else "GDDP task"
+    # Byte-stable across every node and project so the framing text below it
+    # can share a cached prefix. The node title lives in the body instead.
+    header = "[GDDP] node execution request"
+    title_line = f"## Node\n{packet.title}\n\n" if packet.title else ""
     return (
         f"{header}\n\n"
+        f"{title_line}"
         f"## Goal\n{packet.goal}\n\n"
         f"## Why\n{packet.why}\n\n"
         f"## Constraints\n{constraints_text}\n\n"
