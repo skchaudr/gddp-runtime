@@ -856,6 +856,8 @@ def test_executor_turn_prompt_cache_report_potential_reuse():
     assert report.attempt_tokens > 0
     assert report.potential_reuse_tokens == report.protocol_tokens + report.node_tokens
     assert 0.0 < report.potential_reuse_ratio < 1.0
-    # No provider feed yet -> bust loss is zero (structural only).
+    # No provider feed yet -> actual is unmeasured (None), not 0. No bust-loss
+    # field exists (provider reality vs GDDP structural potential span
+    # different surfaces and are not compared).
     assert report.actual_cached_tokens is None
-    assert report.cache_bust_loss_tokens == 0
+    assert not hasattr(report, "cache_bust_loss_tokens")

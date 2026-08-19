@@ -123,34 +123,40 @@ def test_prompt_cache_report_structural_breakdown() -> None:
     assert report.potential_reuse_ratio == pytest.approx((proto + proj + node) / total)
 
 
-def test_cache_bust_loss_quantifies_gap_to_provider() -> None:
-    """When the provider caches less than the structural potential, bust loss
-    is the missing tokens — the 'go find the 1.7%' metric."""
+def test_provider_actual_cached_is_stored_verbatim_not_compared() -> None:
+    """actual_cached_tokens is the provider's authoritative measurement across
+    the WHOLE prompt (harness + GDDP zones). It is stored verbatim and NOT
+    compared against GDDP's structural potential — the two span different
+    surfaces, so a derived bust-loss would be semantically broken. The
+    headline number is provider reality; GDDP's zones describe shape only."""
     tp = _tp()
-    potential = token_estimate(_PROTO) + token_estimate(_PROJECT) + token_estimate(_NODE)
-    actual = int(potential * 0.9)
-    expected_loss = potential - actual
-    report = prompt_cache_report(tp, actual_cached_tokens=actual)
-    assert report.actual_cached_tokens == actual
-    assert report.cache_bust_loss_tokens == expected_loss
-    assert report.cache_bust_loss_ratio == pytest.approx(expected_loss / potential)
+    # A large provider value (the real ~772k shape) lands untouched.
+    report = prompt_cache_report(tp, actual_cached_tokens=772608)
+    assert report.actual_cached_tokens == 772608
+    # The structural zones are still reported as the GDDP-authored view.
+    assert report.potential_reuse_tokens == token_estimate(_PROTO) + token_estimate(_PROJECT) + token_estimate(_NODE)
+    # No bust-loss fields exist.
+    assert not hasattr(report, "cache_bust_loss_tokens")
+    assert not hasattr(report, "cache_bust_loss_ratio")
 
 
-def test_cache_bust_loss_is_zero_when_provider_meets_potential() -> None:
+def test_provider_actual_cached_none_means_unmeasured() -> None:
+    """No provider feed -> actual_cached_tokens is None (unmeasured), not 0.
+    The structural zones are still reported."""
     tp = _tp()
-    potential = token_estimate(_PROTO) + token_estimate(_PROJECT) + token_estimate(_NODE)
-    report = prompt_cache_report(tp, actual_cached_tokens=potential)
-    assert report.cache_bust_loss_tokens == 0
-    assert report.cache_bust_loss_ratio == 0.0
+    report = prompt_cache_report(tp)
+    assert report.actual_cached_tokens is None
+    assert report.potential_reuse_tokens > 0
 
 
-def test_cache_bust_loss_capped_at_potential() -> None:
-    """A provider reporting zero cached tokens can't bust more than potential."""
+def test_cache_report_as_dict_has_no_bust_keys() -> None:
+    """The serialized report carries provider reality + GDDP zones, no bust."""
     tp = _tp()
-    potential = token_estimate(_PROTO) + token_estimate(_PROJECT) + token_estimate(_NODE)
-    report = prompt_cache_report(tp, actual_cached_tokens=0)
-    assert report.cache_bust_loss_tokens == potential
-    assert report.cache_bust_loss_ratio == 1.0
+    d = prompt_cache_report(tp, actual_cached_tokens=100).as_dict()
+    assert "actual_cached_tokens" in d
+    assert "potential_reuse_tokens" in d
+    assert "cache_bust_loss_tokens" not in d
+    assert "cache_bust_loss_ratio" not in d
 
 
 def test_cache_topology_error_is_named() -> None:
@@ -227,8 +233,8 @@ def test_extract_actual_cached_tokens_sums_multiple_message_end_in_turn() -> Non
 
 def test_extract_actual_cached_tokens_zero_cacheread_is_measured_not_absent() -> None:
     """cacheRead=0 on a message_end is a real measurement (cold turn, nothing
-    cached yet) — it returns 0, not None, so cache_bust_loss reads as 100% bust
-    for a cold start rather than 'no metric'."""
+    cached yet) — it returns 0, not None, so the provider measurement reads as
+    '0 cached' for a cold start rather than 'no metric' (None)."""
     from scripts.prompt_topology import extract_actual_cached_tokens
 
     events = [{"type": "message_end", "message": {"usage": {"cacheRead": 0}}}]

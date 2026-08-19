@@ -154,17 +154,30 @@ class CacheTopologyError(RuntimeError):
 
 @dataclass(frozen=True)
 class PromptCacheReport:
-    """Per-turn cache-efficiency breakdown for the cost tracker.
+    """Per-turn cache report: two separate views, never blended.
 
-    The first four fields are structural (knowable from topology alone).
-    ``actual_cached_tokens`` is the provider-reported cached-input-token count
-    for this turn; when supplied it yields the real economics. When absent the
-    report still shows the *potential* reuse ceiling.
+    View 1 — provider measurement (authoritative): ``actual_cached_tokens``
+    is what the provider reported it served from its prefix cache for this
+    turn. It spans the WHOLE prompt the model saw (pi harness: AGENTS.md,
+    skills, tool schemas, system prompt + GDDP's zones). GDDP does not author
+    or model the harness, so this number is the real cache anchor and is not
+    compared against GDDP's own structural potential.
 
-    ``cache_bust_loss_tokens`` is the metric Sab wants: structurally reusable
-    tokens the provider did not cache. ``cache_bust_loss_ratio`` is its share
-    of the potential-reuse prefix. A non-zero bust loss says "go find the
-    stupid 1.7%."
+    View 2 — GDDP-authored zone topology: per-zone token estimates and
+    ``potential_reuse_tokens`` (protocol + project + node — the stable prefix
+    GDDP controls). This describes the SHAPE of what GDDP contributes to the
+    cache topology (how much is stable-prefix-shaped vs volatile-tail), not a
+    comparable cache-hit ratio. A retry-stable node keeps its node zone
+    byte-identical so GDDP's slice stays cacheable; that is the structural
+    property GDDP is responsible for.
+
+    There is deliberately no ``cache_bust_loss`` field. A bust-loss computed
+    as (GDDP potential - provider actual) is semantically broken: the
+    denominator is GDDP's ~hundreds of tokens while the numerator spans the
+    ~hundreds-of-thousands-of-token harness GDDP does not model. Modeling the
+    harness to produce one grand unified percentage would couple GDDP to pi's
+    internal prompt construction; that coupling is rejected until a concrete
+    need earns it.
     """
 
     total_input_tokens: int
@@ -175,8 +188,6 @@ class PromptCacheReport:
     potential_reuse_tokens: int
     potential_reuse_ratio: float
     actual_cached_tokens: int | None
-    cache_bust_loss_tokens: int
-    cache_bust_loss_ratio: float
 
     def as_dict(self) -> dict[str, float | int | None]:
         return {
@@ -188,8 +199,6 @@ class PromptCacheReport:
             "potential_reuse_tokens": self.potential_reuse_tokens,
             "potential_reuse_ratio": round(self.potential_reuse_ratio, 4),
             "actual_cached_tokens": self.actual_cached_tokens,
-            "cache_bust_loss_tokens": self.cache_bust_loss_tokens,
-            "cache_bust_loss_ratio": round(self.cache_bust_loss_ratio, 4),
         }
 
 
@@ -291,12 +300,13 @@ def prompt_cache_report(
     *,
     actual_cached_tokens: int | None = None,
 ) -> PromptCacheReport:
-    """Build the cache-efficiency breakdown for one turn.
+    """Build the cache report for one turn — two separate views, never blended.
 
-    ``potential_reuse_tokens`` is everything ahead of the attempt zone:
-    protocol + project + node. For a retry of the same node that is the exact
-    prefix the provider should serve from cache. ``actual_cached_tokens`` is
-    what the provider reported; the gap is cache bust loss.
+    ``actual_cached_tokens`` (when supplied) is the provider's authoritative
+    measurement across the whole prompt; it is stored as-is and NOT compared
+    against the structural zones below. ``potential_reuse_tokens`` is the
+    GDDP-authored stable prefix (protocol + project + node) — a structural
+    property of what GDDP contributes, not a cache-hit denominator.
     """
     volatility_invariant(tp)
     proto = tp.zone_token_estimate("protocol")
@@ -306,13 +316,6 @@ def prompt_cache_report(
     total = proto + proj + node + attempt
     potential = proto + proj + node
     potential_ratio = potential / total if total else 0.0
-    if actual_cached_tokens is None:
-        bust = 0
-        bust_ratio = 0.0
-    else:
-        # potential - actual, never negative, never above potential
-        bust = max(0, potential - actual_cached_tokens)
-        bust_ratio = bust / potential if potential else 0.0
     return PromptCacheReport(
         total_input_tokens=total,
         protocol_tokens=proto,
@@ -322,6 +325,4 @@ def prompt_cache_report(
         potential_reuse_tokens=potential,
         potential_reuse_ratio=potential_ratio,
         actual_cached_tokens=actual_cached_tokens,
-        cache_bust_loss_tokens=bust,
-        cache_bust_loss_ratio=bust_ratio,
     )
