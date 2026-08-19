@@ -6,7 +6,7 @@ Verified transport (scripts/runtime/spike/pi_rpc_persistent_spike.py):
   - Multi-turn context survives in one process / session file
 
 Fork A (2026-08-16): one long-lived `pi --mode rpc` process is spawned PER
-PROJECT, not per node — that process is the project's single orchestrator.
+PROJECT, not per node — that process is the project's single executor.
 dispatch() drops each NodePacket into that project's inbox.
 run_orchestrator opens ONE git worktree for the session (at the first
 packet's base commit) and keeps it until the session exits. Each claimed
@@ -71,10 +71,13 @@ _DEFAULT_IDLE_TIMEOUT_S = 43200.0  # 12h
 
 _PACKET_PREAMBLE = (
     "Treat the following JSON as the authoritative GDDP NodePacket.\n\n"
-    "You are the ORCHESTRATOR of this attempt, not the implementer. Doing "
-    "the node's investigation, construction, or measurement work directly "
-    "is a protocol violation.\n\n"
-    "Operating protocol:\n"
+    "You are the EXECUTOR for this node. You have autonomy over how you "
+    "accomplish it within its constraints. You are not the graph "
+    "orchestrator — graph progression, dispatch selection, and lifecycle "
+    "transition are handled elsewhere. Your job is to satisfy this node's "
+    "contract in service of graph completion, without unnecessary scope "
+    "expansion or speculative hardening.\n\n"
+    "Execution protocol:\n"
     "1. Read the packet, then decompose the goal into bounded tasks.\n"
     "2. Dispatch worker subagents to perform the work: up to 5 concurrent, "
     "model xai/grok-4.6 via the subagent tool's model parameter. Workers "
@@ -88,12 +91,13 @@ _PACKET_PREAMBLE = (
     "5. Close with parallel reviewer subagents (model "
     "deepseek/deepseek-v4-pro), each assigned a different explicit focus "
     "(criteria coverage, evidence integrity, constraint compliance). "
-    "Resolve their findings before finishing.\n\n"
-    "This session is long-lived and is the ONE orchestrator for this "
+    "Resolve their findings before finishing. For heavy validation or "
+    "cross-node integrity review, use model moonshotai/kimi-k3.\n\n"
+    "This session is long-lived and is the ONE executor for this "
     "project across many packets. The session owns one worktree for its "
     "whole life — the worktree_path named below. Point every worker at "
     "that path. Do not create another worktree, and do not spawn a "
-    "per-packet orchestrator. Worker-subagent count is the concurrent "
+    "per-packet executor. Worker-subagent count is the concurrent "
     "cap in step 2, a shared budget, not one worker per packet. Your "
     "own working directory never changes and is NOT the worktree — "
     "never edit files there yourself. Create this packet's required "

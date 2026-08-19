@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# gddp-orchestrator — launch Pi as a boring GDDP orchestrator.
+#
+# Restricted tools (no edit, no write): the orchestrator observes and
+# dispatches; it does not implement. Sources the same GDDP env as the
+# mini-heartbeat so the `gddp` CLI is configured. Sources pi-observability
+# so the orchestrator session is visible in the fleet dashboard.
+#
+# Usage:
+#   deploy/bin/gddp-orchestrator              # interactive, default model
+#   deploy/bin/gddp-orchestrator --model xai/grok-4.6  # override model
+#   deploy/bin/gddp-orchestrator --continue   # resume previous session
+#
+# On sab-air: ssh sab-mini@sab-air then run from ~/repos/gddp-runtime.
+set -euo pipefail
+
+KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# 1. GDDP env — same source as deploy/mini-heartbeat/bin/common.sh
+ENV_FILE="${MINI_HEARTBEAT_ENV:-$KIT_ROOT/deploy/mini-heartbeat/env/gddp.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+GDDP_RUNTIME_ROOT="${GDDP_RUNTIME_ROOT:-$HOME/repos/gddp-runtime}"
+GDDP_CONFIG_PATH="${GDDP_CONFIG_PATH:-$HOME/repos/gddp-config}"
+
+# 2. Pi-observability fleet env — same source as `piobs pi`
+if [[ -r "$HOME/.config/pi-observability/env" ]]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.config/pi-observability/env"
+  # Override for orchestrator role — distinguish from executor sessions
+  export OBS_POOL="gddp"
+  export OBS_NAME="orchestrator-$(hostname -s)"
+  export OBS_TAG="host:$(hostname -s),gddp,role:orchestrator"
+fi
+
+# 3. Block gddp steer — reserved for the human operator
+gddp() {
+  if [[ "$1" == "steer" ]]; then
+    echo "gddp steer is reserved for the human operator" >&2
+    return 1
+  fi
+  command gddp "$@"
+}
+export -f gddp
+
+# 4. Launch Pi with restricted tools + orchestrator doctrine
+DOCTRINE="$KIT_ROOT/deploy/orchestrator/doctrine.md"
+MODEL="${GDDP_PI_RPC_MODEL:-openai-codex/gpt-5.6-sol}"
+
+exec pi \
+  --model "$MODEL" \
+  --tools read,bash,grep,find,ls,subagent \
+  --append-system-prompt "@$DOCTRINE" \
+  --cwd "$GDDP_RUNTIME_ROOT" \
+  "$@"
