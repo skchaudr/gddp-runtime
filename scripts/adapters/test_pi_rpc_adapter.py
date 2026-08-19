@@ -20,6 +20,7 @@ from adapters.pi_rpc_adapter import (  # noqa: E402
     PiRpcAdapter,
     _PACKET_PREAMBLE,
     _assemble_turn_prompt,
+    build_executor_turn_prompt,
     _pid_is_running,
     read_pi_rpc_status,
 )
@@ -808,3 +809,53 @@ def test_turn_prompt_puts_node_json_before_attempt_envelope():
     assert prompt.index(stable) < prompt.index("execution_attempt_id")
     assert prompt.index(stable) < prompt.index("worktree_path:")
     assert "worktree_path: /tmp/wt" in prompt
+
+
+def test_executor_turn_prompt_retry_preserves_protocol_and_node_prefix():
+    """Two attempts of the same node share protocol (preamble) + node zones
+    byte-for-byte; only the attempt tail (ids + worktree) varies."""
+    from scripts.prompt_topology import common_prefix_tokens, token_estimate
+
+    p0 = _zone_packet(attempt=0)
+    p1 = _zone_packet(attempt=1)
+    a = _assemble_turn_prompt(worktree=Path("/tmp/wt-a"), packets=[p0])
+    b = _assemble_turn_prompt(worktree=Path("/tmp/wt-b"), packets=[p1])
+    # Preamble (protocol) is the shared prefix.
+    assert a.startswith(_PACKET_PREAMBLE)
+    assert b.startswith(_PACKET_PREAMBLE)
+    stable, _ = split_packet_zones(p0)
+    expected = token_estimate(_PACKET_PREAMBLE) + token_estimate(stable)
+    assert common_prefix_tokens(a, b) >= expected
+
+
+def test_executor_turn_prompt_worktree_stays_in_attempt_zone():
+    """worktree_path must not precede the node zone (it busts the cached prefix)."""
+    from scripts.prompt_topology import TurnPrompt  # noqa: F401
+
+    tp = build_executor_turn_prompt(
+        worktree=Path("/repo/.worktrees/n7"), packets=[_zone_packet(attempt=0)]
+    )
+    bounds = tp.zone_offsets()
+    text = tp.assemble()
+    node_end = bounds["node"][1]
+    assert text.index("worktree_path:") >= node_end
+    assert text.index("execution_attempt_id") >= node_end
+
+
+def test_executor_turn_prompt_cache_report_potential_reuse():
+    """The structural cache report shows protocol+node as reusable prefix and
+    attempt as volatile; potential_reuse_ratio > 0 for a real packet."""
+    from scripts.prompt_topology import prompt_cache_report
+
+    tp = build_executor_turn_prompt(
+        worktree=Path("/tmp/wt"), packets=[_zone_packet(attempt=0)]
+    )
+    report = prompt_cache_report(tp)
+    assert report.protocol_tokens > 0
+    assert report.node_tokens > 0
+    assert report.attempt_tokens > 0
+    assert report.potential_reuse_tokens == report.protocol_tokens + report.node_tokens
+    assert 0.0 < report.potential_reuse_ratio < 1.0
+    # No provider feed yet -> bust loss is zero (structural only).
+    assert report.actual_cached_tokens is None
+    assert report.cache_bust_loss_tokens == 0

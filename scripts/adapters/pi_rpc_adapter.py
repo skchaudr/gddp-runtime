@@ -50,6 +50,7 @@ from adapters.executor_protocol import (
     SessionStatus,
 )
 from adapters.session_prompt import split_packet_zones
+from prompt_topology import TurnPrompt, prompt_cache_report
 
 _EXECUTOR = "pi_rpc"
 _SPOOL_ENV = "GDDP_PI_RPC_SPOOL_DIR"
@@ -435,12 +436,18 @@ def _observability_env(
     return obs
 
 
-def _assemble_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> str:
-    """Preamble + stable node JSON first; attempt ids and worktree last.
+def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> TurnPrompt:
+    """Four-zone TurnPrompt for one executor turn.
 
-    Prefix caches only discount a byte-identical prefix. Putting
-    execution_attempt_id or worktree_path above the node body busts the
-    cache for the whole packet on every attempt.
+    protocol  = _PACKET_PREAMBLE (nearly immutable, shared by every turn)
+    project   = "" — repo/AGENTS.md context is loaded by pi itself, not
+               inlined here, so nothing graph-stable sits between protocol
+               and node today. (A future project zone would live here.)
+    node      = stable node JSON blocks (retry-stable per node)
+    attempt   = volatile envelopes (attempt ids + worktree) + turn note
+
+    Emitting protocol->project->node->attempt means a retry of the same
+    node reuses protocol+node and a sibling node reuses protocol.
     """
     n = len(packets)
     node_blocks: list[str] = []
@@ -458,13 +465,22 @@ def _assemble_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> str:
         f"### TURN — {n} packet(s) on the session worktree {worktree}. "
         "Worker-subagent count is the step-2 cap, not one per packet."
     )
-    return (
-        f"{_PACKET_PREAMBLE}\n\n"
-        + "\n\n".join(node_blocks)
-        + "\n\n"
-        + "\n\n".join(envelopes)
-        + f"\n\n{turn_note}\n"
+    return TurnPrompt(
+        protocol=_PACKET_PREAMBLE,
+        project="",
+        node="\n\n".join(node_blocks),
+        attempt="\n\n".join(envelopes) + f"\n\n{turn_note}\n",
     )
+
+
+def _assemble_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> str:
+    """Assemble the executor turn prompt as text (backward-compat shim).
+
+    Prefer ``build_executor_turn_prompt`` when you need the TurnPrompt object
+    (e.g. to compute a prompt_cache_report). This keeps the existing string
+    contract for tests and the RPC send path.
+    """
+    return build_executor_turn_prompt(worktree=worktree, packets=packets).assemble()
 
 
 @dataclass(frozen=True)
@@ -579,10 +595,23 @@ def _run_one_turn(
     # attempt below once the turn ends, since it is the SAME shared turn.
     client.events_path = active[0][0] / "events.jsonl"
 
-    prompt = _assemble_turn_prompt(
+    tp = build_executor_turn_prompt(
         worktree=worktree,
         packets=[packet for _attempt_dir, packet, _packet_raw in active],
     )
+    prompt = tp.assemble()
+    # Structural cache report: how much of this turn's prompt is reusable
+    # prefix vs volatile tail. Persisted into the result handoff so it flows
+    # through the operator loop as node evidence, not a side dashboard.
+    # `actual_cached_tokens` is wired later from the provider usage feed
+    # (events.jsonl / OpenRouter); today this is the potential-reuse ceiling
+    # and the per-zone token breakdown.
+    cache_report = prompt_cache_report(tp).as_dict()
+    for attempt_dir, _packet, _raw in active:
+        _atomic_write(
+            attempt_dir / "prompt_cache_report.json",
+            json.dumps(cache_report, sort_keys=True, separators=(",", ":")),
+        )
 
     plumbing = False
     turn_error: str | None = None
@@ -642,6 +671,16 @@ def _run_one_turn(
             continue
 
         handoff = persist_result(worktree, packet)
+        # Attach the structural cache report so it flows through collect() ->
+        # the operator loop as part of the node's evidence. The report is
+        # computed once per turn above; it is the same for the single active
+        # packet in this fork-A turn.
+        report_path = attempt_dir / "prompt_cache_report.json"
+        if report_path.exists():
+            try:
+                handoff["prompt_cache_report"] = json.loads(report_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
         (attempt_dir / "result.json").write_text(
             json.dumps(handoff, sort_keys=True, separators=(",", ":"))
         )
