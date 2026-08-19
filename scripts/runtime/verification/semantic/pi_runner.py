@@ -144,19 +144,40 @@ class PiHarnessRunner:
         if not EXTENSION_PATH.exists():
             raise RuntimeError(f"gddp_verifier extension missing: {EXTENSION_PATH}")
 
-        messages = build_prompt_messages(node, graph, deterministic_result, shape_profile)
-        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
-        # Canonical context: file pointers to README, PROJECT-BRIEF, foundational
-        # node, and DAG neighbors. The evaluator reads what it needs; the tool
-        # trace proves what was read. AGENTS.md is never included.
         canonical = build_canonical_pointers(
             node=node, graph=graph, repo=repo, config_root=self.config_root,
         )
-        canonical_block = (
-            "\n\n--- Canonical Context (file pointers — read what you need) ---\n"
-            + json.dumps(canonical, indent=2, sort_keys=True)
+        # Split canonical pointers by volatility so the stable ones join the
+        # cached prefix (shared across every eval of the same graph) and only
+        # the per-node neighbor pointers sit in the volatile tail.
+        stable_keys = ("readme", "project_brief", "foundational_node")
+        stable_core = {k: canonical[k] for k in stable_keys if k in canonical}
+        neighbor_core = {
+            k: v for k, v in canonical.items() if k not in stable_keys
+        }
+        stable_prefix_extra = (
+            "canonical_pointers: "
+            + json.dumps(stable_core, sort_keys=True, separators=(",", ":"))
+            + "\n"
+            if stable_core
+            else ""
         )
-        user_prompt = _extract_user_prompt(messages) + canonical_block
+        volatile_tail_extra = (
+            "\nneighbor_pointers: "
+            + json.dumps(neighbor_core, sort_keys=True, separators=(",", ":"))
+            if neighbor_core
+            else ""
+        )
+        messages = build_prompt_messages(
+            node=node,
+            graph=graph,
+            deterministic_result=deterministic_result,
+            shape_profile=shape_profile,
+            stable_prefix_extra=stable_prefix_extra,
+            volatile_tail_extra=volatile_tail_extra,
+        )
+        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
+        user_prompt = _extract_user_prompt(messages)
 
         with tempfile.NamedTemporaryFile(
             prefix="gddp-verdict-", suffix=".json", delete=False
