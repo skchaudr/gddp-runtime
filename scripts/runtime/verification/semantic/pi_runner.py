@@ -35,13 +35,14 @@ from scripts.runtime.verification.semantic.pi_environment import (
     build_pi_environment,
     evaluator_pi_argv0,
 )
-from scripts.runtime.verification.semantic.prompt import build_prompt_messages
+from scripts.runtime.verification.semantic.prompt import build_prompt_messages, build_turn_prompt
 from scripts.runtime.verification.semantic.subprocess_utils import (
     read_tail as _read_tail,
     read_trace as _read_trace,
     tee_subprocess as _tee_subprocess,
 )
 from scripts.runtime.verification.semantic.timeouts import PI_TIMEOUT_SECONDS
+from scripts.prompt_topology import TurnPrompt, prompt_cache_report
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier.ts"
@@ -178,6 +179,33 @@ class PiHarnessRunner:
         )
         sys_prompt = system_prompt or PI_SYSTEM_PROMPT
         user_prompt = _extract_user_prompt(messages)
+        # Structural cache report for the evaluator prompt. The protocol zone
+        # (SYSTEM_PROMPT) lives in the system message, so build_turn_prompt
+        # carries it as protocol=""; include it here so protocol_tokens reflects
+        # the cached prefix the provider actually sees (system + user framing).
+        # actual_cached_tokens is None: the evaluator runs `pi --print --mode
+        # text`, which emits final response text only — no structured usage
+        # events. Wiring the real feed requires --mode json (verified path),
+        # deferred until that mode change is validated against the guard
+        # extension. Today this is the GDDP-authored structural view only.
+        eval_tp = build_turn_prompt(
+            node=node,
+            graph=graph,
+            deterministic_result=deterministic_result,
+            shape_profile=shape_profile,
+            stable_prefix_extra=stable_prefix_extra,
+            volatile_tail_extra=volatile_tail_extra,
+        )
+        # Reconstruct the full four-zone topology for the report: protocol is
+        # the system prompt (carried in the system message, not in eval_tp),
+        # and the user-message zones come from eval_tp.
+        full_tp = TurnPrompt(
+            protocol=sys_prompt,
+            project=eval_tp.project,
+            node=eval_tp.node,
+            attempt=eval_tp.attempt,
+        )
+        eval_cache_report = prompt_cache_report(full_tp).as_dict()
 
         with tempfile.NamedTemporaryFile(
             prefix="gddp-verdict-", suffix=".json", delete=False
@@ -247,11 +275,16 @@ class PiHarnessRunner:
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
         # Ground-truth trace wins over whatever the model put in budget_trace
         # (submit_verdict always includes the key, usually null, so setdefault
-        # would never fire).
+        # would never fire). Attach the structural prompt_cache_report so the
+        # evaluator's cache topology flows into the verdict receipt alongside
+        # the tool-call trace — operator-visible evidence, same field family.
         if trace:
             raw["budget_trace"] = {"tool_calls": trace}
         else:
             raw.setdefault("budget_trace", None)
+        if raw.get("budget_trace") is None:
+            raw["budget_trace"] = {}
+        raw["budget_trace"]["prompt_cache_report"] = eval_cache_report
         raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
         # Success: the verdict was recorded, so the temp stdout/stderr logs are
         # no longer needed. Best-effort cleanup; never raise. On failure paths
