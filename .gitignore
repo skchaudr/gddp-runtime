@@ -1,7 +1,9 @@
 # Runtime data — never committed
 db/
-jobs/
-events/
+jobs/*
+!jobs/context.md
+events/*
+!events/context.md
 *.db
 *.sqlite
 *.sqlite3
