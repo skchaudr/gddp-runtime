@@ -613,6 +613,14 @@ def _run_one_turn(
             json.dumps(cache_report, sort_keys=True, separators=(",", ":")),
         )
 
+    # Capture the events.jsonl byte offset BEFORE this turn so the post-turn
+    # cache-report parse reads only THIS turn's usage events. events.jsonl is
+    # session-cumulative (appended across every turn on the same long-lived
+    # pi process); parsing the whole file would sum every prior turn's cached
+    # tokens against this single turn's structural potential — not comparable.
+    events_file = active[0][0] / "events.jsonl"
+    turn_event_offset = events_file.stat().st_size if events_file.exists() else 0
+
     plumbing = False
     turn_error: str | None = None
     try:
@@ -671,24 +679,30 @@ def _run_one_turn(
             continue
 
         handoff = persist_result(worktree, packet)
-        # Re-parse events.jsonl to extract actual cached tokens if reported by provider
+        # Parse ONLY this turn's events.jsonl tail (from the offset captured
+        # before the turn) to extract actual cached tokens the provider reported
+        # for THIS turn. Sums message_end usage only (deduped in
+        # extract_actual_cached_tokens); message_start stubs and turn_end
+        # cumulative duplicates are skipped.
         report_path = attempt_dir / "prompt_cache_report.json"
         events_path = attempt_dir / "events.jsonl"
         if events_path.exists():
             try:
-                events = []
-                for line in events_path.read_text().splitlines():
-                    if line.strip():
-                        with contextlib.suppress(json.JSONDecodeError):
-                            events.append(json.loads(line))
-                actual_cached = extract_actual_cached_tokens(events)
+                with events_path.open("r", encoding="utf-8") as handle:
+                    handle.seek(turn_event_offset)
+                    turn_events = [
+                        json.loads(line)
+                        for line in handle
+                        if line.strip()
+                    ]
+                actual_cached = extract_actual_cached_tokens(turn_events)
                 if actual_cached is not None:
                     updated_report = prompt_cache_report(tp, actual_cached_tokens=actual_cached).as_dict()
                     _atomic_write(
                         report_path,
                         json.dumps(updated_report, sort_keys=True, separators=(",", ":")),
                     )
-            except OSError:
+            except (OSError, json.JSONDecodeError):
                 pass
 
         # Attach the structural cache report (now with actual_cached_tokens if present)

@@ -183,3 +183,54 @@ def test_extract_actual_cached_tokens_various_formats() -> None:
     ]
     assert extract_actual_cached_tokens(events_generic) == 95
 
+
+def test_extract_actual_cached_tokens_pi_cacheread_shape() -> None:
+    """The VERIFIED live pi/openai-codex/xai shape: message.usage.cacheRead
+    on type=message_end events. This is the shape GDDP actually emits; the
+    extractor must recognize it or actual_cached_tokens is None forever."""
+    from scripts.prompt_topology import extract_actual_cached_tokens
+
+    events = [
+        {"type": "message_start", "message": {"role": "assistant", "usage": {"input": 0, "output": 0, "cacheRead": 0}}},
+        {"type": "message_end", "message": {"role": "assistant", "usage": {"input": 8781, "output": 340, "cacheRead": 348288, "cacheWrite": 0}}},
+    ]
+    assert extract_actual_cached_tokens(events) == 348288
+
+
+def test_extract_actual_cached_tokens_dedupes_message_start_and_turn_end() -> None:
+    """pi emits the same usage on message_start (zero stub), message_end
+    (final), and turn_end (cumulative duplicate). Summing all three would
+    triple-count; only message_end must be counted."""
+    from scripts.prompt_topology import extract_actual_cached_tokens
+
+    usage = {"input": 8781, "output": 340, "cacheRead": 348288, "cacheWrite": 0}
+    events = [
+        {"type": "message_start", "message": {"usage": {"input": 0, "output": 0, "cacheRead": 0}}},
+        {"type": "message_end", "message": {"usage": usage}},
+        {"type": "turn_end", "message": {"usage": usage}},
+    ]
+    # counted once, not 3x
+    assert extract_actual_cached_tokens(events) == 348288
+
+
+def test_extract_actual_cached_tokens_sums_multiple_message_end_in_turn() -> None:
+    """A turn with multiple LLM calls (tool-use round trips) has multiple
+    message_end events; their cacheRead sums to the turn's total cached."""
+    from scripts.prompt_topology import extract_actual_cached_tokens
+
+    events = [
+        {"type": "message_end", "message": {"usage": {"cacheRead": 100}}},
+        {"type": "message_end", "message": {"usage": {"cacheRead": 250}}},
+    ]
+    assert extract_actual_cached_tokens(events) == 350
+
+
+def test_extract_actual_cached_tokens_zero_cacheread_is_measured_not_absent() -> None:
+    """cacheRead=0 on a message_end is a real measurement (cold turn, nothing
+    cached yet) — it returns 0, not None, so cache_bust_loss reads as 100% bust
+    for a cold start rather than 'no metric'."""
+    from scripts.prompt_topology import extract_actual_cached_tokens
+
+    events = [{"type": "message_end", "message": {"usage": {"cacheRead": 0}}}]
+    assert extract_actual_cached_tokens(events) == 0
+

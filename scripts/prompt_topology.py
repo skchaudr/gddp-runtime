@@ -197,52 +197,93 @@ def extract_actual_cached_tokens(events: Sequence[dict]) -> int | None:
     """Extract actual cached input tokens reported across a sequence of RPC/LLM events.
 
     Inspects common provider usage formats:
+      - Pi / openai-codex / xai (VERIFIED against live events.jsonl):
+        message.usage.cacheRead  (camelCase, on type=message_end events)
       - Anthropic / OpenRouter: usage.cache_read_input_tokens
       - OpenAI API: usage.prompt_tokens_details.cached_tokens
-      - Generic / Pi events: usage.cached_tokens or usage.cache_read_tokens
+      - Generic: usage.cached_tokens or usage.cache_read_tokens
+
+    Dedup: pi emits the same usage object on message_start (a zero/pending
+    stub), message_end (the authoritative per-call final), and turn_end (a
+    cumulative turn summary). Counting all three would triple-count. Only
+    message_end events are summed; message_start and turn_end are skipped.
+    For event streams with no message_end events at all, any event carrying a
+    usage dict is counted once (fallback for non-pi providers).
 
     Returns total cached tokens if any usage event with cache details is found,
     or None if no provider usage cache metrics were present in the events.
     """
     total_cached = 0
     found_any = False
+    has_message_end = any(
+        isinstance(evt, dict) and evt.get("type") == "message_end" for evt in events
+    )
 
     for evt in events:
         if not isinstance(evt, dict):
             continue
-
-        usage_candidates: list[dict] = []
-        if "cache_read_input_tokens" in evt or "cached_tokens" in evt or "cache_read_tokens" in evt or "prompt_tokens_details" in evt:
-            usage_candidates.append(evt)
-        for key in ("usage", "event", "message", "response", "data"):
-            val = evt.get(key)
-            if isinstance(val, dict):
-                if "cache_read_input_tokens" in val or "cached_tokens" in val or "cache_read_tokens" in val or "prompt_tokens_details" in val:
-                    usage_candidates.append(val)
-                sub_usage = val.get("usage")
-                if isinstance(sub_usage, dict):
-                    usage_candidates.append(sub_usage)
-
-        if not usage_candidates:
+        # Skip stub and cumulative events to avoid double/triple counting the
+        # same per-call usage. message_start carries a pending (zero) stub and
+        # turn_end repeats message_end's usage as a cumulative summary.
+        if has_message_end and evt.get("type") in {"message_start", "turn_end"}:
             continue
 
-        usage = usage_candidates[0]
-        if "cache_read_input_tokens" in usage and usage["cache_read_input_tokens"] is not None:
-            total_cached += int(usage["cache_read_input_tokens"])
-            found_any = True
-        elif isinstance(usage.get("prompt_tokens_details"), dict):
-            ptd = usage["prompt_tokens_details"]
-            if "cached_tokens" in ptd and ptd["cached_tokens"] is not None:
-                total_cached += int(ptd["cached_tokens"])
-                found_any = True
-        elif "cached_tokens" in usage and usage["cached_tokens"] is not None:
-            total_cached += int(usage["cached_tokens"])
-            found_any = True
-        elif "cache_read_tokens" in usage and usage["cache_read_tokens"] is not None:
-            total_cached += int(usage["cache_read_tokens"])
+        usage = _find_usage_dict(evt)
+        if usage is None:
+            continue
+
+        cached = _read_cached_field(usage)
+        if cached is not None:
+            total_cached += cached
             found_any = True
 
     return total_cached if found_any else None
+
+
+def _find_usage_dict(evt: dict) -> dict | None:
+    """Locate the usage dict inside one event, preferring nested message.usage."""
+    cache_keys = ("cacheRead", "cache_read_input_tokens", "cached_tokens", "cache_read_tokens", "prompt_tokens_details")
+    # message.usage (pi openai-codex/xai shape) is the authoritative location.
+    msg = evt.get("message")
+    if isinstance(msg, dict):
+        u = msg.get("usage")
+        if isinstance(u, dict) and any(k in u for k in cache_keys):
+            return u
+    # top-level usage
+    u = evt.get("usage")
+    if isinstance(u, dict) and any(k in u for k in cache_keys):
+        return u
+    # nested response/data usage (other providers)
+    for key in ("response", "data"):
+        val = evt.get(key)
+        if isinstance(val, dict):
+            su = val.get("usage")
+            if isinstance(su, dict) and any(k in su for k in cache_keys):
+                return su
+    # event itself carries a cache field directly (generic shape)
+    if any(k in evt for k in cache_keys):
+        return evt
+    return None
+
+
+def _read_cached_field(usage: dict) -> int | None:
+    """Read a cached-token count from a usage dict across provider shapes."""
+    # Pi / openai-codex / xai (camelCase, verified live).
+    cr = usage.get("cacheRead")
+    if cr is not None:
+        return int(cr)
+    # Anthropic / OpenRouter.
+    if "cache_read_input_tokens" in usage and usage["cache_read_input_tokens"] is not None:
+        return int(usage["cache_read_input_tokens"])
+    # OpenAI standard.
+    ptd = usage.get("prompt_tokens_details")
+    if isinstance(ptd, dict) and ptd.get("cached_tokens") is not None:
+        return int(ptd["cached_tokens"])
+    # Generic fallbacks.
+    for k in ("cached_tokens", "cache_read_tokens"):
+        if k in usage and usage[k] is not None:
+            return int(usage[k])
+    return None
 
 
 def prompt_cache_report(
