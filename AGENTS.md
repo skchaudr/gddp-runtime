@@ -1,5 +1,7 @@
 # AGENTS.md — gddp-runtime
 
+Communication protocol: State each fact once. Never restate or rephrase a point you already made. No lead-in, no closing recap, no "to summarize." Stop when the answer is complete.
+
 Common Failure Pattern 7/30/2026 
 
 This project is rife with an incredibly unfortunate failure pattern and that failure pattern goes exactly like this. 
@@ -12,20 +14,22 @@ None of the architecture or implementation is considered sacred or unchallengeab
 
 ---- 
 
-Evaluator produces evidence + guards intent/integrity; only a human moves a node to complete. 
+Nodes are evaluated by an agentic evaluator, it's purpose is to protect user intent and project integrity by assessing work done both 
+1.As standalone results 
+2. How it relates to surrounding nodes 
+
+Evaluator does not modify the graph; as source of truth and embodiment of human intent (organizational or business logic, etc), only a human operator tasked with overseeing the graph may modify it. There is only ONE path to nodes being accepted, and that is through the human operator, anything else is provisional at best. 
 
 `gddp` is the operator-facing control plane. Runtime job reads and
-writes route through `scripts/jobs_status.py`; that backend may update runtime
-job/queue state but must never update graph/node status.
+writes route through `scripts/jobs_status.py`; that backend may update runtime job/queue state but must never update graph/node status.
 
-**Heartbeat entrypoint (agents):** never invoke
-`python -m scripts.runtime.heartbeat.runner` (or the runner module) directly.
+**Heartbeat entrypoint (agents):** never invoke directly  
 Use the mini-heartbeat kit only — `deploy/mini-heartbeat/bin/` (`arm.sh`,
 `smoke.sh`, launchd) which sources `deploy/mini-heartbeat/env/gddp.env` via
 `common.sh`. Raw runner calls skip `GDDP_LOCAL_SUBPROCESS_ARGV` / spool and
 create failed jobs before any executor launches.
 
-The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to drift from user intent or project integrity. 
+The goal has always been: *preserve* forward agentic momentum by detecting when a project is about to  drift  from user intent or project integrity. 
 
 Not spec-driven-development; the mission here is create a agentic development system with the goal of legible, observable, and long horizon tasks. Drift prevention both of intent or project integrity, are crucial. 
 
@@ -33,14 +37,9 @@ The evaluator's harness: per-project capabilities, but the baseline capabilities
 
 Harness design and implementation + running nodes through the loop and creating project graphs is the current stage with ambition of overnight runs resulting in a continuous, semi-automated pipeline, with human intervention only when necessary.
 
-Past versions of the runtime loop: 
-GitHub webhook intake → classify → scope → queue → execute pipeline.
-Python scripts in `scripts/`, deploy configs in `deploy/`, docs in `docs/`.
-Scripts use stdlib + Flask (`pip install flask`).
-
 Semi-autonomous pipeline with human-in-the-loop review and agentic evaluation is the goal. The evaluator is live: a two-lane verification pass (deterministic + semantic criteria lane, intent/integrity lane) combined worst-of into a verdict receipt. Verdicts are evidence for human review — the evaluator is the second-to-last gate, never the last.  
 
-Portfolio brief + system narrative: [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md).
+--- 
 
 Intent & architecture doctrine (read these before working on the evaluator or the graph):
 - [`docs/Tests-can-fail-nodes-can-pass.md`](docs/Tests-can-fail-nodes-can-pass.md) — node status reflects accepted graph progress, not temporary implementation perfection. Tests are evidence, not graph truth. Criteria are evidence, not graph truth. Evaluator verdicts are evidence, not graph truth. Only human-accepted node status is graph truth. Do not reinterpret a failing implementation test as proof that an accepted node is false.
@@ -53,43 +52,16 @@ surface, and the frozen-infrastructure list. Frozen surfaces (intake server,
 jules adapters, rig1 deploy, rollback/export) get no investment unless a node
 names them.
 
-The draft canonical graph begins with `neutral-executor-contract`, followed by
-`direct-executor-round-trip` and `immediate-evaluator-round-trip`.
-`concurrent-node-flow` and `graph-frontier-operations` build on the usable
-evaluator loop.
-
-The five capability nodes remain drafts until Sab has reviewed the complete set
-and explicitly accepted their final definitions. Discussion, draft text,
-discovered implementation context, and requested revisions do not constitute
-node approval or authorization to implement, commit, or publish them.
-
 - Treat a node as the unit of project intent. Jobs, sessions, commits, tests,
   artifacts, and verdicts are evidence from attempts to satisfy it.
-- Treat every node as a human-owned proposal, not a commitment. Acceptance is
-  not assumed. Human review may accept, revise, split, supersede, rewire, defer,
-  or abandon a node; only the human changes graph truth.
-- When implementation evidence shows that revising, splitting, superseding, or
-  rewiring a node would preserve intent materially faster, safer, or more
-  cleanly, stop before further implementation and submit a graph-amendment
-  proposal. State why the current shape is costly, the alternative, the
-  time/risk and dependency/frontier effects, and what existing work remains
-  usable. Do not silently change the node or assume its current shape must land.
+- Treat every node as a human-owned proposal, not a commitment. Acceptance is not assumed. Human review may accept, revise, split supersede, rewire, defer, or abandon a node; only the human changes graph truth.
+- When implementation evidence shows that revising, splitting, superseding, or rewiring a node would preserve intent materially faster, safer, or more cleanly, stop before further implementation and submit a graph-amendment proposal. State why the current shape is costly, the alternative, the time/risk and dependency/frontier effects, and what existing work remains usable. Do not silently change the node or assume its current shape must land.
 - Never mark a node complete from executor success, passing tests, or an
   evaluator verdict. Only the human accepts a node.
-- Use one executor-neutral node packet and returned-result contract across
-  all current and future executors.
-- Prefer a direct executor transport for the short node round trip. Preserve
-  any mediated pathway as inherited infrastructure rather than the required
-  command bus.
-- Attach discoveries to the current node as evidence. Create a new dependency,
-  follow-up, or corrective node when the discovery creates bounded work.
-- Treat real project work as the source of discovered capability, integration,
-  corrective, and retry work.
-- Retry attempts re-attempt the same node unchanged (failure findings are
-  injected as the fix-list); they never change what is attempted. Work
-  discovered beyond the node's scope becomes a continuation proposal — a
-  fully-formed node yaml in a proposals ledger, frontier-invisible, that
-  only the human materializes into the graph. Agents never author nodes.
+- Treat real project work as the source of discovered capability, integration, corrective, and retry work.
+- Retry attempts re-attempt the same node unchanged (failure findings are injected as the fix-list); they never change what is attempted. 
+
+Work discovered beyond the node's scope becomes a continuation proposal — a fully-formed node yaml in a proposals ledger, frontier-invisible, that only the human materializes into the graph. 
 - Evaluator-triggered retries require cited, concrete evidence: a repo path
   (optionally :line), a graph node id, or a project canonical document.
   Findings without evidence route to human review, never to work — the
@@ -197,6 +169,7 @@ Before saying "done":
    `main`, push `main`, and verify local `main` equals `origin/main`.
 5. Leave a concise handoff in the final response: branch, commit, pushed status,
    validation run, changed surfaces, and any residual risk.
+   - Follow the template: 000-human-readable-summary.md 
 
 ### Not-done triggers
 
@@ -216,20 +189,3 @@ commands, and continue without first becoming a repository janitor.
 Co-author ALL Git commits with `<agent-name> + <model>` this is so crucial and must happen, failure of this weakens traceability 
 
 
-## Known limitations — factory_mission adapter (mission/milestone3)
-
-1. droid 0.189.0 rejects the documented standalone hook-file shape — hooks
-   unusable as an integration point this version (docs/CLI mismatch).
-2. `mission_completed` progress event is an assumption, untested against a
-   real droid mission end-of-run.
-3. Crash/resume behavior only partially observed (PROBE-2A): state.json goes
-   stale after SIGTERM — infer liveness from process exit + progress_log tail.
-4. Genuine failure behavior (worker-level) not yet tested against real droid.
-5. Push-guard prevention residual: absolute git + `-c core.hooksPath=/dev/null`
-   bypasses PATH shim and pre-push hook. Closed by post-hoc detection in
-   `mission_evidence._protected_branch_push_reasons` (live ls-remote tip first),
-   which quarantines feature results reachable from a protected branch.
-
-Reviewer-found gaps (Sol, 2026-08-07) were fixed and re-verified before merge:
-duplicate completion preserves quarantine disposition (no laundering);
-receipt git-context validated at evidence time.
