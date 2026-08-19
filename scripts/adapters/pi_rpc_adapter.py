@@ -50,7 +50,7 @@ from adapters.executor_protocol import (
     SessionStatus,
 )
 from adapters.session_prompt import split_packet_zones
-from prompt_topology import TurnPrompt, prompt_cache_report
+from prompt_topology import TurnPrompt, extract_actual_cached_tokens, prompt_cache_report
 
 _EXECUTOR = "pi_rpc"
 _SPOOL_ENV = "GDDP_PI_RPC_SPOOL_DIR"
@@ -671,11 +671,28 @@ def _run_one_turn(
             continue
 
         handoff = persist_result(worktree, packet)
-        # Attach the structural cache report so it flows through collect() ->
-        # the operator loop as part of the node's evidence. The report is
-        # computed once per turn above; it is the same for the single active
-        # packet in this fork-A turn.
+        # Re-parse events.jsonl to extract actual cached tokens if reported by provider
         report_path = attempt_dir / "prompt_cache_report.json"
+        events_path = attempt_dir / "events.jsonl"
+        if events_path.exists():
+            try:
+                events = []
+                for line in events_path.read_text().splitlines():
+                    if line.strip():
+                        with contextlib.suppress(json.JSONDecodeError):
+                            events.append(json.loads(line))
+                actual_cached = extract_actual_cached_tokens(events)
+                if actual_cached is not None:
+                    updated_report = prompt_cache_report(tp, actual_cached_tokens=actual_cached).as_dict()
+                    _atomic_write(
+                        report_path,
+                        json.dumps(updated_report, sort_keys=True, separators=(",", ":")),
+                    )
+            except OSError:
+                pass
+
+        # Attach the structural cache report (now with actual_cached_tokens if present)
+        # so it flows through collect() -> the operator loop as part of the node's evidence.
         if report_path.exists():
             try:
                 handoff["prompt_cache_report"] = json.loads(report_path.read_text())

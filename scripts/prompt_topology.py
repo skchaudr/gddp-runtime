@@ -193,6 +193,58 @@ class PromptCacheReport:
         }
 
 
+def extract_actual_cached_tokens(events: Sequence[dict]) -> int | None:
+    """Extract actual cached input tokens reported across a sequence of RPC/LLM events.
+
+    Inspects common provider usage formats:
+      - Anthropic / OpenRouter: usage.cache_read_input_tokens
+      - OpenAI API: usage.prompt_tokens_details.cached_tokens
+      - Generic / Pi events: usage.cached_tokens or usage.cache_read_tokens
+
+    Returns total cached tokens if any usage event with cache details is found,
+    or None if no provider usage cache metrics were present in the events.
+    """
+    total_cached = 0
+    found_any = False
+
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+
+        usage_candidates: list[dict] = []
+        if "cache_read_input_tokens" in evt or "cached_tokens" in evt or "cache_read_tokens" in evt or "prompt_tokens_details" in evt:
+            usage_candidates.append(evt)
+        for key in ("usage", "event", "message", "response", "data"):
+            val = evt.get(key)
+            if isinstance(val, dict):
+                if "cache_read_input_tokens" in val or "cached_tokens" in val or "cache_read_tokens" in val or "prompt_tokens_details" in val:
+                    usage_candidates.append(val)
+                sub_usage = val.get("usage")
+                if isinstance(sub_usage, dict):
+                    usage_candidates.append(sub_usage)
+
+        if not usage_candidates:
+            continue
+
+        usage = usage_candidates[0]
+        if "cache_read_input_tokens" in usage and usage["cache_read_input_tokens"] is not None:
+            total_cached += int(usage["cache_read_input_tokens"])
+            found_any = True
+        elif isinstance(usage.get("prompt_tokens_details"), dict):
+            ptd = usage["prompt_tokens_details"]
+            if "cached_tokens" in ptd and ptd["cached_tokens"] is not None:
+                total_cached += int(ptd["cached_tokens"])
+                found_any = True
+        elif "cached_tokens" in usage and usage["cached_tokens"] is not None:
+            total_cached += int(usage["cached_tokens"])
+            found_any = True
+        elif "cache_read_tokens" in usage and usage["cache_read_tokens"] is not None:
+            total_cached += int(usage["cache_read_tokens"])
+            found_any = True
+
+    return total_cached if found_any else None
+
+
 def prompt_cache_report(
     tp: TurnPrompt,
     *,

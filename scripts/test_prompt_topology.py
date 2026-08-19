@@ -155,3 +155,31 @@ def test_cache_bust_loss_capped_at_potential() -> None:
 
 def test_cache_topology_error_is_named() -> None:
     assert issubclass(CacheTopologyError, RuntimeError)
+
+
+def test_extract_actual_cached_tokens_various_formats() -> None:
+    from scripts.prompt_topology import extract_actual_cached_tokens
+
+    # Empty / no usage
+    assert extract_actual_cached_tokens([]) is None
+    assert extract_actual_cached_tokens([{"type": "agent_start"}]) is None
+
+    # Anthropic / OpenRouter style
+    events_anthropic = [
+        {"type": "message", "usage": {"cache_read_input_tokens": 120, "input_tokens": 50}},
+        {"type": "message", "usage": {"cache_read_input_tokens": 80, "input_tokens": 30}},
+    ]
+    assert extract_actual_cached_tokens(events_anthropic) == 200
+
+    # OpenAI style
+    events_openai = [
+        {"type": "response", "usage": {"prompt_tokens_details": {"cached_tokens": 150}}},
+    ]
+    assert extract_actual_cached_tokens(events_openai) == 150
+
+    # Generic cached_tokens field
+    events_generic = [
+        {"type": "usage_event", "cached_tokens": 95},
+    ]
+    assert extract_actual_cached_tokens(events_generic) == 95
+
