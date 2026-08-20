@@ -228,5 +228,5 @@ are never canon themselves.
   [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](docs/decisions/Tests-can-fail-nodes-can-pass.md)
 - GDDP boundary:
   [`docs/decisions/GDDP-becomes-small-and-real.md`](docs/decisions/GDDP-becomes-small-and-real.md)
-- Decision loop: [`docs/current/decision-loop-spec.md`](docs/current/decision-loop-spec.md)
+- Decision loop (archived): [`docs/archive/decision-loop-spec.md`](docs/archive/decision-loop-spec.md)
 - Config repository: [`../gddp-config/`](../gddp-config/)

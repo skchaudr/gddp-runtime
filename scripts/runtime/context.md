@@ -15,8 +15,7 @@ This directory contains the core GDDP runtime engine. It governs dispatch, execu
 | [`graph_delivery.py`](graph_delivery.py) | Formats and delivers node packets to executors | [`test_graph_delivery.py`](test_graph_delivery.py) |
 | [`graph_updater.py`](graph_updater.py) | Updates graph node definitions upon operator instruction | [`test_graph_updater.py`](test_graph_updater.py) |
 | [`heartbeat/`](heartbeat/) | Runtime heartbeat scheduling and claim mechanisms | [`test_full_cycle_e2e.py`](test_full_cycle_e2e.py) |
-| [`decision_loop/`](decision_loop/) | Decision and reconciliation loop state machine | [`test_full_cycle_e2e.py`](test_full_cycle_e2e.py) |
-| [`verification/`](verification/) | Two-lane automated evaluator (deterministic + semantic criteria) | verification test suite |
+| [`verification/`](verification/) | Three-lane automated evaluator: deterministic floor + semantic criteria lane + integrity lane, combined worst-of into a verdict receipt | verification test suite |
 | [`spike/`](spike/) | Experimental prototypes (non-production) | — |
 
 ---

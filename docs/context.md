@@ -29,7 +29,7 @@ The following documents define core architecture and operational checklists:
 - [`docs/decisions/A-more-complete-evaluator-7-14-26.md`](decisions/A-more-complete-evaluator-7-14-26.md) — Evaluator as integrity-preserving project observer.
 - [`docs/decisions/GDDP-rebuild.md`](decisions/GDDP-rebuild.md) — Provisional continuation and non-blocking evaluation.
 - [`docs/current/dispatch-checklist.md`](current/dispatch-checklist.md) — Operational checklist for dispatch readiness.
-- [`docs/current/decision-loop-spec.md`](current/decision-loop-spec.md) — Decision and reconciliation loop specification.
+- [`docs/archive/decision-loop-spec.md`](../archive/decision-loop-spec.md) — Legacy decision/reconciliation loop spec (archived; module does not exist).
 
 ---
 
