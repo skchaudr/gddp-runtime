@@ -8,6 +8,7 @@ These invariants represent inviolable system rules. No implementation, proposal,
 - **Sole Acceptance Authority:** Only a human operator modifying graph truth (`gddp node browse`) can transition a node to `accepted`.
 - **Automated Gates are Second-to-Last:** Passing unit tests, clean linter outputs, executor success, and passing evaluator verdicts are evidence for human review, never graph truth.
 - **Node Status != Implementation State:** Node acceptance reflects project intent satisfaction as judged by human review, not temporary implementation perfection.
+- **Provisional Traversal and Human Authority Boundary:** Human review is not an execution barrier. Graph dependencies express logical ordering and dependency constraints, while acceptance remains a separate human authority boundary. The runtime may continue provisional traversal beyond unaccepted work when doing so preserves dependency correctness and recoverability.
 
 ## 2. Intent Preservation & Node Integrity
 - **Unit of Intent:** A node is the atomic unit of project intent. It defines the goal, constraints, and acceptance criteria.
