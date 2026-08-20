@@ -2,16 +2,16 @@
 
 Why this exists
 ---------------
-The hand-rolled SemanticAgent loop (semantic/agent.py) is correct but opaque:
-the operator only sees a final receipt. Running the evaluator through `pi`
-gives live visibility into the model's text, thinking, and tool calls, while
+Pi is the only live semantic evaluator. Running through `pi` gives live
+visibility into the model's text, thinking, and tool calls, while
 preserving the GDDP contract:
 
   - criteria come from the gddp-config node YAML (unchanged)
   - submit_verdict stays a TYPED terminal tool (registered by the
     gddp_verifier.ts pi extension), so free-text JSON parsing is still gone
   - the 12-row decision_engine and VerdictReceipt are unchanged
-  - the harness is read-only: pi's edit/write/multi_edit/bash are excluded
+  - the harness is read-only: the guard extension blocks edit/write/multi_edit
+    and mutation/network bash
 
 The runner spawns `pi --print --mode json -e gddp_verifier.ts ...` with the
 operator's terminal inherited, so the investigator's stream is visible live.
@@ -185,18 +185,19 @@ class PiHarnessRunner:
             if neighbor_core
             else ""
         )
+        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
         messages = build_prompt_messages(
             node=node,
             graph=graph,
             deterministic_result=deterministic_result,
             shape_profile=shape_profile,
+            system_prompt=sys_prompt,
             stable_prefix_extra=stable_prefix_extra,
             volatile_tail_extra=volatile_tail_extra,
         )
-        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
         user_prompt = _extract_user_prompt(messages)
         # Structural cache report for the evaluator prompt. The protocol zone
-        # (SYSTEM_PROMPT) lives in the system message, so build_turn_prompt
+        # (the live system prompt) lives in the system message, so build_turn_prompt
         # carries it as protocol=""; include it here so protocol_tokens reflects
         # the cached prefix the provider actually sees (system + user framing).
         # actual_cached_tokens is None: the evaluator runs `pi --print --mode
