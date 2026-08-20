@@ -88,6 +88,10 @@ Vocabulary comes from the evaluator-intent-integrity-verdict node, not this repo
 - contradicted: evidence contradicts the stated intent
 - unknown: unable to determine (missing context, ambiguous)
 
+Citations matter: findings that cite concrete repo paths (file:line) can back
+automated retries; uncited findings route to a human reviewer instead. Cite
+paths when you can.
+
 The integrity review is a guardrail, not a gatekeeper. A pass means proceed
 with confidence; a non-pass means a human should look before dependents fire.
 """

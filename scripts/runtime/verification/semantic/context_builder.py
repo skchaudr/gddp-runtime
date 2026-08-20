@@ -24,11 +24,14 @@ def build_canonical_pointers(
     Keys:
       - "readme": path to the project README in the target repo (if it exists)
       - "project_brief": path to PROJECT-BRIEF.md in the target repo (if it exists)
+      - "invariants": path to the target repo's invariant document (optional;
+        omitted silently when none of the known names exist)
       - "foundational_node": path to the first/oldest node YAML in the graph
       - "neighbor:<node_id>": path to each depends_on/unlocks neighbor node YAML
 
     Missing files are reported as "UNAVAILABLE: <path> does not exist" rather
-    than silently dropped. The target repo's AGENTS.md is NEVER included.
+    than silently dropped — except invariants, which are optional per project.
+    The target repo's AGENTS.md is NEVER included.
     """
     pointers: dict[str, str] = {}
 
@@ -42,6 +45,19 @@ def build_canonical_pointers(
                 break
         else:
             pointers[name] = f"UNAVAILABLE: {repo / filename} does not exist"
+
+    # 1b. Project invariants (optional per project): offer the target repo's
+    # invariant document when present. No UNAVAILABLE marker — invariants are
+    # not guaranteed to exist (unlike readme/brief), so absence is silent.
+    for variant in (
+        "docs/invariants/invariants.md",
+        "INVARIANTS.md",
+        "docs/INVARIANTS.md",
+    ):
+        path = repo / variant
+        if path.exists():
+            pointers["invariants"] = str(path)
+            break
 
     # 2. Foundational/first node from the graph
     project_id = graph.get("project_id", "")

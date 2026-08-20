@@ -243,6 +243,10 @@ def _completeness_status(semantic) -> str:
 # ---------------------------------------------------------------------------
 
 _COVERAGE_SEVERITY = {"none": 0, "low": 1, "medium": 2, "high": 3}
+# "invariants" is deliberately NOT in _DOC_KEYS: it is optional per project
+# (unlike readme/brief), so counting it toward the doc-coverage rating would
+# penalize projects that simply have no invariant document. The pointer is
+# still offered to the model; coverage math just ignores it.
 _DOC_KEYS = {"readme", "project_brief"}
 
 
