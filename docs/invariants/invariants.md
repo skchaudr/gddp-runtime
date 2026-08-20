@@ -17,6 +17,7 @@ These invariants represent inviolable system rules. No implementation, proposal,
 ## 3. Evaluator & Verification Integrity
 - **Graph-Directed Evidence Horizon:** The evaluator's evidence horizon is graph-directed: it may inspect as little or as much canonical project context as necessary to judge the current work's criteria and graph integrity, including adjacent or downstream nodes when their assumptions may be affected.
 - **Distinct Evaluation Horizon and Adjudication Scope:** The evaluator may report findings beyond the current node without treating every graph-level risk as a defect in the current node. Whether an integrity finding affects the current node’s verdict depends on whether the current work caused, contains, or violates the condition being reported.
+- **Human Graph Authority and Evaluator Recommendations:** The evaluator may identify, reason about, and recommend changes to graph topology, nodes, dependencies, criteria, or planned work whenever evaluation produces information that affects the project’s intended trajectory. It may not directly enact those changes or accept nodes; mutation of graph truth requires human authorization.
 
 ## 4. Storage & Evidence Doctrine
 - **Files are Truth:** Durable files (`GDDP_RECEIPTS_PATH`, verdict YAMLs, git worktrees) constitute primary truth. The SQLite database (`db/queue.db`) is a rebuildable cache and index; nothing of architectural value is lost if `queue.db` is purged.
