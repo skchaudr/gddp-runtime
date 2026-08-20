@@ -1,13 +1,15 @@
 # Entity: Executor
 
-The **executor** is the worker environment (e.g. Jules, local subprocess, Claude, Codex) tasked with executing a single node packet. Executors are treated as replaceable transports and workers; they do not own graph truth.
+The **executor** is the worker environment (e.g. Jules, local subprocess, Claude, Codex, Pi, Droid, even the human operator) tasked with executing a single node packet. Executors are treated as interchangeable transports and workers; they do not own graph truth. 
+
+The lead executor can be an orchrestator, who is largely in a read-only capacity routing workers and is in pursuit of advancing the graph as a whole, not just optimize for the set of visible nodes in front of it. 
 
 ---
 
 ## Invariants & Execution Boundaries
 
-- **Worktree Isolation:** Every session executes in an isolated git worktree rather than performing open-heart surgery on repository checkouts.
-- **No Direct Graph Authority:** Passing test suites and successful executor completion are evidence only; they do not mark a node complete in the graph.
+- **Worktree Isolation:** Every session ideally executes in an isolated git worktree; an orchrestator can take on and dispatch as many nodes as feasible in that session, and may stop and resume that session. Each node having its own worktree was not a viable long-term path that was pivoted from.
+- **No Direct Graph Authority:** Passing test suites and successful executor completion are evidence only; they do not mark a node complete in the graph. Forward momentum may be preserved and a provisional acceptance can lead to genuine good work land in the meantime. 
 - **Durable File Return:** Return data lands as files via `GDDP_RECEIPTS_PATH`. The SQLite queue database is merely an index over return files.
 
 ---

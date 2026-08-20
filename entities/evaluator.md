@@ -1,6 +1,6 @@
 # Entity: Evaluator
 
-The **evaluator** is the automated verification system designed to protect user intent and project integrity. It executes a two-lane verification pass on returned work and emits a structured verdict receipt.
+The **evaluator** is the semi-automated (always on ideally, runs as soon a node's job is completed) *verification system* designed to protect user intent and project integrity. It executes a two-lane verification pass on returned work and emits a structured verdict receipt.
 
 ---
 
