@@ -38,8 +38,8 @@ Semi-autonomous pipeline with human-in-the-loop review and agentic evaluation is
 ---
 
 Intent & architecture doctrine (read these before working on the evaluator or the graph):
-- [`docs/Tests-can-fail-nodes-can-pass.md`](docs/Tests-can-fail-nodes-can-pass.md) — node status reflects accepted graph progress, not temporary implementation perfection. Tests are evidence, not graph truth. Criteria are evidence, not graph truth. Evaluator verdicts are evidence, not graph truth. Only human-accepted node status is graph truth. Do not reinterpret a failing implementation test as proof that an accepted node is false.
-- [`docs/GDDP-becomes-small-and-real.md`](docs/GDDP-becomes-small-and-real.md) — GDDP is the intent-preservation and graph-integrity layer around work, not the executor and not the agent harness. GDDP does not rebuild the loop; it constrains, interprets, and verifies the loop.
+- [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](docs/decisions/Tests-can-fail-nodes-can-pass.md) — node status reflects accepted graph progress, not temporary implementation perfection. Tests are evidence, not graph truth. Criteria are evidence, not graph truth. Evaluator verdicts are evidence, not graph truth. Only human-accepted node status is graph truth. Do not reinterpret a failing implementation test as proof that an accepted node is false.
+- [`docs/decisions/GDDP-becomes-small-and-real.md`](docs/decisions/GDDP-becomes-small-and-real.md) — GDDP is the intent-preservation and graph-integrity layer around work, not the executor and not the agent harness. GDDP does not rebuild the loop; it constrains, interprets, and verifies the loop.
 
 ## Canonical node workflow
 

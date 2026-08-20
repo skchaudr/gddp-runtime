@@ -20,13 +20,16 @@ Documentation in this directory is partitioned into distinct epistemic tiers:
 
 ---
 
-## 2. Canonical Root Documents
+## 2. Canonical Decision & Current Truth Documents
 
-The following documents in `docs/` have foundational authority cited by `AGENTS.md`:
+The following documents define core architecture and operational checklists:
 
-- [`docs/Tests-can-fail-nodes-can-pass.md`](Tests-can-fail-nodes-can-pass.md) — Node status reflects human-accepted intent, not temporary test pass/fail state.
-- [`docs/GDDP-becomes-small-and-real.md`](GDDP-becomes-small-and-real.md) — GDDP's boundary: intent preservation & graph integrity layer, not the agent harness.
-- [`docs/dispatch-checklist.md`](dispatch-checklist.md) — Operational checklist for dispatch readiness.
+- [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](decisions/Tests-can-fail-nodes-can-pass.md) — Node status reflects human-accepted intent, not temporary test pass/fail state.
+- [`docs/decisions/GDDP-becomes-small-and-real.md`](decisions/GDDP-becomes-small-and-real.md) — GDDP's boundary: intent preservation & graph integrity layer, not the agent harness.
+- [`docs/decisions/A-more-complete-evaluator-7-14-26.md`](decisions/A-more-complete-evaluator-7-14-26.md) — Evaluator as integrity-preserving project observer.
+- [`docs/decisions/GDDP-rebuild.md`](decisions/GDDP-rebuild.md) — Provisional continuation and non-blocking evaluation.
+- [`docs/current/dispatch-checklist.md`](current/dispatch-checklist.md) — Operational checklist for dispatch readiness.
+- [`docs/current/decision-loop-spec.md`](current/decision-loop-spec.md) — Decision and reconciliation loop specification.
 
 ---
 
@@ -35,3 +38,4 @@ The following documents in `docs/` have foundational authority cited by `AGENTS.
 1. If a proposal in `proposals/` contradicts `invariants/` or `current/`, the invariant/current truth overrides the proposal.
 2. If a historical doc in `archive/` describes an architecture differently from `current/`, the archive is obsolete.
 3. If an empirical observation in `learning/` discovers a gap in `current/`, submit a proposal before treating the finding as accepted architecture.
+

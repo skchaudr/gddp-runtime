@@ -225,8 +225,8 @@ are never canon themselves.
 
 - README: [`README.md`](README.md)
 - Tests and graph truth:
-  [`docs/Tests-can-fail-nodes-can-pass.md`](docs/Tests-can-fail-nodes-can-pass.md)
+  [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](docs/decisions/Tests-can-fail-nodes-can-pass.md)
 - GDDP boundary:
-  [`docs/GDDP-becomes-small-and-real.md`](docs/GDDP-becomes-small-and-real.md)
-- Decision loop: [`docs/decision-loop-spec.md`](docs/decision-loop-spec.md)
+  [`docs/decisions/GDDP-becomes-small-and-real.md`](docs/decisions/GDDP-becomes-small-and-real.md)
+- Decision loop: [`docs/current/decision-loop-spec.md`](docs/current/decision-loop-spec.md)
 - Config repository: [`../gddp-config/`](../gddp-config/)
