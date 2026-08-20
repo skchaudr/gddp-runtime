@@ -23,7 +23,7 @@ This document is the authoritative resolution table for GDDP terminology.
 | **dependency edge** | `defined` | [`entities/graph.md`](entities/graph.md) | Strict topological dependency between nodes in the graph DAG governing execution order. |
 | **jobs_status** | `defined` | [`scripts/jobs_status.py`](scripts/jobs_status.py) | Backend CLI and service managing runtime queue and job state in `db/queue.db`. May update runtime job state; must NEVER update graph node status. |
 | **intake server** | `defined` (frozen) | [`scripts/intake_server.py`](scripts/intake_server.py) | Webhook receiver on `sab-mini:5050`. In frozen state; do not modify unless requested by a named node. |
-| **provisional** | `defined` | [`docs/proposals/LOOP.md`](docs/proposals/LOOP.md) | Unverified intermediate status requiring concrete verdict receipt backing. |
+| **provisional** | `defined` | [`docs/proposals/LOOP.md`](docs/proposals/LOOP.md) · [`docs/invariants/invariants.md`](docs/invariants/invariants.md) | Evaluator-passed, human-unaccepted intermediate status. Written by the runtime only with a concrete verdict receipt backing it; satisfies dependency edges for provisional traversal until the operator accepts (`complete`) or rejects (`ready`). |
 | **MWP** | `unresolved` | — | **DO NOT EXPAND.** Unresolved term from legacy explorations. Do not design or infer architecture around MWP. |
 | **conductor** | `historical/noncanonical` | [`docs/archive/`](docs/archive/) | Deprecated orchestration concept superseded by the 5-step operating loop. |
 | **mission mode** | `historical/noncanonical` | [`docs/archive/`](docs/archive/) | Deprecated multi-node batch runner concept superseded by atomic node dispatch and worktree per session. |
