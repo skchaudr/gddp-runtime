@@ -73,5 +73,22 @@ Agents must navigate hierarchically rather than ingesting the entire repository:
 
 1. **Resolve Terminology First:** Consult [`vocabulary.md`](vocabulary.md) before interpreting unfamiliar terms.
 2. **Consult Global Map:** Identify which subtree holds authority over the question from this document.
-3. **Traverse to Local Context:** Read the directory's `context.md` (e.g. [`scripts/runtime/context.md`](scripts/runtime/context.md)) to identify active vs frozen modules.
+3. **Traverse to Local Context:** Read the directory's `context.md` (e.g. [`scripts/runtime/context.md`](scripts/runtime/context.md), [`deploy/context.md`](deploy/context.md)) to identify active vs frozen modules.
 4. **Inspect Specific Implementation:** Read the targeted source or decision record.
+
+---
+
+## 5. Operations & Runtime Startup Quickstart
+
+👉 **Canonical Runbook:** [`deploy/STARTUP.md`](deploy/STARTUP.md)
+
+| Action | Host | Command |
+|---|---|---|
+| **Preflight Smoke** | `sab-mini` | `bash deploy/mini-heartbeat/bin/smoke.sh` |
+| **Arm / Start** | `sab-mini` | `MINI_HEARTBEAT_ARM=1 bash deploy/mini-heartbeat/bin/arm.sh` |
+| **Disarm / Stop** | `sab-mini` | `bash deploy/mini-heartbeat/bin/disarm.sh` |
+| **Watch Fleet** | Any | `gddp watch` |
+| **Steer Session** | Any | `gddp steer <node_id> "<guidance>"` |
+| **Queue Status** | Any | `python3 scripts/jobs_status.py --summary` |
+| **Fresh Linux Stand-up** | Linux | [`deploy/mini-heartbeat/FRESH-HOST-STANDUP.md`](deploy/mini-heartbeat/FRESH-HOST-STANDUP.md) |
+
