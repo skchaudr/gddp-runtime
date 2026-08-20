@@ -13,7 +13,7 @@ Branch: feat/icm-context-layer
 
 ## Empirical Reality
 
-Implemented the Information Context Management (ICM) layer across gddp-runtime: closed vocabulary table, root context map, cross-cutting entity pages, local subsystem maps, and explicit documentation authority tiers. Suite of 670 tests passes cleanly.
+Implemented the Information Context Management (ICM) layer across gddp-runtime: closed vocabulary table, root context map, cross-cutting entity pages, local subsystem maps, explicit documentation authority tiers, and canonical operations/startup runbook (`deploy/STARTUP.md`). Suite of 670 tests passes cleanly.
 
 ### Scope touched
 
@@ -30,6 +30,7 @@ Implemented the Information Context Management (ICM) layer across gddp-runtime: 
 + `docs/current/current-architecture.md`
 + `scripts/runtime/context.md`
 + `deploy/context.md`
++ `deploy/STARTUP.md`
 + `node_status_history/context.md`
 + `jobs/context.md`
 + `events/context.md`
@@ -48,6 +49,7 @@ On branch `feat/icm-context-layer`. Staged changes committed with conventional c
 
 - `vocabulary.md` - Closed namespace resolution table
 - `context.md` - Root global authority and navigation map
+- `deploy/STARTUP.md` - Canonical runtime start, stop, watch, steer, and fresh-host runbook
 - `entities/*.md` - Cross-cutting entity maps (evaluator, executor, graph, heartbeat, node, receipt)
 - `docs/invariants/invariants.md` - Inviolable system invariants
 - `docs/current/current-architecture.md` - Active topology and loop specification
@@ -55,7 +57,7 @@ On branch `feat/icm-context-layer`. Staged changes committed with conventional c
 
 ### Resume point
 
-The ICM layer is established. The next session can merge `feat/icm-context-layer` or extend entity references as new operational tools evolve.
+The ICM layer and operational startup pathway are established. The next session can merge `feat/icm-context-layer` or extend entity references as new operational tools evolve.
 
 ------------------------------------------------ Agent Section END
 
