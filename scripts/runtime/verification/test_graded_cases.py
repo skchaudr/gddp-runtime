@@ -26,8 +26,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from scripts.runtime.verification import orchestrator
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.schemas import (
@@ -41,35 +39,11 @@ from scripts.runtime.verification.schemas import (
     Verdict,
     VerdictReceipt,
 )
-from scripts.runtime.verification.semantic.agent import LLMResponse, ToolCall
-from scripts.runtime.verification.semantic.tools import SemanticToolbox
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class MockRunner:
-    """Returns a canned SemanticOutput via submit_verdict tool call."""
-
-    def __init__(self, semantic: SemanticOutput) -> None:
-        self.semantic = semantic
-        self.calls = 0
-
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
-        self.calls += 1
-        return LLMResponse(
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="verdict-1",
-                    name="submit_verdict",
-                    args=self.semantic.model_dump(),
-                )
-            ],
-            finish_reason="tool_use",
-        )
 
 
 class MockSemanticHarness:
@@ -241,7 +215,6 @@ def _run_case(
     """Run verify() with mocked deterministic.assemble and optional lanes."""
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
 
-    runner = MockRunner(semantic) if semantic else MockRunner(_semantic_pass())
     integrity_harness = MockIntegrityHarness(integrity) if integrity else None
     # Wire a mock semantic harness when a canned SemanticOutput is provided.
     # The built-in SemanticAgent fallback was removed; the orchestrator requires
@@ -252,8 +225,6 @@ def _run_case(
         node_yaml={"node_id": "graded-case", "acceptance_criteria": [{"id": "c1", "criterion": "test"}]},
         project_yaml={"project_id": "graded-project", "nodes": [{"id": "graded-case"}]},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         semantic_harness=semantic_harness,
         integrity_harness=integrity_harness,
         now=lambda: "2026-07-16T00:00:00+00:00",

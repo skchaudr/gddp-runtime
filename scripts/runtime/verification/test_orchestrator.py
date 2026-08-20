@@ -14,56 +14,6 @@ from scripts.runtime.verification.schemas import (
     SemanticOutput,
     Verdict,
 )
-from scripts.runtime.verification.semantic.tools import SemanticToolbox
-
-
-class MockRunner:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.calls = 0
-
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
-        self.calls += 1
-        from scripts.runtime.verification.semantic.agent import LLMResponse
-
-        return LLMResponse(content=self.content, tool_calls=[], finish_reason="stop")
-
-
-class CapturingRunner:
-    def __init__(self) -> None:
-        self.calls = 0
-        self.message_count = 0
-
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
-        self.calls += 1
-        self.message_count = len(messages)
-        from scripts.runtime.verification.semantic.agent import LLMResponse, ToolCall
-
-        return LLMResponse(
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="verdict-1",
-                    name="submit_verdict",
-                    args={
-                        "judgments": [
-                            {
-                                "criterion_id": "c1",
-                                "judgment": "judged_pass",
-                                "confidence": 0.7,
-                                "evidence": ["module.py:1"],
-                                "reasoning": "Mock semantic evidence matched the criterion.",
-                            }
-                        ],
-                        "overall_reasoning": "Semantic mock passed.",
-                        "risks": None,
-                        "followup_candidates": None,
-                        "budget_exhausted": False,
-                    },
-                )
-            ],
-            finish_reason="tool_use",
-        )
 
 
 def test_clean_deterministic_pass_skips_semantic(monkeypatch, tmp_path: Path) -> None:
@@ -100,18 +50,14 @@ def test_clean_deterministic_pass_skips_semantic(monkeypatch, tmp_path: Path) ->
         human_review_questions=[],
     )
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     receipt = orchestrator.verify(
         node_yaml={"node_id": "node-clean"},
         project_yaml={"project_id": "project-clean"},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
 
-    assert runner.calls == 0
     assert receipt.semantic is None
     assert receipt.verdict == Verdict.PASS
     assert receipt.completeness_status == "not-run"
@@ -187,8 +133,6 @@ def test_indeterminate_criterion_invokes_semantic_and_builds_receipt(monkeypatch
         node_yaml={"node_id": "node-semantic"},
         project_yaml={"project_id": "project-semantic"},
         repo=tmp_path,
-        runner=MockRunner("{}"),
-        toolbox=SemanticToolbox(tmp_path),
         semantic_harness=_mock_semantic_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -271,10 +215,7 @@ def test_orchestrator_passes_correct_args_to_semantic_harness(monkeypatch, tmp_p
         node_yaml=node_yaml,
         project_yaml=project_yaml,
         repo=tmp_path,
-        runner=MockRunner("{}"),
-        toolbox=SemanticToolbox(tmp_path),
         shape_profile=shape_profile,
-        semantic_agent_kwargs={"max_turns": 1, "max_tool_calls": 3, "max_tokens": 50_000},
         semantic_harness=_capturing_semantic_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -361,7 +302,6 @@ def test_integrity_runs_on_row12_clean_pass(monkeypatch, tmp_path: Path) -> None
     """Integrity lane MUST run even when deterministic criteria all pass (row-12)."""
     det = _row12_deterministic()
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     integrity_pass = IntegrityOutput(
         verdict="pass",
@@ -378,8 +318,6 @@ def test_integrity_runs_on_row12_clean_pass(monkeypatch, tmp_path: Path) -> None
         node_yaml={"node_id": "node-row12"},
         project_yaml={"project_id": "project-row12"},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         integrity_harness=integrity_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -387,7 +325,6 @@ def test_integrity_runs_on_row12_clean_pass(monkeypatch, tmp_path: Path) -> None
     # Integrity harness WAS called — row-12 does NOT bypass it
     assert integrity_harness.calls == 1
     # Semantic skipped (deterministic all-pass), integrity ran
-    assert runner.calls == 0
     assert receipt.semantic is None
     # Both lanes pass => combined verdict is PASS
     assert receipt.verdict == Verdict.PASS
@@ -406,7 +343,6 @@ def test_criteria_pass_but_intent_violated_yields_non_pass_verdict(
     """
     det = _row12_deterministic()
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     # Integrity says drift: intent is violated even though criteria pass
     integrity_drift = IntegrityOutput(
@@ -430,8 +366,6 @@ def test_criteria_pass_but_intent_violated_yields_non_pass_verdict(
         node_yaml={"node_id": "node-drift"},
         project_yaml={"project_id": "project-drift"},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         integrity_harness=integrity_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -522,8 +456,6 @@ def test_all_evaluator_lanes_run_and_worst_verdict_is_written(
         node_yaml={"node_id": "mission-node"},
         project_yaml={"project_id": "mission-project"},
         repo=tmp_path,
-        runner=MockRunner("{}"),
-        toolbox=SemanticToolbox(tmp_path),
         semantic_harness=_semantic,
         integrity_harness=integrity,
         now=lambda: "2026-08-07T00:00:00+00:00",
@@ -548,8 +480,6 @@ def test_mission_provenance_is_preserved_in_written_receipt(
         node_yaml={"node_id": "mission-node"},
         project_yaml={"project_id": "mission-project"},
         repo=tmp_path,
-        runner=MockRunner("{}"),
-        toolbox=SemanticToolbox(tmp_path),
         execution_attempt_id="job-1:attempt:0",
         evidence_manifest_sha256="a" * 64,
         mission_receipt_id="mis_1:mission-node:worker-1",
@@ -572,8 +502,6 @@ def test_mission_provenance_is_preserved_in_written_receipt(
         node_yaml={"node_id": "legacy-node"},
         project_yaml={"project_id": "legacy-project"},
         repo=tmp_path,
-        runner=MockRunner("{}"),
-        toolbox=SemanticToolbox(tmp_path),
         now=lambda: "2026-08-07T00:00:00+00:00",
     )
     assert legacy.execution_attempt_id is None
@@ -587,14 +515,11 @@ def test_integrity_harness_none_does_not_run_integrity(
     """When integrity_harness is None, integrity field is None (skeleton default)."""
     det = _row12_deterministic()
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     receipt = orchestrator.verify(
         node_yaml={"node_id": "node-no-integrity"},
         project_yaml={"project_id": "project-no-integrity"},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         integrity_harness=None,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -610,7 +535,6 @@ def test_integrity_harness_receives_node_and_graph(
     """The integrity harness receives the same node/graph as the orchestrator."""
     det = _row12_deterministic()
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     integrity_pass = IntegrityOutput(
         verdict="pass",
@@ -630,8 +554,6 @@ def test_integrity_harness_receives_node_and_graph(
         node_yaml=node,
         project_yaml=graph,
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         integrity_harness=integrity_harness,
         now=lambda: "2026-06-30T00:00:00+00:00",
     )
@@ -898,7 +820,6 @@ def test_receipt_carries_canonical_context_and_coverage(monkeypatch, tmp_path: P
     """Orchestrator attaches canonical_context and context_coverage to the receipt."""
     det = _row12_deterministic()
     monkeypatch.setattr(orchestrator.deterministic, "assemble", lambda **_: det)
-    runner = MockRunner("{}")
 
     integrity_pass = IntegrityOutput(
         verdict="pass",
@@ -921,8 +842,6 @@ def test_receipt_carries_canonical_context_and_coverage(monkeypatch, tmp_path: P
         node_yaml={"node_id": "node-ctx", "depends_on": ["dep-a"]},
         project_yaml={"project_id": "project-ctx", "nodes": [{"id": "dep-a", "status": "complete"}]},
         repo=tmp_path,
-        runner=runner,
-        toolbox=SemanticToolbox(tmp_path),
         integrity_harness=integrity_harness,
         config_root=config_root,
         now=lambda: "2026-07-16T00:00:00+00:00",

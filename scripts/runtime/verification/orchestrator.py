@@ -15,7 +15,6 @@ from .schemas import (
     SemanticOutput,
     VerdictReceipt,
 )
-from .semantic.agent import SemanticAgent
 from .semantic.context_builder import build_canonical_pointers
 
 SemanticHarness = Callable[..., SemanticOutput]
@@ -27,11 +26,8 @@ def verify(
     node_yaml: dict,
     project_yaml: dict,
     repo: Path,
-    runner,
-    toolbox,
     shape_profile: dict | None = None,
     config_root: Path | None = None,
-    semantic_agent_kwargs: dict[str, Any] | None = None,
     semantic_harness: SemanticHarness | None = None,
     integrity_harness: IntegrityHarness | None = None,
     # Phase 1 provenance: the exact change being judged.
