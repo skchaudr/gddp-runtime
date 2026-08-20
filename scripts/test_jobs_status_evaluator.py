@@ -41,6 +41,27 @@ def test_evaluation_summary_uses_coverage_ratings_and_lane_errors(capsys) -> Non
     assert "commit=evaluated-commit  merge=different-merge-commit  (mismatch)" in output
 
 
+def test_print_evaluation_renders_orphaned_intelligence_fields(capsys) -> None:
+    print_evaluation({
+        "verdict": "pass",
+        "criteria_verdict": "pass",
+        "criteria_confidence": 0.9,
+        "integrity": {"verdict": "pass", "confidence": 0.8, "findings": []},
+        "semantic_risks": "Risk: queries rely on self-reported timestamps.",
+        "followup_candidates": "Human clarification: is X part of the criteria?",
+        "human_review_questions": [
+            {"criterion_id": "c1", "question": "Is this criterion path stale?"}
+        ],
+    })
+
+    output = capsys.readouterr().out
+    assert "risks:" in output
+    assert "Risk: queries rely on self-reported timestamps." in output
+    assert "followups:" in output
+    assert "Human clarification: is X part of the criteria?" in output
+    assert "question (c1): Is this criterion path stale?" in output
+
+
 def test_job_show_leads_with_verdict_and_reasoning(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "queue.db"
     con = sqlite3.connect(db_path)

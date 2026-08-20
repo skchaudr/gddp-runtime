@@ -6,7 +6,13 @@ from pathlib import Path
 import yaml
 
 from scripts.runtime.verification import cli
-from scripts.runtime.verification.schemas import SemanticOutput, VerdictReceipt
+from scripts.runtime.verification.schemas import (
+    DeterministicResult,
+    HumanReviewQuestion,
+    SemanticOutput,
+    Verdict,
+    VerdictReceipt,
+)
 
 
 def test_cli_writes_receipt_with_required_contract_fields(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -255,3 +261,146 @@ def test_pi_provider_rejects_glm() -> None:
         assert "does not allow GLM" in str(exc)
     else:
         raise AssertionError("expected evaluator Pi to reject GLM")
+
+
+def test_cli_summary_includes_orphaned_intelligence_fields(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """risks/followups/human_review_questions reach the operator summary."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("# Project\n", encoding="utf-8")
+    node_yaml = tmp_path / "node.yaml"
+    project_yaml = tmp_path / "project.yaml"
+    receipt_dir = tmp_path / "receipts"
+    node_yaml.write_text(
+        yaml.safe_dump({"node_id": "orphan-node", "acceptance_criteria": []}),
+        encoding="utf-8",
+    )
+    project_yaml.write_text(
+        yaml.safe_dump({"project_id": "project-orphan", "nodes": []}),
+        encoding="utf-8",
+    )
+
+    receipt = VerdictReceipt(
+        project_id="project-orphan",
+        node_id="orphan-node",
+        verdict=Verdict.PASS,
+        confidence=0.9,
+        criteria_confidence=0.9,
+        completeness=1.0,
+        graph_readiness=0.9,
+        completeness_status="complete",
+        deterministic=DeterministicResult(
+            criteria=[],
+            constraints=[],
+            artifacts_present={},
+            deps_status={},
+            criteria_mismatches=[],
+            missing_evidence=[],
+            human_review_questions=[
+                HumanReviewQuestion(
+                    criterion_id="c1", question="Is this criterion path stale?"
+                )
+            ],
+        ),
+        semantic=SemanticOutput(
+            judgments=[],
+            overall_reasoning="done",
+            risks="Risk: queries rely on self-reported timestamps.",
+            followup_candidates="Human clarification: is X part of the criteria?",
+            budget_exhausted=False,
+        ),
+        decision_reasoning="pass",
+        required_next_action="accept",
+        generated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    monkeypatch.setattr(cli, "verify", lambda **kwargs: receipt)
+    monkeypatch.setattr(cli, "write_receipt", lambda *a, **kw: tmp_path / "fake.json")
+
+    assert cli.main(
+        [
+            "--node-yaml", str(node_yaml),
+            "--project-yaml", str(project_yaml),
+            "--repo", str(repo),
+            "--receipt-dir", str(receipt_dir),
+        ]
+    ) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["semantic_risks"] == "Risk: queries rely on self-reported timestamps."
+    assert (
+        output["followup_candidates"]
+        == "Human clarification: is X part of the criteria?"
+    )
+    assert output["human_review_questions"] == [
+        {"criterion_id": "c1", "question": "Is this criterion path stale?"}
+    ]
+
+
+def test_cli_summary_omits_orphaned_fields_when_empty(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """Empty/None intelligence fields are absent, not null, in the summary."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("# Project\n", encoding="utf-8")
+    node_yaml = tmp_path / "node.yaml"
+    project_yaml = tmp_path / "project.yaml"
+    receipt_dir = tmp_path / "receipts"
+    node_yaml.write_text(
+        yaml.safe_dump({"node_id": "orphan-node", "acceptance_criteria": []}),
+        encoding="utf-8",
+    )
+    project_yaml.write_text(
+        yaml.safe_dump({"project_id": "project-orphan", "nodes": []}),
+        encoding="utf-8",
+    )
+
+    receipt = VerdictReceipt(
+        project_id="project-orphan",
+        node_id="orphan-node",
+        verdict=Verdict.PASS,
+        confidence=0.9,
+        criteria_confidence=0.9,
+        completeness=1.0,
+        graph_readiness=0.9,
+        completeness_status="complete",
+        deterministic=DeterministicResult(
+            criteria=[],
+            constraints=[],
+            artifacts_present={},
+            deps_status={},
+            criteria_mismatches=[],
+            missing_evidence=[],
+            human_review_questions=[],
+        ),
+        semantic=SemanticOutput(
+            judgments=[],
+            overall_reasoning="done",
+            risks=None,
+            followup_candidates=None,
+            budget_exhausted=False,
+        ),
+        decision_reasoning="pass",
+        required_next_action="accept",
+        generated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    monkeypatch.setattr(cli, "verify", lambda **kwargs: receipt)
+    monkeypatch.setattr(cli, "write_receipt", lambda *a, **kw: tmp_path / "fake.json")
+
+    assert cli.main(
+        [
+            "--node-yaml", str(node_yaml),
+            "--project-yaml", str(project_yaml),
+            "--repo", str(repo),
+            "--receipt-dir", str(receipt_dir),
+        ]
+    ) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert "semantic_risks" not in output
+    assert "followup_candidates" not in output
+    assert "human_review_questions" not in output

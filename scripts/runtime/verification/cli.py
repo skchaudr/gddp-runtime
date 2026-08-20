@@ -427,6 +427,19 @@ def main(argv: list[str] | None = None) -> int:
             summary["integrity"]["graph_observations"] = [
                 o.model_dump() for o in receipt.integrity.graph_observations
             ]
+    # Surface the criteria lane's free-text intelligence (risks, followups)
+    # and the deterministic lane's human-review questions so they reach the
+    # operator view instead of living only in the receipt file.
+    if receipt.semantic is not None:
+        if receipt.semantic.risks:
+            summary["semantic_risks"] = receipt.semantic.risks
+        if receipt.semantic.followup_candidates:
+            summary["followup_candidates"] = receipt.semantic.followup_candidates
+    if receipt.deterministic.human_review_questions:
+        summary["human_review_questions"] = [
+            {"criterion_id": q.criterion_id, "question": q.question}
+            for q in receipt.deterministic.human_review_questions
+        ]
     summary["lane_status"] = {
         "criteria": (
             receipt.semantic.lane_status.value if receipt.semantic and receipt.semantic.lane_status
