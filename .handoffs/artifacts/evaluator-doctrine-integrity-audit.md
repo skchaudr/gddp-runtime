@@ -259,3 +259,56 @@ The terminal shape forces everything back through `pass/fail/blocked/needs-*/out
 | Human surfaces | `scripts/jobs_status.py` (`print_evaluation`), gddp-config `scripts/node_cli.py` |
 | Doctrine | `docs/decisions/{A-more-complete-evaluator-7-14-26, GDDP-becomes-small-and-real, Tests-can-fail-nodes-can-pass, GDDP-rebuild, Thin-Graph-Rich-Project}.md`, `docs/invariants/invariants.md`, `docs/proposals/LOOP.md` |
 | Live evidence | `gddp-config/verification/myapi-part1/node-11-…/job_…-attempt0.json` (populated `graph_observations`, `risks`, `followup_candidates`) |
+
+---
+---
+
+# Second Pass — post invariant admissions (`2aaeae3`) + interactive-menu trace
+
+Code unchanged between passes (diff `dfe6951..HEAD` is docs-only), so all code-level findings stand. Two new inputs: admitted invariants (commits `7bad11e`→`5286a86`) and a full trace of the operator's interactive surfaces.
+
+## A. Finding #2 vs the interactive menu — upheld, narrowed
+
+Surfaces traced [confirmed]:
+
+| Surface | What it renders | Source |
+|---|---|---|
+| `gddp node browse` detail panel (`node_cli.py` ~L1290–1410) | VERDICT banner, NEXT, WHY (`decision_reasoning` → integrity `reasoning` → semantic `overall_reasoning`), CRITERIA table (receipt `semantic.judgments` + summary `criteria_findings`), OBSERVATIONS (integrity findings + `graph_observations`), INTEGRITY NOTES, lanes/timing/coverage/provenance | **full receipt file** via `resolve_receipt` (acceptance_check receipt_path, fallback `verification/<project>/<node>/`) |
+| `gddp review` (`gddp.py:_render_evaluation_and_diff`) | verdict, subject_diff file list, merge state, git diff — no findings/observations | receipt file |
+| `gddp evaluations` (`evaluations.py`) | lane chips + clocks only | DB + receipts |
+| `jobs_status.py show` | verdict, integrity reasoning, criteria findings, integrity findings, graph observations | `results.acceptance_check` only |
+
+**Verdict on finding #2:** upheld. `semantic.risks`, `semantic.followup_candidates`, and `deterministic.human_review_questions` are rendered by **no** operator surface — zero references across all of `gddp-config/scripts/*.py` (non-test). The browse TUI reads the complete receipt, so the discard is a deliberate rendering omission, not a data-availability limit.
+
+**Correction to first-pass wording:** `overall_reasoning` DOES reach the human via browse (WHY / INTEGRITY NOTES), though it still bypasses `jobs_status show` and the CLI summary. The dropped set is exactly: **risks, followup_candidates, human_review_questions**.
+
+**Why this matters more now:** `PI_SYSTEM_PROMPT` explicitly instructs lane 1 to file unlisted-but-notable evidence as followup candidates phrased as *human clarifications* ("Was it intended to be part of the criteria?…"), and §3.3 now guarantees evaluator recommendations reach human consideration — yet the acceptance TUI never displays the channel those clarifications are written into. The receipt JSON file is the only route. The menu trace also reframes the fix: data already lands in the receipt; browse needs a rendering block, and the CLI summary needs the keys for `jobs_status`.
+
+## B. Invariant admissions — what they resolve and sharpen
+
+**Resolved (first-pass items closed):**
+- Missing invariants I flagged are admitted and well-formed: evaluation-precedes-admission (§3.5), graph-directed horizon (§3.1), horizon-vs-adjudication distinction (§3.2), context separation (§3.4), evaluator recommendation authority (§3.3).
+- §1.4 (provisional traversal + human authority boundary) closes the tier-1 silence around system-written `provisional`; the auto-provisional writer is now doctrinally grounded.
+- My demotion recommendation for frozen-infrastructure (§5) and workflow (§6) items was considered and rejected by the admission process — recorded as settled, dropped from the ranked list.
+
+**Sharpened — findings that are now tier-1 collisions rather than doctrine drift:**
+
+1. **§3.3 vs output contract (finding D1, upgraded).** The invariant now *guarantees* the evaluator "may identify, reason about, and recommend changes to graph topology, nodes, dependencies, criteria, or planned work." The contract still offers only `findings`/`graph_observations` with `severity+summary+affected_node_ids` — no recommendation shape, no action vocabulary, no proposal channel. The gap is no longer "doctrine implies X"; it is "tier-1 invariant declares capability X; schema cannot express X." This is now the single clearest invariant-vs-implementation conflict in the repo.
+2. **§3.5 vs `bridge._verify_once` merge_commit_sha gate [confirmed tension].** The gate returns `subject_mismatch` and produces **no verdict** when a return lacks a commit ref or the worktree won't materialize. Subject-pinning is legitimate evidence governance, but the invariant forbids any mechanism that can "terminate the evaluator's judgment" — and today an uncommittable return gets zero evaluation, not a degraded one. Needs a named decision: evaluate whatever evidence exists (worktree state, artifacts) with the pinning gap recorded as a receipt finding, or document why no-commit work is outside evaluation scope.
+3. **§3.5 vs the missing state-driven sweep.** LOOP.md already names it "the known missing half": work that never reaches reconcile (session lost, executor died pre-collect) is never evaluated. Absence rather than gate, but the effect — judgment never rendered — is what §3.5 exists to forbid. The sweep is now doctrinally mandated, not merely nice-to-have.
+4. **§3.1 vs lane asymmetry.** "The evaluator's evidence horizon is graph-directed" — true for lane 2 (config_root pointer + navigable tools); lane 1 never learns where the graph config lives. Minor provisioning fix (one prompt line), but the invariant now makes it a compliance item.
+5. **§3.2 vs D3 (heuristic fail finality).** §3.2 legitimizes lane 2 reporting beyond the node *without* affecting the verdict — which actually codifies that a heuristic criterion fail stands even if lane 2 sees the heuristic misfire: the correction can only be advisory prose. D3 remains open as a design question: is advisory-only correction acceptable for unreviewable deterministic fails?
+
+**Still open, now more glaring:**
+- **vocabulary.md `provisional`** still reads "Unverified intermediate status" — directly contradicted by §1.4 (traversal-worthy because evaluator-verified) and §4 receipt-backing. One-line fix; currently the closed-namespace table misdefines a term that tier-1 invariants depend on.
+
+## C. Revised rankings (replaces §10)
+
+1. **Typed graph-recommendation channel** (was #1, now invariant-mandated): lane-2 output gains structured graph implications (action class + affected nodes + rationale + optional draft node YAML) → durable proposals/attention surface → browse-TUI section. §3.3 cannot be honored without it.
+2. **Render the dropped channels** (was #2, narrowed + confirmed): add risks/followup_candidates/human_review_questions to the browse detail panel (receipt is already loaded) and to the CLI summary → acceptance_check → jobs_status. Two small changes; followups are the prompt-mandated human-clarification channel.
+3. **Resolve §3.5 tensions** (new): named decision on the merge_commit_sha gate (degraded-evaluation vs exemption), then implement the state-driven unevidenced sweep.
+4. **Feed doctrine to the evaluator** (was #3): invariants in the canonical menu, config_root pointer for lane 1, citation-consequence instruction. Now also a §3.1 compliance item.
+5. **Doc-tier repairs** (was #4, unchanged): archive decision-loop-spec, fix scripts/runtime/context.md, resolve dispatch-checklist graph-location contradiction; plus the one-line `provisional` vocabulary fix.
+6. **Heuristic-fail finality** (was #6): design question — semantic adjudication of heuristic (non-command_proof) fails, or accept advisory-only correction per §3.2.
+7. **Longitudinal context for drift** (was #7, unchanged).
+8. **Delete dead machinery** (was #8, unchanged): legacy agent stack, stale SYSTEM_PROMPT, decision_loop dir.
