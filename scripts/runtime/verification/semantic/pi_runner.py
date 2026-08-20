@@ -13,7 +13,7 @@ preserving the GDDP contract:
   - the 12-row decision_engine and VerdictReceipt are unchanged
   - the harness is read-only: pi's edit/write/multi_edit/bash are excluded
 
-The runner spawns `pi --print --mode text -e gddp_verifier.ts ...` with the
+The runner spawns `pi --print --mode json -e gddp_verifier.ts ...` with the
 operator's terminal inherited, so the investigator's stream is visible live.
 On exit it reads the verdict JSON written by the extension and returns a
 SemanticOutput, which orchestrator.verify() feeds into decision_engine.decide().
@@ -42,7 +42,7 @@ from scripts.runtime.verification.semantic.subprocess_utils import (
     tee_subprocess as _tee_subprocess,
 )
 from scripts.runtime.verification.semantic.timeouts import PI_TIMEOUT_SECONDS
-from scripts.prompt_topology import TurnPrompt, prompt_cache_report
+from scripts.prompt_topology import TurnPrompt, prompt_cache_report, extract_actual_cached_tokens
 
 
 EXTENSION_PATH = Path(__file__).resolve().parent / "pi_harness" / "gddp_verifier.ts"
@@ -275,16 +275,25 @@ class PiHarnessRunner:
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
         # Ground-truth trace wins over whatever the model put in budget_trace
         # (submit_verdict always includes the key, usually null, so setdefault
-        # would never fire). Attach the structural prompt_cache_report so the
-        # evaluator's cache topology flows into the verdict receipt alongside
-        # the tool-call trace — operator-visible evidence, same field family.
+        # would never fire). Attach the prompt_cache_report so the evaluator's
+        # cache topology flows into the verdict receipt alongside the tool-call
+        # trace — operator-visible evidence, same field family.
         if trace:
             raw["budget_trace"] = {"tool_calls": trace}
         else:
             raw.setdefault("budget_trace", None)
         if raw.get("budget_trace") is None:
             raw["budget_trace"] = {}
-        raw["budget_trace"]["prompt_cache_report"] = eval_cache_report
+        # --mode json emits structured events (message_end with usage.cacheRead)
+        # to stdout. Parse them for the provider's actual_cached_tokens — the
+        # same feed the executor uses via events.jsonl. Rebuild the report with
+        # the real measurement so the verdict receipt carries provider reality,
+        # not just the structural shape.
+        actual_cached = _extract_cached_from_stdout(stdout_path)
+        final_report = prompt_cache_report(
+            full_tp, actual_cached_tokens=actual_cached
+        ).as_dict() if actual_cached is not None else eval_cache_report
+        raw["budget_trace"]["prompt_cache_report"] = final_report
         raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
         # Success: the verdict was recorded, so the temp stdout/stderr logs are
         # no longer needed. Best-effort cleanup; never raise. On failure paths
@@ -298,7 +307,7 @@ class PiHarnessRunner:
         cmd: list[str] = [
             argv0,
             "--print",
-            "--mode", "text",
+            "--mode", "json",
             # Keep the run clean: only our explicit -e extensions, no discovered
             # project-local resources (AGENTS.md/CLAUDE.md/skills/themes) from
             # the target repo, no session persistence. cwd is set on the
@@ -331,6 +340,29 @@ def _extract_user_prompt(messages: list[dict[str, Any]]) -> str:
         if m.get("role") == "user":
             return str(m.get("content", ""))
     return ""
+
+
+def _extract_cached_from_stdout(stdout_path: str) -> int | None:
+    """Parse --mode json stdout (JSONL events) for provider cached tokens.
+
+    Mirrors the executor's events.jsonl path: the same message_end events
+    with usage.cacheRead that extract_actual_cached_tokens already parses.
+    Returns None if the stdout is missing or no usage events were emitted
+    (e.g. the run crashed before the first LLM call).
+    """
+    p = Path(stdout_path)
+    if not p.exists():
+        return None
+    events: list[dict[str, Any]] = []
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return extract_actual_cached_tokens(events)
 
 
 def _empty_verdict(reason: str, trace: list[dict[str, Any]] | None = None, lane_status: LaneExecutionStatus | None = None, harness_error: str | None = None) -> SemanticOutput:

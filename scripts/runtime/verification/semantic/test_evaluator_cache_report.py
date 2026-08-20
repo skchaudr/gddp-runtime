@@ -90,20 +90,38 @@ def test_evaluator_report_retry_preserves_protocol_project_node():
     )
 
 
-def test_evaluator_report_actual_cached_is_none_until_json_mode_verified():
-    """The evaluator runs `pi --print --mode text`, which emits final response
-    text only — no structured usage events. actual_cached_tokens is therefore
-    None (unmeasured) today. Wiring the real feed requires --mode json
-    (deferred until validated against the guard extension). The structural
-    zones are still reported."""
-    tp = _eval_turn_prompt(
-        node={"id": "n1"}, graph={"project_id": "p1"}, deterministic_result={"ok": True}
-    )
-    report = prompt_cache_report(tp)  # no actual_cached_tokens supplied
-    assert report.actual_cached_tokens is None
-    assert report.potential_reuse_tokens > 0
-    # No bust-loss field (semantically broken; removed).
-    assert not hasattr(report, "cache_bust_loss_tokens")
+def test_evaluator_report_actual_cached_from_json_stdout():
+    """Under --mode json, stdout is JSONL events with message.usage.cacheRead.
+    _extract_cached_from_stdout parses it and feeds actual_cached_tokens into
+    the report — the same provider-reality path the executor uses."""
+    import json
+    import tempfile
+    from scripts.runtime.verification.semantic.pi_runner import _extract_cached_from_stdout
+
+    # Real pi json-mode stdout shape (message_end with usage.cacheRead).
+    events = [
+        {"type": "session", "version": 3, "id": "x"},
+        {"type": "agent_start"},
+        {"type": "message_start", "message": {"role": "assistant", "usage": {"cacheRead": 0}}},
+        {"type": "message_end", "message": {"role": "assistant", "usage": {"input": 5000, "output": 100, "cacheRead": 42000, "cacheWrite": 0}}},
+        {"type": "turn_end", "message": {"usage": {"cacheRead": 42000}}},
+        {"type": "agent_end"},
+    ]
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        for e in events:
+            f.write(json.dumps(e) + "\n")
+        stdout_path = f.name
+    # Deduped: message_end only, not message_start/turn_end.
+    assert _extract_cached_from_stdout(stdout_path) == 42000
+
+    # Missing file -> None (crash before any output).
+    assert _extract_cached_from_stdout("/nonexistent/path") is None
+
+    # No usage events -> None.
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(json.dumps({"type": "agent_start"}) + "\n")
+        f.write(json.dumps({"type": "agent_end"}) + "\n")
+        assert _extract_cached_from_stdout(f.name) is None
 
 
 def test_evaluator_report_serializes_for_budget_trace():
