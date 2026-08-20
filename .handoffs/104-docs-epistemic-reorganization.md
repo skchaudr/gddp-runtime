@@ -13,11 +13,12 @@ Branch: feat/organize-docs-hierarchy
 
 ## Empirical Reality
 
-Cleaned and organized all 35 loose root documents in `docs/` into distinct epistemic tiers (`decisions/`, `current/`, `proposals/`, `learning/`, `artifacts/`, `archive/`). Updated cross-references across `AGENTS.md`, `PROJECT-BRIEF.md`, `TOPOLOGY.md`, `entities/`, and `docs/context.md`. Invariants in `docs/invariants/invariants.md` held intact pending 1-by-1 human review. Suite of 700 tests passes.
+Cleaned and organized all 35 loose root documents in `docs/` into distinct epistemic tiers (`decisions/`, `current/`, `proposals/`, `learning/`, `artifacts/`, `archive/`). Updated cross-references across `AGENTS.md`, `PROJECT-BRIEF.md`, `TOPOLOGY.md`, `entities/`, and `docs/context.md`. Completed line-by-line human review and admission of 6 refined system invariants into `docs/invariants/invariants.md`. Suite of 700 tests passes.
 
 ### Scope touched
 
 ~ `docs/context.md`
+~ `docs/invariants/invariants.md`
 ~ `AGENTS.md`
 ~ `PROJECT-BRIEF.md`
 ~ `TOPOLOGY.md`
@@ -42,12 +43,13 @@ On branch `feat/organize-docs-hierarchy`. Clean working tree after conventional 
 
 ### Artifacts
 
+- `docs/invariants/invariants.md` - Complete system invariants with admitted evaluator & authority rules
 - `docs/context.md` - Updated authority map reflecting organized subdirectories
 - `.handoffs/104-docs-epistemic-reorganization.md` - Session handoff
 
 ### Resume point
 
-`docs/` is organized into clean epistemic tiers. Next step is 1-by-1 human review and admission of candidate invariants into `docs/invariants/invariants.md`.
+Documentation hierarchy reorganization and invariant admissions are complete and verified. Ready to merge `feat/organize-docs-hierarchy` into `main`.
 
 ------------------------------------------------ Agent Section END
 
