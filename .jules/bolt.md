@@ -1,0 +1,3 @@
+## 2023-10-27 - O(1) Node Lookup in Event Processing Loop
+**Learning:** In `scripts/runtime/heartbeat/runner.py`, retrieving the corresponding node for each event from a list of `ready_nodes` using `next(...)` within a loop creates an O(E*N) algorithmic complexity. This causes significant performance degradation as the number of events or ready nodes increases.
+**Action:** Always convert lists of configuration items (like nodes or rules) into a dictionary keyed by ID (`ready_nodes_by_id = {n.node_id: n for n in ready_nodes}`) *before* entering an event processing loop to ensure O(1) lookup performance and overall O(E + N) complexity.
