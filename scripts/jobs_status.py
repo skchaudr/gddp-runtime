@@ -7,6 +7,7 @@ Usage:
     python3 scripts/jobs_status.py results [--all]
     python3 scripts/jobs_status.py set <job_id | node_id> <state> --reason "..."
     python3 scripts/jobs_status.py retry <job_id | node_id> --reason "..."
+    python3 scripts/jobs_status.py adopt --project <id> --node <id> --commit <sha> [--base <sha>] [--dry-run]
 
 This module owns runtime job state only. It never writes graph/node status.
 """
@@ -564,6 +565,38 @@ def apply_retry(*, ref: str, reason: str) -> int:
     return 1
 
 
+def cmd_adopt(args):
+    """Record out-of-runtime work as a collected job for the next heartbeat."""
+    from scripts.runtime.heartbeat.adoption import AdoptionError, adopt
+
+    con = connect()
+    try:
+        plan = adopt(
+            con=con,
+            project_id=args.project,
+            node_id=args.node,
+            commit=args.commit,
+            base=args.base,
+            executor=args.executor,
+            dry_run=args.dry_run,
+            config_path=str(config_root()),
+            runtime_root=RUNTIME_ROOT,
+        )
+    except AdoptionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        con.close()
+    if args.dry_run:
+        return 0
+    print(
+        f"adopted {args.node} as {plan.job['job_id']} "
+        f"session={plan.session['session_id']} "
+        f"commit={plan.session['result_commit_sha'][:12]}"
+    )
+    return 0
+
+
 def cmd_retry(args):
     reason = args.reason.strip()
     if not reason:
@@ -618,6 +651,27 @@ def main(argv=None):
     )
     p_retry.add_argument("--yes", action="store_true", help="skip confirmation")
     p_retry.set_defaults(fn=cmd_retry)
+
+    p_adopt = sub.add_parser(
+        "adopt",
+        help="record out-of-runtime work as a collected job",
+    )
+    p_adopt.add_argument("--project", required=True, help="graph project id")
+    p_adopt.add_argument("--node", required=True, help="node id to adopt")
+    p_adopt.add_argument("--commit", required=True, help="result commit SHA")
+    p_adopt.add_argument(
+        "--base", default=None,
+        help="diff-boundary SHA (ancestor of --commit); warn if omitted",
+    )
+    p_adopt.add_argument(
+        "--executor", default="local_subprocess",
+        help="ADAPTERS key (default local_subprocess)",
+    )
+    p_adopt.add_argument(
+        "--dry-run", action="store_true",
+        help="print the three rows and exit without writing",
+    )
+    p_adopt.set_defaults(fn=cmd_adopt)
 
     args = p.parse_args(argv)
     args.fn(args)
