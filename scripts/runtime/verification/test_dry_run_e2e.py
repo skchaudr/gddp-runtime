@@ -4,23 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any
 
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.schemas import SemanticOutput, Verdict, VerdictReceipt
-from scripts.runtime.verification.semantic.agent import LLMResponse
-from scripts.runtime.verification.semantic.tools import SemanticToolbox
 from scripts.runtime.verification.deterministic.probes import CHECK_PROBES
-
-
-class MockRunner:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.calls = 0
-
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
-        self.calls += 1
-        return LLMResponse(content=self.content, tool_calls=[], finish_reason="stop")
 
 
 def _repo_fingerprint(repo: Path) -> dict[str, str]:
@@ -120,7 +107,6 @@ def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(
         },
     )
     node_yaml, project_yaml = _clean_pass_fixtures(tmp_path)
-    runner = MockRunner("{}")
 
     receipt = _assert_zero_repo_writes(
         tmp_path,
@@ -128,8 +114,6 @@ def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(
             node_yaml=node_yaml,
             project_yaml=project_yaml,
             repo=tmp_path,
-            runner=runner,
-            toolbox=SemanticToolbox(tmp_path),
             now=lambda: "2026-06-30T00:00:00+00:00",
         ),
     )
@@ -139,7 +123,6 @@ def test_verify_e2e_clean_pass_returns_receipt_without_repo_writes(
         project_id="dry-run-project",
         node_id="dry-run-clean",
     )
-    assert runner.calls == 0
     assert receipt.semantic is None
     assert receipt.verdict == Verdict.PASS
 
@@ -174,8 +157,6 @@ def test_verify_e2e_indeterminate_invokes_semantic_without_repo_writes(tmp_path:
             node_yaml=node_yaml,
             project_yaml=project_yaml,
             repo=tmp_path,
-            runner=MockRunner("{}"),
-            toolbox=SemanticToolbox(tmp_path),
             semantic_harness=_mock_semantic_harness,
             now=lambda: "2026-06-30T00:00:00+00:00",
         ),

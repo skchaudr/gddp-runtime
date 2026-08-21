@@ -13,6 +13,7 @@ from scripts.runtime.verification.semantic.integrity_runner import (
     IntegrityHarnessRunner,
     _build_integrity_prompt,
     _neighbor_pointers,
+    _sanitize_graph_recommendations,
 )
 
 NODE = {"node_id": "node-b", "depends_on": ["node-a"], "unlocks": ["node-c"]}
@@ -67,6 +68,52 @@ def test_prompt_includes_canonical_context_block(tmp_path: Path) -> None:
     assert "Canonical Context" in prompt
     assert "README.md" in prompt
     assert "PROJECT-BRIEF.md" in prompt
+
+
+def test_sanitize_drops_malformed_recommendations_without_voiding_payload() -> None:
+    raw = {
+        "verdict": "pass",
+        "intent_preserved": True,
+        "graph_integrity_preserved": True,
+        "required_human_review": False,
+        "confidence": 0.9,
+        "findings": [],
+        "reasoning": "ok",
+        "graph_recommendations": [
+            {
+                "action": "create_node",
+                "affected_node_ids": ["node-13"],
+                "rationale": "Missing continuation.",
+                "evidence": ["src/foo.py:12"],
+                "draft_node_yaml": "node_id: node-13\n",
+            },
+            {
+                "action": "not-a-real-action",
+                "affected_node_ids": ["node-x"],
+                "rationale": "bad",
+                "evidence": ["src/foo.py"],
+            },
+            {
+                "action": "split",
+                "affected_node_ids": ["node-y"],
+                "rationale": "no evidence",
+                "evidence": [],
+            },
+        ],
+    }
+    dropped = _sanitize_graph_recommendations(raw)
+    assert dropped == 2
+    assert len(raw["graph_recommendations"]) == 1
+    assert raw["graph_recommendations"][0]["action"] == "create_node"
+    from scripts.runtime.verification.schemas import IntegrityOutput
+    IntegrityOutput.model_validate(raw)
+
+
+def test_sanitize_non_list_recommendations_dropped() -> None:
+    raw = {"graph_recommendations": "not-a-list", "reasoning": "ok"}
+    dropped = _sanitize_graph_recommendations(raw)
+    assert dropped == 1
+    assert "graph_recommendations" not in raw
 
 
 def test_empty_integrity_accepts_tool_trace() -> None:

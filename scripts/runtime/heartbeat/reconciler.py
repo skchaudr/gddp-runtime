@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tempfile
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+
+import yaml
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,6 +31,7 @@ from adapters.executor_protocol import PatchResult, SessionRef
 
 from ..results_store import write_result
 from ..verification.bridge import verify_job_return
+from ..verification.retry_budget import should_retry
 from .completion_discipline import submit_completion
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .provisional_status import maybe_mark_provisional
@@ -164,7 +167,7 @@ class EvaluationBatch:
             for pending in self._pending
         }
 
-    def finalize(self, con) -> None:
+    def finalize(self, con, *, repo_path: Path | None = None) -> None:
         """Drain verifiers and serialize their DB/result finalization."""
         if self._finalized:
             return
@@ -180,7 +183,9 @@ class EvaluationBatch:
                         "error": f"evaluator worker failed: {exc}",
                     }
                 try:
-                    _finalize_evaluation(con, pending, verification)
+                    _finalize_evaluation(
+                        con, pending, verification, repo_path=repo_path
+                    )
                 except Exception as exc:
                     # Leave this session collected so the next heartbeat can
                     # retry evaluation from its already-durable result commit.
@@ -308,7 +313,7 @@ def reconcile_sessions(
     con.commit()
     batch.start()
     if owns_evaluation_batch:
-        batch.finalize(con)
+        batch.finalize(con, repo_path=repo_path)
 
 
 def cancel_executor_session(con, session_db_id: str) -> str:
@@ -1248,6 +1253,8 @@ def _finalize_evaluation(
     con,
     pending: PendingEvaluation,
     verification: dict,
+    *,
+    repo_path: Path | None = None,
 ) -> None:
     """Persist one evaluator outcome on the coordinator thread.
 
@@ -1302,8 +1309,16 @@ def _finalize_evaluation(
         pending.session_db_id,
         state="evaluated",
     )
-    # Mark job as awaiting_review (human decides graph truth).
-    mark_jobs_awaiting_review(con, (pending.job_id,))
+    # Evaluator-driven retry (mirrors return_router): a non-pass verdict with
+    # cited findings and budget room re-dispatches the same node with the
+    # findings as its fix-list; otherwise the job parks at awaiting_review for
+    # the human. Verification errors and passes never retry.
+    redispatched = _maybe_retry_evaluation(
+        con, pending, verification, repo_path=repo_path
+    )
+    if not redispatched:
+        # Mark job as awaiting_review (human decides graph truth).
+        mark_jobs_awaiting_review(con, (pending.job_id,))
     con.commit()
 
     # Provisional flow (mode 1 default): a qualifying verdict marks the node
@@ -1316,6 +1331,165 @@ def _finalize_evaluation(
         verification=verification,
         evidence_ref=result_id,
     )
+
+
+def _config_root() -> Path:
+    """Resolve gddp-config root (mirrors bridge._config_root)."""
+    runtime_root = Path(__file__).resolve().parents[3]
+    return Path(
+        os.environ.get(
+            "GDDP_CONFIG_PATH", str(runtime_root.parent / "gddp-config")
+        )
+    )
+
+
+def _load_project_yaml(project_id: str) -> dict:
+    """Load execution_policy-bearing project.yaml, or {} when absent."""
+    project_yaml_path = _config_root() / "graphs" / project_id / "project.yaml"
+    if not project_yaml_path.exists():
+        return {}
+    try:
+        doc = yaml.safe_load(project_yaml_path.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _maybe_retry_evaluation(
+    con,
+    pending: PendingEvaluation,
+    verification: dict,
+    *,
+    repo_path: Path | None,
+) -> bool:
+    """Re-dispatch a non-pass, evidence-backed verdict as a retry attempt.
+
+    Mirrors return_router._redispatch_with_findings: the same cited findings
+    become the retry's fix-list (previous_findings), the retry builds on the
+    evaluated commit, and only a real dispatch success leaves the job running.
+    Returns True when a retry was dispatched; False parks the job at review.
+    Verification errors and passes never retry.
+    """
+    if verification.get("verification_status") != "ok":
+        return False
+    verdict = verification.get("verdict", "")
+    if not verdict or verdict == "pass":
+        return False
+
+    job_row = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (pending.job_id,)
+    ).fetchone()
+    if job_row is None:
+        return False
+    job = dict(job_row)
+
+    project_yaml = _load_project_yaml(pending.project_id)
+    integrity = verification.get("integrity")
+    criteria_findings = verification.get("criteria_findings")
+    if not should_retry(
+        verdict=verdict,
+        integrity=integrity,
+        job=job,
+        project_yaml=project_yaml,
+        criteria_findings=criteria_findings,
+    ):
+        return False
+
+    # Same fix-list contract as return_router: the evaluator's cited findings
+    # ride along as previous_findings for the corrective attempt.
+    previous_findings = {
+        "verdict": verdict,
+        "integrity_verdict": (integrity or {}).get("verdict", ""),
+        "findings": (integrity or {}).get("findings", []),
+        "reasoning": (integrity or {}).get("reasoning", ""),
+        "criteria_findings": criteria_findings or [],
+    }
+
+    retry_base = (
+        verification.get("evaluated_commit_sha")
+        or pending.result_commit_sha
+        or (_get_head_sha(repo_path) if repo_path else None)
+        or pending.expected_base_commit_sha
+    )
+
+    allocated = allocate_retry_attempt(
+        con,
+        job,
+        executor=pending.executor,
+        expected_base_commit_sha=retry_base,
+        previous_findings=previous_findings,
+    )
+    if allocated is None:
+        # Attempt budget exhausted at the boundary; fall back to review.
+        return False
+    retry_job, replacement_id = allocated
+
+    repo_value = str(job.get("repo") or "")
+    dispatch_repo_path = str(repo_path) if repo_path else None
+    try:
+        dispatch_result = dispatch(retry_job, repo_value, dispatch_repo_path)
+    except Exception as exc:  # pragma: no cover - same defensive shape as _handle_failed
+        dispatch_result = None
+        dispatch_error = f"retry dispatch raised exception: {exc}"
+    else:
+        if dispatch_result is None:
+            dispatch_error = "retry dispatch failed"
+        else:
+            dispatch_error = dispatch_result.error or "retry dispatch failed"
+
+    if dispatch_result is None or not dispatch_result.success:
+        # Clean up the reservation; the caller parks the job at awaiting_review
+        # (same as return_router, which routes a failed retry-dispatch to
+        # review rather than marking the job failed).
+        finalize_executor_session_dispatch(
+            con,
+            replacement_id,
+            state="dispatch_failed",
+            error=dispatch_error,
+            expected_base_commit_sha=retry_base,
+        )
+        print(
+            f"[reconcile] {pending.session_db_id}: evaluator retry dispatch "
+            f"for job {pending.job_id} failed: {dispatch_error}"
+        )
+        return False
+
+    session_ref = dispatch_result.session_ref
+    if session_ref is not None:
+        finalized = finalize_executor_session_dispatch(
+            con,
+            replacement_id,
+            state="dispatched",
+            executor=session_ref.executor,
+            session_id=session_ref.session_id,
+            expected_base_commit_sha=retry_base,
+        )
+    else:
+        finalized = finalize_executor_session_dispatch(
+            con,
+            replacement_id,
+            state="mediated",
+            session_id=dispatch_result.issue_url,
+            expected_base_commit_sha=retry_base,
+        )
+    if not finalized:
+        cancellation = "reservation is no longer dispatching"
+        if session_ref is not None:
+            _, cancellation = cancel_remote_session(
+                session_ref, retry_job["repo"]
+            )
+        print(
+            f"[reconcile] {replacement_id}: late retry dispatch result "
+            f"ignored; {cancellation}"
+        )
+        return False
+    mark_job_running(con, pending.job_id)
+    print(
+        f"[reconcile] {pending.session_db_id}: evaluator non-pass with cited "
+        f"findings; job {pending.job_id} redispatched as attempt "
+        f"{retry_job['attempt']}"
+    )
+    return True
 
 
 def _get_head_sha(repo_path: Path) -> str | None:

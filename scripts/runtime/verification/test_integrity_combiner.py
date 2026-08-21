@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from . import integrity_combiner
-from .schemas import GraphObservation, IntegrityFinding, IntegrityOutput, Verdict
+from .schemas import (
+    GraphObservation,
+    GraphRecommendation,
+    IntegrityFinding,
+    IntegrityOutput,
+    Verdict,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +221,31 @@ def test_graph_observations_only_no_findings_pass() -> None:
                 severity="low",
                 summary="Node arrival rate suggests aggressive parallel dispatch.",
                 affected_node_ids=["downstream-a", "downstream-b", "downstream-c"],
+            )
+        ],
+    )
+    combined, action = integrity_combiner.combine(Verdict.PASS, integrity, "proceed")
+    assert combined == Verdict.PASS
+    assert action == "proceed"
+
+
+def test_graph_recommendations_do_not_floor_pass() -> None:
+    """Integrity pass with graph_recommendations must leave combined verdict pass."""
+    integrity = IntegrityOutput(
+        verdict="pass",
+        intent_preserved=True,
+        graph_integrity_preserved=True,
+        required_human_review=False,
+        confidence=0.9,
+        findings=[],
+        reasoning="Current node passes.",
+        graph_recommendations=[
+            GraphRecommendation(
+                action="create_node",
+                affected_node_ids=["node-13-preserve-results"],
+                rationale="Missing continuation for query-result linking.",
+                evidence=["graphs/myapi-part1/nodes/node-13-preserve-results.yaml"],
+                draft_node_yaml="node_id: node-13b\n",
             )
         ],
     )

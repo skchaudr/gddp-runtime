@@ -203,6 +203,30 @@ def print_evaluation(check, full=False):
     # Phase 3: graph observations (forward-looking, do not affect verdict)
     for o in integrity.get("graph_observations") or []:
         print(f"  graph observation: [{o.get('severity')}] {o.get('summary')}")
+    for rec in integrity.get("graph_recommendations") or []:
+        if not isinstance(rec, dict):
+            continue
+        action = rec.get("action") or "?"
+        ids = ",".join(str(i) for i in (rec.get("affected_node_ids") or []))
+        rationale = str(rec.get("rationale") or "")
+        if len(rationale) > 120:
+            rationale = rationale[:117] + "..."
+        print(f"  graph recommendation: [{action}] {ids} — {rationale}")
+    # Criteria-lane free-text intelligence + deterministic human-review questions.
+    risks = check.get("semantic_risks")
+    if risks:
+        print("  risks:")
+        for line in str(risks).splitlines():
+            print(f"    {line}")
+    followups = check.get("followup_candidates")
+    if followups:
+        print("  followups:")
+        for line in str(followups).splitlines():
+            print(f"    {line}")
+    for q in check.get("human_review_questions") or []:
+        cid = q.get("criterion_id") if isinstance(q, dict) else "?"
+        question = q.get("question") if isinstance(q, dict) else str(q)
+        print(f"  question ({cid}): {question}")
     print(
         f"  evaluator signals: criteria={check.get('criteria_verdict')} "
         f"@ {check.get('criteria_confidence')}  "

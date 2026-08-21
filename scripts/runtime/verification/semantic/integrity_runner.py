@@ -20,7 +20,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from scripts.runtime.verification.schemas import IntegrityOutput, LaneExecutionStatus
+from scripts.runtime.verification.schemas import (
+    GraphRecommendation,
+    IntegrityOutput,
+    LaneExecutionStatus,
+)
 from scripts.runtime.verification.semantic.context_builder import build_canonical_pointers
 from scripts.runtime.verification.semantic.pi_environment import (
     build_pi_environment,
@@ -67,16 +71,31 @@ with arguments matching IntegrityOutput:
   findings: [{severity: "low"|"medium"|"high", summary: "...", affected_node_ids: [...]}]
   reasoning: "..."
   graph_observations: [{severity, summary, affected_node_ids}] (optional — see below)
+  graph_recommendations: [{action, affected_node_ids, rationale, evidence, draft_node_yaml?}]
+                         (optional — see below)
 
-Findings vs graph_observations:
+Findings vs graph_observations vs graph_recommendations:
   - findings: affect the CURRENT node's verdict. If you put a finding here and
     set intent_preserved=false or graph_integrity_preserved=false, the combined
     verdict floors to needs-human-review. Use findings for current-node problems.
+    If the graph problem you would recommend fixing also makes continuing
+    downstream work dangerous, that is a finding, not merely a recommendation.
   - graph_observations: forward-looking observations about graph trajectory,
     upcoming convergence risk, or execution strategy. These do NOT affect the
     current verdict. Use them when the current work is fine but you notice
-    something about the graph's future. Example: "Upcoming nodes converge on
-    the scheduler; serialize this region." The current node still passes.
+    something about the graph's future and you are NOT proposing a graph change.
+    Example: "Upcoming nodes converge on the scheduler; serialize this region."
+    The current node still passes.
+  - graph_recommendations: typed proposals that the graph itself should change.
+    These do NOT affect the current verdict and do NOT trigger retry. Empty is
+    the normal case. Emit only when THIS evaluation produced concrete evidence
+    the graph should change. Every item needs a named action, affected node ids,
+    and at least one evidence citation (repo path file:line or canonical node id).
+    Missing any of those → observation or silence. Never restate a finding as a
+    recommendation. Never emit vague "watch this later" items.
+    Actions (closed): split, supersede, insert_prerequisite, revise_criteria,
+    rewire, reorder, create_node, retire_node. draft_node_yaml is optional and
+    only meaningful for create_node / insert_prerequisite.
 
 Call submit_integrity_verdict exactly once; it ends the run.
 
@@ -87,6 +106,10 @@ Vocabulary comes from the evaluator-intent-integrity-verdict node, not this repo
 - insufficient: not enough evidence to reach a clear verdict
 - contradicted: evidence contradicts the stated intent
 - unknown: unable to determine (missing context, ambiguous)
+
+Citations matter: findings that cite concrete repo paths (file:line) can back
+automated retries; uncited findings route to a human reviewer instead. Cite
+paths when you can.
 
 The integrity review is a guardrail, not a gatekeeper. A pass means proceed
 with confidence; a non-pass means a human should look before dependents fire.
@@ -206,6 +229,11 @@ class IntegrityHarnessRunner:
                 ),
             )
         raw = json.loads(Path(verdict_path).read_text(encoding="utf-8"))
+        dropped = _sanitize_graph_recommendations(raw)
+        if dropped:
+            note = f"({dropped} malformed graph recommendation(s) dropped)"
+            existing = raw.get("reasoning") or ""
+            raw["reasoning"] = f"{existing} {note}".strip() if existing else note
         # Phase 2: attach ground-truth tool trace to the integrity output.
         trace = _read_trace(trace_path)
         if trace:
@@ -242,6 +270,38 @@ class IntegrityHarnessRunner:
             cmd += ["--model", self.model]
         cmd += self.extra_args
         return cmd
+
+
+def _sanitize_graph_recommendations(raw: dict[str, Any]) -> int:
+    """Filter malformed graph_recommendations in-place. Return dropped count.
+
+    A broken recommendation must never crash the integrity lane or void an
+    otherwise valid verdict. Invalid items (bad action, empty evidence,
+    non-list payload) are dropped; remaining items are left for pydantic.
+    """
+    if "graph_recommendations" not in raw:
+        return 0
+    items = raw.get("graph_recommendations")
+    if items is None:
+        return 0
+    if not isinstance(items, list):
+        del raw["graph_recommendations"]
+        return 1
+    kept: list[Any] = []
+    dropped = 0
+    for item in items:
+        try:
+            GraphRecommendation.model_validate(item)
+        except Exception:
+            dropped += 1
+            continue
+        kept.append(item)
+    if dropped:
+        if kept:
+            raw["graph_recommendations"] = kept
+        else:
+            raw.pop("graph_recommendations", None)
+    return dropped
 
 
 def _neighbor_pointers(

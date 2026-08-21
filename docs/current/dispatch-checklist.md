@@ -10,7 +10,7 @@ Three stages covered: intent → planning → execution. See `TOPOLOGY.md` for h
 
 - [ ] **Have bounded work worth preserving as intent** — the reason to open the loop at all
 - [ ] **Work maps to one node in the schema format** — `gddp-config/schemas/v1/node.yaml`; draft with the node CLI (`gddp.py node rapid`), check with `gddp.py node validate`
-- [ ] **Know which node** — it lives in the project's own repo at `gddp/nodes/<node>.yaml`; the repo owns its graph, gddp-config is not its warehouse
+- [ ] **Know which node** — its YAML lives at `gddp-config/graphs/<project>/nodes/<node_id>.yaml` (authored via the gddp-config node CLI, e.g. `gddp.py node rapid`); the graph is hosted in gddp-config
 - [ ] **Know which host holds `db/queue.db`** — `TOPOLOGY.md`; production queue on `sab-mini` today
 - [ ] **Know the return-path URL GitHub will call** — same host as that queue; exact URL in `TOPOLOGY.md`
 - [ ] **If the job outlasts your session, arm intake + funnel before you leave** — `deploy/mini-heartbeat/bin/arm.sh` (see §3)

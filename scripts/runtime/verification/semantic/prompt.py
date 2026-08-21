@@ -6,32 +6,10 @@ from typing import Any
 from scripts.prompt_topology import TurnPrompt
 
 
-SYSTEM_PROMPT = """You are the GDDP semantic verification investigator.
-
-Use only the provided read-only tools. Investigate acceptance criteria against
-the repo evidence. Do not choose the final project verdict. When finished, call
-submit_verdict with arguments matching SemanticOutput:
-{
-  "judgments": [
-    {
-      "criterion_id": "...",
-      "judgment": "judged_pass | judged_fail | indeterminate",
-      "confidence": 0.0,
-      "evidence": ["file:line or tool evidence"],
-      "reasoning": "why this judgment follows"
-    }
-  ],
-  "overall_reasoning": "...",
-  "risks": null,
-  "followup_candidates": null,
-  "budget_exhausted": false
-}
-"""
-
-
 # Prefix caching discounts a byte-identical prompt prefix. The evaluator prompt
 # is a cache topology with four monotonically-more-volatile zones:
-#   protocol  = SYSTEM_PROMPT (nearly immutable, shared by every evaluation)
+#   protocol  = the live system prompt (PI_SYSTEM_PROMPT), carried in the
+#               system message — nearly immutable, shared by every evaluation
 #   project   = framing + stable canonical pointers + graph (stable across
 #               the whole frontier — shared by every node of the same graph)
 #   node      = the node under evaluation (stable across retries of that node)
@@ -65,9 +43,9 @@ def build_turn_prompt(
 ) -> TurnPrompt:
     """Build the four-zone TurnPrompt for one evaluation.
 
-    Protocol (SYSTEM_PROMPT) is carried separately in the system message by
-    ``build_prompt_messages``; here it is left empty so the user-message text
-    is exactly project + node + attempt.
+    Protocol (the live system prompt) is carried separately in the system
+    message by ``build_prompt_messages``; here it is left empty so the
+    user-message text is exactly project + node + attempt.
     """
     project = _STABLE_FRAMING + stable_prefix_extra + _zone("graph", graph)
     node_zone = _zone("node", node)
@@ -77,7 +55,7 @@ def build_turn_prompt(
     if volatile_tail_extra:
         attempt_zone = attempt_zone + "\n" + volatile_tail_extra
     return TurnPrompt(
-        protocol="",  # SYSTEM_PROMPT lives in the system message
+        protocol="",  # live system prompt lives in the system message
         project=project,
         node=node_zone,
         attempt=attempt_zone,
@@ -90,9 +68,11 @@ def build_prompt_messages(
     deterministic_result: Any,
     shape_profile: dict[str, Any] | None = None,
     *,
+    system_prompt: str,
     stable_prefix_extra: str = "",
     volatile_tail_extra: str = "",
 ) -> list[dict[str, Any]]:
+    """Assemble system+user messages. ``system_prompt`` is the live protocol zone."""
     tp = build_turn_prompt(
         node=node,
         graph=graph,
@@ -102,6 +82,6 @@ def build_prompt_messages(
         volatile_tail_extra=volatile_tail_extra,
     )
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": tp.assemble()},
     ]

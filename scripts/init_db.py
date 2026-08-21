@@ -142,8 +142,8 @@ def init_db():
         summary_path                TEXT,
         logs_path                   TEXT,
         acceptance_check            TEXT,               -- JSON object: criterion -> pass|fail|untested
-        risks                       TEXT,               -- JSON array
-        followup_candidates         TEXT,               -- JSON array of node_ids
+        risks                       TEXT,               -- free-text semantic risks (str|NULL)
+        followup_candidates         TEXT,               -- free-text followup notes (str|NULL)
         github_action               TEXT,               -- JSON object
         FOREIGN KEY(job_id) REFERENCES jobs(job_id)
     );

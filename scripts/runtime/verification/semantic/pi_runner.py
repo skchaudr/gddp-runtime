@@ -2,16 +2,16 @@
 
 Why this exists
 ---------------
-The hand-rolled SemanticAgent loop (semantic/agent.py) is correct but opaque:
-the operator only sees a final receipt. Running the evaluator through `pi`
-gives live visibility into the model's text, thinking, and tool calls, while
+Pi is the only live semantic evaluator. Running through `pi` gives live
+visibility into the model's text, thinking, and tool calls, while
 preserving the GDDP contract:
 
   - criteria come from the gddp-config node YAML (unchanged)
   - submit_verdict stays a TYPED terminal tool (registered by the
     gddp_verifier.ts pi extension), so free-text JSON parsing is still gone
   - the 12-row decision_engine and VerdictReceipt are unchanged
-  - the harness is read-only: pi's edit/write/multi_edit/bash are excluded
+  - the harness is read-only: the guard extension blocks edit/write/multi_edit
+    and mutation/network bash
 
 The runner spawns `pi --print --mode json -e gddp_verifier.ts ...` with the
 operator's terminal inherited, so the investigator's stream is visible live.
@@ -95,6 +95,10 @@ node files state what this node was allowed to assume; downstream files
 state what depends on it. The target repo's AGENTS.md is NOT provided — it
 is executor-facing, not evaluator-facing.
 
+Citations matter: judgments and findings that cite concrete repo paths
+(file:line) can back automated retries; uncited findings route to a human
+reviewer instead. Cite paths when you can.
+
 Criteria confidence is your confidence the code satisfies the criterion,
 INDEPENDENT of whether required execution artifacts/trail are present. If the
 code clearly satisfies a criterion but a required artifact is missing, judge
@@ -150,8 +154,10 @@ class PiHarnessRunner:
         )
         # Split canonical pointers by volatility so the stable ones join the
         # cached prefix (shared across every eval of the same graph) and only
-        # the per-node neighbor pointers sit in the volatile tail.
-        stable_keys = ("readme", "project_brief", "foundational_node")
+        # the per-node neighbor pointers sit in the volatile tail. "invariants"
+        # is stable like readme/brief (a canonical doc constant across the
+        # frontier), so it belongs in the cached prefix, not the neighbor tail.
+        stable_keys = ("readme", "project_brief", "foundational_node", "invariants")
         stable_core = {k: canonical[k] for k in stable_keys if k in canonical}
         neighbor_core = {
             k: v for k, v in canonical.items() if k not in stable_keys
@@ -163,24 +169,35 @@ class PiHarnessRunner:
             if stable_core
             else ""
         )
+        # Lane-1 horizon parity with lane 2 (invariant §3.1): point the
+        # criteria investigator at the full graph config so it can navigate
+        # beyond the offered neighbors when evidence creates a reason to.
+        # config_root is constant across the frontier, so this is stable.
+        if self.config_root:
+            stable_prefix_extra += (
+                f"The full graph config lives at {self.config_root} (read-only; "
+                f"graphs/<project>/nodes/*.yaml) if you need nodes beyond the "
+                f"neighbors.\n"
+            )
         volatile_tail_extra = (
             "\nneighbor_pointers: "
             + json.dumps(neighbor_core, sort_keys=True, separators=(",", ":"))
             if neighbor_core
             else ""
         )
+        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
         messages = build_prompt_messages(
             node=node,
             graph=graph,
             deterministic_result=deterministic_result,
             shape_profile=shape_profile,
+            system_prompt=sys_prompt,
             stable_prefix_extra=stable_prefix_extra,
             volatile_tail_extra=volatile_tail_extra,
         )
-        sys_prompt = system_prompt or PI_SYSTEM_PROMPT
         user_prompt = _extract_user_prompt(messages)
         # Structural cache report for the evaluator prompt. The protocol zone
-        # (SYSTEM_PROMPT) lives in the system message, so build_turn_prompt
+        # (the live system prompt) lives in the system message, so build_turn_prompt
         # carries it as protocol=""; include it here so protocol_tokens reflects
         # the cached prefix the provider actually sees (system + user framing).
         # actual_cached_tokens is None: the evaluator runs `pi --print --mode

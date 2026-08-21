@@ -122,6 +122,29 @@ class GraphObservation(BaseModel):
     affected_node_ids: list[str]
 
 
+class GraphRecommendation(BaseModel):
+    """Typed graph-change proposal that does NOT affect the current verdict.
+
+    Recommendations propose a specific graph surgery (split, create, rewire,
+    …). The combiner and retry scanner ignore them; they are operator-visible
+    evidence only. Empty evidence is invalid — drop the item rather than keep it.
+    """
+    action: Literal[
+        "split",
+        "supersede",
+        "insert_prerequisite",
+        "revise_criteria",
+        "rewire",
+        "reorder",
+        "create_node",
+        "retire_node",
+    ]
+    affected_node_ids: list[str]
+    rationale: str
+    evidence: list[str] = Field(min_length=1)
+    draft_node_yaml: str | None = None
+
+
 class IntegrityOutput(BaseModel):
     # Vocabulary comes from the evaluator-intent-integrity-verdict node YAML in
     # gddp-config, not from this repo — the graph is the source of the language.
@@ -136,6 +159,9 @@ class IntegrityOutput(BaseModel):
     tool_trace: list[dict[str, Any]] | None = None
     # Phase 3: forward-looking graph observations that do NOT affect the verdict.
     graph_observations: list[GraphObservation] | None = None
+    # Typed graph-change proposals; combiner and retry ignore them (same as
+    # graph_observations). Optional so legacy receipts stay valid.
+    graph_recommendations: list[GraphRecommendation] | None = None
     # Phase 4: typed liveness/error reporting.
     lane_status: LaneExecutionStatus | None = None
     harness_error: str | None = None

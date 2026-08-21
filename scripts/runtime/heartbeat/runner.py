@@ -243,7 +243,9 @@ def run_heartbeat(
         finally:
             # Worker threads never receive ``con``. The coordinator serializes
             # all result/session/job writes before closing the heartbeat DB.
-            evaluation_batch.finalize(con)
+            evaluation_batch.finalize(
+                con, repo_path=Path(repo_path) if repo_path else None
+            )
             # Frontier re-check AFTER evaluations land: finalize() may have
             # written provisional statuses that satisfy dependents. Inject
             # their dispatch events now — otherwise the frontier transition

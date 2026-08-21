@@ -15,7 +15,6 @@ from .schemas import (
     SemanticOutput,
     VerdictReceipt,
 )
-from .semantic.agent import SemanticAgent
 from .semantic.context_builder import build_canonical_pointers
 
 SemanticHarness = Callable[..., SemanticOutput]
@@ -27,11 +26,8 @@ def verify(
     node_yaml: dict,
     project_yaml: dict,
     repo: Path,
-    runner,
-    toolbox,
     shape_profile: dict | None = None,
     config_root: Path | None = None,
-    semantic_agent_kwargs: dict[str, Any] | None = None,
     semantic_harness: SemanticHarness | None = None,
     integrity_harness: IntegrityHarness | None = None,
     # Phase 1 provenance: the exact change being judged.
@@ -243,6 +239,10 @@ def _completeness_status(semantic) -> str:
 # ---------------------------------------------------------------------------
 
 _COVERAGE_SEVERITY = {"none": 0, "low": 1, "medium": 2, "high": 3}
+# "invariants" is deliberately NOT in _DOC_KEYS: it is optional per project
+# (unlike readme/brief), so counting it toward the doc-coverage rating would
+# penalize projects that simply have no invariant document. The pointer is
+# still offered to the model; coverage math just ignores it.
 _DOC_KEYS = {"readme", "project_brief"}
 
 

@@ -3,7 +3,7 @@
 PiHarnessRunner.run() spawns `pi` so it is not unit-testable here. These
 tests cover the load-bearing, pure part: the TurnPrompt the evaluator builds
 (constructed the same way pi_runner.run() builds it) produces a structural
-prompt_cache_report whose protocol zone is the SYSTEM_PROMPT and whose zone
+prompt_cache_report whose protocol zone is PI_SYSTEM_PROMPT and whose zone
 order is stable->volatile. This is the GDDP-authored shape view that lands in
 the verdict receipt's budget_trace.prompt_cache_report.
 """
@@ -16,7 +16,7 @@ from scripts.runtime.verification.semantic.pi_runner import PI_SYSTEM_PROMPT
 
 
 def _eval_turn_prompt(*, node, graph, deterministic_result, shape_profile=None):
-    """Mirror what pi_runner.run() builds: protocol=SYSTEM_PROMPT, user zones
+    """Mirror what pi_runner.run() builds: protocol=PI_SYSTEM_PROMPT, user zones
     from build_turn_prompt."""
     eval_tp = build_turn_prompt(
         node=node,
@@ -33,7 +33,7 @@ def _eval_turn_prompt(*, node, graph, deterministic_result, shape_profile=None):
 
 
 def test_evaluator_report_protocol_is_system_prompt():
-    """The protocol zone of the evaluator's report is the SYSTEM_PROMPT (the
+    """The protocol zone of the evaluator's report is PI_SYSTEM_PROMPT (the
     cached prefix shared by every evaluation), not the empty string the
     user-message-only build_turn_prompt carries."""
     tp = _eval_turn_prompt(
