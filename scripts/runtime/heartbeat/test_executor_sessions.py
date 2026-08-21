@@ -704,10 +704,10 @@ def test_evaluator_finalization_failure_leaves_only_that_session_collected(
     monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
     real_finalize = reconciler._finalize_evaluation
 
-    def fail_one_finalize(connection, pending, verification):
+    def fail_one_finalize(connection, pending, verification, **kwargs):
         if pending.job_id == failing[0]:
             raise sqlite3.OperationalError("intentional finalization failure")
-        real_finalize(connection, pending, verification)
+        real_finalize(connection, pending, verification, **kwargs)
 
     monkeypatch.setattr(
         reconciler,
@@ -2165,7 +2165,7 @@ def test_heartbeat_reconciles_even_without_new_events(tmp_path, monkeypatch):
         def __init__(self, max_workers):
             self.max_workers = max_workers
 
-        def finalize(self, c):
+        def finalize(self, c, **kwargs):
             order.append("finalize")
 
     def fake_reconcile(c, repo_path, repo=None, evaluation_batch=None):
@@ -2532,3 +2532,243 @@ def test_evaluation_batch_carries_expected_base(con, tmp_path):
     pending = batch._pending[0]
     assert pending.expected_base_commit_sha == base_sha
     assert pending.result_commit_sha == "c" * 40
+
+
+# --------------------------------------------------------------------------- #
+# Evaluator-driven retry (live heartbeat path)
+# --------------------------------------------------------------------------- #
+
+
+def _retry_pending_and_job(con, index=1):
+    """Insert a collected evaluation and return (pending, job_id, session_db_id)."""
+    job_id, session_db_id = _insert_collected_evaluation(
+        con, index, session_id=f"retry-session-{index}"
+    )
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    pending = reconciler.PendingEvaluation(
+        session_db_id=session_db_id,
+        session_id=f"retry-session-{index}",
+        executor="local_subprocess",
+        project_id=str(job["project_id"]),
+        node_id=str(job["node_id"]),
+        job_id=job_id,
+        attempt=int(job["attempt"]),
+        result_commit_sha="b" * 40,
+    )
+    return pending, job_id, session_db_id
+
+
+def _nonpass_cited_verification():
+    return {
+        "verification_status": "ok",
+        "verdict": "needs-human-review",
+        "evaluated_commit_sha": "c" * 40,
+        "integrity": {
+            "verdict": "drift",
+            "intent_preserved": False,
+            "graph_integrity_preserved": False,
+            "required_human_review": True,
+            "confidence": 0.8,
+            "findings": [
+                {
+                    "severity": "high",
+                    "summary": "broke scripts/runtime/bridge.py:42",
+                    "affected_node_ids": [],
+                }
+            ],
+            "reasoning": "violates the runtime contract",
+        },
+    }
+
+
+def _successful_dispatch(job, repo, repo_path=None):
+    return ProtocolDispatchResult(
+        success=True,
+        session_ref=SessionRef(executor=job["executor"], session_id="retry-new"),
+    )
+
+
+def test_evaluator_retry_dispatches_on_nonpass_with_cited_findings(
+    con, tmp_path, monkeypatch
+):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    monkeypatch.setattr(reconciler, "dispatch", _successful_dispatch)
+
+    reconciler._finalize_evaluation(
+        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    assert job["attempt"] == 1
+    assert job["status"] == "running"
+    assert job["queue_state"] == "running"
+    # The cited findings rode along as the retry's fix-list.
+    findings = json.loads(job["previous_findings"])
+    assert findings["verdict"] == "needs-human-review"
+    assert findings["integrity_verdict"] == "drift"
+    assert findings["findings"][0]["summary"] == "broke scripts/runtime/bridge.py:42"
+
+
+def test_evaluator_retry_skips_when_findings_uncited(con, tmp_path, monkeypatch):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    dispatched = []
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda *a, **k: dispatched.append(1) or _successful_dispatch(*a, **k),
+    )
+
+    verification = _nonpass_cited_verification()
+    # Strip the file-path citation: findings without evidence never retry.
+    verification["integrity"]["findings"] = [
+        {"severity": "medium", "summary": "the code feels wrong", "affected_node_ids": []}
+    ]
+    verification["integrity"]["reasoning"] = "vague"
+
+    reconciler._finalize_evaluation(
+        con, pending, verification, repo_path=tmp_path
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    assert job["attempt"] == 0
+    assert job["status"] == "awaiting_review"
+    assert dispatched == []
+
+
+def test_evaluator_retry_skips_when_budget_exhausted(con, tmp_path, monkeypatch):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 0}},
+    )
+    monkeypatch.setattr(reconciler, "dispatch", _successful_dispatch)
+
+    reconciler._finalize_evaluation(
+        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    assert job["attempt"] == 0
+    assert job["status"] == "awaiting_review"
+
+
+def test_evaluator_retry_skips_on_pass(con, tmp_path, monkeypatch):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    dispatched = []
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda *a, **k: dispatched.append(1) or _successful_dispatch(*a, **k),
+    )
+
+    reconciler._finalize_evaluation(
+        con,
+        pending,
+        {"verification_status": "ok", "verdict": "pass"},
+        repo_path=tmp_path,
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    assert job["attempt"] == 0
+    assert job["status"] == "awaiting_review"
+    assert dispatched == []
+
+
+def test_evaluator_retry_skips_on_verification_error(con, tmp_path, monkeypatch):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    dispatched = []
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda *a, **k: dispatched.append(1) or _successful_dispatch(*a, **k),
+    )
+
+    reconciler._finalize_evaluation(
+        con,
+        pending,
+        {"verification_status": "error", "error": "evaluator crashed"},
+        repo_path=tmp_path,
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    assert job["attempt"] == 0
+    assert job["status"] == "awaiting_review"
+    assert dispatched == []
+
+
+def test_evaluator_retry_dispatch_failure_routes_to_review(con, tmp_path, monkeypatch):
+    pending, job_id, _ = _retry_pending_and_job(con)
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda *a, **k: ProtocolDispatchResult(
+            success=False, error="executor config broken"
+        ),
+    )
+
+    reconciler._finalize_evaluation(
+        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+    )
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    # A failed retry-dispatch does not mark the job failed; the non-pass verdict
+    # still routes to the human, and the reserved session is cleaned up.
+    assert job["status"] == "awaiting_review"
+    sessions = con.execute(
+        "SELECT state FROM executor_sessions WHERE job_id = ? ORDER BY state",
+        (job_id,),
+    ).fetchall()
+    states = {row["state"] for row in sessions}
+    assert "dispatch_failed" in states

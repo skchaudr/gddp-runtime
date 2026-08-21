@@ -17,7 +17,7 @@ The **graph** is the directed acyclic graph (DAG) of nodes representing the comp
 
 | Aspect | Location / Reference |
 |---|---|
-| **Core Doctrine** | [`AGENTS.md`](../AGENTS.md) · [`docs/Tests-can-fail-nodes-can-pass.md`](../docs/Tests-can-fail-nodes-can-pass.md) · [`docs/GDDP-becomes-small-and-real.md`](../docs/GDDP-becomes-small-and-real.md) |
+| **Core Doctrine** | [`AGENTS.md`](../AGENTS.md) · [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](../docs/decisions/Tests-can-fail-nodes-can-pass.md) · [`docs/decisions/GDDP-becomes-small-and-real.md`](../docs/decisions/GDDP-becomes-small-and-real.md) |
 | **Operating Loop Step** | Step 1 (Packet) & Step 5 (Human Review) in [`docs/proposals/LOOP.md`](../docs/proposals/LOOP.md) |
 | **Graph Delivery & Updating** | [`scripts/runtime/graph_delivery.py`](../scripts/runtime/graph_delivery.py) · [`scripts/runtime/graph_updater.py`](../scripts/runtime/graph_updater.py) |
 | **Operator Browse CLI** | `gddp node browse --project <p>` in `gddp-config` |

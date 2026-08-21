@@ -3,9 +3,10 @@
  * terminal tool for the GDDP semantic verifier.
  *
  * Design:
- *   - Evidence investigation uses pi's BUILT-IN read-only tools (read, grep,
- *     find, ls). The Python runner excludes edit/write/multi_edit/bash so the
- *     harness is read-only, matching the gddp-runtime verifier contract.
+ *   - Evidence investigation uses pi's BUILT-IN tools (read, grep, find, ls,
+ *     bash). The guard extension (gddp_verifier_guard.ts) hard-blocks
+ *     edit/write/multi_edit and mutation/network bash so the harness is
+ *     read-only, matching the gddp-runtime verifier contract.
  *   - `submit_verdict` is the ONLY custom tool. Its parameters mirror
  *     SemanticOutput in scripts/runtime/verification/schemas.py. When the model
  *     calls it, the payload is validated, written to the path in

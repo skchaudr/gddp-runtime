@@ -17,7 +17,7 @@ The **node** is the fundamental atomic unit of project intent. It defines the di
 
 | Aspect | Location / Reference |
 |---|---|
-| **Core Doctrine** | [`AGENTS.md`](../AGENTS.md) · [`docs/Tests-can-fail-nodes-can-pass.md`](../docs/Tests-can-fail-nodes-can-pass.md) |
+| **Core Doctrine** | [`AGENTS.md`](../AGENTS.md) · [`docs/decisions/Tests-can-fail-nodes-can-pass.md`](../docs/decisions/Tests-can-fail-nodes-can-pass.md) |
 | **Operating Loop Step** | Step 1 (Packet), Step 2 (Dispatch), Step 5 (Human Review) in [`docs/proposals/LOOP.md`](../docs/proposals/LOOP.md) |
 | **Status History Records** | [`node_status_history/`](../node_status_history/) · [`scripts/node_status_history.py`](../scripts/node_status_history.py) |
 | **Receipt Generation** | [`scripts/gddp_node_receipt.py`](../scripts/gddp_node_receipt.py) |

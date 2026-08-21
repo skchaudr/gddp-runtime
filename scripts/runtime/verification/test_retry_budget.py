@@ -300,6 +300,29 @@ class TestShouldRetry(unittest.TestCase):
             )
         )
 
+    def test_graph_recommendations_do_not_trigger_retry(self):
+        """Cited graph_recommendations are not retry evidence."""
+        integrity = {
+            "findings": [],
+            "reasoning": "Current node passes; graph should grow.",
+            "graph_recommendations": [
+                {
+                    "action": "create_node",
+                    "affected_node_ids": ["node-13"],
+                    "rationale": "Missing continuation.",
+                    "evidence": ["src/foo.py:12", "graphs/p/nodes/node-13.yaml"],
+                }
+            ],
+        }
+        self.assertFalse(
+            should_retry(
+                verdict="fail",
+                integrity=integrity,
+                job=self._base_job(),
+                project_yaml=self._base_project_yaml(),
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

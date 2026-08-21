@@ -52,6 +52,8 @@ def combine(
     if not integrity.intent_preserved or not integrity.graph_integrity_preserved:
         floor = max(floor, Verdict.NEEDS_HUMAN_REVIEW, key=_SEVERITY.__getitem__)
 
+    # graph_recommendations (and graph_observations) are ignored here — they
+    # never floor, halt, or upgrade the combined verdict.
     combined = max(criteria_verdict, floor, key=_SEVERITY.__getitem__)
     if combined is not criteria_verdict:
         required_next_action = (

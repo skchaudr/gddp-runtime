@@ -22,7 +22,7 @@ The **heartbeat** is the periodic control plane dispatch mechanism that claims r
 | **Operating Loop Step** | Step 2 (Dispatch) in [`docs/proposals/LOOP.md`](../docs/proposals/LOOP.md) |
 | **Authorized Entrypoints** | [`deploy/mini-heartbeat/bin/arm.sh`](../deploy/mini-heartbeat/bin/arm.sh) · [`deploy/mini-heartbeat/bin/smoke.sh`](../deploy/mini-heartbeat/bin/smoke.sh) |
 | **Launchd Service** | `~/Library/LaunchAgents/com.gddp.heartbeat.plist` on `sab-mini` |
-| **Runtime Implementation** | [`scripts/runtime/heartbeat/`](../scripts/runtime/heartbeat/) · [`scripts/runtime/decision_loop/`](../scripts/runtime/decision_loop/) |
+| **Runtime Implementation** | [`scripts/runtime/heartbeat/`](../scripts/runtime/heartbeat/) |
 | **Capability Gates** | [`scripts/runtime/gate_tokens.py`](../scripts/runtime/gate_tokens.py) |
 | **Telemetry Events** | [`events/`](../events/) · [`events/context.md`](../events/context.md) |
 | **Host Topology** | [`TOPOLOGY.md`](../TOPOLOGY.md) · [`deploy/context.md`](../deploy/context.md) |

@@ -36,6 +36,23 @@ const GraphObservationSchema = Type.Object({
   affected_node_ids: Type.Array(Type.String()),
 });
 
+const GraphRecommendationSchema = Type.Object({
+  action: Type.Union([
+    Type.Literal("split"),
+    Type.Literal("supersede"),
+    Type.Literal("insert_prerequisite"),
+    Type.Literal("revise_criteria"),
+    Type.Literal("rewire"),
+    Type.Literal("reorder"),
+    Type.Literal("create_node"),
+    Type.Literal("retire_node"),
+  ]),
+  affected_node_ids: Type.Array(Type.String()),
+  rationale: Type.String(),
+  evidence: Type.Array(Type.String(), { minItems: 1 }),
+  draft_node_yaml: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 const SubmitIntegrityVerdictParams = Type.Object({
   verdict: Type.Union([
     Type.Literal("pass"),
@@ -52,6 +69,7 @@ const SubmitIntegrityVerdictParams = Type.Object({
   findings: Type.Array(IntegrityFindingSchema),
   reasoning: Type.String(),
   graph_observations: Type.Optional(Type.Array(GraphObservationSchema)),
+  graph_recommendations: Type.Optional(Type.Array(GraphRecommendationSchema)),
 });
 
 export type SubmitIntegrityVerdictArgs = Static<typeof SubmitIntegrityVerdictParams>;
@@ -101,6 +119,9 @@ export default function (pi: ExtensionAPI) {
       // Phase 3: include graph_observations when the model provides them.
       if (args.graph_observations) {
         payload.graph_observations = args.graph_observations;
+      }
+      if (args.graph_recommendations) {
+        payload.graph_recommendations = args.graph_recommendations;
       }
       try {
         writeFileSync(outPath, JSON.stringify(payload), { encoding: "utf8" });

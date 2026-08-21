@@ -62,6 +62,53 @@ def test_missing_docs_marked_unavailable(tmp_path: Path) -> None:
     assert "PROJECT-BRIEF.md" in pointers["project_brief"]
 
 
+def test_invariants_pointed_when_present(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "docs" / "invariants").mkdir(parents=True)
+    (repo / "docs" / "invariants" / "invariants.md").write_text(
+        "inviolable rules\n", encoding="utf-8",
+    )
+
+    pointers = build_canonical_pointers(
+        node={"depends_on": [], "unlocks": []},
+        graph={"project_id": "p"},
+        repo=repo,
+        config_root=None,
+    )
+
+    assert pointers["invariants"] == str(repo / "docs" / "invariants" / "invariants.md")
+
+
+def test_invariants_fallback_name_when_primary_absent(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "INVARIANTS.md").write_text("rules\n", encoding="utf-8")
+
+    pointers = build_canonical_pointers(
+        node={"depends_on": [], "unlocks": []},
+        graph={"project_id": "p"},
+        repo=repo,
+        config_root=None,
+    )
+
+    assert pointers["invariants"] == str(repo / "INVARIANTS.md")
+
+
+def test_invariants_omitted_when_absent(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    pointers = build_canonical_pointers(
+        node={"depends_on": [], "unlocks": []},
+        graph={"project_id": "p"},
+        repo=repo,
+        config_root=None,
+    )
+
+    # Optional per project: no key, no UNAVAILABLE marker.
+    assert "invariants" not in pointers
+
+
 def test_foundational_node_included(tmp_path: Path) -> None:
     config_root = tmp_path / "config"
     _write_project_yaml(config_root, "p", [{"id": "first"}, {"id": "second"}])
