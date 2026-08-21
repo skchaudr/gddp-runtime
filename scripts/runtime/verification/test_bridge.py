@@ -323,6 +323,57 @@ class TestProvenancePassthrough(unittest.TestCase):
         self.assertIn("abc123", res["error"])
         mock_run.assert_not_called()
 
+    def _verify_with_config(self, **kwargs):
+        """Run verify_job_return with GDDP_CONFIG_PATH pointed at a temp dir.
+
+        Returns (result_dict, parsed_receipt_or_None). The receipt is parsed
+        inside the temp-dir context so the file still exists when we read it.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"GDDP_CONFIG_PATH": tmp}), _fake_paths_exist():
+                res = bridge.verify_job_return("vault-doctor", "auth-node", **kwargs)
+            payload = None
+            rp = res.get("receipt_path")
+            if rp:
+                p = Path(rp)
+                if p.exists():
+                    payload = json.loads(p.read_text())
+                else:
+                    payload = {"_missing": str(p)}
+            return res, payload
+
+    def test_missing_merge_sha_mints_receipt(self):
+        """Missing merge_commit_sha returns subject_mismatch AND a needs-more-evidence receipt."""
+        with patch("scripts.runtime.verification.bridge._create_worktree") as mock_wt, patch(
+            "scripts.runtime.verification.bridge._run_cli"
+        ) as mock_cli:
+            res, payload = self._verify_with_config()
+        self.assertEqual(res["verification_status"], "subject_mismatch")
+        self.assertIn("merge_commit_sha", res["error"])
+        mock_wt.assert_not_called()
+        mock_cli.assert_not_called()
+        self.assertIn("receipt_path", res)
+        self.assertIsNotNone(payload, "a judgment receipt should be minted and readable")
+        self.assertEqual(payload["verdict"], "needs-more-evidence")
+        self.assertEqual(payload["completeness_status"], "not-run")
+        self.assertIn("no committed work", payload["decision_reasoning"])
+
+    def test_worktree_failure_mints_receipt(self):
+        """Unmaterializable subject returns subject_mismatch AND a needs-more-evidence receipt."""
+        with patch(
+            "scripts.runtime.verification.bridge._create_worktree", return_value=None
+        ), patch("scripts.runtime.verification.bridge.subprocess.run") as mock_run:
+            res, payload = self._verify_with_config(merge_commit_sha="abc123")
+        self.assertEqual(res["verification_status"], "subject_mismatch")
+        self.assertIn("abc123", res["error"])
+        mock_run.assert_not_called()
+        self.assertIn("receipt_path", res)
+        self.assertIsNotNone(payload, "a judgment receipt should be minted and readable")
+        self.assertEqual(payload["verdict"], "needs-more-evidence")
+        self.assertIn("could not be materialized", payload["decision_reasoning"])
+
     def test_mission_provenance_is_forwarded_to_cli(self):
         summary = {"receipt_path": "/tmp/r.json", "verdict": "pass"}
         cli_proc = subprocess.CompletedProcess(

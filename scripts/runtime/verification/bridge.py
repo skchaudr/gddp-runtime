@@ -23,6 +23,12 @@ from scripts.runtime.repo_resolver import (
     project_resolution_candidates,
     resolve_project_repo_checkout,
 )
+from scripts.runtime.verification.receipt_sink import write_receipt
+from scripts.runtime.verification.schemas import (
+    DeterministicResult,
+    Verdict,
+    VerdictReceipt,
+)
 from scripts.runtime.verification.semantic.timeouts import bridge_timeout_seconds
 
 # Same semantic settings proven in live runs; override via env for reruns.
@@ -152,19 +158,58 @@ def _verify_once(
     # A receipt without a pinned merge SHA could judge mutable repository state
     # and appear valid for code that was never evaluated.
     if not merge_commit_sha:
-        return {
+        result = {
             "verification_status": "subject_mismatch",
             "retryable": False,
             "error": "merge_commit_sha is required to pin the evaluation subject",
         }
+        # \u00a73.5: render a judgment even when there is nothing evaluable.
+        _attach_receipt(result, _mint_unevaluable_receipt(
+            project_id=project_id,
+            node_id=node_id,
+            reason=(
+                "Evaluator ran; the executor returned no committed work to pin an "
+                "evaluation subject. Nothing evaluable was returned for this attempt."
+            ),
+            merge_commit_sha=merge_commit_sha,
+            expected_base_commit_sha=expected_base_commit_sha,
+            pr_ref=pr_ref,
+            job_id=job_id,
+            attempt=attempt,
+            execution_attempt_id=execution_attempt_id,
+            evidence_manifest_sha256=evidence_manifest_sha256,
+            mission_receipt_id=mission_receipt_id,
+            receipt_dir=receipt_dir,
+        ))
+        return result
 
     worktree_path = _create_worktree(repo, merge_commit_sha)
     if worktree_path is None:
-        return {
+        result = {
             "verification_status": "subject_mismatch",
             "retryable": False,
             "error": f"could not materialize merge_commit_sha {merge_commit_sha} in worktree",
         }
+        # \u00a73.5: render a judgment even when the subject cannot be pinned.
+        _attach_receipt(result, _mint_unevaluable_receipt(
+            project_id=project_id,
+            node_id=node_id,
+            reason=(
+                f"Evaluator ran; merge_commit_sha {merge_commit_sha} could not be "
+                "materialized in a worktree after fetch. The evaluation subject "
+                "could not be pinned."
+            ),
+            merge_commit_sha=merge_commit_sha,
+            expected_base_commit_sha=expected_base_commit_sha,
+            pr_ref=pr_ref,
+            job_id=job_id,
+            attempt=attempt,
+            execution_attempt_id=execution_attempt_id,
+            evidence_manifest_sha256=evidence_manifest_sha256,
+            mission_receipt_id=mission_receipt_id,
+            receipt_dir=receipt_dir,
+        ))
+        return result
     try:
         return _run_cli(
             worktree_path, node_yaml, project_yaml, config_root, receipt_dir,
@@ -173,6 +218,87 @@ def _verify_once(
         )
     finally:
         _remove_worktree(repo, worktree_path)
+
+
+def _mint_unevaluable_receipt(
+    *,
+    project_id: str,
+    node_id: str,
+    reason: str,
+    merge_commit_sha: str | None = None,
+    expected_base_commit_sha: str | None = None,
+    pr_ref: str | None = None,
+    job_id: str | None = None,
+    attempt: int | None = None,
+    execution_attempt_id: str | None = None,
+    evidence_manifest_sha256: str | None = None,
+    mission_receipt_id: str | None = None,
+    receipt_dir: Path,
+) -> Path | None:
+    """Mint a needs-more-evidence judgment when there is nothing evaluable.
+
+    Honours docs/invariants/invariants.md \u00a73.5 (Evaluation Precedes
+    Admission Control): a missing/unmaterializable evaluation subject must not
+    silently terminate the evaluator's judgment. We emit a minimal receipt
+    stating that the evaluator ran and no committed work was returned, instead
+    of only a bare error record.
+
+    Best-effort: a receipt-write failure never changes the caller's error
+    semantics beyond omitting ``receipt_path`` from the returned dict.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        receipt = VerdictReceipt(
+            project_id=project_id,
+            node_id=node_id,
+            verdict=Verdict.NEEDS_MORE_EVIDENCE,
+            criteria_verdict=None,
+            integrity=None,
+            confidence=0.0,
+            criteria_confidence=0.0,
+            completeness=0.0,
+            graph_readiness=0.0,
+            completeness_status="not-run",
+            deterministic=DeterministicResult(
+                criteria=[],
+                constraints=[],
+                artifacts_present={},
+                deps_status={},
+                criteria_mismatches=[],
+                missing_evidence=[],
+                human_review_questions=[],
+                subject_diff=None,
+            ),
+            semantic=None,
+            decision_reasoning=reason,
+            required_next_action=(
+                "Human review: executor return carried no evaluable commit."
+            ),
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            evaluated_tree_sha=None,
+            evaluated_commit_sha=None,
+            merge_commit_sha=merge_commit_sha,
+            expected_base_commit_sha=expected_base_commit_sha,
+            pr_ref=pr_ref,
+            job_id=job_id,
+            execution_attempt_id=execution_attempt_id,
+            evidence_manifest_sha256=evidence_manifest_sha256,
+            mission_receipt_id=mission_receipt_id,
+        )
+        return write_receipt(
+            receipt, project_id, base=receipt_dir, job_id=job_id, attempt=attempt
+        )
+    except Exception:
+        # Best-effort only: never let a receipt-write failure change the
+        # caller's error semantics.
+        return None
+
+
+def _attach_receipt(result: dict, receipt_path: Path | None) -> None:
+    """Attach receipt_path to a verification result dict when one was minted."""
+    if receipt_path is not None:
+        result["receipt_path"] = str(receipt_path)
 
 
 def _create_worktree(repo: Path, commit_sha: str) -> Path | None:
