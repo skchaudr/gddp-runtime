@@ -7,6 +7,7 @@ Usage:
     python3 scripts/jobs_status.py results [--all]
     python3 scripts/jobs_status.py set <job_id | node_id> <state> --reason "..."
     python3 scripts/jobs_status.py retry <job_id | node_id> --reason "..."
+    python3 scripts/jobs_status.py adopt --project <id> --node <id> --commit <sha> [--base <sha>]
 
 This module owns runtime job state only. It never writes graph/node status.
 """
@@ -564,6 +565,33 @@ def apply_retry(*, ref: str, reason: str) -> int:
     return 1
 
 
+def cmd_adopt(args):
+    from scripts.runtime.heartbeat.adoption import (
+        AdoptionError,
+        adopt,
+        format_adopt_rows,
+    )
+    try:
+        plan = adopt(
+            project_id=args.project,
+            node_id=args.node,
+            commit=args.commit,
+            base=args.base,
+            executor=args.executor,
+            dry_run=args.dry_run,
+            runtime_root=RUNTIME_ROOT,
+        )
+    except AdoptionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(format_adopt_rows(plan))
+    if args.dry_run:
+        print("dry-run: no rows written")
+    else:
+        print(f"adopted {args.node} -> {plan['job']['job_id']}")
+    return 0
+
+
 def cmd_retry(args):
     reason = args.reason.strip()
     if not reason:
@@ -618,6 +646,27 @@ def main(argv=None):
     )
     p_retry.add_argument("--yes", action="store_true", help="skip confirmation")
     p_retry.set_defaults(fn=cmd_retry)
+
+    p_adopt = sub.add_parser(
+        "adopt",
+        help="record out-of-runtime work as a collected session for evaluation",
+    )
+    p_adopt.add_argument("--project", required=True, help="graph project id")
+    p_adopt.add_argument("--node", required=True, help="node id to adopt")
+    p_adopt.add_argument("--commit", required=True, help="result commit sha")
+    p_adopt.add_argument(
+        "--base", default=None,
+        help="expected base commit sha (warns if omitted)",
+    )
+    p_adopt.add_argument(
+        "--executor", default="local_subprocess",
+        help="ADAPTERS key; default local_subprocess",
+    )
+    p_adopt.add_argument(
+        "--dry-run", action="store_true",
+        help="print the three rows and exit without writing",
+    )
+    p_adopt.set_defaults(fn=cmd_adopt)
 
     args = p.parse_args(argv)
     args.fn(args)
