@@ -8,7 +8,9 @@ import yaml
 from scripts.runtime.verification import cli
 from scripts.runtime.verification.schemas import (
     DeterministicResult,
+    GraphRecommendation,
     HumanReviewQuestion,
+    IntegrityOutput,
     SemanticOutput,
     Verdict,
     VerdictReceipt,
@@ -280,3 +282,82 @@ def test_cli_summary_omits_orphaned_fields_when_empty(
     assert "semantic_risks" not in output
     assert "followup_candidates" not in output
     assert "human_review_questions" not in output
+
+
+def test_cli_summary_includes_graph_recommendations(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("# Project\n", encoding="utf-8")
+    node_yaml = tmp_path / "node.yaml"
+    project_yaml = tmp_path / "project.yaml"
+    receipt_dir = tmp_path / "receipts"
+    node_yaml.write_text(
+        yaml.safe_dump({"node_id": "rec-node", "acceptance_criteria": []}),
+        encoding="utf-8",
+    )
+    project_yaml.write_text(
+        yaml.safe_dump({"project_id": "project-rec", "nodes": []}),
+        encoding="utf-8",
+    )
+
+    receipt = VerdictReceipt(
+        project_id="project-rec",
+        node_id="rec-node",
+        verdict=Verdict.PASS,
+        confidence=0.9,
+        criteria_confidence=0.9,
+        completeness=1.0,
+        graph_readiness=0.9,
+        completeness_status="complete",
+        deterministic=DeterministicResult(
+            criteria=[],
+            constraints=[],
+            artifacts_present={},
+            deps_status={},
+            criteria_mismatches=[],
+            missing_evidence=[],
+            human_review_questions=[],
+        ),
+        semantic=None,
+        integrity=IntegrityOutput(
+            verdict="pass",
+            intent_preserved=True,
+            graph_integrity_preserved=True,
+            required_human_review=False,
+            confidence=0.9,
+            findings=[],
+            reasoning="ok",
+            graph_recommendations=[
+                GraphRecommendation(
+                    action="create_node",
+                    affected_node_ids=["node-13"],
+                    rationale="Missing continuation.",
+                    evidence=["src/foo.py:12"],
+                    draft_node_yaml="node_id: node-13\n",
+                )
+            ],
+        ),
+        decision_reasoning="pass",
+        required_next_action="accept",
+        generated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    monkeypatch.setattr(cli, "verify", lambda **kwargs: receipt)
+    monkeypatch.setattr(cli, "write_receipt", lambda *a, **kw: tmp_path / "fake.json")
+
+    assert cli.main(
+        [
+            "--node-yaml", str(node_yaml),
+            "--project-yaml", str(project_yaml),
+            "--repo", str(repo),
+            "--receipt-dir", str(receipt_dir),
+        ]
+    ) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    recs = output["integrity"]["graph_recommendations"]
+    assert recs[0]["action"] == "create_node"
+    assert recs[0]["affected_node_ids"] == ["node-13"]
+    assert recs[0]["draft_node_yaml"] == "node_id: node-13\n"

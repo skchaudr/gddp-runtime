@@ -243,6 +243,10 @@ def main(argv: list[str] | None = None) -> int:
             summary["integrity"]["graph_observations"] = [
                 o.model_dump() for o in receipt.integrity.graph_observations
             ]
+        if receipt.integrity.graph_recommendations:
+            summary["integrity"]["graph_recommendations"] = [
+                r.model_dump() for r in receipt.integrity.graph_recommendations
+            ]
     # Surface the criteria lane's free-text intelligence (risks, followups)
     # and the deterministic lane's human-review questions so they reach the
     # operator view instead of living only in the receipt file.

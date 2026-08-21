@@ -62,6 +62,30 @@ def test_print_evaluation_renders_orphaned_intelligence_fields(capsys) -> None:
     assert "question (c1): Is this criterion path stale?" in output
 
 
+def test_print_evaluation_renders_graph_recommendations(capsys) -> None:
+    print_evaluation({
+        "verdict": "pass",
+        "criteria_verdict": "pass",
+        "criteria_confidence": 0.9,
+        "integrity": {
+            "verdict": "pass",
+            "confidence": 0.8,
+            "findings": [],
+            "graph_recommendations": [
+                {
+                    "action": "create_node",
+                    "affected_node_ids": ["node-13", "node-10"],
+                    "rationale": "Missing continuation for query-result linking across branches.",
+                    "evidence": ["src/foo.py:12"],
+                }
+            ],
+        },
+    })
+
+    output = capsys.readouterr().out
+    assert "graph recommendation: [create_node] node-13,node-10 — Missing continuation for query-result linking across branches." in output
+
+
 def test_job_show_leads_with_verdict_and_reasoning(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "queue.db"
     con = sqlite3.connect(db_path)

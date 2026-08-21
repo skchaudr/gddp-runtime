@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 from scripts.runtime.verification.schemas import (
     DeterministicResult,
+    GraphRecommendation,
+    IntegrityOutput,
     Verdict,
     VerdictReceipt,
 )
@@ -177,3 +179,41 @@ def test_receipt_mission_provenance_is_optional_and_round_trips(
     restored = VerdictReceipt.model_validate_json(receipt.model_dump_json())
 
     assert getattr(restored, field_name) == value
+
+
+def test_integrity_output_legacy_receipt_parses_without_recommendations() -> None:
+    integrity = IntegrityOutput(
+        verdict="pass",
+        intent_preserved=True,
+        graph_integrity_preserved=True,
+        required_human_review=False,
+        confidence=0.9,
+        findings=[],
+        reasoning="ok",
+    )
+    assert integrity.graph_recommendations is None
+    restored = IntegrityOutput.model_validate_json(integrity.model_dump_json())
+    assert restored.graph_recommendations is None
+
+
+def test_graph_recommendation_requires_evidence() -> None:
+    with pytest.raises(ValidationError):
+        GraphRecommendation(
+            action="create_node",
+            affected_node_ids=["node-x"],
+            rationale="missing work",
+            evidence=[],
+        )
+
+
+def test_graph_recommendation_round_trips() -> None:
+    rec = GraphRecommendation(
+        action="create_node",
+        affected_node_ids=["node-13"],
+        rationale="Missing continuation.",
+        evidence=["src/foo.py:12"],
+        draft_node_yaml="node_id: node-13\n",
+    )
+    restored = GraphRecommendation.model_validate(rec.model_dump())
+    assert restored.action == "create_node"
+    assert restored.draft_node_yaml == "node_id: node-13\n"
