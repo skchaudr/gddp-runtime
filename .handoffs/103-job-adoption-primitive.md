@@ -118,12 +118,24 @@ would strand the session silently. Default to `local_subprocess` — it is the
 honest label for work done in the local checkout, and it is in the map
 (`dispatcher.py:36`).
 
-**`jobs.repo` must match the heartbeat's `--repo`.**
-`get_active_executor_sessions` filters by repo for cross-repo safety. Note
-`myapi-part2/project.yaml` carries `repo: /Users/sab-mini/repos/MyAPI` — a
-filesystem path, not `owner/name`. Verify what the myapi-part2 heartbeat passes
-as `--repo` and match it exactly, or reconcile will silently skip every adopted
-session. **Check this before writing any rows.**
+**`jobs.repo` must equal `project.repo` verbatim.** `build_job` already
+takes `repo` as a parameter, so pass `project.repo` from the graph and nothing
+else. `myapi-part2/project.yaml` carries `repo: /Users/sab-mini/repos/MyAPI` —
+a filesystem path, not `owner/name`. That is fine:
+`resolution_candidates` handles absolute paths explicitly
+(`repo_resolver.py:53`), and `reconcile_sessions` filters sessions on this exact
+string.
+
+**No heartbeat configuration is needed.** Verified 2026-08-21: launchd runs
+`--all-active` (`com.gddp.heartbeat.plist:20`), which is `run_active_projects`.
+That discovers projects from the DB, and one discovery clause is
+`executor_sessions.state IN (... 'collected')` joined to jobs
+(`runner.py:286-293`) — so **the adopted session is itself what makes
+myapi-part2 an active project**. `run_heartbeat` then receives
+`repo=project.repo` from project.yaml. `GDDP_PROJECT_REPO` in
+`deploy/mini-heartbeat/env/gddp.env` is read only by `baseline.sh` and
+`smoke.sh`; the scheduled heartbeat never reads it. No env file, no plist
+change, no `--repo` flag.
 
 **`--base` should be required in practice.** Without it the verifier loses its
 diff boundary and evaluates the whole tree instead of the node's change. The
@@ -157,8 +169,10 @@ are sequential, so each node's base is its predecessor's commit:
 All four are `ready` in `project.yaml` — consistent with work that completed
 with the runtime never watching.
 
-Adopt in commit order (03 last, matching its position in history). Then one
-heartbeat tick evaluates all four; `node-08-build-source-layers` and its
+Adopt in commit order (03 last, matching its position in history). No
+heartbeat configuration is required — the adopted `collected` sessions make
+myapi-part2 an active project on the next `--all-active` tick (see §4). That
+tick evaluates all four; `node-08-build-source-layers` and its
 siblings unblock on the following tick if the verdicts qualify for provisional.
 
 Operator note: the graph statuses and any acceptance remain Sab's call —
