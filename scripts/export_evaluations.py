@@ -120,6 +120,38 @@ def main() -> int:
         return 0
 
     for project_id, evaluations in sorted(projects.items()):
+        out_path = args.config / "verification" / project_id / "evaluations.yaml"
+        
+        # Check if evaluations actually changed to avoid dirtying git with timestamp-only edits
+        should_write = True
+        if out_path.exists():
+            try:
+                import re
+                existing_text = out_path.read_text(encoding="utf-8")
+                match = re.search(r"^generated_at:\s*['\"]?([^'\"\n]+)['\"]?", existing_text, re.MULTILINE)
+                if match:
+                    old_gen = match.group(1)
+                    candidate_doc = {
+                        "schema_type": "node_evaluations",
+                        "schema_version": "1.0",
+                        "project_id": project_id,
+                        "generated_at": old_gen,
+                        "source": "gddp-runtime db/queue.db (results + decision_results)",
+                        "evaluations": evaluations,
+                    }
+                    candidate_text = yaml.safe_dump(candidate_doc, sort_keys=False, allow_unicode=True, width=100)
+                    if candidate_text == existing_text:
+                        should_write = False
+            except Exception:
+                pass
+
+        if not should_write:
+            if args.dry_run:
+                print(f"--- would skip {out_path} (no changes) ---")
+            else:
+                print(f"skipped {out_path} (no changes)")
+            continue
+
         doc = {
             "schema_type": "node_evaluations",
             "schema_version": "1.0",
@@ -129,7 +161,6 @@ def main() -> int:
             "evaluations": evaluations,
         }
         text = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
-        out_path = args.config / "verification" / project_id / "evaluations.yaml"
         if args.dry_run:
             print(f"--- would write {out_path} ---")
             print(text)
