@@ -115,6 +115,23 @@ def test_render_heartbeat_plist_substitutes_local_executor_config():
     assert env["GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"] == spool
 
 
+def test_render_heartbeat_plist_substitutes_pi_rpc_config():
+    model = "z-ai/glm-5.2"
+    timeout = "7200"
+    tools = "read,grep,find,ls,subagent"
+    plist = _render_heartbeat_plist(
+        _base_render_env(
+            GDDP_PI_RPC_MODEL=model,
+            GDDP_PI_RPC_TURN_TIMEOUT_S=timeout,
+            GDDP_PI_RPC_TOOLS=tools,
+        )
+    )
+    env = plist["EnvironmentVariables"]
+
+    assert env["GDDP_PI_RPC_MODEL"] == model
+    assert env["GDDP_PI_RPC_TURN_TIMEOUT_S"] == timeout
+    assert env["GDDP_PI_RPC_TOOLS"] == tools
+
 def test_webhook_secret_cmd_with_quotes_survives_plist_render():
     webhook = 'ssh -o BatchMode=yes sab-ssd@pi-big "pass show gddp/webhook-secret"'
     deepseek = 'ssh -o BatchMode=yes sab-ssd@pi-big "pass show api/deepseek"'
