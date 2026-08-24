@@ -314,6 +314,31 @@ def test_active_projects_include_pending_events_and_running_jobs(
     assert [project.project_id for project in active] == ["proj-a", "proj-b"]
 
 
+def test_active_projects_include_graph_ready_frontier(tmp_path, monkeypatch):
+    db_path = tmp_path / "queue.db"
+    _init_db(db_path)
+    monkeypatch.setattr(runner, "DB_PATH", db_path)
+    projects = [
+        SimpleNamespace(
+            project_id="proj-ready",
+            repo="owner/ready",
+            execution_policy={"frontier_auto_advance": True},
+            nodes=[{"id": "root", "status": "ready"}],
+        ),
+        SimpleNamespace(
+            project_id="proj-pending",
+            repo="owner/pending",
+            execution_policy={"frontier_auto_advance": True},
+            nodes=[{"id": "root", "status": "pending"}],
+        ),
+    ]
+    reader = SimpleNamespace(list_projects=lambda: projects)
+
+    active = runner._active_projects(reader)
+
+    assert [project.project_id for project in active] == ["proj-ready"]
+
+
 def test_active_projects_include_active_executor_sessions(tmp_path, monkeypatch):
     """A project whose only live work is an active executor session (e.g. an
     awaiting_review job with a session reset to collected for re-evaluation)

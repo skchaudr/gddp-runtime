@@ -17,7 +17,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.runtime.heartbeat.frontier import advance_frontier
+from scripts.runtime.heartbeat.frontier import (
+    advance_frontier,
+    ensure_ready_frontier_events,
+)
 from scripts.runtime.heartbeat.graph_reader import GraphReader
 
 # Same pattern as test_provisional_status.py: the writer uses gddp-config's
@@ -200,6 +203,17 @@ def test_second_tick_is_idempotent(config_root, con):
         ("frontier-dispatch://node: node-c", "received"),
         ("frontier-dispatch://node: node-g", "received"),
     ]
+
+
+def test_ready_frontier_gets_one_bootstrap_event(config_root, con):
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(con, reader, "proj") == ["node-h"]
+    assert ensure_ready_frontier_events(con, reader, "proj") == []
+    assert con.execute(
+        "SELECT url, status FROM events WHERE source = 'frontier_auto' "
+        "AND url = 'frontier-dispatch://node: node-h'"
+    ).fetchall() == [("frontier-dispatch://node: node-h", "received")]
 
 
 def test_opt_out_by_default(config_root, con, tmp_path):

@@ -120,6 +120,57 @@ def advance_frontier(
     return transitioned
 
 
+def ensure_ready_frontier_events(
+    con: sqlite3.Connection,
+    reader: GraphReader,
+    project_id: str,
+    *,
+    now: datetime | None = None,
+) -> list[str]:
+    """Give an opted-in, already-ready frontier its one bootstrap event.
+
+    Graph ``ready`` is the governing dispatch signal.  The event is an internal
+    audit/transport record, so the heartbeat creates it when none exists.  Any
+    prior job or prior automatic event suppresses re-dispatch; retries remain an
+    explicit operator/runtime decision.
+    """
+    project = reader.load_project(project_id)
+    if not (project.execution_policy or {}).get("frontier_auto_advance"):
+        return []
+
+    now = now or datetime.now(timezone.utc)
+    status_by_id = {n["id"]: n.get("status") for n in project.nodes}
+    injected: list[str] = []
+    for node_summary in project.nodes:
+        node_id = node_summary["id"]
+        if status_by_id.get(node_id) != "ready":
+            continue
+
+        node_path = reader.config_path / "graphs" / project_id / "nodes" / f"{node_id}.yaml"
+        try:
+            doc = yaml.safe_load(node_path.read_text()) or {}
+        except OSError:
+            continue
+        if doc.get("human_gate") is True:
+            continue
+        depends_on = doc.get("depends_on", []) or []
+        if not all(
+            status_by_id.get(dep) in SATISFIED_DEP_STATUSES for dep in depends_on
+        ):
+            continue
+        if _has_dispatch_history(con, project_id, node_id):
+            continue
+
+        _ensure_dependency_gates(reader.config_path, project_id, depends_on)
+        _inject_dispatch_event(con, project, node_id, now)
+        injected.append(node_id)
+        print(f"  → frontier: {node_id} already ready; dispatch event injected")
+
+    if injected:
+        con.commit()
+    return injected
+
+
 def _ensure_dependency_gates(
     root: Path, project_id: str, depends_on: list[str]
 ) -> None:
@@ -178,6 +229,26 @@ def _has_active_job(con: sqlite3.Connection, project_id: str, node_id: str) -> b
         (project_id, node_id, *ACTIVE_JOB_STATUSES),
     ).fetchone()
     return row is not None
+
+
+def _has_dispatch_history(
+    con: sqlite3.Connection, project_id: str, node_id: str
+) -> bool:
+    if con.execute(
+        "SELECT 1 FROM jobs WHERE project_id = ? AND node_id = ? LIMIT 1",
+        (project_id, node_id),
+    ).fetchone():
+        return True
+    placeholders = ",".join("?" for _ in PENDING_EVENT_STATUSES)
+    urls = (
+        f"frontier-dispatch://node: {node_id}",
+        f"manual-dispatch://node: {node_id}",
+    )
+    return con.execute(
+        f"SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) "
+        f"AND (source = 'frontier_auto' OR status IN ({placeholders})) LIMIT 1",
+        (project_id, *urls, *PENDING_EVENT_STATUSES),
+    ).fetchone() is not None
 
 
 def _has_pending_frontier_event(

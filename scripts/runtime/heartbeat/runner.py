@@ -37,7 +37,7 @@ from .dispatcher import (
     executor_preflight_error,
     executor_supports_engagement,
 )
-from .frontier import advance_frontier
+from .frontier import advance_frontier, ensure_ready_frontier_events
 from .graph_reader import GraphReader, parse_execution_policy
 from .job_factory import build_job
 from .reconciler import (
@@ -195,14 +195,12 @@ def run_heartbeat(
                 evaluation_batch=evaluation_batch,
             )
 
-            # Frontier: projects opted into auto-advance transition pending
-            # nodes whose deps are provisionally/fully satisfied to ready and
-            # inject dispatch events, so dependents flow on the next planning
-            # pass without operator re-triggering. Reload ready nodes so this
-            # tick's planning sees the new frontier.
+            # Frontier: opted-in projects turn newly unblocked nodes ready and
+            # ensure an already-ready root has its one internal dispatch event.
+            # Graph readiness is the governing signal; events are transport/audit.
             if advance_frontier(con, reader, project_id):
                 ready_nodes = reader.get_ready_nodes(project_id)
-
+            ensure_ready_frontier_events(con, reader, project_id)
             # Review drain: the human's acceptance writes graph files only;
             # reconcile jobs whose node reached terminal graph truth so the
             # review queue drains and the guards stop treating them active.
@@ -264,7 +262,7 @@ def run_heartbeat(
 
 
 def _active_projects(reader: GraphReader) -> list:
-    """Find graph projects with pending intake or unfinished runtime work."""
+    """Find projects with runtime work or an opted-in ready graph frontier."""
     con = connect()
     try:
         project_ids = {
@@ -312,7 +310,19 @@ def _active_projects(reader: GraphReader) -> list:
     return [
         project
         for project in reader.list_projects()
-        if project.project_id in project_ids or project.repo in repos
+        if (
+            project.project_id in project_ids
+            or project.repo in repos
+            or (
+                (getattr(project, "execution_policy", {}) or {}).get(
+                    "frontier_auto_advance"
+                )
+                and any(
+                    node.get("status") == "ready"
+                    for node in (getattr(project, "nodes", []) or [])
+                )
+            )
+        )
     ]
 
 
