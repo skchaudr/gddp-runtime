@@ -805,11 +805,7 @@ def test_usage_and_coverage_land_in_the_attempt_dir(
 def test_a_turn_that_never_reported_a_boundary_is_a_plumbing_failure(
     tmp_path, monkeypatch, repo, fake_cursor
 ):
-    """`invalid_model` produced ZERO stream events and exit 1. The exact
-    phrase routes it to the plumbing budget instead of burning one of the
-    node's three work attempts."""
-    from runtime.heartbeat import reconciler
-
+    """`invalid_model` produced zero events; structured status routes its retry."""
     binary, _ = fake_cursor
     spool = tmp_path / "spool"
     spool.mkdir()
@@ -824,8 +820,8 @@ def test_a_turn_that_never_reported_a_boundary_is_a_plumbing_failure(
     status = _wait_for_terminal(adapter, result.session_ref)
 
     assert status.state == "failed"
-    assert "exited without durable exit state" in (status.error or "")
-    assert reconciler.classify_plumbing_failure(status.error) is True
+    assert status.plumbing is True
+    assert "model not found" in (status.error or "")
     assert adapter.collect(result.session_ref, tmp_path / "nope.json").success is False
 
     # Even with zero harness events, the canonical spool carries a boundary.
@@ -840,7 +836,7 @@ def test_a_turn_that_never_reported_a_boundary_is_a_plumbing_failure(
     assert worktree.exists()
 
 
-def test_missing_terminal_record_fails_closed_with_the_plumbing_phrase(tmp_path):
+def test_missing_terminal_record_fails_closed_with_structured_plumbing(tmp_path):
     """A dead supervisor leaves no exit.json. status() must never report that
     as still running."""
     spool = tmp_path / "spool"
@@ -849,7 +845,8 @@ def test_missing_terminal_record_fails_closed_with_the_plumbing_phrase(tmp_path)
     status = read_cursor_cli_status(spool, "orphan")
 
     assert status.state == "failed"
-    assert status.error == "cursor_cli exited without durable exit state"
+    assert status.error == "cursor_cli attempt terminal record is missing"
+    assert status.plumbing is True
 
 
 @pytest.mark.parametrize("session_id", ("", ".", "..", "a/b"))

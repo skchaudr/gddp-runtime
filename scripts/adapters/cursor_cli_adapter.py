@@ -38,18 +38,12 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from adapters.events_cursor_cli import CursorStreamTranslator
-from adapters.executor_events import (
-    EventWriter,
-    ExecutorEvent,
-    read_events,
-    turn_usage,
-)
+from adapters.executor_events import EventWriter
 from adapters.executor_protocol import (
     FRESH,
     CapabilityUnsupported,
@@ -62,8 +56,20 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
-from adapters.session_prompt import build_turn_prompt, merged_turn_pointers
+from adapters.session_prompt import build_turn_prompt
 from prompt_topology import prompt_cache_report
+from runtime.local_attempt import (
+    TurnOutcome,
+    attempt_dir_for,
+    atomic_write,
+    cancel_attempt,
+    collect_persisted_result,
+    dispatch_worktree_attempt,
+    read_attempt_status,
+    read_text,
+    run_attempt_supervisor,
+    terminate_process_group,
+)
 
 _EXECUTOR = "cursor_cli"
 _SPOOL_ENV = "GDDP_CURSOR_CLI_SPOOL_DIR"
@@ -80,12 +86,7 @@ _DEFAULT_TIMEOUT_S = 1800.0
 # grace is sized above the measured SIGTERM latency with headroom, not
 # guessed.
 _CANCEL_GRACE_S = 3.0
-
-# The exact phrase reconciler.classify_plumbing_failure matches. A dead or
-# missing terminal record must route to the plumbing budget rather than burn
-# one of the node's work attempts, and today that routing is a substring
-# match on adapter prose.
-_NO_DURABLE_EXIT = "cursor_cli exited without durable exit state"
+_CANCEL_SIGNALS = (signal.SIGTERM, signal.SIGKILL)
 
 # Protocol zone for cursor turns. Deliberately NOT pi's preamble: pi's text
 # instructs subagent fan-out and reviewer dispatch, and cursor_cli declares
@@ -195,105 +196,27 @@ class CursorCliAdapter(EngagementAdapterDefaults):
         if continuity.mode == "resume" and self.capabilities().resume == "none":
             raise CapabilityUnsupported("resume", self.executor_name)
 
-        session_id = (
-            f"{_safe_component(packet.job_id)}-"
-            f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
-            f"{uuid.uuid4().hex}"
-        )
-        attempt_dir = self.spool_root / session_id
-        supervisor: subprocess.Popen[bytes] | None = None
-        worktree: Path | None = None
-        start_read: int | None = None
-        start_write: int | None = None
         repo_path = self.cwd or Path.cwd()
-        try:
-            from local_agent_executor import create_worktree  # noqa: PLC0415
-
-            attempt_dir.mkdir(parents=True, exist_ok=False)
-            (attempt_dir / "packet.json").write_text(packet.to_json())
-
-            base_sha = packet.expected_base_commit_sha
-            if not base_sha:
-                raise ValueError("packet missing expected_base_commit_sha")
-            # One worktree per attempt, opened here so a bad base SHA fails
-            # the dispatch cleanly instead of surfacing later as a plumbing
-            # death. It is removed only after persist_result succeeds.
-            worktree = create_worktree(repo_path, str(base_sha))
-            _atomic_write(attempt_dir / "worktree_path", str(worktree))
-
-            resume_token = (
-                continuity.token
-                if continuity.mode == "resume" and continuity.token
-                else None
-            )
-            (attempt_dir / "command.json").write_text(
-                json.dumps(
-                    {
-                        "binary": self.binary,
-                        "model": self.model,
-                        "repo": str(repo_path),
-                        "worktree": str(worktree),
-                        "turn_timeout_s": self.turn_timeout_s,
-                        "continuity_mode": "resume" if resume_token else "fresh",
-                        "resume_token": resume_token,
-                        "continuity_reason": continuity.reason,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            )
-
-            start_read, start_write = os.pipe()
-            supervisor = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "adapters.cursor_cli_adapter",
-                    "--run-attempt",
-                    str(attempt_dir),
-                    "--start-fd",
-                    str(start_read),
-                ],
-                cwd=str(Path(__file__).resolve().parents[1]),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                pass_fds=(start_read,),
-            )
-            os.close(start_read)
-            start_read = None
-            _atomic_write(attempt_dir / "supervisor.pid", str(supervisor.pid))
-            # The child blocks until this byte lands, so it can never run an
-            # attempt whose SessionRef the dispatcher never received.
-            os.write(start_write, b"1")
-        except Exception as exc:
-            if supervisor is not None:
-                try:
-                    os.killpg(supervisor.pid, signal.SIGTERM)
-                except OSError:
-                    pass
-            if worktree is not None:
-                # Nothing ran, so nothing is worth keeping.
-                try:
-                    from local_agent_executor import remove_worktree  # noqa: PLC0415
-
-                    remove_worktree(repo_path, worktree)
-                except Exception:
-                    pass
-            return DispatchResult(
-                success=False,
-                error=f"cursor_cli dispatch failed: {exc}",
-            )
-        finally:
-            if start_read is not None:
-                os.close(start_read)
-            if start_write is not None:
-                os.close(start_write)
-
-        return DispatchResult(
-            success=True,
-            session_ref=SessionRef(executor=self.executor_name, session_id=session_id),
+        resume_token = (
+            continuity.token
+            if continuity.mode == "resume" and continuity.token
+            else None
+        )
+        return dispatch_worktree_attempt(
+            packet=packet,
+            spool_root=self.spool_root,
+            repo=repo_path,
+            executor=self.executor_name,
+            command={
+                "binary": self.binary,
+                "model": self.model,
+                "turn_timeout_s": self.turn_timeout_s,
+                "continuity_mode": "resume" if resume_token else "fresh",
+                "resume_token": resume_token,
+                "continuity_reason": continuity.reason,
+            },
+            supervisor_module="adapters.cursor_cli_adapter",
+            supervisor_cwd=Path(__file__).resolve().parents[1],
         )
 
     def status(self, session_ref: SessionRef) -> SessionStatus:
@@ -311,45 +234,10 @@ class CursorCliAdapter(EngagementAdapterDefaults):
         attempt_dir = self._attempt_dir(session_ref)
         if attempt_dir is None:
             return PatchResult(success=False, error="invalid cursor_cli session")
-        try:
-            handoff = json.loads((attempt_dir / "result.json").read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            return PatchResult(
-                success=False, error=f"cursor_cli missing result handoff: {exc}"
-            )
-        try:
-            destination = Path(dest_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(
-                json.dumps(handoff, sort_keys=True, separators=(",", ":"))
-            )
-        except OSError as exc:
-            return PatchResult(
-                success=False, error=f"failed to write handoff to {dest_path}: {exc}"
-            )
-
-        result_sha = handoff.get("result_commit_sha")
-        worktree_path = handoff.get("worktree_path")
-        if isinstance(result_sha, str) and result_sha:
-            return PatchResult(
-                success=True,
-                patch_path=str(destination),
-                result_commit_sha=result_sha,
-                result_ref=handoff.get("result_ref")
-                if isinstance(handoff.get("result_ref"), str)
-                else None,
-                worktree_path=worktree_path
-                if isinstance(worktree_path, str)
-                else None,
-            )
-        return PatchResult(
-            success=False,
-            patch_path=str(destination),
-            result_ref=handoff.get("result_ref")
-            if isinstance(handoff.get("result_ref"), str)
-            else None,
-            worktree_path=worktree_path if isinstance(worktree_path, str) else None,
-            error=str(handoff.get("error") or "cursor_cli persist failed without result"),
+        return collect_persisted_result(
+            attempt_dir,
+            Path(dest_path),
+            executor=self.executor_name,
         )
 
     def cancel(self, session_ref: SessionRef) -> bool:
@@ -365,66 +253,25 @@ class CursorCliAdapter(EngagementAdapterDefaults):
             return False
         if (attempt_dir / "exit.json").exists():
             return False
-        try:
-            _atomic_write(attempt_dir / "cancel.requested", "")
-        except OSError:
-            return False
-        pid = _read_pid(attempt_dir / "pid")
-        if pid is None:
-            # The turn has not launched yet; the supervisor reads this marker
-            # before it spawns and again right after publishing the pid.
-            return True
-        _terminate(pid, grace_s=_CANCEL_GRACE_S)
-        return True
+        return cancel_attempt(
+            attempt_dir,
+            grace_s=_CANCEL_GRACE_S,
+            signals=_CANCEL_SIGNALS,
+        )
 
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
         if session_ref.executor != self.executor_name:
             return None
-        return _attempt_dir_for(self.spool_root, session_ref.session_id)
+        return attempt_dir_for(self.spool_root, session_ref.session_id)
 
 
 def read_cursor_cli_status(spool_root: Path, session_id: str) -> SessionStatus:
-    """Read-only durable status of one cursor_cli attempt (operator-safe).
-
-    Derived from durable files first and pid liveness second, and fails
-    CLOSED: an attempt with neither a terminal record nor a live process is
-    reported with the plumbing phrase, never as still running.
-    """
-    attempt_dir = _attempt_dir_for(Path(spool_root), session_id)
-    if attempt_dir is None:
-        return SessionStatus(state="failed", error="invalid cursor_cli session id")
-    if not attempt_dir.is_dir():
-        return SessionStatus(state="failed", error="cursor_cli spool not found")
-
-    exit_path = attempt_dir / "exit.json"
-    if exit_path.exists():
-        try:
-            exit_state = json.loads(exit_path.read_text())
-            returncode = int(exit_state["returncode"])
-        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            return SessionStatus(
-                state="failed", error=f"invalid cursor_cli exit state: {exc}"
-            )
-        if returncode == 0:
-            return SessionStatus(state="completed")
-        detail = exit_state.get("error") or f"cursor_cli exited with code {returncode}"
-        if exit_state.get("plumbing"):
-            detail = (
-                _NO_DURABLE_EXIT
-                if not exit_state.get("error")
-                else f"{_NO_DURABLE_EXIT}: {exit_state.get('error')}"
-            )
-        elif exit_state.get("cancelled"):
-            detail = f"cursor_cli cancelled: {detail}"
-        return SessionStatus(state="failed", error=str(detail))
-
-    pid = _read_pid(attempt_dir / "pid")
-    if pid is not None and _pid_is_running(pid):
-        return SessionStatus(state="running")
-    supervisor_pid = _read_pid(attempt_dir / "supervisor.pid")
-    if supervisor_pid is not None and _pid_is_running(supervisor_pid):
-        return SessionStatus(state="dispatched")
-    return SessionStatus(state="failed", error=_NO_DURABLE_EXIT)
+    """Read-only durable status of one cursor_cli attempt (operator-safe)."""
+    return read_attempt_status(
+        Path(spool_root),
+        session_id,
+        executor=_EXECUTOR,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -459,69 +306,49 @@ def build_argv(
 
 
 def _run_attempt(attempt_dir: Path, start_fd: int | None = None) -> int:
-    from local_agent_executor import (  # noqa: PLC0415 - scripts/ on path
-        load_packet,
-        persist_result,
-        record_worktree_correlation,
-        remove_worktree,
-    )
-    from runtime.context_coverage import (  # noqa: PLC0415
-        compute_turn_context_coverage,
+    return run_attempt_supervisor(
+        attempt_dir,
+        run_turn=_run_cursor_turn,
+        start_fd=start_fd,
     )
 
+
+def _run_cursor_turn(
+    attempt_dir: Path,
+    command: Mapping[str, object],
+    packet: dict,
+) -> TurnOutcome:
+    """Cursor-specific prompt, stream translation, and terminal synthesis."""
     turn_id = uuid.uuid4().hex
     translator = CursorStreamTranslator()
     writer: EventWriter | None = None
-    cancelled = False
-    plumbing = False
-    error: str | None = None
-    returncode = 127
-    worktree: Path | None = None
-    repo: Path | None = None
-    packet: dict | None = None
+    worktree = Path(str(command["worktree"]))
+    turn_prompt = build_cursor_turn_prompt(worktree=worktree, packets=[packet])
+    atomic_write(
+        attempt_dir / "prompt_cache_report.json",
+        json.dumps(
+            prompt_cache_report(turn_prompt).as_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
 
-    try:
-        if start_fd is not None and os.read(start_fd, 1) != b"1":
-            raise RuntimeError("dispatch startup handshake was not published")
-        command = json.loads((attempt_dir / "command.json").read_text())
-        packet = load_packet((attempt_dir / "packet.json").read_text())
-        worktree = Path(command["worktree"])
-        repo = Path(command["repo"])
-        record_worktree_correlation(worktree, packet)
-
-        turn_prompt = build_cursor_turn_prompt(worktree=worktree, packets=[packet])
-        _atomic_write(
-            attempt_dir / "prompt_cache_report.json",
-            json.dumps(
-                prompt_cache_report(turn_prompt).as_dict(),
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
+    if (attempt_dir / "cancel.requested").exists():
+        cancelled = True
+        returncode = 143
+        error = "cancelled before the turn started"
+    else:
+        returncode, error, writer = _stream_turn(
+            attempt_dir=attempt_dir,
+            command=command,
+            prompt=turn_prompt.assemble(),
+            translator=translator,
+            turn_id=turn_id,
         )
-
-        if (attempt_dir / "cancel.requested").exists():
-            cancelled = True
-            returncode = 143
-            error = "cancelled before the turn started"
-        else:
-            returncode, error, writer = _stream_turn(
-                attempt_dir=attempt_dir,
-                command=command,
-                prompt=turn_prompt.assemble(),
-                translator=translator,
-                turn_id=turn_id,
-            )
-            cancelled = (
-                returncode != 0 and (attempt_dir / "cancel.requested").exists()
-            )
-            # No terminal `result` event means the harness never reported a
-            # turn boundary — a bad invocation, a kill, or a host fault. That
-            # is plumbing, not evidence about the node's work.
-            plumbing = not translator.saw_turn_end and not cancelled
-    except Exception as exc:
-        error = f"cursor_cli supervisor failed: {exc}"
-        plumbing = True
-        returncode = 127
+        cancelled = (
+            returncode != 0 and (attempt_dir / "cancel.requested").exists()
+        )
+    plumbing = not translator.saw_turn_end and not cancelled
 
     if writer is None:
         # Zero stream events (a bad invocation produces none at all) still
@@ -541,57 +368,12 @@ def _run_attempt(attempt_dir: Path, start_fd: int | None = None) -> int:
             status="cancelled" if cancelled else "failed",
             error=error or f"cursor-agent exited with code {returncode}",
         )
-
-    events = read_events(attempt_dir / "events.jsonl")
-    _write_evidence(
-        attempt_dir=attempt_dir,
-        events=events,
-        packet=packet,
-        worktree=worktree,
-        compute_coverage=compute_turn_context_coverage,
-    )
-
-    if not cancelled and not plumbing and packet is not None and worktree is not None:
-        handoff = persist_result(worktree, packet)
-        report_path = attempt_dir / "prompt_cache_report.json"
-        if report_path.exists():
-            try:
-                handoff["prompt_cache_report"] = json.loads(report_path.read_text())
-            except (OSError, json.JSONDecodeError):
-                pass
-        (attempt_dir / "result.json").write_text(
-            json.dumps(handoff, sort_keys=True, separators=(",", ":"))
-        )
-        if handoff.get("result_commit_sha"):
-            # Only a persisted result licenses removing the worktree; a
-            # persist failure keeps it, and its path rides the handoff so an
-            # operator can recover the work.
-            if repo is not None:
-                try:
-                    remove_worktree(repo, worktree)
-                except Exception:
-                    pass
-            _write_exit(attempt_dir, returncode=0, cancelled=False, plumbing=False, error=None)
-            return 0
-        error = (
-            f"persist failed; worktree kept at {worktree}: "
-            f"{handoff.get('error') or 'no result commit'}"
-        )
-        _write_exit(
-            attempt_dir, returncode=1, cancelled=False, plumbing=False, error=error
-        )
-        return 0
-
-    if worktree is not None:
-        error = f"{error or 'turn ended without a result'}; worktree kept at {worktree}"
-    _write_exit(
-        attempt_dir,
-        returncode=returncode if returncode != 0 else 1,
+    return TurnOutcome(
+        returncode=returncode,
         cancelled=cancelled,
         plumbing=plumbing,
         error=error,
     )
-    return 0
 
 
 def _stream_turn(
@@ -632,19 +414,34 @@ def _stream_turn(
             start_new_session=True,
         )
         try:
-            _atomic_write(attempt_dir / "pid", str(proc.pid))
+            atomic_write(attempt_dir / "pid", str(proc.pid))
         except Exception:
-            _terminate(proc.pid, grace_s=_CANCEL_GRACE_S)
+            terminate_process_group(
+                proc.pid,
+                grace_s=_CANCEL_GRACE_S,
+                graceful_signal=_CANCEL_SIGNALS[0],
+                final_signal=_CANCEL_SIGNALS[1],
+            )
             proc.wait()
             raise
         # Close the race where cancel() landed between spawn and pid
         # publication: cancel() could not have signalled a pid it never saw.
         if (attempt_dir / "cancel.requested").exists():
-            _terminate(proc.pid, grace_s=_CANCEL_GRACE_S)
+            terminate_process_group(
+                proc.pid,
+                grace_s=_CANCEL_GRACE_S,
+                graceful_signal=_CANCEL_SIGNALS[0],
+                final_signal=_CANCEL_SIGNALS[1],
+            )
 
         def _on_timeout() -> None:
             timed_out.set()
-            _terminate(proc.pid, grace_s=_CANCEL_GRACE_S)
+            terminate_process_group(
+                proc.pid,
+                grace_s=_CANCEL_GRACE_S,
+                graceful_signal=_CANCEL_SIGNALS[0],
+                final_signal=_CANCEL_SIGNALS[1],
+            )
 
         watchdog = threading.Timer(timeout_s, _on_timeout)
         watchdog.daemon = True
@@ -686,7 +483,7 @@ def _stream_turn(
                         # Persisted on EVERY dispatch, cold included: it is
                         # the operator's only handle for a future
                         # operator_requested resume, and it costs nothing.
-                        _atomic_write(
+                        atomic_write(
                             attempt_dir / "session_id", translator.session_id
                         )
             returncode = proc.wait()
@@ -696,7 +493,7 @@ def _stream_turn(
     if timed_out.is_set():
         return returncode, f"turn exceeded {timeout_s}s and was terminated", writer
     if returncode != 0 and not translator.saw_turn_end:
-        tail = _read_text(attempt_dir / "stderr").strip()[-500:]
+        tail = read_text(attempt_dir / "stderr").strip()[-500:]
         return (
             returncode,
             tail or f"cursor-agent exited with code {returncode}",
@@ -705,60 +502,9 @@ def _stream_turn(
     return returncode, None, writer
 
 
-def _write_evidence(
-    *,
-    attempt_dir: Path,
-    events: list[ExecutorEvent],
-    packet: dict | None,
-    worktree: Path | None,
-    compute_coverage,
-) -> None:
-    """Cache report + coverage from the canonical stream. Best-effort only:
-    the node's result must never turn on a measurement."""
-    usage = turn_usage(events)
-    report_path = attempt_dir / "prompt_cache_report.json"
-    if usage is not None and usage.cached_input_tokens is not None and report_path.exists():
-        try:
-            report = json.loads(report_path.read_text())
-            report["actual_cached_tokens"] = usage.cached_input_tokens
-            _atomic_write(
-                report_path, json.dumps(report, sort_keys=True, separators=(",", ":"))
-            )
-        except (OSError, json.JSONDecodeError):
-            pass
-
-    if packet is None:
-        return
-    try:
-        coverage = compute_coverage(
-            pointers=merged_turn_pointers([packet]),
-            events=events,
-            # cursor-agent's cwd IS the worktree, so a relative path it
-            # reported resolves against the worktree, not the checkout.
-            base=worktree,
-        )
-        if coverage is not None:
-            _atomic_write(
-                attempt_dir / "context_coverage.json",
-                json.dumps(coverage, sort_keys=True, separators=(",", ":")),
-            )
-    except Exception:
-        pass
-
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-
-
-def _attempt_dir_for(spool_root: Path, session_id: str) -> Path | None:
-    if (
-        not session_id
-        or session_id in {".", ".."}
-        or Path(session_id).name != session_id
-    ):
-        return None
-    return Path(spool_root) / session_id
 
 
 def _configured_spool_root(spool_root: str | Path | None) -> Path:
@@ -771,82 +517,6 @@ def _configured_spool_root(spool_root: str | Path | None) -> Path:
     if configured is None:
         raise ValueError(f"cursor_cli spool root is required ({_SPOOL_ENV})")
     return Path(configured).expanduser().resolve()
-
-
-def _terminate(pid: int, *, grace_s: float) -> None:
-    """SIGTERM the process group, then SIGKILL if it outlives the grace."""
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except OSError:
-        return
-    deadline = time.monotonic() + grace_s
-    while time.monotonic() < deadline:
-        if not _pid_is_running(pid):
-            return
-        time.sleep(0.05)
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except OSError:
-        pass
-
-
-def _write_exit(
-    attempt_dir: Path,
-    *,
-    returncode: int,
-    cancelled: bool,
-    plumbing: bool,
-    error: str | None,
-) -> None:
-    _atomic_write(
-        attempt_dir / "exit.json",
-        json.dumps(
-            {
-                "returncode": returncode,
-                "cancelled": cancelled,
-                "plumbing": plumbing,
-                "error": error,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ),
-    )
-
-
-def _safe_component(value: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in value)[:80]
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + f".tmp.{uuid.uuid4().hex}")
-    tmp.write_text(text)
-    tmp.replace(path)
-
-
-def _read_text(path: Path) -> str:
-    try:
-        return path.read_text(errors="replace")
-    except OSError:
-        return ""
-
-
-def _read_pid(path: Path) -> int | None:
-    try:
-        return int(path.read_text().strip())
-    except (OSError, ValueError):
-        return None
-
-
-def _pid_is_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
 
 
 def _main(argv: Sequence[str]) -> int:
