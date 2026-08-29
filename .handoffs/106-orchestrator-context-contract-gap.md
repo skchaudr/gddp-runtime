@@ -1,84 +1,156 @@
-# 106 — Orchestrator context-contract gap (diagnosis only, no code changed)
+# 106 — The orchestrator has no context contract; the evaluator does
 
------------------------------------------------- Agent Section START
+Not a session handoff. This is a diagnosis note from reading three live orchestrator
+session logs (2026-08-20 / 08-23 / 08-24) plus the adapter and evaluator source.
+No code was changed. Everything below points at files in this repo.
 
-Date: 2026-08-27
-Worktree: /Users/sab-mini/repos/gddp-runtime (read-only this session; analysis ran from ~/.pi)
-Branch: main
+## What we were chasing, and what it actually was
 
-## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
+The visible problem was cost and a persistent orchestrator carrying 120K–180K of
+context. The assumption was that Pi's compaction was the culprit — it compacts too
+late, so build something that compacts earlier.
 
-The persistent orchestrator's context blowup (p50 177K, max 246K) is caused upstream of compaction: it receives `_PACKET_PREAMBLE` plus a NodePacket and nothing describing the project, so it reconstructs "what is GDDP" from the filesystem every run — 29 `read` calls and 120 `bash` calls against only 16 `subagent` dispatches in the 2026-08-20 session. The evaluator already solved this exact problem (bounded canonical pointers, coverage measurement, four-zone prefix-cache-ordered prompt) and none of it was carried across to `pi_rpc_adapter.py`. No code was changed this session; this is diagnosis with file-level pointers to the fixes.
+That was the wrong layer. The orchestrator's context is large because it spends its
+run discovering what GDDP is. In the 08-20 session it made **29 `read` calls and 120
+`bash` calls, against 16 `subagent` dispatches**. What it read: `context.md`,
+`vocabulary.md`, `LOOP.md`, the invariants doc, the node and evaluator entity specs,
+the runtime decision-loop spec, the architecture doc, and several design essays. The
+bash calls were directory walks, file-tree listings, and line counts over
+`scripts/runtime/`.
 
-### Scope touched (One file per line, +/- for only what was changed)
+It is not an orchestrator that got heavy while orchestrating. It ran an unbounded
+research task, and dispatching was the small part.
 
-+ .handoffs/106-orchestrator-context-contract-gap.md (this file — only file written; all source read-only)
+## The gap, stated plainly
 
-### Constrained areas touched (none / list + justification)
+The evaluator was given a context contract. The orchestrator was not.
 
-none — no runtime, db, graph-truth, deploy, or scripts mutation. Session logs read from `~/.pi/agent/sessions/`.
+**Evaluator** (`scripts/runtime/verification/semantic/`):
 
-## Concern 1 — the evaluator has a context contract; the orchestrator has none
+- `context_builder.py::build_canonical_pointers()` hands it a bounded set of file
+  *paths* — readme, project brief, invariants, foundational node, direct
+  `depends_on`/`unlocks` neighbors. The docstring states the rule: *a read call is
+  evidence, an embedded blob is not.* Target-repo `AGENTS.md` is explicitly never
+  included. Missing files are marked `UNAVAILABLE` rather than dropped.
+- `prompt.py` orders the prompt in four zones, least to most volatile: protocol,
+  project, node, attempt. Each zone is internally byte-stable; the zones are never
+  merged, because one combined `json.dumps(sort_keys=True)` would hoist
+  `deterministic_result` ahead of `graph` and bust the cached prefix on every
+  evaluation. That failure mode is written down in the comment.
+- `orchestrator.py::_compute_context_coverage()` and `_extract_accessed_paths()`
+  record which pointers were actually opened. Asserted on the receipt in
+  `test_orchestrator.py`.
 
-Evaluator, `scripts/runtime/verification/semantic/`:
-- `context_builder.py::build_canonical_pointers()` — bounded set of file *paths*: readme, project_brief, invariants (optional), foundational node, direct `depends_on`/`unlocks` neighbors. Docstring states the rule: "a read call is evidence, an embedded blob is not." Target-repo `AGENTS.md` explicitly never included; missing files marked `UNAVAILABLE` rather than dropped.
-- `prompt.py` — four zones ordered least-to-most volatile (protocol / project / node / attempt), each internally `sort_keys=True`. The comment names the failure mode: one merged `json.dumps(sort_keys=True)` hoists `deterministic_result` ahead of `graph` and busts the cached prefix on every evaluation.
-- `orchestrator.py::_compute_context_coverage()` / `_extract_accessed_paths()` — records which pointers were actually opened; asserted on the receipt in `test_orchestrator.py`.
+**Orchestrator** (`scripts/adapters/pi_rpc_adapter.py`):
 
-Orchestrator, `scripts/adapters/pi_rpc_adapter.py`:
-- `_PACKET_PREAMBLE` (L72–112) — ~40 lines of behavioral prose. Tells it how to act; says nothing about what the project is.
-- No pointer list, no zone ordering, no cache topology, no coverage record.
-- `_DEFAULT_MODEL = "xai/grok-4.5"` (L62) — hardcoded fallback; prime suspect for a chosen cheap orchestrator model not taking effect.
-- `_DEFAULT_IDLE_TIMEOUT_S = 43200.0` (L70, 12h) — deliberate and correct for cross-packet continuity, but it means nothing excavated is ever released.
+- `_PACKET_PREAMBLE` (L72–112) — about 40 lines of behavioral prose. It says how to
+  act: dispatch workers, don't implement, run a watcher, close with reviewers. It
+  says nothing about what the project is.
+- No pointer list. No zone ordering. No coverage record.
 
-Neither agent is *briefed* — the evaluator also opens its own pointer files. The difference is that the evaluator's excavation is fenced to ~5-8 named paths and measured afterwards, while the orchestrator's is unbounded and unobserved.
+So it's told what to do and left to find out what it's doing it to. The instructions
+even say workers investigate and the orchestrator does not — but with no context
+handed in, investigating is the only way to start. The equipment wins over the
+instruction.
 
-## Concern 2 — unowned orchestration efficiency shifts the bill to the harness
+Worth being precise: **neither** agent is briefed. The evaluator opens its own
+pointer files too. The difference is that the evaluator's excavation is fenced to
+five or so named paths and measured afterwards, while the orchestrator's is
+unbounded and nobody is counting.
 
-Pi's native compaction triggers at `contextWindow - reserveTokens` (default 16384), i.e. ~184K on a 200K model, so the orchestrator carried near-ceiling context on every tool call for the life of each run. Measured from `~/.pi/agent/sessions/--Users-sab-mini-repos-gddp-runtime--/`:
+## Why compaction can't fix this
 
-| session | reqs >1K ctx | p50 ctx | p90 ctx | max | total input |
+If you summarize away the docs the orchestrator just read, it has no durable copy of
+its own instructions, so it reads them again. You'd be paying a summarizer to forget
+things the agent immediately re-fetches. That's why the ceiling tuning kept not
+landing — it was adjusting how fast to forget, when the problem is that the
+orchestrator has to rediscover who it is every time it wakes up.
+
+## The second-order version of the same problem
+
+When the runtime doesn't own orchestration efficiency, the harness pays for it. Pi's
+native compaction fires at `contextWindow - reserveTokens` (default 16384), so around
+184K on a 200K model. The orchestrator therefore carried near-ceiling context on
+every single tool call for the life of each run.
+
+| session | requests >1K ctx | p50 ctx | p90 ctx | max | total input |
 |---|---|---|---|---|---|
 | 2026-08-20 | 205 | 176,894 | 233,371 | 245,760 | 34,365,343 |
 | 2026-08-23 | 147 | 120,144 | 174,590 | 185,471 | 16,172,338 |
 | 2026-08-24 | 81 | 116,216 | 159,252 | 160,964 | 8,906,047 |
 
-These are floors. The 08-20 run had 14 failed calls (6 request timeouts, 6 fetch failures, 1 connection error, 1 429) plus 3 aborts; a failed request records no usage, so each sent a full context that appears nowhere in the totals. Timeout probability rises with context size, so the blowup manufactures its own retries at the largest size the session reached.
+Those totals are floors, not totals. The 08-20 run had 14 failed calls — 6 request
+timeouts, 6 fetch failures, 1 connection error, 1 rate-limit rejection — plus 3
+aborts. A failed request records no usage, so each of those sent a full context and
+appears nowhere in the numbers above. Timeout probability climbs with context size,
+so the blowup manufactures its own retries, each charged at the largest size the
+session had reached.
 
-Compaction cannot fix Concern 1 — summarizing away docs the orchestrator just read guarantees it reads them again. The harness should not be rebuilt to bail out the runtime.
+## Fixes, cheapest first
 
-## Immediately fixable, ordered by payoff-to-effort
+1. **Call `build_canonical_pointers()` from the orchestrator preamble.** The function
+   already exists and is already tested. The orchestrator just never calls it. This is
+   the smallest diff with the largest effect.
+2. **Make the orchestrator model explicit at the call site.** `_DEFAULT_MODEL =
+   "xai/grok-4.5"` at `pi_rpc_adapter.py` L62 is a silent hardcoded fallback, and the
+   prime suspect for a chosen cheap model not taking effect.
+3. **Reorder the preamble stable-first**, porting the zone pattern from
+   `semantic/prompt.py`. Port the pattern, not the code.
+4. **Add `.pi/settings.json` to this repo** with `compaction.reserveTokens` sized
+   against the pinned orchestrator model's window. That gives an absolute ceiling with
+   no code. Pi's `ExtensionContext` exposes no `settingsManager`, so static config is
+   the only route — an extension cannot set this at runtime.
+5. **Borrow the coverage measurement** so orchestrator context growth is observable
+   live instead of reconstructed from session logs after the fact.
 
-1. `pi_rpc_adapter.py` — call `build_canonical_pointers()` when assembling the orchestrator preamble. The function exists and is tested; the orchestrator simply never calls it. Smallest diff, largest effect.
-2. `pi_rpc_adapter.py` L62 — make the model explicit at the call site; delete or loudly warn on the `_DEFAULT_MODEL` fallback.
-3. `pi_rpc_adapter.py` L72–112 — reorder the preamble stable-first, porting the zone pattern from `semantic/prompt.py`.
-4. Add `<repo>/.pi/settings.json` with `compaction.reserveTokens` sized against the pinned orchestrator model's window. Gives an absolute ceiling with zero code; note Pi's `ExtensionContext` exposes no `settingsManager`, so static config is the only route.
-5. Borrow `_compute_context_coverage()` for the orchestrator so context growth is observable live rather than forensically from session logs.
+`_DEFAULT_IDLE_TIMEOUT_S = 43200.0` (L70, 12h) is deliberate and correct for
+cross-packet continuity — it is not a bug. But it does mean nothing the orchestrator
+excavates is ever released, which amplifies items 1 and 3.
 
-### Current Git state (2-3 sentences max, anything more must be critically justifiable)
+## On the harness side, for the record
 
-`main` clean and tracking `origin/main`; this handoff is the only change and is uncommitted pending Sab's review. An earlier copy of this analysis was mistakenly committed to the `~/.pi` harness repo as `2d3a197` and needs reverting there — wrong repo, since every fix listed above is in this one.
+Native Pi compaction is in-place: it appends a `CompactionEntry` and rebuilds from
+`firstKeptEntryId` in the same session. It does not end the session — that behavior
+is specific to oh-my-pi.
 
-### Artifacts (Filepath - Description, 1 line max per artifact)
+The 08-25 interruptions in `~/.pi` had two independent causes, both already removed
+in that repo at `d538b20`. `refutation-verifier.ts` returned `{systemPrompt}` without
+spreading `event.payload`, wiping `messages` and `model` from the request — that is
+the red-error-with-no-agent-response failure, and it was not compaction.
+`early-compaction.ts` called `ctx.compact()` on `turn_end`, which fires at tool-loop
+boundaries *inside* a live run, rewriting history underneath the running loop.
 
-`~/.pi/agent/sessions/--Users-sab-mini-repos-gddp-runtime--/*.jsonl` - source sessions behind every number above (08-20 / 08-23 / 08-24)
-`docs/proposals/pure-orchestration-not-execution.md` - pre-existing proposal, NOT read this session; likely overlaps this diagnosis
-`.handoffs/097-prefix-cache-prompt-templates.md` - prior prefix-cache work; the pattern Concern 1 says to port to the orchestrator
+If harness compaction is ever rebuilt: trigger on `agent_settled` ("fired after an
+agent run has fully settled and no automatic retry, compaction, or queued
+continuation will run"), guard with `ctx.isIdle()` and `ctx.hasPendingMessages()`
+plus a cooldown, and leave native's `threshold` trigger in place as a backstop rather
+than cancelling it. No auto-continue is needed because nothing is in flight at that
+point.
 
-### Resume point (2-3 sentences max, anything more must be critically justifiable)
+Do not port oh-my-pi's compaction subsystem on the strength of the prior handoff's
+description of it. That description was never checked against source — oh-my-pi is
+not on this machine, `~/.omp` is only its data directory. The one local measurement
+available deflates its cheap-tier claim: `~/.omp/snapcompact-savings.jsonl` holds
+three records totalling 2,442 saved tokens across its entire logged life.
 
-Read `docs/proposals/pure-orchestration-not-execution.md` first to check how much of this was already specified, then do fixes 1 and 2 in `scripts/adapters/pi_rpc_adapter.py`. Harness-side compaction work is optional and explicitly deprioritized.
+But the standing conclusion is that the harness should not be rebuilt to bail out the
+runtime. Fixes 1–3 are the real work.
 
------------------------------------------------- Agent Section END
+## Two corrections, so they aren't inherited
 
------------------------- Do NOT edit this file past this point
+Earlier in the session I argued that the context window was *not* the expensive part,
+on the grounds that most input tokens were cached reads. That was wrong. A cache
+discount is per token and you pay it on every request, so 205 requests at a 177K
+median is the dominant term regardless. Compacting at a sane ceiling would have cut
+that run's input tokens roughly 4x.
 
-## Narrative / Trajectory (SAB ONLY)
+I also claimed retries weren't involved, citing tool-call counts. Tool-call counts
+cannot show that — a retry resends context without adding a tool call. See the 14
+failed calls above.
 
-### Intent going into/at start of session
+## Not yet read
 
-### Interpretation of how the session went
-
-### Friction experienced or anticipated
-
-### What's Next (Momentum or Lack Thereof)
+`docs/proposals/pure-orchestration-not-execution.md` exists and was never opened this
+session. Read it before acting on the fix list; it may already specify some of this.
+`.handoffs/097-prefix-cache-prompt-templates.md` is the prior prefix-cache work and is
+presumably where the evaluator's zone ordering came from.
