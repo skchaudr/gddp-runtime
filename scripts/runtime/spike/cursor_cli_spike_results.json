@@ -1,0 +1,250 @@
+{
+  "binary": "cursor-agent",
+  "hard_fails": [],
+  "model_defaulted": true,
+  "open_risks": [
+    "resume durability across hours/days not provable in one session",
+    "provider/API failure classification not exercised (only invalid-model)",
+    "write/shell tool_call variants not exercised (read only)"
+  ],
+  "scratch": "/tmp/cursor-cli-spike",
+  "turns": {
+    "cold_turn": {
+      "assistant_text": "SPIKE7-COLDSPIKE7-COLD",
+      "event_types": {
+        "assistant": 3,
+        "result/success": 1,
+        "system/init": 1,
+        "thinking/completed": 1,
+        "thinking/delta": 10,
+        "user": 1
+      },
+      "exit_code": 0,
+      "label": "cold_turn",
+      "model": "Kimi K3 Max",
+      "result_event": {
+        "duration_api_ms": 5481,
+        "duration_ms": 5481,
+        "is_error": false,
+        "request_id": "2dc70204-c21c-4d0d-bd18-5b80245c4cab",
+        "result": "SPIKE7-COLD",
+        "session_id": "e130cd81-dcf7-4de8-bd50-58c80d951107",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "cacheReadTokens": 8188,
+          "cacheWriteTokens": 0,
+          "inputTokens": 12770,
+          "outputTokens": 35
+        }
+      },
+      "session_id": "e130cd81-dcf7-4de8-bd50-58c80d951107",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 9.66
+    },
+    "invalid_model": {
+      "assistant_text": "",
+      "event_types": {},
+      "exit_code": 1,
+      "label": "invalid_model",
+      "model": null,
+      "result_event": null,
+      "session_id": null,
+      "stderr_tail": "i-medium, gpt-5.4-mini-high, gpt-5.4-mini-xhigh, gpt-5.4-nano-none, gpt-5.4-nano-low, gpt-5.4-nano-medium, gpt-5.4-nano-high, gpt-5.4-nano-xhigh, claude-4.5-sonnet, claude-4.5-sonnet-thinking, gpt-5.1-low, gpt-5.1, gpt-5.1-high, gemini-3.5-flash, claude-4-sonnet, claude-4-sonnet-thinking, gpt-5-mini, kimi-k3-low, kimi-k3-high, kimi-k3-max, kimi-k2.7-code, glm-5.2-high, glm-5.2-max, gemini-3-flash\n",
+      "tool_calls": [],
+      "wall_s": 1.68
+    },
+    "resume_after_exit": {
+      "assistant_text": "SPIKE7-COLDSPIKE7-COLD",
+      "event_types": {
+        "assistant": 3,
+        "result/success": 1,
+        "system/init": 1,
+        "thinking/completed": 1,
+        "thinking/delta": 21,
+        "user": 1
+      },
+      "exit_code": 0,
+      "label": "resume_after_exit",
+      "model": "Kimi K3 Max",
+      "result_event": {
+        "duration_api_ms": 1985,
+        "duration_ms": 1985,
+        "is_error": false,
+        "request_id": "57868abd-662b-42e6-a9f6-a8175a498314",
+        "result": "SPIKE7-COLD",
+        "session_id": "e130cd81-dcf7-4de8-bd50-58c80d951107",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "cacheReadTokens": 20956,
+          "cacheWriteTokens": 0,
+          "inputTokens": 112,
+          "outputTokens": 61
+        }
+      },
+      "session_id": "e130cd81-dcf7-4de8-bd50-58c80d951107",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 6.76
+    },
+    "sigkill_mid_turn": {
+      "assistant_text": "",
+      "event_types": {
+        "system/init": 1,
+        "thinking/delta": 6,
+        "user": 1
+      },
+      "exit_code": -9,
+      "label": "sigkill_mid_turn",
+      "model": "Kimi K3 Max",
+      "result_event": null,
+      "seconds_signal_to_death": 0.02,
+      "session_id": "ab57391a-f41b-4cc7-a1fd-61d365186c25",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 7.94
+    },
+    "sigkill_mid_turn_resume_check": {
+      "assistant_text": "ALIVEALIVE",
+      "event_types": {
+        "assistant": 2,
+        "result/success": 1,
+        "system/init": 1,
+        "thinking/completed": 1,
+        "thinking/delta": 6,
+        "user": 1
+      },
+      "exit_code": 0,
+      "label": "sigkill_mid_turn_resume_check",
+      "model": "Kimi K3 Max",
+      "result_event": {
+        "duration_api_ms": 1867,
+        "duration_ms": 1867,
+        "is_error": false,
+        "request_id": "494ab4aa-cab5-4633-a08d-a12ba05525d5",
+        "result": "ALIVE",
+        "session_id": "ab57391a-f41b-4cc7-a1fd-61d365186c25",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "cacheReadTokens": 20892,
+          "cacheWriteTokens": 0,
+          "inputTokens": 63,
+          "outputTokens": 28
+        }
+      },
+      "session_id": "ab57391a-f41b-4cc7-a1fd-61d365186c25",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 6.9
+    },
+    "sigterm_mid_turn": {
+      "assistant_text": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n",
+      "event_types": {
+        "assistant": 17,
+        "system/init": 1,
+        "thinking/completed": 1,
+        "thinking/delta": 39,
+        "user": 1
+      },
+      "exit_code": 143,
+      "label": "sigterm_mid_turn",
+      "model": "Kimi K3 Max",
+      "result_event": null,
+      "seconds_signal_to_death": 1.16,
+      "session_id": "3275605e-0bc7-4a30-b025-a5383cba3347",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 7.91
+    },
+    "sigterm_mid_turn_resume_check": {
+      "assistant_text": "ALIVEALIVE",
+      "event_types": {
+        "assistant": 2,
+        "result/success": 1,
+        "system/init": 1,
+        "thinking/completed": 1,
+        "thinking/delta": 14,
+        "user": 1
+      },
+      "exit_code": 0,
+      "label": "sigterm_mid_turn_resume_check",
+      "model": "Kimi K3 Max",
+      "result_event": {
+        "duration_api_ms": 3884,
+        "duration_ms": 3884,
+        "is_error": false,
+        "request_id": "30aff223-6ca8-48f3-b111-03bf0922789d",
+        "result": "ALIVE",
+        "session_id": "3275605e-0bc7-4a30-b025-a5383cba3347",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "cacheReadTokens": 8188,
+          "cacheWriteTokens": 0,
+          "inputTokens": 12767,
+          "outputTokens": 47
+        }
+      },
+      "session_id": "3275605e-0bc7-4a30-b025-a5383cba3347",
+      "stderr_tail": "",
+      "tool_calls": [],
+      "wall_s": 8.77
+    },
+    "tool_events": {
+      "assistant_text": "spikewordspikeword",
+      "event_types": {
+        "assistant": 3,
+        "result/success": 1,
+        "system/init": 1,
+        "thinking/completed": 2,
+        "thinking/delta": 23,
+        "tool_call/completed": 1,
+        "tool_call/started": 1,
+        "user": 1
+      },
+      "exit_code": 0,
+      "label": "tool_events",
+      "model": "Kimi K3 Max",
+      "result_event": {
+        "duration_api_ms": 9252,
+        "duration_ms": 9252,
+        "is_error": false,
+        "request_id": "76ed4d87-0bd9-4279-96c3-3d0360c82706",
+        "result": "spikeword",
+        "session_id": "1f44e3be-d819-45b0-98d3-17111c43db12",
+        "subtype": "success",
+        "type": "result",
+        "usage": {
+          "cacheReadTokens": 41880,
+          "cacheWriteTokens": 0,
+          "inputTokens": 208,
+          "outputTokens": 116
+        }
+      },
+      "session_id": "1f44e3be-d819-45b0-98d3-17111c43db12",
+      "stderr_tail": "",
+      "tool_calls": [
+        {
+          "call_id": "Read_0_10e6fbcd-558f1",
+          "path": "/tmp/cursor-cli-spike/spike-target.txt",
+          "subtype": "started",
+          "tool_key": "readToolCall"
+        },
+        {
+          "call_id": "Read_0_10e6fbcd-558f1",
+          "path": "/tmp/cursor-cli-spike/spike-target.txt",
+          "result_keys": [
+            "success"
+          ],
+          "subtype": "completed",
+          "tool_key": "readToolCall"
+        }
+      ],
+      "wall_s": 13.31
+    }
+  },
+  "verdict": "GO"
+}

@@ -35,7 +35,7 @@ Clean and synced with origin/main at bffcbb3. Commits: b148170 (settings ceiling
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
-Nothing pending from the handoff 106 fix list. Next natural step is operator review of the stateless-supervisor design doc and, if endorsed, its V1 build sequence (census tick → stall detector → rate-limited steer nudge). First live orchestrator run after this deploy is the real validation: watch context_coverage.json ratings and whether p50 context drops from the 116-177K regime.
+Nothing pending from the handoff 106 fix list. Next natural step is operator review of the stateless-supervisor design doc and, if endorsed, its V1 build sequence (census tick → stall detector → rate-limited steer nudge). First live orchestrator run after this deploy is the real validation: watch context_coverage.json ratings and whether p50 context drops from the 116-177K regime. Separately, the cursor-cli transport spike (scripts/runtime/spike/cursor_cli_spike.py) returned GO: per-turn subprocess + --resume survives SIGTERM/SIGKILL mid-turn, tool_call events map cleanly onto the events.jsonl schema, and resume turns ride Cursor-side prefix cache (63-112 fresh input tokens against ~21K cacheRead). cursor_cli_adapter.py is de-risked and ready to become graph work.
 
 ------------------------------------------------ Agent Section END
 
