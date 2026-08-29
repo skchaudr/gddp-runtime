@@ -22,6 +22,8 @@ from adapters.pi_rpc_adapter import (  # noqa: E402
     _assemble_turn_prompt,
     build_executor_turn_prompt,
     build_project_zone,
+    compute_turn_context_coverage,
+    extract_read_paths,
     _pid_is_running,
     read_pi_rpc_status,
 )
@@ -43,6 +45,9 @@ from adapters.session_prompt import split_packet_zones  # noqa: E402
 # FAKE_PI_PROMPT_MARKER, if set, gets one line appended each time a "prompt"
 # request is received — lets tests prove a batch of N packets was handled by
 # exactly ONE prompt/turn rather than N.
+# FAKE_PI_READ_PATHS, if set, is a comma-separated list of paths emitted as
+# real read tool_execution_start/end pairs before agent_end — the verified
+# event shape the coverage parser reads.
 # ---------------------------------------------------------------------------
 
 _FAKE_PI = r'''#!/usr/bin/env python3
@@ -109,6 +114,17 @@ while True:
                 open(os.path.join(target, "RESULT.txt"), "w").write("pi-rpc-ok\n")
             except OSError:
                 pass
+        for i, p in enumerate(os.environ.get("FAKE_PI_READ_PATHS", "").split(",")):
+            p = p.strip()
+            if not p:
+                continue
+            cid = f"call_fake_{i}"
+            print(json.dumps({"type": "tool_execution_start", "toolCallId": cid,
+                              "toolName": "read", "args": {"path": p}}), flush=True)
+            print(json.dumps({"type": "tool_execution_end", "toolCallId": cid,
+                              "toolName": "read",
+                              "result": {"content": [{"type": "text", "text": "x"}]},
+                              "isError": False}), flush=True)
         print(json.dumps({"type": "message_update", "assistant": "done"}), flush=True)
         print(json.dumps({"type": "agent_end", "reason": "stop"}), flush=True)
     elif rtype == "abort":
@@ -126,6 +142,7 @@ def _isolate_fake_pi_env(monkeypatch):
     monkeypatch.delenv("FAKE_PI_MODE", raising=False)
     monkeypatch.delenv("FAKE_PI_BOOT_MARKER", raising=False)
     monkeypatch.delenv("FAKE_PI_PROMPT_MARKER", raising=False)
+    monkeypatch.delenv("FAKE_PI_READ_PATHS", raising=False)
 
 
 @pytest.fixture
@@ -162,7 +179,12 @@ def git_repo(tmp_path: Path) -> tuple[Path, str]:
     return repo, sha
 
 
-def _packet(base_sha: str, attempt: int = 0, project_id: str = "") -> NodePacket:
+def _packet(
+    base_sha: str,
+    attempt: int = 0,
+    project_id: str = "",
+    pointers: dict | None = None,
+) -> NodePacket:
     return NodePacket(
         job_id="job_test",
         execution_attempt_id=f"job_test:attempt:{attempt}",
@@ -176,6 +198,7 @@ def _packet(base_sha: str, attempt: int = 0, project_id: str = "") -> NodePacket
         attempt_index=attempt,
         expected_base_commit_sha=base_sha,
         project_id=project_id,
+        context_pointers=pointers,
     )
 
 
@@ -569,6 +592,7 @@ def _seed_attempt(
     attempt: int = 0,
     idle_timeout_s: float = 0.5,
     turn_timeout_s: float = 20.0,
+    pointers: dict | None = None,
 ) -> Path:
     """Build one attempt_dir's packet.json + command.json without going
     through dispatch(), so several can be enqueued together before
@@ -578,7 +602,9 @@ def _seed_attempt(
     pointed at unrelated evidence)."""
     attempt_dir = spool / name
     attempt_dir.mkdir(parents=True)
-    packet = _packet(base_sha, attempt=attempt, project_id="batch-proj")
+    packet = _packet(
+        base_sha, attempt=attempt, project_id="batch-proj", pointers=pointers
+    )
     (attempt_dir / "packet.json").write_text(packet.to_json())
     config = {
         "pi_binary": str(fake_pi),
@@ -993,3 +1019,278 @@ def test_dispatcher_passes_the_model_at_the_call_site(monkeypatch):
     _build_adapter(FakePi, "pi_rpc", "owner/repo", "/tmp/checkout")
     assert seen["model"] == "chosen/model"
     assert seen["cwd"] == "/tmp/checkout"
+
+
+# ---------------------------------------------------------------------------
+# Context coverage (fix 5): offered pointers vs paths the turn actually read.
+#
+# Event shapes below are copied from real orchestrator streams in the pi_rpc
+# spool (jobs/local-subprocess-spool/*/events.jsonl): tool_execution_start
+# carries toolName + args.path, the matching tool_execution_end carries the
+# outcome as a top-level isError.
+# ---------------------------------------------------------------------------
+
+
+def _read_start(call_id: str, path: str, tool: str = "read") -> dict:
+    return {
+        "type": "tool_execution_start",
+        "toolCallId": call_id,
+        "toolName": tool,
+        "args": {"path": path},
+    }
+
+
+def _read_end(call_id: str, tool: str = "read", is_error: bool = False) -> dict:
+    return {
+        "type": "tool_execution_end",
+        "toolCallId": call_id,
+        "toolName": tool,
+        "result": {"content": [{"type": "text", "text": "..."}], "details": {}},
+        "isError": is_error,
+    }
+
+
+def _reads(*paths: str, tool: str = "read") -> list[dict]:
+    events: list[dict] = []
+    for i, path in enumerate(paths):
+        call_id = f"call_{tool}_{i}"
+        events.append(_read_start(call_id, path, tool=tool))
+        events.append(_read_end(call_id, tool=tool))
+    return events
+
+
+_COVERAGE_POINTERS = {
+    "readme": "/repo/README.md",
+    "project_brief": "/repo/PROJECT-BRIEF.md",
+    "foundational_node": "/cfg/nodes/node-00.yaml",
+    "neighbor:node-02": "/cfg/nodes/node-02.yaml",
+}
+
+
+def test_read_paths_come_from_verified_tool_execution_shape():
+    """read and grep starts carry args.path; the end event carries the outcome."""
+    events = [
+        *_reads("/repo/README.md"),
+        *_reads("/cfg/nodes/node-02.yaml", tool="grep"),
+    ]
+    assert extract_read_paths(events) == {
+        "/repo/README.md",
+        "/cfg/nodes/node-02.yaml",
+    }
+
+
+def test_ls_and_find_are_not_content_access():
+    """Awareness that a path exists is not evidence the pointer was consumed."""
+    events = [
+        *_reads("/repo/README.md", tool="ls"),
+        *_reads("/cfg/nodes/node-02.yaml", tool="find"),
+    ]
+    assert extract_read_paths(events) == set()
+
+
+def test_failed_and_unfinished_reads_are_not_coverage():
+    """An ENOENT read, and a read whose turn died before its end event, are
+    both excluded — same strictness as the evaluator's lane extraction."""
+    events = [
+        _read_start("enoent", "/repo/README.md"),
+        _read_end("enoent", is_error=True),
+        _read_start("orphan", "/repo/PROJECT-BRIEF.md"),
+    ]
+    assert extract_read_paths(events) == set()
+
+
+def test_relative_read_paths_resolve_against_base(tmp_path):
+    """About a third of observed read/grep calls use a relative path; pi runs
+    with cwd=repo, so they must still match the absolute offered pointers."""
+    (tmp_path / "README.md").write_text("# r")
+    pointers = {"readme": str(tmp_path / "README.md")}
+    coverage = compute_turn_context_coverage(
+        pointers=pointers, events=_reads("README.md"), base=tmp_path
+    )
+    assert coverage["rating"] == "high"
+    assert coverage["outside_pointers"] == []
+
+
+def test_coverage_high_when_every_offered_pointer_is_read():
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS,
+        events=_reads(
+            "/repo/README.md",
+            "/repo/PROJECT-BRIEF.md",
+            "/cfg/nodes/node-00.yaml",
+            "/cfg/nodes/node-02.yaml",
+        ),
+    )
+    assert coverage["rating"] == "high"
+    assert coverage["offered"] == 4
+    assert coverage["content_accessed"] == 4
+    assert coverage["not_observed"] == 0
+    assert coverage["not_observed_paths"] == []
+    assert coverage["groups"]["docs"]["content_accessed"] == 2
+    assert coverage["groups"]["neighbors"]["content_accessed"] == 2
+
+
+def test_coverage_none_when_no_offered_pointer_is_read():
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS, events=_reads("/repo/scripts/whatever.py")
+    )
+    assert coverage["rating"] == "none"
+    assert coverage["content_accessed"] == 0
+    assert coverage["not_observed"] == 4
+    assert "/repo/README.md" in coverage["not_observed_paths"]
+
+
+def test_coverage_low_when_only_a_neighbor_is_read():
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS, events=_reads("/cfg/nodes/node-02.yaml")
+    )
+    assert coverage["rating"] == "low"
+
+
+def test_coverage_medium_when_docs_read_but_offered_neighbors_are_not():
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS, events=_reads("/repo/README.md")
+    )
+    assert coverage["rating"] == "medium"
+
+
+def test_coverage_high_without_neighbors_offered():
+    """No neighbors offered + a doc read reaches 'high' — the no-neighbor rule."""
+    coverage = compute_turn_context_coverage(
+        pointers={"readme": "/repo/README.md"}, events=_reads("/repo/README.md")
+    )
+    assert coverage["rating"] == "high"
+
+
+def test_coverage_skips_unavailable_pointers():
+    """An UNAVAILABLE marker is offered as context but is not a ratable path,
+    so it cannot be held against the turn as unread."""
+    coverage = compute_turn_context_coverage(
+        pointers={
+            "readme": "/repo/README.md",
+            "project_brief": "UNAVAILABLE: /repo/PROJECT-BRIEF.md does not exist",
+        },
+        events=_reads("/repo/README.md"),
+    )
+    assert coverage["offered"] == 1
+    assert coverage["offered_paths"] == ["/repo/README.md"]
+    assert coverage["rating"] == "high"
+    assert coverage["unavailable_pointer_keys"] == ["project_brief"]
+
+
+def test_coverage_is_none_when_nothing_ratable_was_offered():
+    """No artifact beats a misleading 'none' for a packet carrying no pointers
+    (or only UNAVAILABLE ones)."""
+    assert compute_turn_context_coverage(pointers={}, events=_reads("/x")) is None
+    assert (
+        compute_turn_context_coverage(
+            pointers={"readme": "UNAVAILABLE: /repo/README.md does not exist"},
+            events=_reads("/x"),
+        )
+        is None
+    )
+    # "invariants" is offered but deliberately unrated (optional per project).
+    assert (
+        compute_turn_context_coverage(
+            pointers={"invariants": "/repo/INVARIANTS.md"}, events=[]
+        )
+        is None
+    )
+
+
+def test_coverage_records_reads_outside_the_offered_pointers():
+    """The research-drift signal: an orchestrator rediscovering the project
+    shows a long outside_pointers list whatever its rating is."""
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS,
+        events=_reads(
+            "/repo/README.md",
+            "/cfg/nodes/node-00.yaml",
+            "/repo/context.md",
+            "/repo/vocabulary.md",
+            "/repo/LOOP.md",
+        ),
+    )
+    assert coverage["rating"] == "high"
+    assert coverage["outside_pointers"] == [
+        "/repo/LOOP.md",
+        "/repo/context.md",
+        "/repo/vocabulary.md",
+    ]
+    assert len(coverage["read_paths"]) == 5
+
+
+def test_coverage_record_is_json_serializable():
+    coverage = compute_turn_context_coverage(
+        pointers=_COVERAGE_POINTERS, events=_reads("/repo/README.md")
+    )
+    assert json.loads(json.dumps(coverage, sort_keys=True)) == coverage
+
+
+def test_turn_writes_context_coverage_artifact(fake_pi, git_repo, tmp_path):
+    """run_orchestrator writes context_coverage.json beside
+    prompt_cache_report.json, measured against the pointers the packet
+    offered and the reads the turn actually made."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "batch-proj"
+    readme = repo / "README.md"
+    readme.write_text("# offered\n")
+    neighbor = tmp_path / "cfg" / "node-02.yaml"
+    neighbor.parent.mkdir(parents=True)
+    neighbor.write_text("node_id: node-02\n")
+
+    os.environ["FAKE_PI_MODE"] = "ok"
+    # Read one offered doc (relative, as a model naturally would) plus one
+    # path that was never offered.
+    os.environ["FAKE_PI_READ_PATHS"] = f"README.md,{repo / 'context.md'}"
+    attempt_dir = _seed_attempt(
+        spool,
+        orchestrator_dir,
+        repo,
+        fake_pi,
+        base,
+        name="coverage0",
+        attempt=0,
+        pointers={
+            "readme": str(readme),
+            "project_brief": "UNAVAILABLE: missing",
+            "neighbor:node-02": str(neighbor),
+        },
+    )
+    with _orchestrator_lock(orchestrator_dir):
+        _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+    assert run_orchestrator(orchestrator_dir) == 0
+    coverage = json.loads((attempt_dir / "context_coverage.json").read_text())
+    assert coverage["offered"] == 2
+    assert coverage["accessed_paths"] == [str(readme.resolve())]
+    assert coverage["not_observed_paths"] == [str(neighbor.resolve())]
+    # Doc read, neighbor offered and unread.
+    assert coverage["rating"] == "medium"
+    assert coverage["outside_pointers"] == [str((repo / "context.md").resolve())]
+    assert coverage["unavailable_pointer_keys"] == ["project_brief"]
+
+
+def test_coverage_absence_never_fails_a_turn(fake_pi, git_repo, tmp_path):
+    """A packet with no pointers still persists its node result; coverage is
+    measurement, not a gate."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "batch-proj"
+    os.environ["FAKE_PI_MODE"] = "ok"
+    attempt_dir = _seed_attempt(
+        spool, orchestrator_dir, repo, fake_pi, base, name="nocoverage0", attempt=1
+    )
+    with _orchestrator_lock(orchestrator_dir):
+        _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+    assert run_orchestrator(orchestrator_dir) == 0
+    assert not (attempt_dir / "context_coverage.json").exists()
+    assert json.loads((attempt_dir / "result.json").read_text())["result_commit_sha"]

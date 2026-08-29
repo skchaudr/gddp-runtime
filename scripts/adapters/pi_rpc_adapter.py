@@ -458,6 +458,22 @@ _POINTER_HEADER = (
 )
 
 
+def merged_turn_pointers(packets: Sequence[dict]) -> dict[str, str]:
+    """Union of the packets' context_pointers — what one turn actually offers.
+
+    First writer wins per key, so a batch turn offering the same key from two
+    packets renders (and is measured against) one value.
+    """
+    pointers: dict[str, str] = {}
+    for packet in packets:
+        carried = packet.get("context_pointers")
+        if not isinstance(carried, Mapping):
+            continue
+        for key, value in carried.items():
+            pointers.setdefault(str(key), str(value))
+    return pointers
+
+
 def build_project_zone(packets: Sequence[dict]) -> str:
     """Render the packets' canonical context pointers as the project zone.
 
@@ -468,17 +484,170 @@ def build_project_zone(packets: Sequence[dict]) -> str:
     are passed through verbatim: knowing a canonical doc is missing is
     context too.
     """
-    pointers: dict[str, str] = {}
-    for packet in packets:
-        carried = packet.get("context_pointers")
-        if not isinstance(carried, Mapping):
-            continue
-        for key, value in carried.items():
-            pointers.setdefault(str(key), str(value))
+    pointers = merged_turn_pointers(packets)
     if not pointers:
         return ""
     lines = [f"{key}: {pointers[key]}" for key in sorted(pointers)]
     return "\n".join([_POINTER_HEADER, *lines])
+
+
+# ---------------------------------------------------------------------------
+# Context coverage: were the offered pointers actually opened?
+# ---------------------------------------------------------------------------
+
+# Mirrors scripts/runtime/verification/orchestrator.py: "invariants" is
+# optional per project, so it is offered to the model but never rated —
+# counting it would penalize a project that simply has no invariant doc.
+_DOC_POINTER_KEYS = frozenset({"readme", "project_brief"})
+# read/grep examine content. ls/find only prove awareness that a path
+# exists, which is not evidence the pointer was consumed.
+_CONTENT_TOOLS = frozenset({"read", "grep"})
+
+
+def extract_read_paths(events: Sequence[dict], *, base: Path | None = None) -> set[str]:
+    """Absolute paths of successful read/grep calls in one pi event stream.
+
+    Verified against real orchestrator streams in the pi_rpc spool
+    (``jobs/local-subprocess-spool/*/events.jsonl``), which carry the pair:
+
+        {"type":"tool_execution_start","toolCallId":"call_..","toolName":"read",
+         "args":{"path":"/abs/or/rel/path"}}
+        {"type":"tool_execution_end","toolCallId":"call_..","toolName":"read",
+         "result":{"content":[...]},"isError":false}
+
+    The start carries the tool name and path; only the matching end carries
+    the outcome, so an ENOENT read is excluded rather than counted as
+    coverage. A start with no matching end (turn died mid-call) does not
+    count either — same strictness as the evaluator's lane extraction.
+    Relative paths are real (about a third of observed read/grep calls) and
+    resolve against ``base``, since pi runs with cwd=repo.
+    """
+    ended: set[str] = set()
+    failed: set[str] = set()
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != "tool_execution_end":
+            continue
+        call_id = event.get("toolCallId")
+        if not isinstance(call_id, str):
+            continue
+        ended.add(call_id)
+        result = event.get("result")
+        if event.get("isError") or (
+            isinstance(result, Mapping) and result.get("isError")
+        ):
+            failed.add(call_id)
+
+    accessed: set[str] = set()
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != "tool_execution_start":
+            continue
+        if event.get("toolName") not in _CONTENT_TOOLS:
+            continue
+        args = event.get("args")
+        path = args.get("path") if isinstance(args, Mapping) else None
+        if not isinstance(path, str) or not path:
+            continue
+        call_id = event.get("toolCallId")
+        if isinstance(call_id, str) and (call_id not in ended or call_id in failed):
+            continue
+        accessed.add(_resolve_read_path(path, base))
+    return accessed
+
+
+def compute_turn_context_coverage(
+    *,
+    pointers: Mapping[str, str],
+    events: Sequence[dict],
+    base: Path | None = None,
+) -> dict | None:
+    """Coverage record for ONE orchestrator turn: offered pointers vs reads.
+
+    Ports the rating from the evaluator's per-lane coverage
+    (``scripts/runtime/verification/orchestrator.py::_compute_context_coverage``)
+    to a surface that has no lanes. The rating there is already the worst-of
+    the doc and neighbor groups within a lane, which is the part that
+    transfers:
+
+      none   — no offered pointer was read
+      low    — something offered was read, but no canonical doc
+      medium — a doc was read, no neighbor read while neighbors were offered
+      high   — a doc was read and (a neighbor was read, or none were offered)
+
+    ``outside_pointers`` is the research-drift signal: read paths that were
+    never offered. An orchestrator rediscovering the project shows up as a
+    long list here regardless of its rating.
+
+    Returns None when nothing ratable was offered, so an old packet with no
+    pointers produces no artifact instead of a misleading "none".
+    """
+    offered_docs: set[str] = set()
+    offered_neighbors: set[str] = set()
+    unavailable: list[str] = []
+    for raw_key, value in pointers.items():
+        key = str(raw_key)
+        if not isinstance(value, str) or value.startswith("UNAVAILABLE"):
+            unavailable.append(key)
+            continue
+        resolved = _resolve_read_path(value, None)
+        if key in _DOC_POINTER_KEYS:
+            offered_docs.add(resolved)
+        elif key == "foundational_node" or key.startswith("neighbor:"):
+            offered_neighbors.add(resolved)
+
+    all_offered = offered_docs | offered_neighbors
+    if not all_offered:
+        return None
+
+    read_paths = extract_read_paths(events, base=base)
+    accessed = read_paths & all_offered
+    accessed_docs = read_paths & offered_docs
+    accessed_neighbors = read_paths & offered_neighbors
+
+    if not accessed:
+        rating = "none"
+    elif not accessed_docs:
+        rating = "low"
+    elif not accessed_neighbors and offered_neighbors:
+        rating = "medium"
+    else:
+        rating = "high"
+
+    return {
+        "rating": rating,
+        "offered": len(all_offered),
+        "content_accessed": len(accessed),
+        "not_observed": len(all_offered - accessed),
+        "offered_paths": sorted(all_offered),
+        "accessed_paths": sorted(accessed),
+        "not_observed_paths": sorted(all_offered - accessed),
+        "groups": {
+            "docs": _pointer_group(offered_docs, read_paths),
+            "neighbors": _pointer_group(offered_neighbors, read_paths),
+        },
+        "read_paths": sorted(read_paths),
+        "outside_pointers": sorted(read_paths - all_offered),
+        "unavailable_pointer_keys": sorted(unavailable),
+    }
+
+
+def _pointer_group(offered: set[str], read_paths: set[str]) -> dict:
+    accessed = offered & read_paths
+    return {
+        "offered": len(offered),
+        "content_accessed": len(accessed),
+        "accessed_paths": sorted(accessed),
+        "not_observed_paths": sorted(offered - accessed),
+    }
+
+
+def _resolve_read_path(path: str, base: Path | None) -> str:
+    candidate = Path(path)
+    if not candidate.is_absolute() and base is not None:
+        candidate = base / candidate
+    try:
+        return str(candidate.resolve())
+    except OSError:
+        return str(candidate)
 
 
 def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> TurnPrompt:
@@ -551,6 +720,7 @@ def _run_one_turn(
     load_packet: Callable[[str], dict],
     persist_result: Callable[[Path, dict], dict],
     record_worktree_correlation: Callable[[Path, dict], None],
+    repo: Path | None = None,
 ) -> tuple[list[_TurnOutcome], bool]:
     """Run ONE RPC turn against an already-running pi session on the
     session-owned worktree. Caller should pass one attempt_dir so
@@ -641,10 +811,11 @@ def _run_one_turn(
     # attempt below once the turn ends, since it is the SAME shared turn.
     client.events_path = active[0][0] / "events.jsonl"
 
-    tp = build_executor_turn_prompt(
-        worktree=worktree,
-        packets=[packet for _attempt_dir, packet, _packet_raw in active],
-    )
+    turn_packets = [packet for _attempt_dir, packet, _packet_raw in active]
+    tp = build_executor_turn_prompt(worktree=worktree, packets=turn_packets)
+    # The pointers this turn's project zone actually offered — the offered set
+    # coverage is measured against below.
+    turn_pointers = merged_turn_pointers(turn_packets)
     prompt = tp.assemble()
     # Structural cache report: how much of this turn's prompt is reusable
     # prefix vs volatile tail. Persisted into the result handoff so it flows
@@ -732,6 +903,7 @@ def _run_one_turn(
         # cumulative duplicates are skipped.
         report_path = attempt_dir / "prompt_cache_report.json"
         events_path = attempt_dir / "events.jsonl"
+        turn_events: list[dict] = []
         if events_path.exists():
             try:
                 with events_path.open("r", encoding="utf-8") as handle:
@@ -749,6 +921,24 @@ def _run_one_turn(
                         json.dumps(updated_report, sort_keys=True, separators=(",", ":")),
                     )
             except (OSError, json.JSONDecodeError):
+                pass
+
+            # Context coverage for this turn: which of the pointers the
+            # project zone offered were actually opened, plus the read paths
+            # that were never offered. Makes orchestrator context growth
+            # observable per turn instead of reconstructed from session logs
+            # afterwards. Strictly best-effort — the node's result is already
+            # persisted above and must not turn on a measurement.
+            try:
+                coverage = compute_turn_context_coverage(
+                    pointers=turn_pointers, events=turn_events, base=repo
+                )
+                if coverage is not None:
+                    _atomic_write(
+                        attempt_dir / "context_coverage.json",
+                        json.dumps(coverage, sort_keys=True, separators=(",", ":")),
+                    )
+            except Exception:
                 pass
 
         # Attach the structural cache report (now with actual_cached_tokens if present)
@@ -945,6 +1135,7 @@ def run_orchestrator(orchestrator_dir: Path) -> int:
                     load_packet=load_packet,
                     persist_result=persist_result,
                     record_worktree_correlation=record_worktree_correlation,
+                    repo=repo,
                 )
                 active_attempt_dirs = None
 
