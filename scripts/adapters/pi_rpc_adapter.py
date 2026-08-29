@@ -14,6 +14,14 @@ packet is one RPC turn against that same worktree; persist_result commits
 the node boundary. Worker-subagent count is a separate budget in
 _PACKET_PREAMBLE. Packets that arrive mid-turn queue for the NEXT turn.
 
+Attempt spool (the canonical half is identical to every other transport's —
+adapters/executor_events.py, docs/proposals/executor-event-vocabulary.md):
+  packet.json command.json supervisor.pid pid session_file worktree_path
+  events.jsonl  — canonical ExecutorEvents, translated by events_pi_rpc
+  raw.jsonl     — pi's own RPC lines, verbatim, for forensics and tail -F
+  steer.jsonl prompt_cache_report.json context_coverage.json result.json
+  exit.json
+
 Only a pi-health failure (dead process, broken protocol, turn timeout) ends
 the whole session. A worktree/persist failure OR an operator cancel is
 scoped to that one node's attempt_dir: the other N-1 packets in the same
@@ -38,10 +46,12 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from adapters.events_pi_rpc import PiStreamTranslator
+from adapters.executor_events import EventWriter, ExecutorEvent, turn_usage
 from adapters.executor_protocol import (
     FRESH,
     CapabilityUnsupported,
@@ -64,7 +74,8 @@ from adapters.session_prompt import (  # noqa: F401 - re-export
     merged_turn_pointers,
     split_packet_zones,
 )
-from prompt_topology import TurnPrompt, extract_actual_cached_tokens, prompt_cache_report
+from prompt_topology import TurnPrompt, prompt_cache_report
+from runtime.context_coverage import compute_turn_context_coverage
 
 _EXECUTOR = "pi_rpc"
 _SPOOL_ENV = "GDDP_PI_RPC_SPOOL_DIR"
@@ -501,165 +512,6 @@ def _observability_env(
     return obs
 
 
-# ---------------------------------------------------------------------------
-# Context coverage: were the offered pointers actually opened?
-# ---------------------------------------------------------------------------
-
-# Mirrors scripts/runtime/verification/orchestrator.py: "invariants" is
-# optional per project, so it is offered to the model but never rated —
-# counting it would penalize a project that simply has no invariant doc.
-_DOC_POINTER_KEYS = frozenset({"readme", "project_brief"})
-# read/grep examine content. ls/find only prove awareness that a path
-# exists, which is not evidence the pointer was consumed.
-_CONTENT_TOOLS = frozenset({"read", "grep"})
-
-
-def extract_read_paths(events: Sequence[dict], *, base: Path | None = None) -> set[str]:
-    """Absolute paths of successful read/grep calls in one pi event stream.
-
-    Verified against real orchestrator streams in the pi_rpc spool
-    (``jobs/local-subprocess-spool/*/events.jsonl``), which carry the pair:
-
-        {"type":"tool_execution_start","toolCallId":"call_..","toolName":"read",
-         "args":{"path":"/abs/or/rel/path"}}
-        {"type":"tool_execution_end","toolCallId":"call_..","toolName":"read",
-         "result":{"content":[...]},"isError":false}
-
-    The start carries the tool name and path; only the matching end carries
-    the outcome, so an ENOENT read is excluded rather than counted as
-    coverage. A start with no matching end (turn died mid-call) does not
-    count either — same strictness as the evaluator's lane extraction.
-    Relative paths are real (about a third of observed read/grep calls) and
-    resolve against ``base``, since pi runs with cwd=repo.
-    """
-    ended: set[str] = set()
-    failed: set[str] = set()
-    for event in events:
-        if not isinstance(event, dict) or event.get("type") != "tool_execution_end":
-            continue
-        call_id = event.get("toolCallId")
-        if not isinstance(call_id, str):
-            continue
-        ended.add(call_id)
-        result = event.get("result")
-        if event.get("isError") or (
-            isinstance(result, Mapping) and result.get("isError")
-        ):
-            failed.add(call_id)
-
-    accessed: set[str] = set()
-    for event in events:
-        if not isinstance(event, dict) or event.get("type") != "tool_execution_start":
-            continue
-        if event.get("toolName") not in _CONTENT_TOOLS:
-            continue
-        args = event.get("args")
-        path = args.get("path") if isinstance(args, Mapping) else None
-        if not isinstance(path, str) or not path:
-            continue
-        call_id = event.get("toolCallId")
-        if isinstance(call_id, str) and (call_id not in ended or call_id in failed):
-            continue
-        accessed.add(_resolve_read_path(path, base))
-    return accessed
-
-
-def compute_turn_context_coverage(
-    *,
-    pointers: Mapping[str, str],
-    events: Sequence[dict],
-    base: Path | None = None,
-) -> dict | None:
-    """Coverage record for ONE orchestrator turn: offered pointers vs reads.
-
-    Ports the rating from the evaluator's per-lane coverage
-    (``scripts/runtime/verification/orchestrator.py::_compute_context_coverage``)
-    to a surface that has no lanes. The rating there is already the worst-of
-    the doc and neighbor groups within a lane, which is the part that
-    transfers:
-
-      none   — no offered pointer was read
-      low    — something offered was read, but no canonical doc
-      medium — a doc was read, no neighbor read while neighbors were offered
-      high   — a doc was read and (a neighbor was read, or none were offered)
-
-    ``outside_pointers`` is the research-drift signal: read paths that were
-    never offered. An orchestrator rediscovering the project shows up as a
-    long list here regardless of its rating.
-
-    Returns None when nothing ratable was offered, so an old packet with no
-    pointers produces no artifact instead of a misleading "none".
-    """
-    offered_docs: set[str] = set()
-    offered_neighbors: set[str] = set()
-    unavailable: list[str] = []
-    for raw_key, value in pointers.items():
-        key = str(raw_key)
-        if not isinstance(value, str) or value.startswith("UNAVAILABLE"):
-            unavailable.append(key)
-            continue
-        resolved = _resolve_read_path(value, None)
-        if key in _DOC_POINTER_KEYS:
-            offered_docs.add(resolved)
-        elif key == "foundational_node" or key.startswith("neighbor:"):
-            offered_neighbors.add(resolved)
-
-    all_offered = offered_docs | offered_neighbors
-    if not all_offered:
-        return None
-
-    read_paths = extract_read_paths(events, base=base)
-    accessed = read_paths & all_offered
-    accessed_docs = read_paths & offered_docs
-    accessed_neighbors = read_paths & offered_neighbors
-
-    if not accessed:
-        rating = "none"
-    elif not accessed_docs:
-        rating = "low"
-    elif not accessed_neighbors and offered_neighbors:
-        rating = "medium"
-    else:
-        rating = "high"
-
-    return {
-        "rating": rating,
-        "offered": len(all_offered),
-        "content_accessed": len(accessed),
-        "not_observed": len(all_offered - accessed),
-        "offered_paths": sorted(all_offered),
-        "accessed_paths": sorted(accessed),
-        "not_observed_paths": sorted(all_offered - accessed),
-        "groups": {
-            "docs": _pointer_group(offered_docs, read_paths),
-            "neighbors": _pointer_group(offered_neighbors, read_paths),
-        },
-        "read_paths": sorted(read_paths),
-        "outside_pointers": sorted(read_paths - all_offered),
-        "unavailable_pointer_keys": sorted(unavailable),
-    }
-
-
-def _pointer_group(offered: set[str], read_paths: set[str]) -> dict:
-    accessed = offered & read_paths
-    return {
-        "offered": len(offered),
-        "content_accessed": len(accessed),
-        "accessed_paths": sorted(accessed),
-        "not_observed_paths": sorted(offered - accessed),
-    }
-
-
-def _resolve_read_path(path: str, base: Path | None) -> str:
-    candidate = Path(path)
-    if not candidate.is_absolute() and base is not None:
-        candidate = base / candidate
-    try:
-        return str(candidate.resolve())
-    except OSError:
-        return str(candidate)
-
-
 def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> TurnPrompt:
     """Four-zone TurnPrompt for one pi orchestrator turn.
 
@@ -796,11 +648,11 @@ def _run_one_turn(
                         f"{kind} rejected: {resp}"
                     )
 
-    # Per-turn events file, on the one long-lived client's reader loop.
-    # The first active attempt is the live target; its full event stream
-    # (including this turn's agent_end) is copied to every other active
-    # attempt below once the turn ends, since it is the SAME shared turn.
-    client.events_path = active[0][0] / "events.jsonl"
+    # Per-turn spool, on the one long-lived client's reader loop. The first
+    # active attempt is the live target; its full event stream (including
+    # this turn's agent_end) is copied to every other active attempt below
+    # once the turn ends, since it is the SAME shared turn.
+    client.begin_turn(active[0][0], turn_id=uuid.uuid4().hex)
 
     turn_packets = [packet for _attempt_dir, packet, _packet_raw in active]
     tp = build_executor_turn_prompt(worktree=worktree, packets=turn_packets)
@@ -820,14 +672,6 @@ def _run_one_turn(
             attempt_dir / "prompt_cache_report.json",
             json.dumps(cache_report, sort_keys=True, separators=(",", ":")),
         )
-
-    # Capture the events.jsonl byte offset BEFORE this turn so the post-turn
-    # cache-report parse reads only THIS turn's usage events. events.jsonl is
-    # session-cumulative (appended across every turn on the same long-lived
-    # pi process); parsing the whole file would sum every prior turn's cached
-    # tokens against this single turn's structural potential — not comparable.
-    events_file = active[0][0] / "events.jsonl"
-    turn_event_offset = events_file.stat().st_size if events_file.exists() else 0
 
     plumbing = False
     turn_error: str | None = None
@@ -862,16 +706,33 @@ def _run_one_turn(
             except Exception:
                 pass
 
+    if not client.translator.saw_turn_end:
+        # pi reported no turn boundary: the process died, the protocol broke,
+        # or the operator cancelled. The canonical stream says so explicitly
+        # rather than just stopping.
+        client.emit_turn_ended(
+            status=(
+                "cancelled"
+                if (active[0][0] / "cancel.requested").exists()
+                else "failed"
+            ),
+            error=turn_error,
+        )
+
+    turn_events = list(client.turn_events)
+
     if n > 1:
-        try:
-            shared_events = (active[0][0] / "events.jsonl").read_bytes()
-        except OSError:
-            shared_events = b""
-        for attempt_dir, _packet, _raw in active[1:]:
+        # Same shared turn, so every packet in the batch gets the same spool.
+        for name in ("events.jsonl", "raw.jsonl"):
             try:
-                (attempt_dir / "events.jsonl").write_bytes(shared_events)
+                shared = (active[0][0] / name).read_bytes()
             except OSError:
-                pass
+                continue
+            for attempt_dir, _packet, _raw in active[1:]:
+                try:
+                    (attempt_dir / name).write_bytes(shared)
+                except OSError:
+                    pass
 
     for attempt_dir, packet, _packet_raw in active:
         if plumbing:
@@ -887,50 +748,46 @@ def _run_one_turn(
             continue
 
         handoff = persist_result(worktree, packet)
-        # Parse ONLY this turn's events.jsonl tail (from the offset captured
-        # before the turn) to extract actual cached tokens the provider reported
-        # for THIS turn. Sums message_end usage only (deduped in
-        # extract_actual_cached_tokens); message_start stubs and turn_end
-        # cumulative duplicates are skipped.
+        # Evidence from THIS turn's canonical events. Both measurements below
+        # are strictly best-effort: the node's result is already persisted
+        # above and must not turn on a measurement.
         report_path = attempt_dir / "prompt_cache_report.json"
-        events_path = attempt_dir / "events.jsonl"
-        turn_events: list[dict] = []
-        if events_path.exists():
-            try:
-                with events_path.open("r", encoding="utf-8") as handle:
-                    handle.seek(turn_event_offset)
-                    turn_events = [
-                        json.loads(line)
-                        for line in handle
-                        if line.strip()
-                    ]
-                actual_cached = extract_actual_cached_tokens(turn_events)
-                if actual_cached is not None:
-                    updated_report = prompt_cache_report(tp, actual_cached_tokens=actual_cached).as_dict()
-                    _atomic_write(
-                        report_path,
-                        json.dumps(updated_report, sort_keys=True, separators=(",", ":")),
-                    )
-            except (OSError, json.JSONDecodeError):
-                pass
-
-            # Context coverage for this turn: which of the pointers the
-            # project zone offered were actually opened, plus the read paths
-            # that were never offered. Makes orchestrator context growth
-            # observable per turn instead of reconstructed from session logs
-            # afterwards. Strictly best-effort — the node's result is already
-            # persisted above and must not turn on a measurement.
-            try:
-                coverage = compute_turn_context_coverage(
-                    pointers=turn_pointers, events=turn_events, base=repo
+        # Cached tokens the provider reported for this turn, summed across
+        # its per-message usage records. Streaming updates cannot reach this
+        # number any more — they never become canonical usage events — so it
+        # no longer inflates on a turn where a delta happened to carry usage
+        # (docs/proposals/executor-event-vocabulary.md §1.2).
+        try:
+            usage = turn_usage(turn_events)
+            if usage is not None and usage.cached_input_tokens is not None:
+                _atomic_write(
+                    report_path,
+                    json.dumps(
+                        prompt_cache_report(
+                            tp, actual_cached_tokens=usage.cached_input_tokens
+                        ).as_dict(),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                 )
-                if coverage is not None:
-                    _atomic_write(
-                        attempt_dir / "context_coverage.json",
-                        json.dumps(coverage, sort_keys=True, separators=(",", ":")),
-                    )
-            except Exception:
-                pass
+        except OSError:
+            pass
+
+        # Which of the pointers the project zone offered were actually
+        # opened, plus the read paths that were never offered. Makes
+        # orchestrator context growth observable per turn instead of
+        # reconstructed from session logs afterwards.
+        try:
+            coverage = compute_turn_context_coverage(
+                pointers=turn_pointers, events=turn_events, base=repo
+            )
+            if coverage is not None:
+                _atomic_write(
+                    attempt_dir / "context_coverage.json",
+                    json.dumps(coverage, sort_keys=True, separators=(",", ":")),
+                )
+        except Exception:
+            pass
 
         # Attach the structural cache report (now with actual_cached_tokens if present)
         # so it flows through collect() -> the operator loop as part of the node's evidence.
@@ -1061,7 +918,18 @@ def run_orchestrator(orchestrator_dir: Path) -> int:
             _drain_inbox(reason, plumbing=True, cancelled=False)
             return proc.returncode or 1
 
-        client = _RpcClient(proc, events_path=orchestrator_dir / "events.jsonl")
+        # Bootstrap spool: the get_state exchange happens before any packet's
+        # turn, so its events land in the orchestrator dir. begin_turn
+        # repoints the writer at each attempt dir from there on.
+        client = _RpcClient(
+            proc,
+            writer=EventWriter(
+                orchestrator_dir,
+                executor=_EXECUTOR,
+                session_id="",
+                turn_id="bootstrap",
+            ),
+        )
         session_file_value: str | None = None
         try:
             state = client.get_state()
@@ -1186,9 +1054,26 @@ class _PlumbingError(RuntimeError):
 
 
 class _RpcClient:
-    def __init__(self, proc: subprocess.Popen[str], *, events_path: Path):
+    """One long-lived pi RPC process, plus the canonical spool it writes.
+
+    Every line pi emits goes verbatim to ``raw.jsonl`` and, when it maps onto
+    the canonical vocabulary, to ``events.jsonl`` as an ExecutorEvent. The
+    translator is session-scoped because the pi process is: it learns the
+    session identity once from ``get_state`` and keeps it across turns.
+    ``begin_turn`` repoints the writer at the attempt dir whose turn is about
+    to run, which is what makes a pi attempt's spool mean the same thing as a
+    cursor attempt's.
+    """
+
+    def __init__(self, proc: subprocess.Popen[str], *, writer: EventWriter):
         self.proc = proc
-        self.events_path = events_path
+        self.writer = writer
+        self.translator = PiStreamTranslator()
+        # This turn's canonical events, in emission order. Held in memory so
+        # the post-turn evidence pass reads exactly the turn it just ran,
+        # with no byte-offset windowing into a file other turns also append
+        # to.
+        self.turn_events: list[ExecutorEvent] = []
         self._req = 0
         self._lock = threading.Lock()
         # Raw-fd line buffer. Never mix select() with buffered TextIOWrapper
@@ -1302,11 +1187,66 @@ class _RpcClient:
         except json.JSONDecodeError:
             return {"type": "_non_json", "raw": line[:500]}
 
-    def _record(self, evt: dict) -> None:
+    def begin_turn(self, attempt_dir: Path, *, turn_id: str) -> None:
+        """Point the spool at one attempt's turn and start a fresh seq.
+
+        Emits ``session_started`` so every attempt's canonical stream is
+        self-describing — the identity was learned once, out-of-band, at
+        orchestrator startup, and an attempt spool that never saw that
+        exchange would otherwise carry no session or resume handle at all.
+        """
+        self.translator.begin_turn()
+        self.turn_events = []
+        self.writer = EventWriter(
+            attempt_dir,
+            executor=_EXECUTOR,
+            session_id=self.translator.session_id or "",
+            turn_id=turn_id,
+        )
+        if self.translator.session_id or self.translator.resume_token:
+            self._emit(
+                "session_started",
+                raw_type="",
+                model=self.translator.model,
+                resume_token=self.translator.resume_token,
+            )
+
+    def emit_turn_ended(self, *, status: str, error: str | None) -> None:
+        """Terminal record for a turn pi never closed.
+
+        pi emits nothing when its process dies mid-turn and nothing when the
+        operator cancels, so the boundary those turns get is the one the
+        driver already knows about from the outcome it is writing to
+        exit.json.
+        """
+        self._emit("turn_ended", raw_type="", status=status, error=error)
+
+    def _emit(self, type: str, *, raw_type: str = "", **fields: object) -> None:
         try:
-            with self.events_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(evt, separators=(",", ":")) + "\n")
+            self.turn_events.append(
+                self.writer.emit(type, raw_type=raw_type, **fields)  # type: ignore[arg-type]
+            )
         except OSError:
+            pass
+
+    def _record(self, evt: dict) -> None:
+        """Verbatim to raw.jsonl, canonical to events.jsonl.
+
+        Recording is observability: a failure here must never end a turn that
+        is otherwise healthy, which is why the whole path is best-effort.
+        """
+        try:
+            self.writer.raw(json.dumps(evt, separators=(",", ":")))
+        except OSError:
+            pass
+        try:
+            for translated in self.translator.translate(evt):
+                self._emit(
+                    translated.type,
+                    raw_type=translated.raw_type,
+                    **translated.fields,
+                )
+        except Exception:
             pass
 
 

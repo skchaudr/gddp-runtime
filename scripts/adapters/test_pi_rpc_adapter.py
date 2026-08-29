@@ -16,18 +16,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.executor_protocol import NodePacket, SessionRef  # noqa: E402
+from adapters.events_pi_rpc import translate_stream  # noqa: E402
+from adapters.executor_events import read_events  # noqa: E402
 from adapters.pi_rpc_adapter import (  # noqa: E402
     PiRpcAdapter,
     _PACKET_PREAMBLE,
     _assemble_turn_prompt,
     build_executor_turn_prompt,
     build_project_zone,
-    compute_turn_context_coverage,
-    extract_read_paths,
     _pid_is_running,
     read_pi_rpc_status,
 )
 from adapters.session_prompt import split_packet_zones  # noqa: E402
+from runtime.context_coverage import (  # noqa: E402
+    compute_turn_context_coverage,
+    extract_read_paths,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +242,18 @@ def test_dispatch_sends_packet_and_completes(fake_pi, git_repo, tmp_path):
     assert collected.result_commit_sha
     assert collected.result_ref
 
-    # Packet was written and events recorded.
+    # Packet was written and the turn recorded into the canonical spool.
     attempt_dir = spool / result.session_ref.session_id
     assert (attempt_dir / "packet.json").exists()
-    events = (attempt_dir / "events.jsonl").read_text()
-    assert "agent_end" in events
-    assert '"type":"agent_end"' in events or '"type": "agent_end"' in events
+    events = read_events(attempt_dir / "events.jsonl")
+    assert [e.type for e in events] == ["session_started", "turn_ended"]
+    assert all(e.executor == "pi_rpc" for e in events)
+    assert events[-1].status == "completed"
+    # raw.jsonl keeps pi's own words for forensics and tail -F; events.jsonl
+    # is canonical whichever executor produced it.
+    raw = (attempt_dir / "raw.jsonl").read_text()
+    assert '"type":"agent_end"' in raw
+    assert '"type":"message_update"' in raw
 
     # The worktree_path line in the prompt was actually honored: RESULT.txt
     # landed as a real, non-empty commit (not the empty-tree fallback).
@@ -1024,10 +1034,16 @@ def test_dispatcher_passes_the_model_at_the_call_site(monkeypatch):
 # ---------------------------------------------------------------------------
 # Context coverage (fix 5): offered pointers vs paths the turn actually read.
 #
-# Event shapes below are copied from real orchestrator streams in the pi_rpc
-# spool (jobs/local-subprocess-spool/*/events.jsonl): tool_execution_start
-# carries toolName + args.path, the matching tool_execution_end carries the
-# outcome as a top-level isError.
+# Raw event shapes below are copied from real orchestrator streams in the
+# pi_rpc spool (jobs/local-subprocess-spool/*/events.jsonl):
+# tool_execution_start carries toolName + args.path, the matching
+# tool_execution_end carries the outcome as a top-level isError.
+#
+# The measurement itself now lives in runtime/context_coverage.py over
+# canonical events, so these cases run the SAME raw pi fixtures through
+# events_pi_rpc and assert the same ratings the pi-shaped implementation
+# produced. That is the point: the migration changed the event shape, not
+# what coverage means.
 # ---------------------------------------------------------------------------
 
 
@@ -1050,13 +1066,18 @@ def _read_end(call_id: str, tool: str = "read", is_error: bool = False) -> dict:
     }
 
 
-def _reads(*paths: str, tool: str = "read") -> list[dict]:
-    events: list[dict] = []
+def _canonical(raw_events: list[dict]):
+    """Raw pi stream -> the canonical events every consumer now reads."""
+    return translate_stream(raw_events)
+
+
+def _reads(*paths: str, tool: str = "read"):
+    raw: list[dict] = []
     for i, path in enumerate(paths):
         call_id = f"call_{tool}_{i}"
-        events.append(_read_start(call_id, path, tool=tool))
-        events.append(_read_end(call_id, tool=tool))
-    return events
+        raw.append(_read_start(call_id, path, tool=tool))
+        raw.append(_read_end(call_id, tool=tool))
+    return _canonical(raw)
 
 
 _COVERAGE_POINTERS = {
@@ -1091,11 +1112,13 @@ def test_ls_and_find_are_not_content_access():
 def test_failed_and_unfinished_reads_are_not_coverage():
     """An ENOENT read, and a read whose turn died before its end event, are
     both excluded — same strictness as the evaluator's lane extraction."""
-    events = [
-        _read_start("enoent", "/repo/README.md"),
-        _read_end("enoent", is_error=True),
-        _read_start("orphan", "/repo/PROJECT-BRIEF.md"),
-    ]
+    events = _canonical(
+        [
+            _read_start("enoent", "/repo/README.md"),
+            _read_end("enoent", is_error=True),
+            _read_start("orphan", "/repo/PROJECT-BRIEF.md"),
+        ]
+    )
     assert extract_read_paths(events) == set()
 
 
@@ -1273,6 +1296,91 @@ def test_turn_writes_context_coverage_artifact(fake_pi, git_repo, tmp_path):
     assert coverage["rating"] == "medium"
     assert coverage["outside_pointers"] == [str((repo / "context.md").resolve())]
     assert coverage["unavailable_pointer_keys"] == ["project_brief"]
+
+
+def test_turn_spool_is_canonical_events_beside_the_raw_pi_stream(
+    fake_pi, git_repo, tmp_path
+):
+    """events.jsonl means ONE thing regardless of executor: canonical
+    ExecutorEvents. pi's own words stay, verbatim, in raw.jsonl."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "canonical-proj"
+    (repo / "README.md").write_text("# offered\n")
+
+    os.environ["FAKE_PI_MODE"] = "ok"
+    os.environ["FAKE_PI_READ_PATHS"] = "README.md"
+    attempt_dir = _seed_attempt(
+        spool, orchestrator_dir, repo, fake_pi, base, name="canon0", attempt=0
+    )
+    with _orchestrator_lock(orchestrator_dir):
+        _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+    assert run_orchestrator(orchestrator_dir) == 0
+
+    events = read_events(attempt_dir / "events.jsonl")
+    assert [e.type for e in events] == [
+        "session_started",
+        "tool_started",
+        "tool_completed",
+        "turn_ended",
+    ]
+    # Self-contained completion: coverage reads tool and paths off this one
+    # event, with no start/end join (vocabulary §4).
+    completed = events[2]
+    assert completed.tool == "read"
+    assert completed.paths == ("README.md",)
+    assert completed.ok is True
+    assert events[-1].status == "completed"
+    # One turn_id and a monotonic seq across the whole turn.
+    assert len({e.turn_id for e in events}) == 1
+    assert [e.seq for e in events] == [1, 2, 3, 4]
+    # The pi session's resume handle rides the stream, not just the sidecar.
+    assert events[0].resume_token == (attempt_dir / "session_file").read_text()
+
+    raw_lines = [
+        json.loads(line)
+        for line in (attempt_dir / "raw.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw_types = [e.get("type") for e in raw_lines]
+    assert "tool_execution_start" in raw_types
+    assert "agent_end" in raw_types
+    # Dropped from the canonical spool, kept here.
+    assert "message_update" in raw_types
+
+
+def test_a_turn_pi_never_closed_still_gets_a_terminal_event(
+    fake_pi, git_repo, tmp_path
+):
+    """pi emits nothing when its process dies mid-turn, so the driver
+    synthesizes the boundary rather than leaving the stream just stopping."""
+    from adapters.pi_rpc_adapter import _enqueue_attempt, _orchestrator_lock, run_orchestrator
+
+    repo, base = git_repo
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    orchestrator_dir = spool / "_orchestrators" / "died-proj"
+    os.environ["FAKE_PI_MODE"] = "die_mid"
+    attempt_dir = _seed_attempt(
+        spool, orchestrator_dir, repo, fake_pi, base, name="died0", attempt=0
+    )
+    with _orchestrator_lock(orchestrator_dir):
+        _enqueue_attempt(orchestrator_dir, attempt_dir)
+
+    run_orchestrator(orchestrator_dir)
+
+    ended = [e for e in read_events(attempt_dir / "events.jsonl") if e.type == "turn_ended"]
+    assert len(ended) == 1
+    assert ended[0].status == "failed"
+    assert ended[0].error
+    # The durable status contract is unchanged: plumbing text for the
+    # reconciler still comes from exit.json, not from the event.
+    exit_state = json.loads((attempt_dir / "exit.json").read_text())
+    assert exit_state["plumbing"] is True
 
 
 def test_coverage_absence_never_fails_a_turn(fake_pi, git_repo, tmp_path):
