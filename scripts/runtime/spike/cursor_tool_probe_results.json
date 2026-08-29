@@ -1,0 +1,423 @@
+{
+  "probe": "cursor-agent tool_call shape probe: write, edit, grep, shell, read, and a failing read",
+  "date": "2026-08-29",
+  "argv": [
+    "cursor-agent",
+    "-p",
+    "--trust",
+    "--output-format",
+    "stream-json",
+    "--stream-partial-output"
+  ],
+  "cwd": "/tmp/cursor-tool-probe",
+  "derived_facts": {
+    "tool_key_by_observed_call": {
+      "write (create probe-target.txt)": "editToolCall, call_id prefix Write_",
+      "edit (alpha->beta)": "editToolCall, call_id prefix StrReplace_",
+      "grep": "grepToolCall, call_id prefix Grep_",
+      "shell (echo)": "shellToolCall, call_id prefix Shell_",
+      "read": "readToolCall, call_id prefix Read_"
+    },
+    "write_vs_edit": "both are editToolCall; distinguish by call_id prefix (Write_ = create, StrReplace_ = edit)",
+    "ok_derivation": "result dict has key \"success\" -> ok=True; key \"error\" -> ok=False. Observed error body: {\"errorMessage\": \"File not found\"}",
+    "path_fields": "read/grep/edit args carry path; shell args carry command (no path)",
+    "failing_completed_drops_args": "the FAILED read's completed event carried no args (None) \u2014 the driver MUST buffer call_id -> args from started events as fallback; do not rely on completed carrying args",
+    "assistant_text_duplication": "partial + final assistant content both stream; naive concatenation doubles output (carried from cursor_cli_spike_results.json)"
+  },
+  "events": [
+    {
+      "type": "system",
+      "subtype": "init",
+      "apiKeySource": "login",
+      "cwd": "/private/tmp/cursor-tool-probe",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "model": "Kimi K3 Max",
+      "permissionMode": "default"
+    },
+    {
+      "type": "tool_call",
+      "subtype": "started",
+      "call_id": "Write_0_25c30736-af0a1",
+      "tool_call": {
+        "editToolCall": {
+          "args": {
+            "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+            "streamContent": "alpha\n"
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Write_0_25c30736-af0a1",
+        "startedAtMs": "1788038814810"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-0-1hdz",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038814844
+    },
+    {
+      "type": "tool_call",
+      "subtype": "completed",
+      "call_id": "Write_0_25c30736-af0a1",
+      "tool_call": {
+        "editToolCall": {
+          "args": {
+            "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+            "streamContent": "alpha\n"
+          },
+          "result": {
+            "success": {
+              "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+              "linesAdded": 1,
+              "linesRemoved": 0,
+              "diffString": "--- /dev/null\n+++ b//private/tmp/cursor-tool-probe/probe-target.txt\n@@ -1,0 +1 @@\n+alpha",
+              "afterFullFileContent": "alpha\n",
+              "message": "Wrote contents to /private/tmp/cursor-tool-probe/probe-target.txt"
+            }
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Write_0_25c30736-af0a1",
+        "startedAtMs": "1788038814810",
+        "completedAtMs": "1788038819494"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-0-1hdz",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038819492
+    },
+    {
+      "type": "tool_call",
+      "subtype": "started",
+      "call_id": "StrReplace_0_80e029ed-af0a2",
+      "tool_call": {
+        "editToolCall": {
+          "args": {
+            "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+            "streamContent": "beta"
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "StrReplace_0_80e029ed-af0a2",
+        "startedAtMs": "1788038821048"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-1-bn1g",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038821088
+    },
+    {
+      "type": "tool_call",
+      "subtype": "completed",
+      "call_id": "StrReplace_0_80e029ed-af0a2",
+      "tool_call": {
+        "editToolCall": {
+          "args": {
+            "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+            "streamContent": "beta"
+          },
+          "result": {
+            "success": {
+              "path": "/private/tmp/cursor-tool-probe/probe-target.txt",
+              "linesAdded": 1,
+              "linesRemoved": 1,
+              "diffString": "--- a//private/tmp/cursor-tool-probe/probe-target.txt\n+++ b//private/tmp/cursor-tool-probe/probe-target.txt\n@@ -1 +1 @@\n-alpha\n+beta",
+              "beforeFullFileContent": "alpha\n",
+              "afterFullFileContent": "beta\n",
+              "message": "The file /private/tmp/cursor-tool-probe/probe-target.txt has been updated."
+            }
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "StrReplace_0_80e029ed-af0a2",
+        "startedAtMs": "1788038821048",
+        "completedAtMs": "1788038827687"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-1-bn1g",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038827684
+    },
+    {
+      "type": "tool_call",
+      "subtype": "started",
+      "call_id": "Grep_0_70a20c0e-af0a3",
+      "tool_call": {
+        "grepToolCall": {
+          "args": {
+            "pattern": "beta",
+            "path": "/private/tmp/cursor-tool-probe",
+            "outputMode": "content",
+            "caseInsensitive": false,
+            "multiline": false,
+            "toolCallId": "Grep_0_70a20c0e-af0a3",
+            "offset": 0
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Grep_0_70a20c0e-af0a3",
+        "startedAtMs": "1788038828766"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038829035
+    },
+    {
+      "type": "tool_call",
+      "subtype": "started",
+      "call_id": "Shell_1_8d06cebb-af0a3",
+      "tool_call": {
+        "shellToolCall": {
+          "args": {
+            "command": "echo probe-done",
+            "workingDirectory": "",
+            "timeout": 30000,
+            "toolCallId": "Shell_1_8d06cebb-af0a3",
+            "simpleCommands": [
+              "echo"
+            ],
+            "hasInputRedirect": false,
+            "hasOutputRedirect": false,
+            "parsingResult": {
+              "parsingFailed": false,
+              "executableCommands": [
+                {
+                  "name": "echo",
+                  "args": [
+                    {
+                      "type": "word",
+                      "value": "probe-done"
+                    }
+                  ],
+                  "fullText": "echo probe-done"
+                }
+              ],
+              "hasRedirects": false,
+              "hasCommandSubstitution": false,
+              "redirects": []
+            },
+            "fileOutputThresholdBytes": "40000",
+            "isBackground": false,
+            "skipApproval": false,
+            "timeoutBehavior": "TIMEOUT_BEHAVIOR_BACKGROUND",
+            "hardTimeout": 86400000,
+            "description": "Echo probe-done marker",
+            "closeStdin": true,
+            "conversationId": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+            "adminCommandDenylist": []
+          },
+          "description": "Echo probe-done marker"
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Shell_1_8d06cebb-af0a3",
+        "startedAtMs": "1788038829238"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038829233
+    },
+    {
+      "type": "tool_call",
+      "subtype": "started",
+      "call_id": "Read_2_a2b0f77d-af0a3",
+      "tool_call": {
+        "readToolCall": {
+          "args": {
+            "path": "/nonexistent/definitely-missing.txt"
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Read_2_a2b0f77d-af0a3",
+        "startedAtMs": "1788038829239"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038829254
+    },
+    {
+      "type": "tool_call",
+      "subtype": "completed",
+      "call_id": "Read_2_a2b0f77d-af0a3",
+      "tool_call": {
+        "readToolCall": {
+          "result": {
+            "error": {
+              "errorMessage": "File not found"
+            }
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Read_2_a2b0f77d-af0a3",
+        "startedAtMs": "1788038829239",
+        "completedAtMs": "1788038831392"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038831386
+    },
+    {
+      "type": "tool_call",
+      "subtype": "completed",
+      "call_id": "Grep_0_70a20c0e-af0a3",
+      "tool_call": {
+        "grepToolCall": {
+          "args": {
+            "pattern": "beta",
+            "path": "/private/tmp/cursor-tool-probe",
+            "outputMode": "content",
+            "caseInsensitive": false,
+            "multiline": false,
+            "toolCallId": "Grep_0_70a20c0e-af0a3",
+            "offset": 0
+          },
+          "result": {
+            "success": {
+              "pattern": "beta",
+              "path": "/private/tmp/cursor-tool-probe",
+              "outputMode": "content",
+              "workspaceResults": {
+                "/private/tmp/cursor-tool-probe": {
+                  "content": {
+                    "matches": [
+                      {
+                        "file": "./probe-stream.jsonl",
+                        "matches": [
+                          {
+                            "lineNumber": 2,
+                            "content": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Do these steps using tools, in order: 1) use the write tool to create probe-target.txt containing the word alpha. 2) use the edit tool to change alpha to beta in probe-target.txt. 3) use grep to find beta in this directory. 4) run a bash command: echo probe-done. 5) try to read the file /nonexistent/definitely-missing.txt (it does not exist; let it fail). Then reply with one line summarizing what happened.\"}]},\"session_id\":\"b9074518-21fc-49ed-a839-738d08fbb8c9\"}",
+                            "contentTruncated": false,
+                            "isContextLine": false
+                          },
+                          {
+                            "lineNumber": 135,
+                            "content": "{\"type\":\"tool_call\",\"subtype\":\"started\",\"call_id\":\"StrReplace_0_80e029ed-af0a2\",\"tool_call\":{\"editToolCall\":{\"args\":{\"path\":\"/private/tmp/cursor-tool-probe/probe-target.txt\",\"streamContent\":\"beta\"}},\"hookAdditionalContexts\":[],\"toolCallId\":\"StrReplace_0_80e029ed-af0a2\",\"startedAtMs\":\"1788038821048\"},\"model_call_id\":\"d89f1ea3-f0b4-4c68-997d-4397805b1915-1-bn1g\",\"session_id\":\"b9074518-21fc-49ed-a839-738d08fbb8c9\",\"timestamp_ms\":1788038821088}",
+                            "contentTruncated": false,
+                            "isContextLine": false
+                          },
+                          {
+                            "lineNumber": 136,
+                            "content": "{\"type\":\"tool_call\",\"subtype\":\"completed\",\"call_id\":\"StrReplace_0_80e029ed-af0a2\",\"tool_call\":{\"editToolCall\":{\"args\":{\"path\":\"/private/tmp/cursor-tool-probe/probe-target.txt\",\"streamContent\":\"beta\"},\"result\":{\"success\":{\"path\":\"/private/tmp/cursor-tool-probe/probe-target.txt\",\"linesAdded\":1,\"linesRemoved\":1,\"diffString\":\"--- a//private/tmp/cursor-tool-probe/probe-target.txt\\n+++ b//private/tmp/cursor-tool-probe/probe-target.txt\\n@@ -1 +1 @@\\n-alpha\\n+beta\",\"beforeFullFileContent\":\"alpha\\n\",\"afterFullFileContent\":\"beta\\n\",\"message\":\"The file /private/tmp/cursor-tool-probe/probe-target.txt has been updated.\"}}},\"hookAdditionalContexts\":[],\"toolCallId\":\"StrReplace_0_80e029ed-af0a2\",\"startedAtMs\":\"1788038821048\",\"completedAtMs\":\"1788038827687\"},\"model_call_id\":\"d89f1ea3-f0b4-4c68-997d-4397805b1915-1-bn1g\",\"session_id\":\"b9074518-21fc-49ed-a839-738d08fbb8c9\",\"timestamp_ms\":1788038827684}",
+                            "contentTruncated": false,
+                            "isContextLine": false
+                          },
+                          {
+                            "lineNumber": 137,
+                            "content": "{\"type\":\"tool_call\",\"subtype\":\"started\",\"call_id\":\"Grep_0_70a20c0e-af0a3\",\"tool_call\":{\"grepToolCall\":{\"args\":{\"pattern\":\"beta\",\"path\":\"/private/tmp/cursor-tool-probe\",\"outputMode\":\"content\",\"caseInsensitive\":false,\"multiline\":false,\"toolCallId\":\"Grep_0_70a20c0e-af0a3\",\"offset\":0}},\"hookAdditionalContexts\":[],\"toolCallId\":\"Grep_0_70a20c0e-af0a3\",\"startedAtMs\":\"1788038828766\"},\"model_call_id\":\"d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw\",\"session_id\":\"b9074518-21fc-49ed-a839-738d08fbb8c9\",\"timestamp_ms\":1788038829035}",
+                            "contentTruncated": false,
+                            "isContextLine": false
+                          }
+                        ]
+                      },
+                      {
+                        "file": "./probe-target.txt",
+                        "matches": [
+                          {
+                            "lineNumber": 1,
+                            "content": "beta",
+                            "contentTruncated": false,
+                            "isContextLine": false
+                          }
+                        ]
+                      }
+                    ],
+                    "totalLines": 5,
+                    "totalMatchedLines": 5,
+                    "clientTruncated": false,
+                    "ripgrepTruncated": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Grep_0_70a20c0e-af0a3",
+        "startedAtMs": "1788038828766",
+        "completedAtMs": "1788038832290"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038832285
+    },
+    {
+      "type": "tool_call",
+      "subtype": "completed",
+      "call_id": "Shell_1_8d06cebb-af0a3",
+      "tool_call": {
+        "shellToolCall": {
+          "args": {
+            "command": "echo probe-done",
+            "workingDirectory": "",
+            "timeout": 30000,
+            "toolCallId": "Shell_1_8d06cebb-af0a3",
+            "simpleCommands": [
+              "echo"
+            ],
+            "hasInputRedirect": false,
+            "hasOutputRedirect": false,
+            "parsingResult": {
+              "parsingFailed": false,
+              "executableCommands": [
+                {
+                  "name": "echo",
+                  "args": [
+                    {
+                      "type": "word",
+                      "value": "probe-done"
+                    }
+                  ],
+                  "fullText": "echo probe-done"
+                }
+              ],
+              "hasRedirects": false,
+              "hasCommandSubstitution": false,
+              "redirects": []
+            },
+            "fileOutputThresholdBytes": "40000",
+            "isBackground": false,
+            "skipApproval": false,
+            "timeoutBehavior": "TIMEOUT_BEHAVIOR_BACKGROUND",
+            "hardTimeout": 86400000,
+            "description": "Echo probe-done marker",
+            "closeStdin": true,
+            "conversationId": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+            "adminCommandDenylist": []
+          },
+          "result": {
+            "success": {
+              "command": "echo probe-done",
+              "workingDirectory": "",
+              "exitCode": 0,
+              "signal": "",
+              "stdout": "probe-done\n",
+              "stderr": "",
+              "executionTime": 5033,
+              "interleavedOutput": "probe-done\n",
+              "localExecutionTimeMs": 979
+            },
+            "isBackground": false
+          },
+          "description": "Echo probe-done marker"
+        },
+        "hookAdditionalContexts": [],
+        "toolCallId": "Shell_1_8d06cebb-af0a3",
+        "startedAtMs": "1788038829238",
+        "completedAtMs": "1788038835449"
+      },
+      "model_call_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915-2-3dxw",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "timestamp_ms": 1788038835447
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "duration_ms": 29834,
+      "duration_api_ms": 29834,
+      "is_error": false,
+      "result": "I'll run these steps in order.All 5 steps completed: wrote `probe-target.txt` with \"alpha\", edited it to \"beta\", grep found `beta` in `probe-target.txt:1`, `echo probe-done` printed successfully, and reading `/nonexistent/definitely-missing.txt` failed with \"File not found\" as expected.",
+      "session_id": "b9074518-21fc-49ed-a839-738d08fbb8c9",
+      "request_id": "d89f1ea3-f0b4-4c68-997d-4397805b1915",
+      "usage": {
+        "inputTokens": 27420,
+        "outputTokens": 768,
+        "cacheReadTokens": 59408,
+        "cacheWriteTokens": 0
+      }
+    }
+  ]
+}

@@ -172,6 +172,126 @@ class SessionStatus:
     error: str | None = None
 
 
+CancellationKind = Literal["none", "cooperative", "preemptive"]
+ResumeKind = Literal["none", "token", "session_file"]
+
+
+@dataclass(frozen=True)
+class ExecutorCapabilities:
+    """Declared executor capabilities. Pure, cheap, callable without a session.
+
+    The runtime feature-detects through this declaration rather than
+    provider-detecting by executor name. Every field defaults to the least
+    capable value: an adapter that declares nothing gets a correct, degraded
+    contract. Declaring a capability is a promise about the NORMALIZED surface
+    (canonical ExecutorEvent/TurnUsage records), not about the provider's
+    native shape.
+
+    cold_turn is required of every adapter and is therefore not a field: an
+    adapter that cannot run one turn from a NodePacket is not an adapter.
+
+    Design doc: docs/proposals/executor-capability-contract.md.
+    """
+
+    executor: str
+
+    streaming_events: bool = False
+    # Writes canonical ExecutorEvent records (executor_events.py) while the
+    # turn runs. False means observability is terminal-only.
+
+    partial_text: bool = False
+    # Assistant text observable before the turn boundary. Implies
+    # streaming_events.
+
+    cancellation: CancellationKind = "none"
+    # "none"        — cancel() is a no-op returning False.
+    # "cooperative" — honored at the next packet/turn boundary; in-flight work
+    #                 continues (pi_rpc marker file).
+    # "preemptive"  — stops the in-flight turn (signal to a subprocess).
+
+    resume: ResumeKind = "none"
+    # "token"        — opaque string resumes prior context (cursor --resume).
+    # "session_file" — a path on the executor host resumes it (pi --session).
+    # Declares only that resume is POSSIBLE. Whether to resume is runtime
+    # policy (see Continuity), never the adapter's decision.
+
+    midturn_steering: bool = False
+    # Accepts operator messages while status() == "running", delivered into
+    # the same turn.
+
+    usage_reporting: bool = False
+    # Emits normalized TurnUsage per turn regardless of provider field names.
+
+    native_subagents: bool = False
+    # Harness can fan work out to child agents it manages itself.
+
+    structured_tool_calls: bool = False
+    # Emits canonical tool_started/tool_completed with (tool, paths, ok) so
+    # context coverage computes without provider event names.
+
+    engagement: bool = False
+    # Fold of supports_engagement(); that method stays as a shim.
+
+    reply: bool = False
+    # Declarative form of the hasattr(adapter, "reply") probe.
+
+    def supports(self, name: str) -> bool:
+        """Single predicate for policy call sites: True for bool fields,
+        True for graded fields that are not the zero value ("none")."""
+        value = getattr(self, name)
+        if isinstance(value, bool):
+            return value
+        return value != "none"
+
+
+class CapabilityUnsupported(RuntimeError):
+    """A call required a capability the adapter did not declare.
+
+    Bug-catcher, not control flow: the runtime's policy layer receives the
+    declaration and must not ask. Lifecycle capabilities (resume, engagement)
+    hard-error rather than silently degrade, because a quiet resume-to-fresh
+    substitution produces a receipt claiming continuity the turn never had.
+    """
+
+    def __init__(self, capability: str, executor: str) -> None:
+        self.capability = capability
+        self.executor = executor
+        super().__init__(f"executor {executor} does not support {capability}")
+
+
+@dataclass(frozen=True)
+class Continuity:
+    """The runtime's continuity decision for ONE dispatch. Packet-scoped.
+
+    fresh is the structural default: the packet owns continuity, not the chat
+    id. resume is an explicit policy decision; the token is opaque to GDDP and
+    interpreted by the adapter, with silent cold fallback when the token is
+    missing or unusable — resume is a hint, never a requirement.
+    """
+
+    mode: Literal["fresh", "resume"]
+    token: str | None = None
+    reason: str = ""
+
+
+FRESH = Continuity(mode="fresh")
+
+
+def adapter_capabilities(adapter: object, executor: str) -> ExecutorCapabilities:
+    """Probe an adapter's capability declaration, least-capable by default.
+
+    capabilities() is a convention (like reply()), not a Protocol member:
+    adding it to ExecutorAdapter would break runtime_checkable isinstance
+    checks for adapters that predate the declaration.
+    """
+    probe = getattr(adapter, "capabilities", None)
+    if callable(probe):
+        declared = probe()
+        if isinstance(declared, ExecutorCapabilities):
+            return declared
+    return ExecutorCapabilities(executor=executor)
+
+
 @dataclass
 class PatchResult:
     """Result of collecting a completed session's work.
