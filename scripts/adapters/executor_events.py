@@ -19,7 +19,8 @@ raw_type (harness type, forensics only).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -197,6 +198,20 @@ class ExecutorEvent:
                 scope=usage.get("scope", "turn"),  # type: ignore[arg-type]
             )
         return cls(**kwargs)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True)
+class TranslatedEvent:
+    """One canonical event minus the envelope the writer stamps.
+
+    What every per-transport translator returns. Keeping it here rather than
+    in one driver means a second driver does not import the first one just to
+    borrow its return type.
+    """
+
+    type: EventType
+    raw_type: str
+    fields: Mapping[str, object] = field(default_factory=dict)
 
 
 def _utc_now_iso() -> str:
