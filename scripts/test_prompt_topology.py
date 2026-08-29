@@ -7,7 +7,12 @@ after the failure mode it guards against.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from scripts.prompt_topology import (
     CacheTopologyError,
@@ -89,6 +94,34 @@ def test_empty_zones_are_skipped_not_placeholderd() -> None:
     assert _PROTO in no_project
     assert _PROJECT not in no_project
     assert no_project != full
+
+
+def test_executor_turn_prompt_fills_every_zone() -> None:
+    """The executor turn prompt now populates all four zones. The project zone
+    was empty until context pointers existed; an empty zone cannot carry a
+    volatility invariant, so this pins the filled shape."""
+    from adapters.pi_rpc_adapter import build_executor_turn_prompt
+
+    packet = {
+        "node_id": "node-01",
+        "title": "T",
+        "goal": "G",
+        "why": "W",
+        "job_id": "job-a",
+        "execution_attempt_id": "job-a:attempt:0",
+        "attempt_index": 0,
+        "context_pointers": {"readme": "/repo/README.md"},
+    }
+    tp = build_executor_turn_prompt(worktree=Path("/tmp/wt"), packets=[packet])
+    volatility_invariant(tp)
+    bounds = tp.zone_offsets()
+    for name in ("protocol", "project", "node", "attempt"):
+        assert bounds[name][1] > bounds[name][0], f"{name} zone is empty"
+    text = tp.assemble()
+    # Pointers are graph-stable: they must land in the project zone, ahead of
+    # the node zone, and the volatile ids must stay behind it.
+    assert bounds["project"][0] <= text.index("/repo/README.md") < bounds["project"][1]
+    assert text.index("job-a:attempt:0") >= bounds["attempt"][0]
 
 
 def test_volatility_invariant_passes_in_order() -> None:

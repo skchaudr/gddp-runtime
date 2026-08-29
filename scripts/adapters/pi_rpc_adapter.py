@@ -38,7 +38,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,7 +59,6 @@ _BINARY_ENV = "GDDP_PI_RPC_BINARY"
 _TOOLS_ENV = "GDDP_PI_RPC_TOOLS"
 _TIMEOUT_ENV = "GDDP_PI_RPC_TURN_TIMEOUT_S"
 _IDLE_TIMEOUT_ENV = "GDDP_PI_RPC_IDLE_TIMEOUT_S"
-_DEFAULT_MODEL = "xai/grok-4.5"
 _DEFAULT_TOOLS = "read,bash,edit,write,grep,find,ls,subagent"
 _DEFAULT_TIMEOUT_S = 1800.0
 # Idle grace is sized for a session to survive a working day, not a
@@ -136,7 +135,16 @@ class PiRpcAdapter:
         self.spool_root = _configured_spool_root(spool_root)
         configured_cwd = cwd if cwd is not None else os.environ.get("GDDP_PI_RPC_CWD")
         self.cwd = Path(configured_cwd).resolve() if configured_cwd else None
-        self.model = model or os.environ.get(_MODEL_ENV) or _DEFAULT_MODEL
+        # No default model. A silent fallback here is invisible at the call
+        # site, so an operator's chosen (cheap) model can be overridden by a
+        # constant in this file without anyone noticing.
+        resolved_model = model or os.environ.get(_MODEL_ENV)
+        if not resolved_model:
+            raise ValueError(
+                "pi_rpc model is required: pass model= explicitly or set "
+                f"{_MODEL_ENV}"
+            )
+        self.model = resolved_model
         self.pi_binary = pi_binary or os.environ.get(_BINARY_ENV) or "pi"
         self.tools = tools or os.environ.get(_TOOLS_ENV) or _DEFAULT_TOOLS
         if turn_timeout_s is not None:
@@ -444,18 +452,48 @@ def _observability_env(
     return obs
 
 
+_POINTER_HEADER = (
+    "Project context pointers (read these files; a read is evidence, an "
+    "embedded blob is not):"
+)
+
+
+def build_project_zone(packets: Sequence[dict]) -> str:
+    """Render the packets' canonical context pointers as the project zone.
+
+    Paths only — never file contents. Sorted by key so the block is
+    byte-identical across retries of the same packet(s), and empty when no
+    packet carries pointers (old packets, unreachable gddp-config), which
+    leaves the zone absent rather than failing the turn. UNAVAILABLE markers
+    are passed through verbatim: knowing a canonical doc is missing is
+    context too.
+    """
+    pointers: dict[str, str] = {}
+    for packet in packets:
+        carried = packet.get("context_pointers")
+        if not isinstance(carried, Mapping):
+            continue
+        for key, value in carried.items():
+            pointers.setdefault(str(key), str(value))
+    if not pointers:
+        return ""
+    lines = [f"{key}: {pointers[key]}" for key in sorted(pointers)]
+    return "\n".join([_POINTER_HEADER, *lines])
+
+
 def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> TurnPrompt:
     """Four-zone TurnPrompt for one executor turn.
 
     protocol  = _PACKET_PREAMBLE (nearly immutable, shared by every turn)
-    project   = "" — repo/AGENTS.md context is loaded by pi itself, not
-               inlined here, so nothing graph-stable sits between protocol
-               and node today. (A future project zone would live here.)
+    project   = canonical context pointers for this node's project (paths
+               only, graph-stable — see build_project_zone); empty when the
+               packet carries none
     node      = stable node JSON blocks (retry-stable per node)
     attempt   = volatile envelopes (attempt ids + worktree) + turn note
 
     Emitting protocol->project->node->attempt means a retry of the same
-    node reuses protocol+node and a sibling node reuses protocol.
+    node reuses protocol+project+node and a sibling node in the same project
+    reuses protocol+project.
     """
     n = len(packets)
     node_blocks: list[str] = []
@@ -475,7 +513,7 @@ def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> Tu
     )
     return TurnPrompt(
         protocol=_PACKET_PREAMBLE,
-        project="",
+        project=build_project_zone(packets),
         node="\n\n".join(node_blocks),
         attempt="\n\n".join(envelopes) + f"\n\n{turn_note}\n",
     )

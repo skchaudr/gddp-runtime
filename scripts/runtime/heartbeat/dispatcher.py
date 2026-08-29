@@ -28,6 +28,9 @@ from adapters.local_subprocess_adapter import (
 from adapters.mission_adapter import MissionAdapter
 from adapters.pi_rpc_adapter import PiRpcAdapter
 
+from ..verification.semantic.context_builder import build_canonical_pointers
+from .graph_reader import GraphReader
+
 
 
 
@@ -110,7 +113,7 @@ def dispatch(
         return DispatchResult(success=False, error=f"Unknown executor: {executor}")
 
     try:
-        packet = _build_node_packet(job)
+        packet = _build_node_packet(job, repo_path=repo_path)
         adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
@@ -153,7 +156,7 @@ def dispatch_engagement(
                 error=f"executor {executor} does not support engagements",
             )
         _validate_engagement_order(jobs)
-        packets = [_build_node_packet(job) for job in jobs]
+        packets = [_build_node_packet(job, repo_path=repo_path) for job in jobs]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return EngagementDispatchResult(
             success=False, error=f"Invalid engagement dispatch packet: {exc}"
@@ -194,9 +197,15 @@ def _validate_engagement_order(
 
 def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):
     """Give only local transports the checkout they execute inside."""
+    kwargs: dict[str, object] = {"repo": repo}
     if executor in _LOCAL_TRANSPORT_EXECUTORS and repo_path:
-        return adapter_cls(repo=repo, cwd=repo_path)
-    return adapter_cls(repo=repo)
+        kwargs["cwd"] = repo_path
+    if executor == "pi_rpc":
+        # Named here so the orchestrator model is visible at the call site
+        # rather than resolved by a default inside the adapter. Unset env
+        # means the adapter raises, which surfaces as a configuration error.
+        kwargs["model"] = os.environ.get("GDDP_PI_RPC_MODEL")
+    return adapter_cls(**kwargs)
 
 
 def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str]:
@@ -205,7 +214,8 @@ def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str
     if adapter_cls is None:
         return False, f"unknown executor {session_ref.executor!r}; remote may continue"
     try:
-        accepted = adapter_cls(repo=repo).cancel(session_ref)
+        adapter = _build_adapter(adapter_cls, session_ref.executor, repo, None)
+        accepted = adapter.cancel(session_ref)
     except Exception as exc:
         return False, f"late session cancellation failed: {exc}; remote may continue"
     if accepted:
@@ -213,7 +223,67 @@ def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str
     return False, "late session cancellation was not accepted; remote may continue"
 
 
-def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
+def _config_root() -> Path | None:
+    """Resolve the gddp-config checkout, or None when it is not on disk."""
+    runtime_root = Path(__file__).resolve().parents[3]
+    root = Path(
+        os.environ.get("GDDP_CONFIG_PATH", str(runtime_root.parent / "gddp-config"))
+    ).expanduser()
+    return root if root.is_dir() else None
+
+
+def _node_edges_and_pointers(
+    job: Mapping[str, object],
+    repo_path: str | None,
+    depends_on: tuple[str, ...],
+) -> tuple[tuple[str, ...], dict[str, str] | None]:
+    """Return (unlocks, context_pointers) for one job.
+
+    Pointers are built exactly once here, at dispatch, so every retry of the
+    resulting packet renders a byte-identical project prompt zone. Both graph
+    reads are best-effort: without a reachable gddp-config checkout or a local
+    checkout there is nothing to point at, and dispatch must still proceed
+    with an empty project zone rather than fail the job.
+    """
+    project_id = str(job.get("project_id") or "")
+    node_id = str(job.get("node_id") or "")
+    if not repo_path or not project_id or not node_id:
+        return (), None
+
+    config_root = _config_root()
+    graph: dict[str, object] = {"project_id": project_id}
+    unlocks: tuple[str, ...] = ()
+    reader: GraphReader | None = None
+    if config_root is not None:
+        try:
+            reader = GraphReader(str(config_root))
+        except Exception:
+            reader = None
+    if reader is not None:
+        try:
+            project = reader.load_project(project_id)
+            graph = {"project_id": project.project_id, "nodes": list(project.nodes)}
+        except Exception:
+            graph = {"project_id": project_id}
+        try:
+            unlocks = tuple(
+                str(item) for item in reader.load_node(project_id, node_id).unlocks
+            )
+        except Exception:
+            unlocks = ()
+
+    pointers = build_canonical_pointers(
+        node={"depends_on": list(depends_on), "unlocks": list(unlocks)},
+        graph=graph,
+        repo=Path(repo_path),
+        config_root=config_root,
+    )
+    return unlocks, pointers
+
+
+def _build_node_packet(
+    job: Mapping[str, object], *, repo_path: str | None = None
+) -> NodePacket:
     """Decode persisted fields once into an immutable executor packet."""
     constraints = _decode_sequence(job.get("constraints"), "constraints")
     acceptance_criteria = _decode_sequence(
@@ -235,6 +305,12 @@ def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
     if attempt_index < 0:
         raise ValueError("attempt must be zero or greater")
 
+    depends_on = tuple(
+        str(item)
+        for item in _decode_sequence(job.get("dependencies"), "dependencies")
+    )
+    unlocks, context_pointers = _node_edges_and_pointers(job, repo_path, depends_on)
+
     return NodePacket(
         job_id=str(job["job_id"]),
         node_id=str(job["node_id"]),
@@ -253,6 +329,9 @@ def _build_node_packet(job: Mapping[str, object]) -> NodePacket:
             else None
         ),
         project_id=str(job.get("project_id") or ""),
+        depends_on=depends_on,
+        unlocks=unlocks,
+        context_pointers=context_pointers,
     )
 
 

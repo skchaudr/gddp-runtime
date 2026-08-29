@@ -114,6 +114,124 @@ def test_dispatcher_decodes_a_deeply_immutable_packet_without_mutating_job():
         packet.previous_findings["verdict"] = "pass"  # type: ignore[index]
 
 
+def test_packet_round_trips_graph_edges_and_context_pointers():
+    """depends_on/unlocks/context_pointers survive to_json -> json.loads and
+    stay immutable, so the orchestrator reads the same pointers the dispatcher
+    resolved."""
+    packet = NodePacket(
+        job_id="job-123",
+        execution_attempt_id="job-123:attempt:0",
+        node_id="node-456",
+        title="T",
+        goal="G",
+        why="W",
+        constraints=(),
+        acceptance_criteria=(),
+        required_artifacts=(),
+        attempt_index=0,
+        project_id="proj",
+        depends_on=("node-up",),
+        unlocks=("node-down",),
+        context_pointers={
+            "readme": "/repo/README.md",
+            "neighbor:node-up": "UNAVAILABLE: /cfg/node-up.yaml does not exist",
+        },
+    )
+
+    decoded = json.loads(packet.to_json())
+    assert decoded["depends_on"] == ["node-up"]
+    assert decoded["unlocks"] == ["node-down"]
+    assert decoded["context_pointers"]["readme"] == "/repo/README.md"
+    assert decoded["context_pointers"]["neighbor:node-up"].startswith("UNAVAILABLE:")
+    assert decoded == packet.to_json_value()
+
+    with pytest.raises(TypeError):
+        packet.context_pointers["readme"] = "/elsewhere"  # type: ignore[index]
+
+
+def test_dispatch_time_pointers_are_built_once_from_the_graph(monkeypatch, tmp_path):
+    """Pointers are resolved at dispatch from job dependencies + the node yaml's
+    unlocks, so the executor gets the same bounded reading list the evaluator
+    gets, and every retry of the packet renders identical bytes."""
+    config_root = tmp_path / "config"
+    nodes = config_root / "graphs" / "proj" / "nodes"
+    nodes.mkdir(parents=True)
+    (config_root / "graphs" / "proj" / "project.yaml").write_text(
+        "project_id: proj\nproject_name: Proj\nrepo: owner/repo\n"
+        "nodes:\n  - id: node-00\n  - id: node-456\n",
+        encoding="utf-8",
+    )
+    (nodes / "node-00.yaml").write_text(
+        "node_id: node-00\ntitle: Foundational\n", encoding="utf-8"
+    )
+    (nodes / "node-456.yaml").write_text(
+        "node_id: node-456\ntitle: Under work\nunlocks:\n  - node-down\n",
+        encoding="utf-8",
+    )
+    (nodes / "node-up.yaml").write_text(
+        "node_id: node-up\ntitle: Upstream\n", encoding="utf-8"
+    )
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+    (repo / "AGENTS.md").write_text("agent-only\n", encoding="utf-8")
+    monkeypatch.setenv("GDDP_CONFIG_PATH", str(config_root))
+
+    job = _persisted_job()
+    job["project_id"] = "proj"
+    job["dependencies"] = json.dumps(["node-up"])
+
+    packet = dispatcher._build_node_packet(job, repo_path=str(repo))
+
+    assert packet.depends_on == ("node-up",)
+    assert packet.unlocks == ("node-down",)
+    pointers = packet.context_pointers
+    assert pointers is not None
+    assert pointers["readme"] == str(repo / "README.md")
+    assert pointers["foundational_node"] == str(nodes / "node-00.yaml")
+    assert pointers["neighbor:node-up"] == str(nodes / "node-up.yaml")
+    # unlocks neighbor has no yaml on disk -> marked, not dropped
+    assert pointers["neighbor:node-down"].startswith("UNAVAILABLE:")
+    assert pointers["project_brief"].startswith("UNAVAILABLE:")
+    # The target repo's AGENTS.md is never offered.
+    assert not any("AGENTS.md" in value for value in pointers.values())
+    # Byte-stable: rebuilding the same job yields the same pointer dict.
+    assert dispatcher._build_node_packet(job, repo_path=str(repo)).to_json() == (
+        packet.to_json()
+    )
+
+
+def test_pointers_absent_when_config_root_is_unreachable(monkeypatch, tmp_path):
+    """A missing gddp-config checkout degrades to no pointers, not a failed
+    dispatch."""
+    monkeypatch.setenv("GDDP_CONFIG_PATH", str(tmp_path / "nope"))
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    job = _persisted_job()
+    job["project_id"] = "proj"
+    job["dependencies"] = json.dumps(["node-up"])
+
+    packet = dispatcher._build_node_packet(job, repo_path=str(repo))
+
+    assert packet.depends_on == ("node-up",)
+    assert packet.unlocks == ()
+    assert packet.context_pointers is not None
+    assert packet.context_pointers["neighbor:node-up"].startswith("UNAVAILABLE:")
+    assert packet.context_pointers["foundational_node"].startswith("UNAVAILABLE:")
+
+
+def test_packet_defaults_carry_no_edges_or_pointers():
+    """A job with no dependencies and no reachable graph yields a packet whose
+    project zone will be empty — absence must be representable, not an error."""
+    job = _persisted_job()
+    packet = dispatcher._build_node_packet(job)
+
+    assert packet.depends_on == ()
+    assert packet.unlocks == ()
+    assert packet.context_pointers is None
+    assert json.loads(packet.to_json())["context_pointers"] is None
+
+
 def test_jules_renderers_preserve_the_same_packet_semantics():
     packet = _packet()
 

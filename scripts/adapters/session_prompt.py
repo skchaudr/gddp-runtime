@@ -25,6 +25,8 @@ _STABLE_PROMPT_KEYS = (
     "constraints",
     "acceptance_criteria",
     "required_artifacts",
+    "depends_on",
+    "unlocks",
 )
 _VOLATILE_PROMPT_KEYS = (
     "job_id",
@@ -33,6 +35,10 @@ _VOLATILE_PROMPT_KEYS = (
     "expected_base_commit_sha",
     "previous_findings",
 )
+# Rendered as text in the prompt's PROJECT zone (least volatile, ahead of the
+# node zone). Keeping it out of both JSON zones avoids duplicating it into the
+# volatile tail, where a graph-stable pointer list does not belong.
+_PROJECT_ZONE_KEYS = ("context_pointers",)
 
 
 def split_packet_zones(packet: Mapping[str, object]) -> tuple[str, str]:
@@ -41,7 +47,8 @@ def split_packet_zones(packet: Mapping[str, object]) -> tuple[str, str]:
     The stable zone is byte-identical across retries of the same node, so a
     retry reuses the cached prefix instead of re-billing the whole packet.
     Unknown keys fall into the volatile zone so a future packet field is never
-    silently dropped from the prompt.
+    silently dropped from the prompt; ``_PROJECT_ZONE_KEYS`` are the exception,
+    rendered separately ahead of both zones.
     """
 
     def _dump(keys: tuple[str, ...]) -> str:
@@ -51,7 +58,11 @@ def split_packet_zones(packet: Mapping[str, object]) -> tuple[str, str]:
             separators=(",", ":"),
         )
 
-    known = set(_STABLE_PROMPT_KEYS) | set(_VOLATILE_PROMPT_KEYS)
+    known = (
+        set(_STABLE_PROMPT_KEYS)
+        | set(_VOLATILE_PROMPT_KEYS)
+        | set(_PROJECT_ZONE_KEYS)
+    )
     extra = tuple(sorted(key for key in packet if key not in known))
     return _dump(_STABLE_PROMPT_KEYS), _dump(_VOLATILE_PROMPT_KEYS + extra)
 

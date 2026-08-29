@@ -65,6 +65,13 @@ class NodePacket:
     previous_findings: Mapping[str, FrozenJSON] | None = None
     expected_base_commit_sha: str | None = None
     project_id: str = ""
+    depends_on: tuple[str, ...] = ()
+    unlocks: tuple[str, ...] = ()
+    # Canonical context file POINTERS (paths, never contents) for this node,
+    # built once at dispatch. Byte-stable per packet so every retry renders an
+    # identical project prompt zone; None means "not resolvable" (old packet,
+    # unreachable gddp-config), which callers must tolerate.
+    context_pointers: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -78,6 +85,21 @@ class NodePacket:
         object.__setattr__(
             self, "required_artifacts", tuple(str(item) for item in self.required_artifacts)
         )
+        object.__setattr__(
+            self, "depends_on", tuple(str(item) for item in self.depends_on)
+        )
+        object.__setattr__(self, "unlocks", tuple(str(item) for item in self.unlocks))
+        if self.context_pointers is not None:
+            object.__setattr__(
+                self,
+                "context_pointers",
+                MappingProxyType(
+                    {
+                        str(key): str(value)
+                        for key, value in self.context_pointers.items()
+                    }
+                ),
+            )
         if self.previous_findings is not None:
             frozen = _freeze_json(self.previous_findings)
             if not isinstance(frozen, Mapping):
@@ -106,6 +128,13 @@ class NodePacket:
             ),
             "expected_base_commit_sha": self.expected_base_commit_sha,
             "project_id": self.project_id,
+            "depends_on": list(self.depends_on),
+            "unlocks": list(self.unlocks),
+            "context_pointers": (
+                dict(self.context_pointers)
+                if self.context_pointers is not None
+                else None
+            ),
         }
 
     def to_json(self) -> str:

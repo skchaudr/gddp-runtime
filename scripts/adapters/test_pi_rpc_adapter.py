@@ -21,6 +21,7 @@ from adapters.pi_rpc_adapter import (  # noqa: E402
     _PACKET_PREAMBLE,
     _assemble_turn_prompt,
     build_executor_turn_prompt,
+    build_project_zone,
     _pid_is_running,
     read_pi_rpc_status,
 )
@@ -243,6 +244,7 @@ def test_mid_turn_death_is_plumbing_failure(fake_pi, git_repo, tmp_path):
         spool_root=spool,
         cwd=repo,
         pi_binary=str(fake_pi),
+        model="fake/model",
         turn_timeout_s=15,
     )
     result = adapter.dispatch(_packet(base))
@@ -268,6 +270,7 @@ def test_resume_reuses_session_file_arg(fake_pi, git_repo, tmp_path):
         spool_root=spool,
         cwd=repo,
         pi_binary=str(fake_pi),
+        model="fake/model",
         resume_session_file=prior,
         turn_timeout_s=20,
     )
@@ -297,6 +300,7 @@ def test_cancel_marks_request(fake_pi, git_repo, tmp_path):
         spool_root=spool,
         cwd=repo,
         pi_binary=str(fake_pi),
+        model="fake/model",
         turn_timeout_s=20,
     )
     result = adapter.dispatch(_packet(base))
@@ -773,8 +777,8 @@ def test_observability_env_project_tag_from_production_packet(tmp_path):
     assert "project:myapi-part2" in obs["OBS_TAG"].split(",")
 
 
-def _zone_packet(*, attempt: int) -> dict:
-    return {
+def _zone_packet(*, attempt: int, pointers: dict | None = None) -> dict:
+    packet = {
         "node_id": "node-01",
         "title": "T",
         "goal": "G",
@@ -788,6 +792,17 @@ def _zone_packet(*, attempt: int) -> dict:
         "expected_base_commit_sha": "abc",
         "previous_findings": None,
     }
+    if pointers is not None:
+        packet["context_pointers"] = pointers
+    return packet
+
+
+_POINTERS = {
+    "readme": "/repo/README.md",
+    "project_brief": "UNAVAILABLE: /repo/PROJECT-BRIEF.md does not exist",
+    "foundational_node": "/cfg/graphs/p/nodes/node-00.yaml",
+    "neighbor:node-02": "/cfg/graphs/p/nodes/node-02.yaml",
+}
 
 
 def test_split_packet_zones_stable_across_retries():
@@ -861,3 +876,120 @@ def test_executor_turn_prompt_cache_report_potential_reuse():
     # different surfaces and are not compared).
     assert report.actual_cached_tokens is None
     assert not hasattr(report, "cache_bust_loss_tokens")
+
+
+def test_project_zone_renders_pointer_paths_not_contents():
+    """The project zone lists canonical file PATHS, sorted by key, with
+    UNAVAILABLE markers preserved verbatim — a read is evidence, an embedded
+    blob is not."""
+    tp = build_executor_turn_prompt(
+        worktree=Path("/tmp/wt"),
+        packets=[_zone_packet(attempt=0, pointers=_POINTERS)],
+    )
+    zone = tp.project
+    assert zone != ""
+    lines = zone.splitlines()
+    assert lines[0].startswith("Project context pointers")
+    assert lines[1:] == [
+        "foundational_node: /cfg/graphs/p/nodes/node-00.yaml",
+        "neighbor:node-02: /cfg/graphs/p/nodes/node-02.yaml",
+        "project_brief: UNAVAILABLE: /repo/PROJECT-BRIEF.md does not exist",
+        "readme: /repo/README.md",
+    ]
+    # Pointers live only in the project zone — never duplicated into the
+    # volatile tail, where a graph-stable list would ride along for free.
+    text = tp.assemble()
+    assert text.count("/repo/README.md") == 1
+    assert "context_pointers" not in text
+
+
+def test_project_zone_is_empty_without_pointers():
+    """Old packets (no context_pointers) fall back to the previous empty
+    project zone rather than failing the turn."""
+    tp = build_executor_turn_prompt(
+        worktree=Path("/tmp/wt"), packets=[_zone_packet(attempt=0)]
+    )
+    assert tp.project == ""
+    assert tp.assemble().startswith(_PACKET_PREAMBLE)
+
+
+def test_project_zone_sits_between_protocol_and_node():
+    tp = build_executor_turn_prompt(
+        worktree=Path("/tmp/wt"),
+        packets=[_zone_packet(attempt=0, pointers=_POINTERS)],
+    )
+    bounds = tp.zone_offsets()
+    assert bounds["protocol"][1] <= bounds["project"][0]
+    assert bounds["project"][1] <= bounds["node"][0]
+    assert bounds["node"][1] <= bounds["attempt"][0]
+    text = tp.assemble()
+    assert text.index("worktree_path:") >= bounds["node"][1]
+
+
+def test_retry_shares_protocol_project_and_node_prefix():
+    """Two attempts of the same node share protocol+project+node byte-for-byte:
+    pointers are built once per packet, so the pointer block cannot drift
+    between retries."""
+    from scripts.prompt_topology import common_prefix_tokens, token_estimate
+
+    p0 = _zone_packet(attempt=0, pointers=_POINTERS)
+    p1 = _zone_packet(attempt=1, pointers=_POINTERS)
+    a = _assemble_turn_prompt(worktree=Path("/tmp/wt-a"), packets=[p0])
+    b = _assemble_turn_prompt(worktree=Path("/tmp/wt-b"), packets=[p1])
+    stable, _ = split_packet_zones(p0)
+    project_zone = build_executor_turn_prompt(
+        worktree=Path("/tmp/wt-a"), packets=[p0]
+    ).project
+    expected = (
+        token_estimate(_PACKET_PREAMBLE)
+        + token_estimate(project_zone)
+        + token_estimate(stable)
+    )
+    assert common_prefix_tokens(a, b) >= expected
+
+
+def test_batch_turn_merges_pointers_deterministically():
+    """A batch turn carrying two nodes renders one merged, sorted pointer
+    block — same bytes regardless of which packet contributed a key."""
+    p1 = _zone_packet(attempt=0, pointers={"readme": "/repo/README.md"})
+    p2 = _zone_packet(
+        attempt=0, pointers={"neighbor:node-03": "/cfg/node-03.yaml"}
+    )
+    forward = build_project_zone([p1, p2])
+    assert forward == build_project_zone([p2, p1])
+    assert "readme: /repo/README.md" in forward
+    assert "neighbor:node-03: /cfg/node-03.yaml" in forward
+
+
+def test_model_must_be_explicit(monkeypatch, tmp_path):
+    """No silent default: an unset model is a configuration error, an explicit
+    constructor arg wins over the env."""
+    monkeypatch.delenv("GDDP_PI_RPC_MODEL", raising=False)
+    with pytest.raises(ValueError, match="GDDP_PI_RPC_MODEL"):
+        PiRpcAdapter(repo="owner/repo", spool_root=tmp_path)
+
+    monkeypatch.setenv("GDDP_PI_RPC_MODEL", "env/model")
+    assert PiRpcAdapter(repo="owner/repo", spool_root=tmp_path).model == "env/model"
+    assert (
+        PiRpcAdapter(
+            repo="owner/repo", spool_root=tmp_path, model="explicit/model"
+        ).model
+        == "explicit/model"
+    )
+
+
+def test_dispatcher_passes_the_model_at_the_call_site(monkeypatch):
+    """dispatcher._build_adapter names the model when building PiRpcAdapter so
+    the operator's choice is visible where the adapter is constructed."""
+    from runtime.heartbeat.dispatcher import _build_adapter
+
+    monkeypatch.setenv("GDDP_PI_RPC_MODEL", "chosen/model")
+    seen: dict[str, object] = {}
+
+    class FakePi:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    _build_adapter(FakePi, "pi_rpc", "owner/repo", "/tmp/checkout")
+    assert seen["model"] == "chosen/model"
+    assert seen["cwd"] == "/tmp/checkout"
