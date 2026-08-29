@@ -500,7 +500,7 @@ def _reconcile_one(
             evaluation_batch,
         )
     elif status.state in {"failed", "crashed"}:
-        _handle_failed(con, session, job_row, status.error, repo_path)
+        _handle_failed(con, session, job_row, status, repo_path)
     elif status.state == "missing":
         created_at = datetime.fromisoformat(
             str(session["created_at"]).replace("Z", "+00:00")
@@ -513,7 +513,7 @@ def _reconcile_one(
                 f"list within {missing_stale_after} grace; will retry next tick"
             )
             return
-        _handle_failed(con, session, job_row, status.error, repo_path)
+        _handle_failed(con, session, job_row, status, repo_path)
     elif status.state == "poll_error":
         print(
             f"[reconcile] {session_db_id}: poll error (transient, will retry "
@@ -615,7 +615,7 @@ def _reconcile_engagement_group(
                 "SELECT * FROM jobs WHERE job_id = ?", (session["job_id"],)
             ).fetchone()
             if job is not None:
-                _handle_failed(con, session, job, status.error, repo_path)
+                _handle_failed(con, session, job, status, repo_path)
         return
     elif status.state in {"completed", "failed", "crashed"}:
         remaining_node_ids = []
@@ -982,9 +982,22 @@ _PLUMBING_PATTERNS = (
 )
 
 
-def classify_plumbing_failure(error: str | None) -> bool:
+def classify_plumbing_failure(status_or_error) -> bool:
     """True when the session failed before the executor could report — infra
-    noise, not evidence about the node's work."""
+    noise, not evidence about the node's work.
+
+    Local-attempt transports carry the classification on their structured
+    status. String matching remains as compatibility for transports awaiting
+    adoption of the shared runtime.
+    """
+    plumbing = getattr(status_or_error, "plumbing", None)
+    if plumbing is not None:
+        return bool(plumbing)
+    error = (
+        status_or_error
+        if isinstance(status_or_error, str) or status_or_error is None
+        else getattr(status_or_error, "error", None)
+    )
     text = (error or "").lower()
     return any(pattern in text for pattern in _PLUMBING_PATTERNS)
 
@@ -998,7 +1011,7 @@ def classify_executor_failure(error: str | None) -> str:
     return "retryable"
 
 
-def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> None:
+def _handle_failed(con, session, job, status, repo_path: Path) -> None:
     """Persist one authoritative failure, then allocate at most one retry.
 
     Auth-blocked failures park instead: session -> needs_operator, job stays
@@ -1007,6 +1020,7 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
     job; unattended, the node waits rather than exhausting."""
     session_db_id = session["session_db_id"]
     job_id = session["job_id"]
+    error = status.error
 
     # Operator-cancelled jobs are terminal: never resurrect them via retry.
     # jobs_status 'set cancelled' is the operator-recovery path; without this
@@ -1058,7 +1072,7 @@ def _handle_failed(con, session, job, error: str | None, repo_path: Path) -> Non
 
     mark_job_failed(con, job_id)
     expected_base = _get_head_sha(repo_path) or session["expected_base_commit_sha"]
-    plumbing = classify_plumbing_failure(error)
+    plumbing = classify_plumbing_failure(status)
     if plumbing:
         allocated = allocate_plumbing_retry(
             con,

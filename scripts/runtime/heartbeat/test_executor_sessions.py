@@ -1505,6 +1505,23 @@ def test_work_failure_consumes_attempt_not_plumbing_budget(
 
 
 def test_classify_plumbing_failure_patterns():
+    from runtime.local_attempt import LocalAttemptStatus
+
+    assert reconciler.classify_plumbing_failure(
+        LocalAttemptStatus(
+            state="failed",
+            error="provider initialization failed",
+            plumbing=True,
+        )
+    )
+    assert not reconciler.classify_plumbing_failure(
+        LocalAttemptStatus(
+            state="failed",
+            error="exited without durable exit state",
+            plumbing=False,
+        )
+    )
+    # Compatibility for transports awaiting local_attempt adoption.
     assert reconciler.classify_plumbing_failure(
         "local subprocess exited without durable exit state"
     )
