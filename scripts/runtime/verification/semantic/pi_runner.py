@@ -362,8 +362,12 @@ def _extract_user_prompt(messages: list[dict[str, Any]]) -> str:
 def _extract_cached_from_stdout(stdout_path: str) -> int | None:
     """Parse --mode json stdout (JSONL events) for provider cached tokens.
 
-    Mirrors the executor's events.jsonl path: the same message_end events
-    with usage.cacheRead that extract_actual_cached_tokens already parses.
+    Reads pi's native shape directly: the same message_end events with
+    usage.cacheRead that extract_actual_cached_tokens already parses. The
+    executor path no longer does this — it reads canonical usage events via
+    executor_events.turn_usage — but `--mode json` stdout is a separate
+    surface with no recorded fixture, so it is not assumed to match the RPC
+    stream until someone measures it.
     Returns None if the stdout is missing or no usage events were emitted
     (e.g. the run crashed before the first LLM call).
     """
