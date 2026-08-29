@@ -36,6 +36,7 @@ from adapters.events_cursor_cli import (
 )
 from adapters.executor_events import read_events, turn_usage
 from adapters.executor_protocol import (
+    AttemptContext,
     FRESH,
     CapabilityUnsupported,
     Continuity,
@@ -345,7 +346,8 @@ def test_pi_dispatch_maps_a_resume_continuity_onto_its_session_file(tmp_path):
     adapter = PiRpcAdapter(repo="", spool_root=tmp_path, model="m")
     packet = _packet()
 
-    result = adapter.dispatch(
+    result = _dispatch(
+        adapter,
         packet,
         continuity=Continuity(mode="resume", token="/tmp/pi-session.jsonl"),
     )
@@ -362,7 +364,7 @@ def test_pi_dispatch_maps_a_resume_continuity_onto_its_session_file(tmp_path):
 def test_pi_fresh_dispatch_leaves_resume_unset(tmp_path):
     adapter = PiRpcAdapter(repo="", spool_root=tmp_path, model="m")
 
-    result = adapter.dispatch(_packet(), continuity=FRESH)
+    result = _dispatch(adapter, _packet(), continuity=FRESH)
 
     assert result.session_ref is not None
     command = json.loads(
@@ -381,7 +383,11 @@ def test_resume_against_an_adapter_that_cannot_resume_is_a_hard_error(tmp_path):
     )
 
     with pytest.raises(CapabilityUnsupported) as excinfo:
-        adapter.dispatch(_packet(), continuity=Continuity(mode="resume", token="x"))
+        _dispatch(
+            adapter,
+            _packet(),
+            continuity=Continuity(mode="resume", token="x"),
+        )
 
     assert excinfo.value.capability == "resume"
 
@@ -637,6 +643,18 @@ def _packet(attempt: int = 2, base: str | None = None) -> NodePacket:
     )
 
 
+def _dispatch(adapter, packet: NodePacket, *, continuity=FRESH):
+    attempt_id = f"test-{packet.execution_attempt_id.replace(':', '-')}-{time.time_ns()}"
+    attempt_dir = adapter.attempt_root() / attempt_id
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    return adapter.dispatch(
+        packet,
+        attempt=AttemptContext(attempt_id=attempt_id, attempt_dir=attempt_dir),
+        continuity=continuity,
+    )
+
+
 def _wait_for_terminal(adapter, session_ref, timeout=25.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -675,7 +693,7 @@ def test_dispatch_runs_a_turn_and_hands_back_a_commit_ref(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(_packet(base=_head(repo)))
+    result = _dispatch(adapter, _packet(base=_head(repo)))
 
     assert result.success is True
     assert result.session_ref is not None
@@ -716,7 +734,7 @@ def test_turn_writes_canonical_events_beside_the_verbatim_stream(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(_packet(base=_head(repo)))
+    result = _dispatch(adapter, _packet(base=_head(repo)))
     _wait_for_terminal(adapter, result.session_ref)
     attempt_dir = spool / result.session_ref.session_id
 
@@ -787,7 +805,7 @@ def test_usage_and_coverage_land_in_the_attempt_dir(
         }
     )
 
-    result = adapter.dispatch(packet)
+    result = _dispatch(adapter, packet)
     _wait_for_terminal(adapter, result.session_ref)
     attempt_dir = spool / result.session_ref.session_id
 
@@ -820,7 +838,7 @@ def test_a_turn_that_never_reported_a_boundary_is_a_plumbing_failure(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(_packet(base=_head(repo)))
+    result = _dispatch(adapter, _packet(base=_head(repo)))
     status = _wait_for_terminal(adapter, result.session_ref)
 
     assert status.state == "failed"
@@ -889,7 +907,7 @@ def test_cancel_is_preemptive_and_refuses_a_terminal_session(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(_packet(base=_head(repo)))
+    result = _dispatch(adapter, _packet(base=_head(repo)))
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if adapter.status(result.session_ref).state == "running":
@@ -959,7 +977,8 @@ def test_resume_token_is_plumbed_only_when_continuity_says_so(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(
+    result = _dispatch(
+        adapter,
         _packet(base=_head(repo)),
         continuity=Continuity(
             mode="resume", token="prior-session-uuid", reason="operator_requested"
@@ -993,7 +1012,8 @@ def test_unusable_resume_token_falls_back_to_a_cold_turn(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(
+    result = _dispatch(
+        adapter,
         _packet(base=_head(repo)),
         continuity=Continuity(mode="resume", token=None, reason="token unusable"),
     )
@@ -1018,7 +1038,7 @@ def test_dispatch_fails_cleanly_on_an_unreachable_base_commit(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
 
-    result = adapter.dispatch(_packet(base="0" * 40))
+    result = _dispatch(adapter, _packet(base="0" * 40))
 
     assert result.success is False
     assert result.session_ref is None
@@ -1042,7 +1062,7 @@ def test_status_and_cancel_are_constructible_from_the_repo_alone(
     dispatching = CursorCliAdapter(
         repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
     )
-    result = dispatching.dispatch(_packet(base=_head(repo)))
+    result = _dispatch(dispatching, _packet(base=_head(repo)))
     _wait_for_terminal(dispatching, result.session_ref)
 
     reconstructed = CursorCliAdapter(repo="owner/repo")

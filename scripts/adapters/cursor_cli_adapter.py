@@ -16,11 +16,9 @@ Transport shape, proven by scripts/runtime/spike/cursor_cli_spike.py:
     0.02s, and the session stayed resumable afterwards
   - `--resume <session_id>` restores prior context cross-process
 
-Continuity is cold by default and structurally so: dispatch() takes
-`continuity=FRESH`. Resume happens only when an operator wrote a
-`resume.requested` marker and the guards in
-runtime/heartbeat/continuity_policy.py pass; an unusable token falls back to
-a cold turn silently and never fails the attempt.
+The runtime reserves the attempt directory and decides continuity before
+calling dispatch(). Resume is operator-requested and remains a hint: an
+unusable token falls back to a cold turn without failing the attempt.
 
 Spool layout per attempt (same conventions as pi_rpc/local_subprocess, so the
 operator's watch surface keeps working):
@@ -51,6 +49,7 @@ from adapters.executor_events import (
     turn_usage,
 )
 from adapters.executor_protocol import (
+    AttemptContext,
     FRESH,
     CapabilityUnsupported,
     Continuity,
@@ -189,18 +188,22 @@ class CursorCliAdapter(EngagementAdapterDefaults):
     def supports_engagement(self) -> bool:
         return self.capabilities().engagement
 
+    def attempt_root(self) -> Path:
+        """Root where the runtime reserves transport attempts."""
+        return self.spool_root
+
     def dispatch(
-        self, packet: NodePacket, *, continuity: Continuity = FRESH
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
     ) -> DispatchResult:
         if continuity.mode == "resume" and self.capabilities().resume == "none":
             raise CapabilityUnsupported("resume", self.executor_name)
 
-        session_id = (
-            f"{_safe_component(packet.job_id)}-"
-            f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
-            f"{uuid.uuid4().hex}"
-        )
-        attempt_dir = self.spool_root / session_id
+        session_id = attempt.attempt_id
+        attempt_dir = attempt.attempt_dir
         supervisor: subprocess.Popen[bytes] | None = None
         worktree: Path | None = None
         start_read: int | None = None
@@ -208,9 +211,6 @@ class CursorCliAdapter(EngagementAdapterDefaults):
         repo_path = self.cwd or Path.cwd()
         try:
             from local_agent_executor import create_worktree  # noqa: PLC0415
-
-            attempt_dir.mkdir(parents=True, exist_ok=False)
-            (attempt_dir / "packet.json").write_text(packet.to_json())
 
             base_sha = packet.expected_base_commit_sha
             if not base_sha:

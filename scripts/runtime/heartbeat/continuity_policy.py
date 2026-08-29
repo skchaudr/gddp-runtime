@@ -13,12 +13,12 @@ since it was written and the runtime has never set it, while the armed
 heartbeat runs `pi --print --no-session`. Resume earns exactly one trigger —
 a human explicitly asking for it.
 
-The operator's request is a marker file, `attempt_dir/resume.requested`,
-mirroring the `cancel.requested` idiom already in the spool. There is
-deliberately NO env var: `GDDP_EXECUTOR_OVERRIDE` exists so an operator can
-reroute transport without touching human-owned graph truth, but resume
-changes what the model is told and what it remembers, which sits next to node
-intent — and a shell export on one host would silently differ between hosts.
+The operator's request is keyed by the durable job id at
+`<attempt-root>/_continuity/<job-id>/resume.requested`. That path exists before
+the runtime reserves a transport attempt, so the dispatcher can consume the
+request before calling the adapter. There is deliberately NO policy env var:
+resume changes what the model is told and what it remembers, which sits next
+to node intent.
 
 Resume is a HINT. A missing, malformed, or guard-failing token falls back to
 a cold turn silently; it never fails the attempt. The cursor chat store is
@@ -141,14 +141,23 @@ class ResumeRequest:
     host: str | None = None
 
 
-def read_resume_request(attempt_dir: Path) -> ResumeRequest | None:
-    """Parse `attempt_dir/resume.requested`, or None when it is unusable.
+def continuity_request_dir(attempt_root: Path, job_id: str) -> Path:
+    """Return the stable, pre-dispatch request directory for one job."""
+    safe_job_id = "".join(
+        character if character.isalnum() or character in "._-" else "-"
+        for character in job_id
+    ).strip("._-")
+    return Path(attempt_root) / "_continuity" / (safe_job_id or "job")
+
+
+def read_resume_request(request_dir: Path) -> ResumeRequest | None:
+    """Parse a job-keyed `resume.requested`, or None when it is unusable.
 
     Accepts a bare session id (the shape an operator types) or a JSON object
     carrying `session_id` plus the `cwd`/`host` the session was recorded
     against. Never raises: an unreadable or empty marker is a cold turn.
     """
-    path = Path(attempt_dir) / RESUME_MARKER
+    path = Path(request_dir) / RESUME_MARKER
     try:
         text = path.read_text().strip()
     except OSError:
@@ -177,7 +186,7 @@ def read_resume_request(attempt_dir: Path) -> ResumeRequest | None:
 
 def choose_continuity(
     *,
-    attempt_dir: Path,
+    request_dir: Path,
     capabilities: ExecutorCapabilities,
     policy: SessionPolicy | None = None,
     cwd: str | Path | None = None,
@@ -205,7 +214,7 @@ def choose_continuity(
     if policy is not None and policy.resume_scope == "never":
         return Continuity(mode="fresh", reason="session_policy resume_scope: never")
 
-    request = read_resume_request(attempt_dir)
+    request = read_resume_request(request_dir)
     if request is None:
         return Continuity(mode="fresh", reason="no operator resume request")
 
@@ -251,6 +260,7 @@ __all__ = [
     "ResumeRequest",
     "SessionPolicy",
     "choose_continuity",
+    "continuity_request_dir",
     "parse_session_policy",
     "read_resume_request",
 ]

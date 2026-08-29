@@ -15,7 +15,13 @@ import pytest
 # scripts/ on path for adapter imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adapters.executor_protocol import NodePacket, SessionRef  # noqa: E402
+from adapters.executor_protocol import (  # noqa: E402
+    AttemptContext,
+    FRESH,
+    Continuity,
+    NodePacket,
+    SessionRef,
+)
 from adapters.pi_rpc_adapter import (  # noqa: E402
     PiRpcAdapter,
     _PACKET_PREAMBLE,
@@ -202,6 +208,18 @@ def _packet(
     )
 
 
+def _dispatch(adapter: PiRpcAdapter, packet: NodePacket, *, continuity=FRESH):
+    attempt_id = f"test-{packet.execution_attempt_id.replace(':', '-')}-{time.time_ns()}"
+    attempt_dir = adapter.attempt_root() / attempt_id
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    return adapter.dispatch(
+        packet,
+        attempt=AttemptContext(attempt_id=attempt_id, attempt_dir=attempt_dir),
+        continuity=continuity,
+    )
+
+
 def _wait_terminal(adapter: PiRpcAdapter, session_ref: SessionRef, timeout: float = 30) -> None:
     deadline = time.time() + timeout
     status = adapter.status(session_ref)
@@ -223,7 +241,7 @@ def test_dispatch_sends_packet_and_completes(fake_pi, git_repo, tmp_path):
         model="fake/model",
         turn_timeout_s=30,
     )
-    result = adapter.dispatch(_packet(base))
+    result = _dispatch(adapter, _packet(base))
     assert result.success, result.error
     assert result.session_ref is not None
     assert result.session_ref.executor == "pi_rpc"
@@ -270,7 +288,7 @@ def test_mid_turn_death_is_plumbing_failure(fake_pi, git_repo, tmp_path):
         model="fake/model",
         turn_timeout_s=15,
     )
-    result = adapter.dispatch(_packet(base))
+    result = _dispatch(adapter, _packet(base))
     assert result.success, result.error
     _wait_terminal(adapter, result.session_ref, timeout=20)
     status = adapter.status(result.session_ref)
@@ -280,8 +298,7 @@ def test_mid_turn_death_is_plumbing_failure(fake_pi, git_repo, tmp_path):
     assert "without durable exit state" in status.error
 
 
-def test_resume_reuses_session_file_arg(fake_pi, git_repo, tmp_path):
-    """Constructor resume_session_file is recorded into command.json for the orchestrator."""
+def test_resume_continuity_sets_session_file_arg(fake_pi, git_repo, tmp_path):
     repo, base = git_repo
     spool = tmp_path / "spool"
     spool.mkdir()
@@ -294,10 +311,13 @@ def test_resume_reuses_session_file_arg(fake_pi, git_repo, tmp_path):
         cwd=repo,
         pi_binary=str(fake_pi),
         model="fake/model",
-        resume_session_file=prior,
         turn_timeout_s=20,
     )
-    result = adapter.dispatch(_packet(base, attempt=1))
+    result = _dispatch(
+        adapter,
+        _packet(base, attempt=1),
+        continuity=Continuity(mode="resume", token=str(prior)),
+    )
     assert result.success, result.error
     attempt_dir = spool / result.session_ref.session_id
     cfg = json.loads((attempt_dir / "command.json").read_text())
@@ -326,7 +346,7 @@ def test_cancel_marks_request(fake_pi, git_repo, tmp_path):
         model="fake/model",
         turn_timeout_s=20,
     )
-    result = adapter.dispatch(_packet(base))
+    result = _dispatch(adapter, _packet(base))
     assert result.success
     # Cancel while running.
     time.sleep(0.15)
@@ -361,12 +381,12 @@ def test_second_dispatch_same_project_reuses_live_session(fake_pi, git_repo, tmp
             model="fake/model",
             turn_timeout_s=30,
         )
-        r1 = adapter.dispatch(_packet(base, attempt=0, project_id="proj-x"))
+        r1 = _dispatch(adapter, _packet(base, attempt=0, project_id="proj-x"))
         assert r1.success, r1.error
         _wait_terminal(adapter, r1.session_ref, timeout=30)
         assert adapter.status(r1.session_ref).state == "completed"
 
-        r2 = adapter.dispatch(_packet(base, attempt=1, project_id="proj-x"))
+        r2 = _dispatch(adapter, _packet(base, attempt=1, project_id="proj-x"))
         assert r2.success, r2.error
         _wait_terminal(adapter, r2.session_ref, timeout=30)
         assert adapter.status(r2.session_ref).state == "completed"
@@ -401,9 +421,9 @@ def test_second_dispatch_while_first_running_queues_not_spawns(fake_pi, git_repo
             model="fake/model",
             turn_timeout_s=30,
         )
-        r1 = adapter.dispatch(_packet(base, attempt=0, project_id="proj-y"))
+        r1 = _dispatch(adapter, _packet(base, attempt=0, project_id="proj-y"))
         assert r1.success, r1.error
-        r2 = adapter.dispatch(_packet(base, attempt=1, project_id="proj-y"))
+        r2 = _dispatch(adapter, _packet(base, attempt=1, project_id="proj-y"))
         assert r2.success, r2.error
 
         # supervisor.pid is written synchronously inside dispatch() itself
@@ -439,8 +459,8 @@ def test_different_projects_get_separate_orchestrators(fake_pi, git_repo, tmp_pa
         model="fake/model",
         turn_timeout_s=30,
     )
-    r1 = adapter.dispatch(_packet(base, attempt=0, project_id="proj-a"))
-    r2 = adapter.dispatch(_packet(base, attempt=1, project_id="proj-b"))
+    r1 = _dispatch(adapter, _packet(base, attempt=0, project_id="proj-a"))
+    r2 = _dispatch(adapter, _packet(base, attempt=1, project_id="proj-b"))
     assert r1.success and r2.success
 
     d1 = spool / r1.session_ref.session_id
@@ -470,8 +490,8 @@ def test_cancel_of_queued_packet_does_not_kill_live_orchestrator(fake_pi, git_re
         model="fake/model",
         turn_timeout_s=30,
     )
-    r1 = adapter.dispatch(_packet(base, attempt=0, project_id="proj-z"))
-    r2 = adapter.dispatch(_packet(base, attempt=1, project_id="proj-z"))
+    r1 = _dispatch(adapter, _packet(base, attempt=0, project_id="proj-z"))
+    r2 = _dispatch(adapter, _packet(base, attempt=1, project_id="proj-z"))
     assert r1.success and r2.success
 
     ok = adapter.cancel(r2.session_ref)  # r2 is queued, its turn never started
@@ -503,7 +523,7 @@ def test_idle_timeout_exits_session_then_new_dispatch_spawns_fresh(fake_pi, git_
         turn_timeout_s=30,
         idle_timeout_s=0.5,
     )
-    r1 = adapter.dispatch(_packet(base, attempt=0, project_id="proj-idle"))
+    r1 = _dispatch(adapter, _packet(base, attempt=0, project_id="proj-idle"))
     assert r1.success
     _wait_terminal(adapter, r1.session_ref, timeout=30)
     assert adapter.status(r1.session_ref).state == "completed"
@@ -514,7 +534,7 @@ def test_idle_timeout_exits_session_then_new_dispatch_spawns_fresh(fake_pi, git_
         time.sleep(0.1)
     assert not _pid_is_running(sup1), "orchestrator did not exit after its idle timeout"
 
-    r2 = adapter.dispatch(_packet(base, attempt=1, project_id="proj-idle"))
+    r2 = _dispatch(adapter, _packet(base, attempt=1, project_id="proj-idle"))
     assert r2.success
     sup2 = int((spool / r2.session_ref.session_id / "supervisor.pid").read_text().strip())
     assert sup2 != sup1, "expected a fresh orchestrator after the prior one idled out"

@@ -17,8 +17,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
 from adapters.executor_protocol import (
+    Continuity,
     DispatchResult,
     ExecutorAdapter,
+    ExecutorCapabilities,
     NodePacket,
     SessionRef,
 )
@@ -34,6 +36,10 @@ from adapters.mission_adapter import MissionAdapter
 from adapters import local_subprocess_adapter
 from adapters.pi_rpc_adapter import PiRpcAdapter
 from runtime.heartbeat import dispatcher
+from runtime.heartbeat.continuity_policy import (
+    RESUME_MARKER,
+    continuity_request_dir,
+)
 
 
 def _persisted_job(*, executor: str = "jules_api", attempt: int = 2) -> dict:
@@ -490,6 +496,107 @@ def test_dispatch_returns_common_receipt_and_passes_same_node_packet(
     dispatched_packet = adapter_dispatch.call_args.args[0]
     assert isinstance(dispatched_packet, NodePacket)
     assert dispatched_packet.to_json_value() == _packet().to_json_value()
+
+
+class _CapabilityAwareDispatchAdapter:
+    observed: list[tuple[object, Continuity]] = []
+    root: Path
+
+    def __init__(self, repo, *, cwd=None):
+        self.repo = repo
+        self.cwd = cwd
+
+    def capabilities(self):
+        return ExecutorCapabilities(executor="cursor_cli", resume="token")
+
+    def attempt_root(self):
+        return type(self).root
+
+    def dispatch(self, packet, *, attempt, continuity):
+        type(self).observed.append((attempt, continuity))
+        return DispatchResult(
+            success=True,
+            session_ref=SessionRef("cursor_cli", attempt.attempt_id),
+        )
+
+
+@pytest.mark.parametrize(
+    ("marker", "expected_mode", "expected_token"),
+    (("session-token", "resume", "session-token"), (None, "fresh", None)),
+)
+def test_dispatcher_decides_continuity_before_cursor_dispatch(
+    monkeypatch, tmp_path, marker, expected_mode, expected_token
+):
+    _CapabilityAwareDispatchAdapter.root = tmp_path
+    _CapabilityAwareDispatchAdapter.observed = []
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS, "cursor_cli", _CapabilityAwareDispatchAdapter
+    )
+    if marker is not None:
+        request_dir = continuity_request_dir(tmp_path, "job-123")
+        request_dir.mkdir(parents=True)
+        (request_dir / RESUME_MARKER).write_text(marker)
+
+    result = dispatcher.dispatch(
+        _persisted_job(executor="cursor_cli"), "owner/repo"
+    )
+
+    assert result.success is True
+    attempt, continuity = _CapabilityAwareDispatchAdapter.observed[0]
+    assert attempt.attempt_dir.is_dir()
+    assert attempt.attempt_dir.name == attempt.attempt_id
+    persisted_capabilities = json.loads(
+        (attempt.attempt_dir / "capabilities.json").read_text()
+    )
+    assert persisted_capabilities["executor"] == "cursor_cli"
+    assert persisted_capabilities["midturn_steering"] is False
+    assert continuity.mode == expected_mode
+    assert continuity.token == expected_token
+
+
+def test_preemptive_cancel_text_never_claims_remote_work_may_continue(
+    monkeypatch,
+):
+    class PreemptiveAdapter:
+        def __init__(self, repo):
+            pass
+
+        def capabilities(self):
+            return ExecutorCapabilities(
+                executor="cursor_cli", cancellation="preemptive"
+            )
+
+        def cancel(self, session_ref):
+            return True
+
+    monkeypatch.setitem(dispatcher.ADAPTERS, "cursor_cli", PreemptiveAdapter)
+
+    accepted, text = dispatcher.cancel_remote_session(
+        SessionRef("cursor_cli", "attempt-1"), "owner/repo"
+    )
+
+    assert accepted is True
+    assert text == "late session termination accepted"
+    assert "remote may continue" not in text
+
+
+def test_steer_refuses_executor_without_midturn_delivery(tmp_path):
+    attempt_dir = tmp_path / "attempt"
+    attempt_dir.mkdir()
+    (attempt_dir / "capabilities.json").write_text(
+        json.dumps(
+            {
+                "executor": "cursor_cli",
+                "midturn_steering": False,
+            }
+        )
+    )
+
+    accepted, text = dispatcher.queue_operator_steer(attempt_dir, "change course")
+
+    assert accepted is False
+    assert "does not support mid-turn steering" in text
+    assert not (attempt_dir / "steer.jsonl").exists()
 
 
 def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiation(tmp_path):

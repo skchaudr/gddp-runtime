@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from adapters.executor_protocol import (
+    AttemptContext,
     FRESH,
     CapabilityUnsupported,
     Continuity,
@@ -202,36 +203,37 @@ class PiRpcAdapter:
         """Thin shim over the declaration so call sites keep working."""
         return self.capabilities().engagement
 
+    def attempt_root(self) -> Path:
+        """Root where the runtime reserves transport attempts."""
+        return self.spool_root
+
     def dispatch(
-        self, packet: NodePacket, *, continuity: Continuity = FRESH
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
     ) -> DispatchResult:
         if continuity.mode == "resume" and self.capabilities().resume == "none":
             raise CapabilityUnsupported("resume", self.executor_name)
-        # The runtime's per-dispatch decision outranks the constructor
-        # argument: a token on the call is packet-scoped, while
-        # resume_session_file is ambient adapter state. mode="fresh" changes
-        # nothing, which is what every caller does today.
-        resume_session_file = self.resume_session_file
-        if continuity.mode == "resume" and continuity.token:
-            resume_session_file = Path(continuity.token)
-
-        session_id = (
-            f"{_safe_component(packet.job_id)}-"
-            f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
-            f"{uuid.uuid4().hex}"
+        # Continuity is packet-scoped runtime policy. Ambient constructor
+        # state must not turn an explicit fresh dispatch into a resumed one.
+        resume_session_file = (
+            Path(continuity.token)
+            if continuity.mode == "resume" and continuity.token
+            else None
         )
-        attempt_dir = self.spool_root / session_id
+
+        session_id = attempt.attempt_id
+        attempt_dir = attempt.attempt_dir
         supervisor: subprocess.Popen[bytes] | None = None
         try:
-            attempt_dir.mkdir(parents=True, exist_ok=False)
             execution_cwd = self.cwd
             if execution_cwd is None:
                 # Fall back to the process cwd (dispatcher sets repo_path as cwd
                 # for local transports). This becomes the orchestrator session's
                 # own cwd — never the session worktree (see _PACKET_PREAMBLE).
                 execution_cwd = Path.cwd()
-            (attempt_dir / "packet.json").write_text(packet.to_json())
-
             project_key = _safe_component(packet.project_id or self.repo or "default")
             orchestrator_dir = self.spool_root / "_orchestrators" / project_key
 
