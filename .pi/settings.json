@@ -1,4 +1,9 @@
 {
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 163840,
+    "keepRecentTokens": 12000
+  },
   "subagents": {
     "agentOverrides": {}
   }
