@@ -26,9 +26,8 @@ turn_ended for them is synthesized by the driver from the return code.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 
-from adapters.executor_events import EventType, ExecutorEvent, TurnUsage
+from adapters.executor_events import ExecutorEvent, TranslatedEvent, TurnUsage
 
 # Canonical tool names are the pi spellings already load-bearing in coverage
 # and in 72 existing spools; cursor's spellings map onto them.
@@ -66,15 +65,6 @@ def canonical_tool_name(tool_key: str, call_id: str) -> str:
                 return name
         return "edit"
     return _TOOL_KEY_NAMES.get(f"{lowered}toolcall", lowered)
-
-
-@dataclass(frozen=True)
-class TranslatedEvent:
-    """One canonical event minus the envelope the writer stamps."""
-
-    type: EventType
-    raw_type: str
-    fields: Mapping[str, object] = field(default_factory=dict)
 
 
 def _tool_body(raw: Mapping[str, object]) -> tuple[str, Mapping[str, object]]:

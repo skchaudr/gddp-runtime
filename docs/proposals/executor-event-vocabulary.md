@@ -290,6 +290,27 @@ Two further requirements:
 | *(no event — `cancel.requested`)* | `turn_ended{status:"cancelled"}` | driver-synthesized (`scripts/adapters/pi_rpc_adapter.py:891-896`) | |
 | `entry_appended`, `extension_ui_request`, `agent_settled` | *(drop)* | — | 10,787 events, zero consumers. |
 
+**Implementation note (2026-08-29, `scripts/adapters/events_pi_rpc.py`).** As
+built, the table above departs from this proposal in two places, both because
+re-measuring the 72 spools contradicted what the mapping assumed:
+
+- **`turn_end` emits no `usage`.** This proposal called it cumulative and
+  assigned it `scope:"turn"`. Measured: 765 `turn_end` against 777 *assistant*
+  `message_end`, with identical `cacheRead` totals in 58 of the 69 spools that
+  report any — it restates the turn's message usage rather than accumulating
+  across the session. Since `executor_events.turn_usage` *prefers* a
+  turn-scoped record over summed message-scoped ones, emitting it would have
+  silently replaced the authoritative per-message sum with whichever `turn_end`
+  came last. Its `stopReason` is kept and rides the next `turn_ended`.
+- **Only `role: "assistant"` `message_end` becomes `assistant_message`
+  + `usage`.** `message_end` also carries `toolResult` (1,401), `custom` (239)
+  and `user` (59), and only the assistant ones carry usage at all. The
+  proposal's row did not distinguish them.
+
+Also measured while building it: `response.data.model` is an object with
+`id`/`name`, not a display string; both top-level `isError` (74 observed) and
+nested `result.isError` (18) are real failure shapes.
+
 ### 5.2 cursor stream-json → canonical
 
 | cursor event | canonical | field mapping | notes |

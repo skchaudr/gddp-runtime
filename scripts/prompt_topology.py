@@ -221,6 +221,14 @@ def extract_actual_cached_tokens(events: Sequence[dict]) -> int | None:
 
     Returns total cached tokens if any usage event with cache details is found,
     or None if no provider usage cache metrics were present in the events.
+
+    NOT the executor path any more. Both local transports now read usage off
+    canonical events via ``adapters.executor_events.turn_usage``, which cannot
+    reach a streaming update and so cannot reproduce the message_update
+    over-count described in docs/proposals/executor-event-vocabulary.md §1.2.
+    What still calls this is the evaluator's own pi run over `--mode json`
+    stdout (runtime/verification/semantic/pi_runner.py), a different surface
+    with no recorded fixture yet.
     """
     total_cached = 0
     found_any = False

@@ -1,0 +1,293 @@
+{
+  "sample": "pi --mode rpc event stream: one representative slice of every type observed in production, lifted verbatim from real orchestrator spools",
+  "date": "2026-08-29",
+  "source": "jobs/local-subprocess-spool/*/events.jsonl (72 spools, 241,585 events; not git-tracked runtime state)",
+  "redaction": "string values longer than 160 chars truncated with ' …[truncated]'; long arrays clipped to 2 entries. No key was added, removed, or renamed.",
+  "type_census": {
+    "message_update": 221271,
+    "entry_appended": 7833,
+    "extension_ui_request": 2933,
+    "message_start": 2477,
+    "message_end": 2476,
+    "tool_execution_update": 1458,
+    "tool_execution_start": 1413,
+    "tool_execution_end": 1401,
+    "turn_start": 778,
+    "turn_end": 765,
+    "response": 122,
+    "agent_start": 74,
+    "agent_end": 61,
+    "agent_settled": 21
+  },
+  "derived_facts": {
+    "message_end_roles": "toolResult 1401, assistant 777, custom 239, user 59 — ONLY assistant carries message.usage",
+    "usage_keys": "input, output, cacheRead, cacheWrite, reasoning, totalTokens, cost{input,output,cacheRead,cacheWrite,total}",
+    "turn_end_vs_message_end": "765 turn_end against 777 assistant message_end; cacheRead totals identical in 58 of the 69 spools reporting any. turn_end restates the turn's message usage, it does not accumulate across the session.",
+    "message_update_usage_trap": "146,799 message_update events carry a top-level usage dict and 2,098 of those carry a nonzero cacheRead. prompt_topology.extract_actual_cached_tokens counts them on top of message_end, inflating actual_cached_tokens (vocabulary doc §1.2).",
+    "tool_end_has_no_args": "all 1,401 tool_execution_end events carry only toolCallId/toolName/result/isError — paths must be buffered from the matching start",
+    "tool_failure_shapes": "top-level isError true (74 observed) and nested result.isError true (18 observed); both are real",
+    "get_state_model_is_an_object": "response.data.model is a dict with id/name/provider/cost, not a display string"
+  },
+  "events": [
+    {
+      "id": "req-1",
+      "type": "response",
+      "command": "get_state",
+      "success": true,
+      "data": {
+        "model": {
+          "id": "grok-4.5",
+          "name": "Grok 4.5",
+          "api": "openai-responses",
+          "provider": "xai",
+          "contextWindow": 500000
+        },
+        "thinkingLevel": "high",
+        "isStreaming": false,
+        "sessionFile": "/Users/sab-mini/repos/gddp-runtime/jobs/local-subprocess-spool/_orchestrators/gddp-runtime/pi-session/019ffce4-f6ff-7c87-b0c0-6ddde137de3d.jsonl",
+        "sessionId": "019ffce4-f6ff-7c87-b0c0-6ddde137de3d",
+        "messageCount": 0
+      }
+    },
+    { "type": "agent_start" },
+    { "type": "turn_start" },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Treat the following JSON as the authoritative GDDP NodePacket. Work only in the current worktree. Implement its goal within its constraints, create its required …[truncated]"
+          }
+        ],
+        "timestamp": 1786654298484
+      }
+    },
+    {
+      "type": "message_update",
+      "usage": {
+        "input": 16384,
+        "output": 1600,
+        "cacheRead": 512,
+        "cacheWrite": 0,
+        "reasoning": 1501,
+        "totalTokens": 18496,
+        "cost": {
+          "input": 0.015826944,
+          "output": 0.0048576,
+          "cacheRead": 9.89184e-05,
+          "cacheWrite": 0,
+          "total": 0.0207834624
+        }
+      },
+      "assistantMessageEvent": {
+        "type": "thinking_end",
+        "contentIndex": 0,
+        "content": "Let me start by understanding the situation. I'm the ORCHESTRATOR for a GDDP node execution session. Let me parse what's being asked.\n\nThe node is `milestone-in …[truncated]"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-0|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_0",
+      "toolName": "bash",
+      "args": {
+        "command": "git rev-parse HEAD && git status --short --branch && ls -la reports/pi-harness-execution/ 2>/dev/null; ls -la reports/ 2 …[truncated]"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-1|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_1",
+      "toolName": "read",
+      "args": {
+        "path": "reports/pi-harness-execution/node-05-extensions-audit.md"
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-1|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_1",
+      "toolName": "read",
+      "args": {
+        "path": "reports/pi-harness-execution/node-05-extensions-audit.md"
+      },
+      "partialResult": { "content": [{ "type": "text", "text": "# Extensions, Hooks, and …[truncated]" }] }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-1|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_1",
+      "toolName": "read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "# Extensions, Hooks, and Advisor Modes Audit\n\n**GDDP Node:** node-05-extensions-audit\n**Date:** 2026-08-09\n**BASE SHA:** …[truncated]"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-599f9e75-3c82-420e-8d43-938d1e9e49e1-6|fc_f82c7e86-0d31-991e-af64-276a84fb46dc_0",
+      "toolName": "read",
+      "args": {
+        "path": "/Users/sab-mini/repos/MyAPI-rebuild/project-docs/corpus-work-2026-08/2026-08-08-last2w-decisions.md",
+        "limit": 200
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-599f9e75-3c82-420e-8d43-938d1e9e49e1-6|fc_f82c7e86-0d31-991e-af64-276a84fb46dc_0",
+      "toolName": "read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "ENOENT: no such file or directory, access '/Users/sab-mini/repos/MyAPI-rebuild/project-docs/corpus-work-2026-08/2026-08-08-last2w-decisions.md'"
+          }
+        ],
+        "details": {}
+      },
+      "isError": true
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call_80BRNzHQXWgzwefcaAZcquvG|fc_010632ddb7255308016a7f87697e70819abfba111909b5a207",
+      "toolName": "subagent",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Workflow failed: Workflow script timed out after 180000ms.\n\nCall trace:\n- run normalize-map: started\n- run relation-audit: started\n- run validation-design: star …[truncated]"
+          }
+        ],
+        "isError": true,
+        "details": { "mode": "workflow", "runId": "call_80BRNzHQXWgzwefcaAZcquvG|fc_010632ddb7255308016a7f87697e70819abfba111909b5a207" }
+      }
+    },
+    {
+      "type": "entry_appended",
+      "entry": {
+        "type": "custom",
+        "customType": "obs-log",
+        "data": { "message": "post_failed", "timestamp": "2026-08-13T20:51:40.069Z", "error": "fetch failed" },
+        "id": "75cf697b",
+        "parentId": "74915797",
+        "timestamp": "2026-08-13T20:51:40.069Z"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "f4d055ac-e551-4aeb-9742-d0660f4b47e2",
+      "method": "notify",
+      "message": "📡 pi-observability: no auth token — set OBS_AUTH_TOKEN env or --obs-token to match the server.",
+      "notifyType": "warning"
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to implement a GDDP NodePacket. Let me start by reading the audit report and understanding the current state.",
+            "thinkingSignature": "{\"id\":\"rs_e1431702-91d0-9f7c-90f6-ac35c2b86e49\",\"summary\":[{\"text\":\"The user wants me to implement a GDDP NodePacket. Let me start by reading the audit report a …[truncated]"
+          },
+          {
+            "type": "text",
+            "text": "I'll read the paired audit report and check the worktree state before implementing anything.",
+            "textSignature": "{\"v\":1,\"id\":\"msg_e1431702-91d0-9f7c-90f6-ac35c2b86e49\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "xai",
+        "model": "grok-4.5",
+        "usage": {
+          "input": 9580,
+          "output": 164,
+          "cacheRead": 384,
+          "cacheWrite": 0,
+          "reasoning": 26,
+          "totalTokens": 10128,
+          "cost": {
+            "input": 0.01916,
+            "output": 0.000984,
+            "cacheRead": 0.0001152,
+            "cacheWrite": 0,
+            "total": 0.0202592
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1786654300213,
+        "responseId": "e1431702-91d0-9f7c-90f6-ac35c2b86e49",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-0|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_0",
+        "toolName": "bash",
+        "content": [
+          {
+            "type": "text",
+            "text": "4a967077f36eb0470cb1b19816de76a8e7ef9c70\n## HEAD (no branch)\ntotal 360\ndrwxr-xr-x@ 8 sab-mini  staff    256 Aug 13 13:51 . …[truncated]"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1786654304009
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll read the paired audit report and check the worktree state before implementing anything.",
+            "textSignature": "{\"v\":1,\"id\":\"msg_e1431702-91d0-9f7c-90f6-ac35c2b86e49\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "xai",
+        "model": "grok-4.5",
+        "usage": {
+          "input": 9580,
+          "output": 164,
+          "cacheRead": 384,
+          "cacheWrite": 0,
+          "reasoning": 26,
+          "totalTokens": 10128,
+          "cost": { "total": 0.0202592 }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1786654300213,
+        "rawStopReason": "completed"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "call-904745c7-b20d-4122-bb67-87bdcbd9d966-0|fc_e1431702-91d0-9f7c-90f6-ac35c2b86e49_0",
+          "toolName": "bash",
+          "content": [{ "type": "text", "text": "4a967077f36eb0470cb1b19816de76a8e7ef9c70 …[truncated]" }],
+          "isError": false,
+          "timestamp": 1786654304009
+        }
+      ]
+    },
+    {
+      "type": "agent_end",
+      "messages": [
+        {
+          "role": "user",
+          "content": [{ "type": "text", "text": "Treat the following JSON as the authoritative GDDP NodePacket. …[truncated]" }],
+          "timestamp": 1786654298484
+        }
+      ],
+      "willRetry": false
+    },
+    { "type": "agent_settled" }
+  ]
+}

@@ -1,10 +1,14 @@
 """Context coverage over canonical events must rate identically to the pi
 implementation it was ported from.
 
-The hard constraint on the second transport is that the MEASUREMENT does not
+The hard constraint on a second transport is that the MEASUREMENT does not
 change when the event shape does: same ratings, same "None when nothing was
 offered" rule. These tests assert both halves — the rating table directly, and
-equivalence against the live pi implementation on matched pi/cursor streams.
+equivalence across matched pi/cursor streams of the same work.
+
+The pi-shaped copy of this rating this file used to compare against is gone;
+pi now reaches the same implementation through events_pi_rpc, so the
+equivalence case below runs both native shapes through their translators.
 """
 
 from __future__ import annotations
@@ -19,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-from adapters import pi_rpc_adapter
 from adapters.events_cursor_cli import translate_stream
+from adapters.events_pi_rpc import translate_stream as translate_pi_stream
 from adapters.executor_events import ExecutorEvent
 from runtime.context_coverage import (
     compute_turn_context_coverage,
@@ -175,8 +179,8 @@ def test_unread_and_unoffered_paths_are_both_reported():
 
 def test_cursor_and_pi_streams_of_the_same_work_produce_the_same_record():
     """The measurement must not change because the transport did. Same reads,
-    same failures, same ratings — one stream in pi's shape through pi's
-    implementation, one in cursor's shape through this one."""
+    same failures, same record — one stream in pi's native shape, one in
+    cursor's, both through their translators into the one implementation."""
     pointers = {
         "readme": "/repo/README.md",
         "neighbor:node-up": "/repo/nodes/up.yaml",
@@ -213,8 +217,8 @@ def test_cursor_and_pi_streams_of_the_same_work_produce_the_same_record():
         ]
     )
 
-    pi_coverage = pi_rpc_adapter.compute_turn_context_coverage(
-        pointers=pointers, events=pi_events
+    pi_coverage = compute_turn_context_coverage(
+        pointers=pointers, events=translate_pi_stream(pi_events)
     )
     cursor_coverage = compute_turn_context_coverage(
         pointers=pointers, events=cursor_events
