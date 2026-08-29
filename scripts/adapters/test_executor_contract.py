@@ -22,6 +22,7 @@ from adapters.executor_protocol import (
     NodePacket,
     SessionRef,
 )
+from adapters.cursor_cli_adapter import CursorCliAdapter
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.session_prompt import build_session_instructions
@@ -263,6 +264,7 @@ def test_jules_renderers_preserve_the_same_packet_semantics():
 
 
 def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
+    cursor = CursorCliAdapter(repo="owner/repo", spool_root=tmp_path)
     api = JulesApiAdapter("owner/repo", api_key="test-key")
     local = LocalSubprocessAdapter(
         repo="owner/repo",
@@ -281,6 +283,7 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
     assert isinstance(local, ExecutorAdapter)
     assert isinstance(droid, ExecutorAdapter)
     assert isinstance(mission, ExecutorAdapter)
+    assert isinstance(cursor, ExecutorAdapter)
     assert not isinstance(action, ExecutorAdapter)
     assert dispatcher.ADAPTERS == {
         "jules_api": JulesApiAdapter,
@@ -288,6 +291,7 @@ def test_direct_registry_contains_only_runtime_lifecycle_conformers(tmp_path):
         "droid": DroidSubprocessAdapter,
         "factory_mission": MissionAdapter,
         "pi_rpc": PiRpcAdapter,
+        "cursor_cli": CursorCliAdapter,
     }
     assert dispatcher.MEDIATED_ADAPTERS == {"jules": JulesActionAdapter}
 

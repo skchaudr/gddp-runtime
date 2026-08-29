@@ -21,6 +21,7 @@ DEFAULT_MISSION_MAX_PAIRS = 5
 DEFAULT_EXECUTION_MODE_ALLOWLIST = frozenset(
     {
         "agent",
+        "cursor_cli",
         "droid",
         "factory_mission",
         "human",

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from adapters.executor_protocol import NodePacket
+from prompt_topology import TurnPrompt
 
 # Prefix caching only discounts a byte-identical prompt prefix. Per-attempt
 # identifiers must therefore be serialized AFTER the node content, never sorted
@@ -65,6 +67,91 @@ def split_packet_zones(packet: Mapping[str, object]) -> tuple[str, str]:
     )
     extra = tuple(sorted(key for key in packet if key not in known))
     return _dump(_STABLE_PROMPT_KEYS), _dump(_VOLATILE_PROMPT_KEYS + extra)
+
+
+_POINTER_HEADER = (
+    "Project context pointers (read these files; a read is evidence, an "
+    "embedded blob is not):"
+)
+
+
+def merged_turn_pointers(packets: Sequence[Mapping[str, object]]) -> dict[str, str]:
+    """Union of the packets' context_pointers — what one turn actually offers.
+
+    First writer wins per key, so a batch turn offering the same key from two
+    packets renders (and is measured against) one value.
+    """
+    pointers: dict[str, str] = {}
+    for packet in packets:
+        carried = packet.get("context_pointers")
+        if not isinstance(carried, Mapping):
+            continue
+        for key, value in carried.items():
+            pointers.setdefault(str(key), str(value))
+    return pointers
+
+
+def build_project_zone(packets: Sequence[Mapping[str, object]]) -> str:
+    """Render the packets' canonical context pointers as the project zone.
+
+    Paths only — never file contents. Sorted by key so the block is
+    byte-identical across retries of the same packet(s), and empty when no
+    packet carries pointers (old packets, unreachable gddp-config), which
+    leaves the zone absent rather than failing the turn. UNAVAILABLE markers
+    are passed through verbatim: knowing a canonical doc is missing is
+    context too.
+    """
+    pointers = merged_turn_pointers(packets)
+    if not pointers:
+        return ""
+    lines = [f"{key}: {pointers[key]}" for key in sorted(pointers)]
+    return "\n".join([_POINTER_HEADER, *lines])
+
+
+def build_turn_prompt(
+    *,
+    worktree: Path,
+    packets: Sequence[Mapping[str, object]],
+    preamble: str,
+    turn_note: str,
+) -> TurnPrompt:
+    """Four-zone TurnPrompt for one executor turn, on any transport.
+
+    protocol  = the transport's protocol text (nearly immutable, shared by
+                every turn on that transport)
+    project   = canonical context pointers for this node's project (paths
+                only, graph-stable — see build_project_zone); empty when the
+                packet carries none
+    node      = stable node JSON blocks (retry-stable per node)
+    attempt   = volatile envelopes (attempt ids + worktree) + turn note
+
+    Emitting protocol->project->node->attempt means a retry of the same node
+    reuses protocol+project+node and a sibling node in the same project
+    reuses protocol+project.
+
+    ``preamble`` and ``turn_note`` are parameters rather than constants
+    because the protocol zone is where a harness's own capabilities show up:
+    pi's text instructs subagent fan-out, which an executor that declares
+    native_subagents=False must not be told to do. Zone assembly itself is
+    GDDP policy and identical for every transport.
+    """
+    node_blocks: list[str] = []
+    envelopes: list[str] = []
+    for idx, packet in enumerate(packets, start=1):
+        stable_zone, volatile_zone = split_packet_zones(packet)
+        node_blocks.append(
+            f"### NODE {idx} (authoritative GDDP NodePacket)\n{stable_zone}"
+        )
+        envelopes.append(
+            f"### ATTEMPT ENVELOPE {idx}\n{volatile_zone}\n"
+            f"worktree_path: {worktree}"
+        )
+    return TurnPrompt(
+        protocol=preamble,
+        project=build_project_zone(packets),
+        node="\n\n".join(node_blocks),
+        attempt="\n\n".join(envelopes) + f"\n\n{turn_note}\n",
+    )
 
 
 def flatten(item) -> str:

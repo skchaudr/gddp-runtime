@@ -19,6 +19,7 @@ from adapters.executor_protocol import (
     NodePacket,
     SessionRef,
 )
+from adapters.cursor_cli_adapter import CursorCliAdapter
 from adapters.jules_action_adapter import JulesActionAdapter
 from adapters.jules_api_adapter import JulesApiAdapter
 from adapters.local_subprocess_adapter import (
@@ -40,13 +41,14 @@ ADAPTERS = {
     "droid": DroidSubprocessAdapter,
     "factory_mission": MissionAdapter,
     "pi_rpc": PiRpcAdapter,
+    "cursor_cli": CursorCliAdapter,
 }
 
 # Executors that run inside a local checkout and therefore receive repo_path
 # as their cwd. Name-keyed (not class-keyed) so tests can substitute
 # duck-typed adapter doubles into ADAPTERS.
 _LOCAL_TRANSPORT_EXECUTORS = frozenset(
-    {"local_subprocess", "droid", "factory_mission", "pi_rpc"}
+    {"local_subprocess", "droid", "factory_mission", "pi_rpc", "cursor_cli"}
 )
 
 MEDIATED_ADAPTERS = {

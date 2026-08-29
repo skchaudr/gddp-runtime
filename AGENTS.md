@@ -43,7 +43,7 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 
 ## Canonical node workflow
 
-**Start at [`LOOP.md`](LOOP.md)** — the five-step operating loop, the watch/steer surface, and the frozen-infrastructure list. Frozen surfaces (intake server, jules adapters, rig1 deploy, rollback/export) get no investment unless a node names them.
+**Start at [`LOOP.md`](docs/proposals/LOOP.md)** — the five-step operating loop, the watch/steer surface, and the frozen-infrastructure list. Frozen surfaces (intake server, jules adapters, rig1 deploy, rollback/export) get no investment unless a node names them.
 
 - Treat a node as the unit of project intent. Jobs, sessions, commits, tests, artifacts, and verdicts are evidence from attempts to satisfy it.
 - Treat every node as a human-owned proposal, not a commitment. Acceptance is not assumed. Human review may accept, revise, split, supersede, rewire, defer, or abandon a node; only the human changes graph truth.

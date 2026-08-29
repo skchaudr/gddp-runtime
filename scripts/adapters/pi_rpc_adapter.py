@@ -43,13 +43,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from adapters.executor_protocol import (
+    FRESH,
+    CapabilityUnsupported,
+    Continuity,
     DispatchResult,
+    ExecutorCapabilities,
     NodePacket,
     PatchResult,
     SessionRef,
     SessionStatus,
 )
-from adapters.session_prompt import split_packet_zones
+
+# build_project_zone/merged_turn_pointers/build_turn_prompt moved to the
+# transport-neutral session_prompt module so a second transport reuses the
+# four-zone machinery instead of copying it. Re-exported here: they are part
+# of this module's existing public surface.
+from adapters.session_prompt import (  # noqa: F401 - re-export
+    build_project_zone,
+    build_turn_prompt,
+    merged_turn_pointers,
+    split_packet_zones,
+)
 from prompt_topology import TurnPrompt, extract_actual_cached_tokens, prompt_cache_report
 
 _EXECUTOR = "pi_rpc"
@@ -163,7 +177,44 @@ class PiRpcAdapter:
             Path(resume_session_file) if resume_session_file else None
         )
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
+    def capabilities(self) -> ExecutorCapabilities:
+        """Declared capabilities. Pure — safe in preflight, no live session.
+
+        Evidence for each field: docs/proposals/executor-capability-contract.md
+        §4. cancellation is COOPERATIVE, not preemptive: cancel() writes a
+        marker and deliberately never signals, because this attempt's pid may
+        be the shared per-project process. engagement is False, which is what
+        supports_engagement() has always reported by omission.
+        """
+        return ExecutorCapabilities(
+            executor=self.executor_name,
+            streaming_events=True,
+            partial_text=True,
+            cancellation="cooperative",
+            resume="session_file",
+            midturn_steering=True,
+            usage_reporting=True,
+            native_subagents=True,
+            structured_tool_calls=True,
+        )
+
+    def supports_engagement(self) -> bool:
+        """Thin shim over the declaration so call sites keep working."""
+        return self.capabilities().engagement
+
+    def dispatch(
+        self, packet: NodePacket, *, continuity: Continuity = FRESH
+    ) -> DispatchResult:
+        if continuity.mode == "resume" and self.capabilities().resume == "none":
+            raise CapabilityUnsupported("resume", self.executor_name)
+        # The runtime's per-dispatch decision outranks the constructor
+        # argument: a token on the call is packet-scoped, while
+        # resume_session_file is ambient adapter state. mode="fresh" changes
+        # nothing, which is what every caller does today.
+        resume_session_file = self.resume_session_file
+        if continuity.mode == "resume" and continuity.token:
+            resume_session_file = Path(continuity.token)
+
         session_id = (
             f"{_safe_component(packet.job_id)}-"
             f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
@@ -193,9 +244,7 @@ class PiRpcAdapter:
                 "repo_cwd": str(execution_cwd),
                 "orchestrator_dir": str(orchestrator_dir),
                 "resume_session_file": (
-                    str(self.resume_session_file)
-                    if self.resume_session_file
-                    else None
+                    str(resume_session_file) if resume_session_file else None
                 ),
             }
             (attempt_dir / "command.json").write_text(
@@ -452,45 +501,6 @@ def _observability_env(
     return obs
 
 
-_POINTER_HEADER = (
-    "Project context pointers (read these files; a read is evidence, an "
-    "embedded blob is not):"
-)
-
-
-def merged_turn_pointers(packets: Sequence[dict]) -> dict[str, str]:
-    """Union of the packets' context_pointers — what one turn actually offers.
-
-    First writer wins per key, so a batch turn offering the same key from two
-    packets renders (and is measured against) one value.
-    """
-    pointers: dict[str, str] = {}
-    for packet in packets:
-        carried = packet.get("context_pointers")
-        if not isinstance(carried, Mapping):
-            continue
-        for key, value in carried.items():
-            pointers.setdefault(str(key), str(value))
-    return pointers
-
-
-def build_project_zone(packets: Sequence[dict]) -> str:
-    """Render the packets' canonical context pointers as the project zone.
-
-    Paths only — never file contents. Sorted by key so the block is
-    byte-identical across retries of the same packet(s), and empty when no
-    packet carries pointers (old packets, unreachable gddp-config), which
-    leaves the zone absent rather than failing the turn. UNAVAILABLE markers
-    are passed through verbatim: knowing a canonical doc is missing is
-    context too.
-    """
-    pointers = merged_turn_pointers(packets)
-    if not pointers:
-        return ""
-    lines = [f"{key}: {pointers[key]}" for key in sorted(pointers)]
-    return "\n".join([_POINTER_HEADER, *lines])
-
-
 # ---------------------------------------------------------------------------
 # Context coverage: were the offered pointers actually opened?
 # ---------------------------------------------------------------------------
@@ -651,40 +661,21 @@ def _resolve_read_path(path: str, base: Path | None) -> str:
 
 
 def build_executor_turn_prompt(*, worktree: Path, packets: Sequence[dict]) -> TurnPrompt:
-    """Four-zone TurnPrompt for one executor turn.
+    """Four-zone TurnPrompt for one pi orchestrator turn.
 
-    protocol  = _PACKET_PREAMBLE (nearly immutable, shared by every turn)
-    project   = canonical context pointers for this node's project (paths
-               only, graph-stable — see build_project_zone); empty when the
-               packet carries none
-    node      = stable node JSON blocks (retry-stable per node)
-    attempt   = volatile envelopes (attempt ids + worktree) + turn note
-
-    Emitting protocol->project->node->attempt means a retry of the same
-    node reuses protocol+project+node and a sibling node in the same project
-    reuses protocol+project.
+    Zone assembly is shared (session_prompt.build_turn_prompt); what is pi's
+    own is the protocol zone and the turn note, both of which describe pi's
+    subagent fan-out. The rendered bytes are unchanged.
     """
-    n = len(packets)
-    node_blocks: list[str] = []
-    envelopes: list[str] = []
-    for idx, packet in enumerate(packets, start=1):
-        stable_zone, volatile_zone = split_packet_zones(packet)
-        node_blocks.append(
-            f"### NODE {idx} (authoritative GDDP NodePacket)\n{stable_zone}"
-        )
-        envelopes.append(
-            f"### ATTEMPT ENVELOPE {idx}\n{volatile_zone}\n"
-            f"worktree_path: {worktree}"
-        )
-    turn_note = (
-        f"### TURN — {n} packet(s) on the session worktree {worktree}. "
-        "Worker-subagent count is the step-2 cap, not one per packet."
-    )
-    return TurnPrompt(
-        protocol=_PACKET_PREAMBLE,
-        project=build_project_zone(packets),
-        node="\n\n".join(node_blocks),
-        attempt="\n\n".join(envelopes) + f"\n\n{turn_note}\n",
+    return build_turn_prompt(
+        worktree=worktree,
+        packets=packets,
+        preamble=_PACKET_PREAMBLE,
+        turn_note=(
+            f"### TURN — {len(packets)} packet(s) on the session worktree "
+            f"{worktree}. Worker-subagent count is the step-2 cap, not one "
+            "per packet."
+        ),
     )
 
 
