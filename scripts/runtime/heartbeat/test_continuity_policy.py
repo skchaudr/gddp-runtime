@@ -36,7 +36,7 @@ NO_RESUME = ExecutorCapabilities(executor="jules_api")
 
 
 def test_default_is_cold_with_no_marker(tmp_path):
-    decision = choose_continuity(attempt_dir=tmp_path, capabilities=CURSOR)
+    decision = choose_continuity(request_dir=tmp_path, capabilities=CURSOR)
 
     assert decision.mode == "fresh"
     assert decision.token is None
@@ -46,7 +46,7 @@ def test_default_is_cold_with_no_marker(tmp_path):
 def test_operator_marker_holding_a_session_id_requests_resume(tmp_path):
     (tmp_path / RESUME_MARKER).write_text("e130cd81-dcf7-4de8-bd50-58c80d951107\n")
 
-    decision = choose_continuity(attempt_dir=tmp_path, capabilities=CURSOR)
+    decision = choose_continuity(request_dir=tmp_path, capabilities=CURSOR)
 
     assert decision.mode == "resume"
     assert decision.token == "e130cd81-dcf7-4de8-bd50-58c80d951107"
@@ -58,7 +58,7 @@ def test_an_executor_that_cannot_resume_is_never_asked_to(tmp_path):
     bug-catcher, not a control-flow path."""
     (tmp_path / RESUME_MARKER).write_text("some-session")
 
-    decision = choose_continuity(attempt_dir=tmp_path, capabilities=NO_RESUME)
+    decision = choose_continuity(request_dir=tmp_path, capabilities=NO_RESUME)
 
     assert decision.mode == "fresh"
     assert "does not support resume" in decision.reason
@@ -68,7 +68,7 @@ def test_an_executor_that_cannot_resume_is_never_asked_to(tmp_path):
 def test_an_unusable_marker_falls_back_to_cold_silently(tmp_path, body):
     (tmp_path / RESUME_MARKER).write_text(body)
 
-    decision = choose_continuity(attempt_dir=tmp_path, capabilities=CURSOR)
+    decision = choose_continuity(request_dir=tmp_path, capabilities=CURSOR)
 
     assert decision.mode == "fresh"
 
@@ -89,7 +89,7 @@ def test_marker_can_carry_the_cwd_and_host_the_session_was_recorded_against(tmp_
     assert request.token == "sess-1"
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, cwd=tmp_path
+        request_dir=tmp_path, capabilities=CURSOR, cwd=tmp_path
     )
     assert decision.mode == "resume"
 
@@ -103,7 +103,7 @@ def test_a_token_from_another_cwd_falls_back_to_cold(tmp_path):
     )
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, cwd=tmp_path
+        request_dir=tmp_path, capabilities=CURSOR, cwd=tmp_path
     )
 
     assert decision.mode == "fresh"
@@ -116,7 +116,7 @@ def test_a_token_from_another_host_falls_back_to_cold(tmp_path):
     )
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, host="sab-mini"
+        request_dir=tmp_path, capabilities=CURSOR, host="sab-mini"
     )
 
     assert decision.mode == "fresh"
@@ -134,7 +134,7 @@ def test_guards_can_be_relaxed_by_policy(tmp_path):
     )
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, policy=policy, host="sab-mini"
+        request_dir=tmp_path, capabilities=CURSOR, policy=policy, host="sab-mini"
     )
 
     assert decision.mode == "resume"
@@ -144,7 +144,7 @@ def test_a_project_can_refuse_operator_resume_entirely(tmp_path):
     (tmp_path / RESUME_MARKER).write_text("sess-1")
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, policy=DEFAULT_SESSION_POLICY
+        request_dir=tmp_path, capabilities=CURSOR, policy=DEFAULT_SESSION_POLICY
     )
 
     assert decision.mode == "fresh"
@@ -156,7 +156,7 @@ def test_resume_scope_never_refuses_even_a_named_trigger(tmp_path):
     policy = SessionPolicy(resume_when=(OPERATOR_REQUESTED,), resume_scope="never")
 
     decision = choose_continuity(
-        attempt_dir=tmp_path, capabilities=CURSOR, policy=policy
+        request_dir=tmp_path, capabilities=CURSOR, policy=policy
     )
 
     assert decision.mode == "fresh"
@@ -167,7 +167,7 @@ def test_pi_resume_is_reachable_through_the_same_policy(tmp_path):
     runtime has never set it. The policy is the caller that finally can."""
     (tmp_path / RESUME_MARKER).write_text("/spool/pi-session/abc.jsonl")
 
-    decision = choose_continuity(attempt_dir=tmp_path, capabilities=PI)
+    decision = choose_continuity(request_dir=tmp_path, capabilities=PI)
 
     assert decision.mode == "resume"
     assert decision.token == "/spool/pi-session/abc.jsonl"

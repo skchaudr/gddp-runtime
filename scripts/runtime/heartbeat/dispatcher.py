@@ -8,16 +8,22 @@ truth from executor choice.
 import json
 import os
 import sys
+import uuid
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure adapters directory is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from adapters.executor_protocol import (
+    AttemptContext,
     DispatchResult,
     EngagementDispatchResult,
+    ExecutorCapabilities,
     NodePacket,
     SessionRef,
+    adapter_capabilities,
 )
 from adapters.cursor_cli_adapter import CursorCliAdapter
 from adapters.jules_action_adapter import JulesActionAdapter
@@ -30,6 +36,7 @@ from adapters.mission_adapter import MissionAdapter
 from adapters.pi_rpc_adapter import PiRpcAdapter
 
 from ..verification.semantic.context_builder import build_canonical_pointers
+from .continuity_policy import choose_continuity, continuity_request_dir
 from .graph_reader import GraphReader
 
 
@@ -81,18 +88,22 @@ def executor_supports_engagement(
     executor: str, repo: str, repo_path: str | None = None
 ) -> bool:
     """Return the adapter's optional multi-node capability."""
+    return executor_capabilities(executor, repo, repo_path).engagement
+
+
+def executor_capabilities(
+    executor: str, repo: str, repo_path: str | None = None
+) -> ExecutorCapabilities:
+    """Return the selected adapter's authoritative runtime declaration."""
     selected = os.environ.get("GDDP_EXECUTOR_OVERRIDE", "") or executor
-    adapter_cls = ADAPTERS.get(selected)
+    adapter_cls = ADAPTERS.get(selected) or MEDIATED_ADAPTERS.get(selected)
     if adapter_cls is None:
-        return False
+        return ExecutorCapabilities(executor=selected)
     try:
         adapter = _build_adapter(adapter_cls, selected, repo, repo_path)
-        supports_engagement = getattr(
-            adapter, "supports_engagement", lambda: False
-        )
-        return bool(supports_engagement())
+        return adapter_capabilities(adapter, selected)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return False
+        return ExecutorCapabilities(executor=selected)
 
 
 def dispatch(
@@ -117,9 +128,23 @@ def dispatch(
     try:
         packet = _build_node_packet(job, repo_path=repo_path)
         adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
+        capabilities = adapter_capabilities(adapter, executor)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
-    return adapter.dispatch(packet)
+    if capabilities.resume == "none":
+        return adapter.dispatch(packet)
+    try:
+        attempt = _reserve_attempt(adapter, packet, capabilities)
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        return DispatchResult(success=False, error=f"Attempt reservation failed: {exc}")
+    continuity = choose_continuity(
+        request_dir=continuity_request_dir(
+            attempt.attempt_dir.parent, packet.job_id
+        ),
+        capabilities=capabilities,
+        cwd=repo_path,
+    )
+    return adapter.dispatch(packet, attempt=attempt, continuity=continuity)
 
 
 def dispatch_engagement(
@@ -152,7 +177,8 @@ def dispatch_engagement(
         )
     try:
         adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
-        if not adapter.supports_engagement():
+        capabilities = adapter_capabilities(adapter, executor)
+        if not capabilities.engagement:
             return EngagementDispatchResult(
                 success=False,
                 error=f"executor {executor} does not support engagements",
@@ -210,19 +236,93 @@ def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None)
     return adapter_cls(**kwargs)
 
 
+def _reserve_attempt(
+    adapter: object,
+    packet: NodePacket,
+    capabilities: ExecutorCapabilities,
+) -> AttemptContext:
+    """Mint and persist attempt identity before transport dispatch."""
+    attempt_root = Path(adapter.attempt_root())
+    attempt_id = (
+        f"{_safe_component(packet.execution_attempt_id)}-"
+        f"{uuid.uuid4().hex}"
+    )
+    attempt_dir = attempt_root / attempt_id
+    attempt_dir.mkdir(parents=True, exist_ok=False)
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    (attempt_dir / "capabilities.json").write_text(
+        json.dumps(asdict(capabilities), sort_keys=True, separators=(",", ":"))
+    )
+    return AttemptContext(attempt_id=attempt_id, attempt_dir=attempt_dir)
+
+
+def _safe_component(value: str) -> str:
+    safe = "".join(
+        character if character.isalnum() or character in "._-" else "-"
+        for character in value
+    )
+    return safe.strip("._-") or "attempt"
+
+
+def queue_operator_steer(attempt_dir: Path, message: str) -> tuple[bool, str]:
+    """Queue a steer only when the reserved attempt declares delivery support."""
+    capabilities_path = Path(attempt_dir) / "capabilities.json"
+    try:
+        payload = json.loads(capabilities_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False, "steer refused: executor capabilities are unavailable"
+    executor = str(payload.get("executor") or "executor")
+    if payload.get("midturn_steering") is not True:
+        return (
+            False,
+            f"steer refused: executor {executor} does not support mid-turn steering",
+        )
+    text = message.strip()
+    if not text:
+        return False, "steer refused: message is empty"
+    line = json.dumps(
+        {"ts": datetime.now(timezone.utc).isoformat(), "message": text}
+    )
+    try:
+        with (Path(attempt_dir) / "steer.jsonl").open(
+            "a", encoding="utf-8"
+        ) as handle:
+            handle.write(line + "\n")
+    except OSError as exc:
+        return False, f"steer refused: {exc}"
+    return True, f"steer queued for {executor}"
+
+
 def cancel_remote_session(session_ref: SessionRef, repo: str) -> tuple[bool, str]:
     """Best-effort cancel a known remote session with truthful outcome text."""
     adapter_cls = ADAPTERS.get(session_ref.executor)
     if adapter_cls is None:
         return False, f"unknown executor {session_ref.executor!r}; remote may continue"
+    capabilities: ExecutorCapabilities | None = None
     try:
         adapter = _build_adapter(adapter_cls, session_ref.executor, repo, None)
+        capabilities = adapter_capabilities(adapter, session_ref.executor)
         accepted = adapter.cancel(session_ref)
     except Exception as exc:
+        if capabilities is not None and capabilities.cancellation == "preemptive":
+            return False, f"preemptive session cancellation failed: {exc}"
         return False, f"late session cancellation failed: {exc}; remote may continue"
+    assert capabilities is not None
+    if capabilities.cancellation == "preemptive":
+        if accepted:
+            return True, "late session termination accepted"
+        return False, "late session termination was not accepted; session may be terminal"
+    if capabilities.cancellation == "cooperative":
+        if accepted:
+            return True, "cancellation queued; in-flight turn continues to its boundary"
+        return False, "cooperative cancellation was not accepted"
     if accepted:
         return True, "late session cancellation accepted"
-    return False, "late session cancellation was not accepted; remote may continue"
+    return (
+        False,
+        "late session cancellation was not accepted; "
+        "executor declares no cancellation support; remote may continue",
+    )
 
 
 def _config_root() -> Path | None:

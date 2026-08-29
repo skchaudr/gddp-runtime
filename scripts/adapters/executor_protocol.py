@@ -277,19 +277,31 @@ class Continuity:
 FRESH = Continuity(mode="fresh")
 
 
+@dataclass(frozen=True)
+class AttemptContext:
+    """Runtime-owned identity and durable directory for one dispatch."""
+
+    attempt_id: str
+    attempt_dir: Path
+
+
 def adapter_capabilities(adapter: object, executor: str) -> ExecutorCapabilities:
     """Probe an adapter's capability declaration, least-capable by default.
 
     capabilities() is a convention (like reply()), not a Protocol member:
     adding it to ExecutorAdapter would break runtime_checkable isinstance
-    checks for adapters that predate the declaration.
+    checks for adapters that predate the declaration. The existing
+    supports_engagement() protocol member is folded into the declaration here
+    so all runtime policy has one read point during migration.
     """
     probe = getattr(adapter, "capabilities", None)
     if callable(probe):
         declared = probe()
         if isinstance(declared, ExecutorCapabilities):
             return declared
-    return ExecutorCapabilities(executor=executor)
+    engagement_probe = getattr(adapter, "supports_engagement", None)
+    engagement = bool(engagement_probe()) if callable(engagement_probe) else False
+    return ExecutorCapabilities(executor=executor, engagement=engagement)
 
 
 @dataclass
@@ -383,7 +395,13 @@ class EngagementAdapterDefaults:
 class ExecutorAdapter(Protocol):
     """Direct executor lifecycle protocol."""
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
+    def dispatch(
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
+    ) -> DispatchResult:
         """Send one node attempt to an executor."""
         ...
 
