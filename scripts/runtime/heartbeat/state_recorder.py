@@ -60,15 +60,19 @@ def insert_job(con: sqlite3.Connection, job: dict) -> None:
                job_type, executor, queue_state, title, goal, why,
                constraints, acceptance_criteria,
                priority, status, attempt, max_attempts, artifacts_dir,
-               required_artifacts, previous_findings
+               required_artifacts, previous_findings, expected_base_commit_sha
            ) VALUES (
                :job_id, :created_at, :event_id, :project_id, :repo, :node_id,
                :job_type, :executor, :queue_state, :title, :goal, :why,
                :constraints, :acceptance_criteria,
                :priority, :status, :attempt, :max_attempts, :artifacts_dir,
-               :required_artifacts, :previous_findings
+               :required_artifacts, :previous_findings,
+               :expected_base_commit_sha
            )""",
-        job,
+        {
+            **job,
+            "expected_base_commit_sha": job.get("expected_base_commit_sha"),
+        },
     )
 
 
@@ -248,6 +252,49 @@ def insert_executor_session(
 DEFAULT_PLUMBING_RETRY_BUDGET = 3
 
 
+def _column(row, name: str):
+    if row is None:
+        return None
+    return row[name] if hasattr(row, "keys") else row[0]
+
+
+def recorded_base_commit_sha(
+    con: sqlite3.Connection, job_id: str
+) -> str | None:
+    """Return attempt 0's base commit — the only base a retry may build on.
+
+    A retry re-attempts the same node from the same base. Stacking a
+    correction on a prior attempt's result leaves retry entirely and belongs
+    in a continuation proposal, so no caller may re-derive the base from HEAD
+    or from a result commit while this value exists.
+
+    The jobs row is authoritative. Rows created before jobs carried the column
+    recorded the base only on their attempt-0 session row; that row is the
+    legacy fallback.
+    """
+    try:
+        row = con.execute(
+            "SELECT expected_base_commit_sha FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None  # database predates the jobs column
+    recorded = _column(row, "expected_base_commit_sha")
+    if recorded:
+        return str(recorded)
+
+    row = con.execute(
+        """SELECT expected_base_commit_sha
+             FROM executor_sessions
+            WHERE job_id = ? AND expected_base_commit_sha IS NOT NULL
+            ORDER BY attempt_index ASC, created_at ASC, session_db_id ASC
+            LIMIT 1""",
+        (job_id,),
+    ).fetchone()
+    recorded = _column(row, "expected_base_commit_sha")
+    return str(recorded) if recorded else None
+
+
 def allocate_retry_attempt(
     con: sqlite3.Connection,
     job,
@@ -256,7 +303,12 @@ def allocate_retry_attempt(
     expected_base_commit_sha: str | None = None,
     previous_findings: dict | str | None = None,
 ) -> tuple[dict, str] | None:
-    """Atomically increment a known job attempt and insert its dispatch record."""
+    """Atomically increment a known job attempt and insert its dispatch record.
+
+    The retry keeps attempt 0's base. `expected_base_commit_sha` is only an
+    override for callers that already resolved it; when it is absent the
+    recorded base is used rather than anything derived from current HEAD.
+    """
     persisted_job = dict(job)
     current_attempt = int(persisted_job.get("attempt") or 0)
     max_attempts = int(persisted_job.get("max_attempts") or 0)
@@ -284,8 +336,11 @@ def allocate_retry_attempt(
     if updated.rowcount != 1:
         return None
 
+    base_commit_sha = expected_base_commit_sha or recorded_base_commit_sha(
+        con, persisted_job["job_id"]
+    )
     persisted_job["attempt"] = next_attempt
-    persisted_job["expected_base_commit_sha"] = expected_base_commit_sha
+    persisted_job["expected_base_commit_sha"] = base_commit_sha
     if encoded_findings is not None:
         persisted_job["previous_findings"] = encoded_findings
     attempt_id = execution_attempt_id(persisted_job["job_id"], next_attempt)
@@ -294,7 +349,7 @@ def allocate_retry_attempt(
         persisted_job["job_id"],
         executor,
         attempt_id,
-        expected_base_commit_sha,
+        base_commit_sha,
         attempt_index=next_attempt,
         state="dispatching",
     )
@@ -315,7 +370,8 @@ def allocate_plumbing_retry(
     evidence about the node's work, so they never consume the work-attempt
     budget (jobs.attempt); they draw on their own bounded counter instead.
     The replacement session keeps the current attempt_index, so the
-    superseded-attempt guard still recognizes it as the live attempt.
+    superseded-attempt guard still recognizes it as the live attempt, and it
+    redispatches cold from attempt 0's recorded base like any other retry.
     """
     persisted_job = dict(job)
     current = int(persisted_job.get("plumbing_attempt") or 0)
@@ -332,8 +388,11 @@ def allocate_plumbing_retry(
     if updated.rowcount != 1:
         return None
 
+    base_commit_sha = expected_base_commit_sha or recorded_base_commit_sha(
+        con, persisted_job["job_id"]
+    )
     persisted_job["plumbing_attempt"] = next_plumbing
-    persisted_job["expected_base_commit_sha"] = expected_base_commit_sha
+    persisted_job["expected_base_commit_sha"] = base_commit_sha
     attempt_index = int(persisted_job.get("attempt") or 0)
     attempt_id = execution_attempt_id(persisted_job["job_id"], attempt_index)
     session_db_id = insert_executor_session(
@@ -341,7 +400,7 @@ def allocate_plumbing_retry(
         persisted_job["job_id"],
         executor,
         f"{attempt_id}:plumbing:{next_plumbing}",
-        expected_base_commit_sha,
+        base_commit_sha,
         attempt_index=attempt_index,
         state="dispatching",
     )

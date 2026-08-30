@@ -44,6 +44,7 @@ from .state_recorder import (
     mark_job_failed,
     mark_job_running,
     mark_jobs_awaiting_review,
+    recorded_base_commit_sha,
     recover_stale_dispatching_sessions,
     update_executor_session_state,
 )
@@ -1071,7 +1072,12 @@ def _handle_failed(con, session, job, status, repo_path: Path) -> None:
         return
 
     mark_job_failed(con, job_id)
-    expected_base = _get_head_sha(repo_path) or session["expected_base_commit_sha"]
+    # Strict same-base retry: re-attempt this node from attempt 0's recorded
+    # base. HEAD has moved for reasons that have nothing to do with this node,
+    # so it is only a last resort for rows that recorded no base at all.
+    expected_base = recorded_base_commit_sha(con, job_id) or _get_head_sha(
+        repo_path
+    )
     plumbing = classify_plumbing_failure(status)
     if plumbing:
         allocated = allocate_plumbing_retry(
@@ -1379,10 +1385,10 @@ def _maybe_retry_evaluation(
     """Re-dispatch a non-pass, evidence-backed verdict as a retry attempt.
 
     Mirrors return_router._redispatch_with_findings: the same cited findings
-    become the retry's fix-list (previous_findings), the retry builds on the
-    evaluated commit, and only a real dispatch success leaves the job running.
-    Returns True when a retry was dispatched; False parks the job at review.
-    Verification errors and passes never retry.
+    become the retry's fix-list (previous_findings), the retry re-attempts the
+    node from attempt 0's base, and only a real dispatch success leaves the job
+    running. Returns True when a retry was dispatched; False parks the job at
+    review. Verification errors and passes never retry.
     """
     if verification.get("verification_status") != "ok":
         return False
@@ -1419,10 +1425,11 @@ def _maybe_retry_evaluation(
         "criteria_findings": criteria_findings or [],
     }
 
+    # Strict same-base retry: the rejected work's own commit is not a retry
+    # base. Building the correction on top of it would be stacking, which is
+    # continuation-proposal territory, not a re-attempt of the same node.
     retry_base = (
-        verification.get("evaluated_commit_sha")
-        or pending.result_commit_sha
-        or (_get_head_sha(repo_path) if repo_path else None)
+        recorded_base_commit_sha(con, pending.job_id)
         or pending.expected_base_commit_sha
     )
 

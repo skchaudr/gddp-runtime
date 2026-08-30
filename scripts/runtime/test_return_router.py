@@ -236,6 +236,7 @@ class TestReturnRouterRetry(unittest.TestCase):
             "why": "Protect users",
             "required_artifacts": json.dumps(["decision.md", "patch.diff"]),
             "previous_findings": None,
+            "expected_base_commit_sha": "base000attempt0",
         }
 
     def _base_event(self) -> dict:
@@ -314,9 +315,11 @@ class TestReturnRouterRetry(unittest.TestCase):
                     "previous_findings"
                 ]
                 self.assertEqual(allocated_findings["verdict"], "fail")
+                # Strict same-base retry: attempt 0's base, not the merge
+                # commit ("abc123retrybase") this attempt just produced.
                 self.assertEqual(
                     mock_allocate.call_args.kwargs["expected_base_commit_sha"],
-                    "abc123retrybase",
+                    "base000attempt0",
                 )
                 dispatched_job = mock_dispatch.call_args.args[0]
                 self.assertEqual(dispatched_job["attempt"], 1)
@@ -338,7 +341,7 @@ class TestReturnRouterRetry(unittest.TestCase):
                 mock_running.assert_called_once_with(mock_con, "job_123")
                 mock_mark.assert_not_called()
 
-    def test_operator_retry_injects_human_fix_list_and_uses_evaluated_commit(self):
+    def test_operator_retry_injects_human_fix_list_and_uses_attempt_zero_base(self):
         from scripts.runtime import return_router
 
         job = dict(
@@ -353,7 +356,7 @@ class TestReturnRouterRetry(unittest.TestCase):
             patch.object(
                 return_router,
                 "_latest_job_verification",
-                return_value=("res_latest", verification, "result123"),
+                return_value=("res_latest", verification, "base000attempt0"),
             ),
             patch.object(
                 return_router,
@@ -367,11 +370,69 @@ class TestReturnRouterRetry(unittest.TestCase):
 
         self.assertEqual(result["status"], "redispatched")
         args = redispatch.call_args.args
-        self.assertEqual(args[1]["_retry_base_commit_sha"], "result123")
+        self.assertEqual(args[1]["_retry_base_commit_sha"], "base000attempt0")
         self.assertEqual(
             args[3]["human_fix_list"]["reason"],
             "new clean Khoj user is ready",
         )
+
+    def test_latest_job_verification_returns_attempt_zero_base(self):
+        """The human-reject retry base is attempt 0's recorded base, not the
+        evaluated commit and not the rejected attempt's result commit."""
+        import sqlite3
+
+        from scripts.runtime import return_router
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "queue.db"
+            con = sqlite3.connect(db_path)
+            con.executescript(
+                """
+                CREATE TABLE jobs (
+                    job_id TEXT PRIMARY KEY,
+                    expected_base_commit_sha TEXT
+                );
+                CREATE TABLE results (
+                    result_id TEXT PRIMARY KEY,
+                    job_id TEXT,
+                    received_at TEXT,
+                    acceptance_check TEXT
+                );
+                CREATE TABLE executor_sessions (
+                    session_db_id TEXT PRIMARY KEY,
+                    job_id TEXT,
+                    attempt_index INTEGER,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    expected_base_commit_sha TEXT,
+                    result_commit_sha TEXT
+                );
+                """
+            )
+            con.execute(
+                "INSERT INTO jobs VALUES ('job_123', 'base000attempt0')"
+            )
+            con.execute(
+                "INSERT INTO results VALUES ('res_1', 'job_123', "
+                "'2026-03-20T10:00:00Z', ?)",
+                (json.dumps({"evaluated_commit_sha": "evaluated999"}),),
+            )
+            con.execute(
+                "INSERT INTO executor_sessions VALUES ('ses_0', 'job_123', 0, "
+                "'2026-03-20T09:00:00Z', '2026-03-20T09:30:00Z', "
+                "'base000attempt0', 'result777')"
+            )
+            con.commit()
+            con.close()
+
+            with patch.object(return_router, "DB_PATH", db_path):
+                latest = return_router._latest_job_verification("job_123")
+
+        self.assertIsNotNone(latest)
+        result_id, verification, retry_base = latest
+        self.assertEqual(result_id, "res_1")
+        self.assertEqual(verification["evaluated_commit_sha"], "evaluated999")
+        self.assertEqual(retry_base, "base000attempt0")
 
     def test_operator_retry_requires_awaiting_review_job(self):
         from scripts.runtime import return_router

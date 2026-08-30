@@ -100,6 +100,7 @@ def init_db():
         status              TEXT DEFAULT 'ready',       -- ready | running | awaiting_result | awaiting_review | complete | failed
         attempt             INTEGER DEFAULT 0,
         max_attempts        INTEGER DEFAULT 3,
+        expected_base_commit_sha TEXT,                  -- attempt 0's base; every retry re-uses it
         artifacts_dir       TEXT,
         required_artifacts  TEXT NOT NULL DEFAULT '[]',
         previous_findings   TEXT,
@@ -220,6 +221,9 @@ def init_db():
     )
     _ensure_column(con, "jobs", "previous_findings", "TEXT")
     _ensure_column(con, "jobs", "plumbing_attempt", "INTEGER NOT NULL DEFAULT 0")
+    # Jobs predating this column recorded attempt 0's base only on their
+    # attempt-0 session row; retry base resolution falls back to it there.
+    _ensure_column(con, "jobs", "expected_base_commit_sha", "TEXT")
     _ensure_column(con, "executor_sessions", "execution_attempt_id", "TEXT")
     _ensure_column(con, "executor_sessions", "attempt_index", "INTEGER")
     _ensure_column(con, "executor_sessions", "completion_id", "TEXT")

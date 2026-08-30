@@ -159,6 +159,7 @@ def _write_rows(con, *, project, node, commit_sha, base_sha, executor, dry_run, 
     }
     job = build_job(node, event, project_id, project.repo, runtime_root, executor)
     job["status"] = job["queue_state"] = "awaiting_result"
+    job["expected_base_commit_sha"] = base_sha
     session = {
         "session_id": f"adopt_{node_id}_{commit_sha[:7]}", "state": "collected",
         "result_commit_sha": commit_sha, "expected_base_commit_sha": base_sha,
