@@ -113,6 +113,16 @@ class TurnOutcome:
 TurnRunner = Callable[[Path, Mapping[str, object], dict], TurnOutcome]
 
 
+def last_canonical_turn_ended(
+    events: Sequence[ExecutorEvent],
+) -> ExecutorEvent | None:
+    """The last canonical ``turn_ended``, or None if the spool has none."""
+    for event in reversed(events):
+        if event.type == "turn_ended":
+            return event
+    return None
+
+
 def attempt_dir_for(spool_root: Path, attempt_id: str) -> Path | None:
     """Resolve one direct child of a spool root, rejecting traversal."""
     if (
@@ -373,7 +383,12 @@ def run_attempt_supervisor(
     run_turn: TurnRunner,
     start_fd: int | None = None,
 ) -> int:
-    """Run one transport turn and always publish a durable terminal record."""
+    """Run one transport turn and always publish a durable terminal record.
+
+    Backstop: a canonical ``turn_ended status=failed`` in events.jsonl is
+    attempt failure regardless of ``TurnOutcome.returncode``. Consumes only
+    the canonical vocabulary.
+    """
     from local_agent_executor import load_packet, record_worktree_correlation
 
     outcome = TurnOutcome(
@@ -404,16 +419,21 @@ def run_attempt_supervisor(
             error=f"local attempt supervisor failed: {exc}",
         )
 
+    events = read_events(attempt_dir / "events.jsonl")
     write_post_turn_evidence(
         attempt_dir=attempt_dir,
-        events=read_events(attempt_dir / "events.jsonl"),
+        events=events,
         packet=packet,
         worktree=worktree,
     )
 
+    terminal = last_canonical_turn_ended(events)
+    terminal_failed = terminal is not None and terminal.status == "failed"
+
     if (
         not outcome.cancelled
         and not outcome.plumbing
+        and not terminal_failed
         and packet is not None
         and worktree is not None
         and repo is not None
@@ -446,6 +466,8 @@ def run_attempt_supervisor(
         return 0
 
     error = outcome.error
+    if terminal_failed:
+        error = terminal.error or outcome.error or "turn_ended status=failed"
     if worktree is not None:
         error = f"{error or 'turn ended without a result'}; worktree kept at {worktree}"
     write_exit_state(

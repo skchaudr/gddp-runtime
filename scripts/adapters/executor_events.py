@@ -81,8 +81,10 @@ class ExecutorEvent:
                       (self-contained: carries tool/paths again so coverage
                       is a one-pass filter with no start/end join)
     usage:            usage (TurnUsage)
-    turn_ended:       status, error, stop_reason — driver-synthesized when
-                      the harness emits no terminal event (kill, bad args)
+    turn_ended:       status, error, stop_reason, warning — driver-synthesized
+                      when the harness emits no terminal event (kill, bad
+                      args). warning records a termination-boundary crash
+                      after completed work; it does not flip status.
     """
 
     type: EventType
@@ -107,6 +109,7 @@ class ExecutorEvent:
     status: TurnStatus | None = None
     error: str | None = None
     stop_reason: str | None = None
+    warning: str | None = None
 
     def to_json_value(self) -> dict[str, object]:
         """Envelope-first dict; unset optional fields are omitted."""
@@ -133,6 +136,7 @@ class ExecutorEvent:
             "status",
             "error",
             "stop_reason",
+            "warning",
         ):
             value = getattr(self, key)
             if value is not None:
@@ -181,6 +185,7 @@ class ExecutorEvent:
             "status",
             "error",
             "stop_reason",
+            "warning",
         }
         kwargs: dict[str, object] = {
             key: value for key, value in data.items() if key in known

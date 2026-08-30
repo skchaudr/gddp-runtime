@@ -21,6 +21,19 @@ SIGKILL case. Both produce NO terminal cursor event at all
 (cursor_cli_spike_results.json: `invalid_model` has zero stream events,
 `sigterm_mid_turn`/`sigkill_mid_turn` have `result_event: null`), so the
 turn_ended for them is synthesized by the driver from the return code.
+
+Terminal classification (not blunt ``is_error → failed``):
+  - ``result``/``success`` is completed work. Every recorded completed turn
+    in cursor_cli_spike_results.json and cursor_tool_probe_results.json is
+    this shape (``subtype: "success"``, ``is_error: false``).
+  - ``is_error`` on that subtype, or a later non-success result after it, is
+    a termination-boundary crash: ``status: "completed"`` plus ``warning``.
+  - Any other ``result`` (no ``success`` subtype) is a real failure — model/
+    provider error or an aborted turn whose work was not done. Provider-
+    failure ``result`` is unobserved in the spikes (open_risks); the
+    existing translator test uses ``subtype: "error", is_error: true``.
+  - Process exit after a completed result is classified by the driver, not
+    here: success ``TurnOutcome``, crash recorded as ``warning``.
 """
 
 from __future__ import annotations
@@ -175,6 +188,7 @@ class CursorStreamTranslator:
         self.session_id: str | None = None
         self.model: str | None = None
         self.saw_turn_end = False
+        self.completed_work = False
 
     def translate(self, raw: object) -> list[TranslatedEvent]:
         """Translate one decoded stream-json line. Unknown types yield []."""
@@ -305,6 +319,11 @@ class CursorStreamTranslator:
     def _result(
         self, raw: Mapping[str, object], label: str
     ) -> list[TranslatedEvent]:
+        already_completed = self.completed_work
+        subtype = raw.get("subtype")
+        completed = subtype == "success"
+        if completed:
+            self.completed_work = True
         self.saw_turn_end = True
         session_id = raw.get("session_id")
         if isinstance(session_id, str) and session_id:
@@ -345,20 +364,55 @@ class CursorStreamTranslator:
                 )
             )
 
+        if already_completed:
+            # A second result after completed work is a termination crash,
+            # not a new turn boundary.
+            warning = (
+                str(result_text)
+                if result_text is not None
+                else "error after a completed result"
+            )
+            events.append(
+                TranslatedEvent(
+                    type="turn_ended",
+                    raw_type=label,
+                    fields={
+                        "status": "completed",
+                        "error": None,
+                        "warning": warning,
+                        "stop_reason": str(subtype or "") or None,
+                        "duration_ms": _int_or_none(raw.get("duration_ms")),
+                    },
+                )
+            )
+            return events
+
+        warning = None
+        if completed:
+            status = "completed"
+            error = None
+            if is_error:
+                warning = (
+                    str(result_text)
+                    if result_text is not None
+                    else "result marked is_error after a completed result"
+                )
+        else:
+            status = "failed"
+            error = str(result_text) if result_text is not None else None
+        fields: dict[str, object] = {
+            "status": status,
+            "error": error,
+            "stop_reason": str(subtype or "") or None,
+            "duration_ms": _int_or_none(raw.get("duration_ms")),
+        }
+        if warning is not None:
+            fields["warning"] = warning
         events.append(
             TranslatedEvent(
                 type="turn_ended",
                 raw_type=label,
-                fields={
-                    "status": "failed" if is_error else "completed",
-                    "error": (
-                        str(result_text)
-                        if is_error and result_text is not None
-                        else None
-                    ),
-                    "stop_reason": str(raw.get("subtype") or "") or None,
-                    "duration_ms": _int_or_none(raw.get("duration_ms")),
-                },
+                fields=fields,
             )
         )
         return events

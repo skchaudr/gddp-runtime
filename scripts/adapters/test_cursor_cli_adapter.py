@@ -219,6 +219,37 @@ def test_result_is_error_ends_the_turn_failed():
     assert ended.error == "boom"
 
 
+def test_success_subtype_with_is_error_stays_completed_and_records_warning():
+    """Not blunt is_error→failed. Spike-recorded completed turns are
+    result/success (cursor_cli_spike_results.json cold_turn); is_error on
+    that subtype is a termination-boundary crash, not undone work."""
+    events = translate_stream(
+        [
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": True,
+                "result": "died after",
+            }
+        ]
+    )
+    ended = _by_type(events, "turn_ended")[0]
+    assert ended.status == "completed"
+    assert ended.warning == "died after"
+    assert ended.error is None
+
+
+def test_error_result_after_completed_success_does_not_flip_status():
+    stream = [
+        SPIKE_RESULTS["turns"]["cold_turn"]["result_event"],
+        {"type": "result", "subtype": "error", "is_error": True, "result": "crash"},
+    ]
+    ended = _by_type(translate_stream(stream), "turn_ended")
+    assert ended[0].status == "completed"
+    assert ended[-1].status == "completed"
+    assert ended[-1].warning == "crash"
+
+
 def test_assistant_partial_and_final_are_emitted_once():
     """Measured: naive concatenation doubles the output
     (assistant_text 'SPIKE7-COLDSPIKE7-COLD' for a turn whose result was
@@ -290,6 +321,7 @@ def test_killed_turn_produces_no_terminal_event_for_the_translator():
     translator.translate(_assistant("partial work"))
 
     assert translator.saw_turn_end is False
+    assert translator.completed_work is False
     assert [event.type for event in translator.flush_text()] == ["assistant_message"]
 
 
@@ -1106,6 +1138,94 @@ def test_dispatcher_routes_cursor_cli_without_a_new_env_knob(
     assert result.success is True
     adapter = CursorCliAdapter(repo="owner/repo", spool_root=spool)
     assert _wait_for_terminal(adapter, result.session_ref).state == "completed"
+
+
+def _provider_failure_stream(session_id="sess-fail-1") -> list[dict]:
+    """Unobserved live shape (spike open_risks). Uses the translator's
+    recorded failure fixture: subtype != success, is_error true."""
+    return [
+        {
+            "type": "system",
+            "subtype": "init",
+            "session_id": session_id,
+            "model": "Kimi K3 Max",
+        },
+        {
+            "type": "result",
+            "subtype": "error",
+            "is_error": True,
+            "result": "Provider error: boom",
+            "session_id": session_id,
+        },
+    ]
+
+
+def test_provider_failure_mid_turn_is_attempt_failure(
+    tmp_path, monkeypatch, repo, fake_cursor
+):
+    """cursor-agent exits 0 on a model/provider result that is not
+    result/success. Work was not done — attempt failure, no success exit."""
+    binary, _ = fake_cursor
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    monkeypatch.setenv(
+        "FAKE_CURSOR_LINES",
+        str(_stream_file(tmp_path, _provider_failure_stream())),
+    )
+    monkeypatch.setenv("FAKE_CURSOR_EXIT", "0")
+    adapter = CursorCliAdapter(
+        repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
+    )
+
+    result = _dispatch(adapter, _packet(base=_head(repo)))
+    status = _wait_for_terminal(adapter, result.session_ref)
+
+    assert status.state == "failed"
+    attempt_dir = spool / result.session_ref.session_id
+    exit_state = json.loads((attempt_dir / "exit.json").read_text())
+    assert exit_state["returncode"] != 0
+    assert not (attempt_dir / "result.json").exists()
+    ended = [event for event in read_events(attempt_dir / "events.jsonl") if event.type == "turn_ended"]
+    assert ended[-1].status == "failed"
+    worktree = Path((attempt_dir / "worktree_path").read_text())
+    assert worktree.exists()
+
+
+def test_termination_crash_after_completed_result_is_success(
+    tmp_path, monkeypatch, repo, fake_cursor
+):
+    """Spike result/success (cold_turn) then process death: work was done.
+    Success TurnOutcome; crash rides turn_ended.warning."""
+    binary, _ = fake_cursor
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    monkeypatch.setenv(
+        "FAKE_CURSOR_LINES", str(_stream_file(tmp_path, _successful_stream()))
+    )
+    monkeypatch.setenv("FAKE_CURSOR_WRITE", "produced.txt")
+    monkeypatch.setenv("FAKE_CURSOR_EXIT", "143")
+    adapter = CursorCliAdapter(
+        repo="owner/repo", spool_root=spool, cwd=repo, binary=str(binary)
+    )
+
+    result = _dispatch(adapter, _packet(base=_head(repo)))
+    status = _wait_for_terminal(adapter, result.session_ref)
+
+    assert status.state == "completed"
+    attempt_dir = spool / result.session_ref.session_id
+    exit_state = json.loads((attempt_dir / "exit.json").read_text())
+    assert exit_state["returncode"] == 0
+    ended = [
+        event
+        for event in read_events(attempt_dir / "events.jsonl")
+        if event.type == "turn_ended"
+    ]
+    assert len(ended) == 1
+    assert ended[0].status == "completed"
+    assert ended[0].warning
+    assert "143" in ended[0].warning
+    collected = adapter.collect(result.session_ref, tmp_path / "handoff.json")
+    assert collected.success is True
 
 
 def test_turn_usage_reads_the_single_terminal_record():

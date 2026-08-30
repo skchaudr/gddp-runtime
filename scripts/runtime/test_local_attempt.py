@@ -187,3 +187,65 @@ def test_persist_failure_keeps_worktree(tmp_path, monkeypatch):
     assert exit_state["returncode"] == 1
     assert exit_state["plumbing"] is False
     assert str(worktree) in exit_state["error"]
+
+
+def test_canonical_failed_terminal_overrides_zero_turn_outcome(
+    tmp_path, monkeypatch
+):
+    """Executor-neutral backstop: last turn_ended status=failed is attempt
+    failure even when TurnOutcome.returncode is 0."""
+    attempt_dir = tmp_path / "attempt"
+    worktree = tmp_path / "worktree"
+    repo = tmp_path / "repo"
+    worktree.mkdir()
+    repo.mkdir()
+    _write_supervisor_inputs(attempt_dir, worktree, repo)
+    (attempt_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "v": 1,
+                "ts": "1970-01-01T00:00:00.000Z",
+                "executor": "neutral_test",
+                "session_id": "s",
+                "turn_id": "t",
+                "seq": 1,
+                "type": "turn_ended",
+                "raw_type": "",
+                "status": "failed",
+                "error": "provider exploded",
+            }
+        )
+        + "\n"
+    )
+    persisted: list[Path] = []
+    removed: list[Path] = []
+
+    monkeypatch.setattr(
+        "local_agent_executor.persist_result",
+        lambda selected_worktree, packet: persisted.append(selected_worktree)
+        or {
+            "schema": "gddp.local_result.v1",
+            "result_commit_sha": "deadbeef",
+            "result_ref": "gddp/attempt-1",
+            "worktree_path": None,
+        },
+    )
+    monkeypatch.setattr(
+        "local_agent_executor.remove_worktree",
+        lambda _repo, selected_worktree: removed.append(selected_worktree),
+    )
+
+    result = local_attempt.run_attempt_supervisor(
+        attempt_dir,
+        run_turn=lambda *_args: local_attempt.TurnOutcome(returncode=0),
+    )
+
+    assert result == 0
+    assert persisted == []
+    assert removed == []
+    exit_state = json.loads((attempt_dir / "exit.json").read_text())
+    assert exit_state["returncode"] == 1
+    assert exit_state["plumbing"] is False
+    assert "provider exploded" in exit_state["error"]
+    assert not (attempt_dir / "result.json").exists()
+    assert worktree.exists()

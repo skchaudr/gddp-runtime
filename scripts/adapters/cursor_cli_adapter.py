@@ -41,7 +41,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from adapters.events_cursor_cli import CursorStreamTranslator
-from adapters.executor_events import EventWriter
+from adapters.executor_events import EventWriter, TranslatedEvent
 from adapters.executor_protocol import (
     AttemptContext,
     FRESH,
@@ -325,10 +325,18 @@ def _run_cursor_turn(
     command: Mapping[str, object],
     packet: dict,
 ) -> TurnOutcome:
-    """Cursor-specific prompt, stream translation, and terminal synthesis."""
+    """Cursor-specific prompt, stream translation, and terminal synthesis.
+
+    TurnOutcome is classified from the stream, not ``proc.wait()`` alone.
+    cursor-agent exits 0 on a model/provider ``result`` that is not
+    ``subtype: success`` (work not done) — that is attempt failure.
+    A nonzero exit after ``result/success`` is a termination-boundary
+    crash: success TurnOutcome, crash recorded as ``turn_ended.warning``.
+    """
     turn_id = uuid.uuid4().hex
     translator = CursorStreamTranslator()
     writer: EventWriter | None = None
+    pending_ends: list[TranslatedEvent] = []
     worktree = Path(str(command["worktree"]))
     turn_prompt = build_cursor_turn_prompt(worktree=worktree, packets=[packet])
     atomic_write(
@@ -345,7 +353,7 @@ def _run_cursor_turn(
         returncode = 143
         error = "cancelled before the turn started"
     else:
-        returncode, error, writer = _stream_turn(
+        returncode, error, writer, pending_ends = _stream_turn(
             attempt_dir=attempt_dir,
             command=command,
             prompt=turn_prompt.assemble(),
@@ -353,9 +361,20 @@ def _run_cursor_turn(
             turn_id=turn_id,
         )
         cancelled = (
-            returncode != 0 and (attempt_dir / "cancel.requested").exists()
+            returncode != 0
+            and (attempt_dir / "cancel.requested").exists()
+            and not translator.completed_work
         )
-    plumbing = not translator.saw_turn_end and not cancelled
+
+    crash_after_complete = (
+        translator.completed_work and returncode != 0 and not cancelled
+    )
+    crash_warning = None
+    if crash_after_complete:
+        crash_warning = (
+            error or f"cursor-agent exited with code {returncode} after a completed result"
+        )
+        error = None
 
     if writer is None:
         # Zero stream events (a bad invocation produces none at all) still
@@ -366,6 +385,11 @@ def _run_cursor_turn(
             session_id=translator.session_id or "",
             turn_id=turn_id,
         )
+    for pending in pending_ends:
+        fields = dict(pending.fields)
+        if crash_warning and pending.type == "turn_ended":
+            fields.setdefault("warning", crash_warning)
+        writer.emit(pending.type, raw_type=pending.raw_type, **fields)
     if not translator.saw_turn_end:
         for pending in translator.flush_text():
             writer.emit(pending.type, raw_type=pending.raw_type, **pending.fields)
@@ -375,11 +399,26 @@ def _run_cursor_turn(
             status="cancelled" if cancelled else "failed",
             error=error or f"cursor-agent exited with code {returncode}",
         )
+
+    plumbing = not translator.saw_turn_end and not cancelled
+    if translator.completed_work:
+        outcome_rc = 0
+        outcome_error = None
+    elif translator.saw_turn_end:
+        outcome_rc = returncode if returncode != 0 else 1
+        if pending_ends:
+            last_error = pending_ends[-1].fields.get("error")
+            if isinstance(last_error, str) and last_error:
+                error = error or last_error
+        outcome_error = error
+    else:
+        outcome_rc = returncode
+        outcome_error = error
     return TurnOutcome(
-        returncode=returncode,
+        returncode=outcome_rc,
         cancelled=cancelled,
         plumbing=plumbing,
-        error=error,
+        error=outcome_error,
     )
 
 
@@ -390,12 +429,12 @@ def _stream_turn(
     prompt: str,
     translator: CursorStreamTranslator,
     turn_id: str,
-) -> tuple[int, str | None, EventWriter | None]:
+) -> tuple[int, str | None, EventWriter | None, list[TranslatedEvent]]:
     """Spawn cursor-agent and translate its stream as it arrives.
 
-    Returns (returncode, error, writer). The writer comes back because it can
-    only be built once the session id is known, and the caller needs it to
-    synthesize a turn boundary the harness never emitted.
+    Returns (returncode, error, writer, pending_turn_ended). ``turn_ended``
+    is held until after ``proc.wait()`` so a termination crash after a
+    completed result can attach ``warning`` to the same boundary event.
     """
     argv = build_argv(
         binary=str(command["binary"]),
@@ -407,7 +446,9 @@ def _stream_turn(
     )
     timeout_s = float(command.get("turn_timeout_s") or _DEFAULT_TIMEOUT_S)
     writer: EventWriter | None = None
+    pending_ends: list[TranslatedEvent] = []
     timed_out = threading.Event()
+    returncode = -1
 
     with (attempt_dir / "stderr").open("wb") as stderr_file:
         proc = subprocess.Popen(
@@ -481,6 +522,9 @@ def _stream_turn(
                 if raw is None:
                     continue
                 for translated in translator.translate(raw):
+                    if translated.type == "turn_ended":
+                        pending_ends.append(translated)
+                        continue
                     writer.emit(
                         translated.type,
                         raw_type=translated.raw_type,
@@ -498,15 +542,21 @@ def _stream_turn(
             watchdog.cancel()
 
     if timed_out.is_set():
-        return returncode, f"turn exceeded {timeout_s}s and was terminated", writer
+        return (
+            returncode,
+            f"turn exceeded {timeout_s}s and was terminated",
+            writer,
+            pending_ends,
+        )
     if returncode != 0 and not translator.saw_turn_end:
         tail = read_text(attempt_dir / "stderr").strip()[-500:]
         return (
             returncode,
             tail or f"cursor-agent exited with code {returncode}",
             writer,
+            pending_ends,
         )
-    return returncode, None, writer
+    return returncode, None, writer, pending_ends
 
 
 # ---------------------------------------------------------------------------
