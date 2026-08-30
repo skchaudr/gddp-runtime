@@ -203,6 +203,7 @@ def _init_db(db_path: Path) -> None:
             status              TEXT DEFAULT 'ready',
             attempt             INTEGER DEFAULT 0,
             max_attempts        INTEGER DEFAULT 3,
+            expected_base_commit_sha TEXT,
             artifacts_dir       TEXT,
             required_artifacts  TEXT NOT NULL DEFAULT '[]',
             previous_findings   TEXT,

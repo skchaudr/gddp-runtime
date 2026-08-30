@@ -17,6 +17,7 @@ from .heartbeat.state_recorder import (
     allocate_retry_attempt,
     finalize_executor_session_dispatch,
     mark_job_running,
+    recorded_base_commit_sha,
 )
 
 _FALLBACK_ALLOWED_REPOS = ["skchaudr/vault-doctor", "skchaudr/test-project", "skchaudr/gddp-runtime"]
@@ -111,7 +112,11 @@ def _mark_job_awaiting_review(job_id: str) -> None:
 def _latest_job_verification(
     job_id: str,
 ) -> tuple[str, dict, str | None] | None:
-    """Return the latest result id, evaluator receipt, and retry base commit."""
+    """Return the latest result id, evaluator receipt, and retry base commit.
+
+    The retry base is attempt 0's recorded base, never the commit the rejected
+    attempt produced: a retry re-attempts the same node from the same base.
+    """
     con = _connect()
     try:
         result = con.execute(
@@ -125,14 +130,7 @@ def _latest_job_verification(
             verification = json.loads(result["acceptance_check"])
         except json.JSONDecodeError:
             return None
-        session = con.execute(
-            "SELECT result_commit_sha FROM executor_sessions "
-            "WHERE job_id = ? AND result_commit_sha IS NOT NULL "
-            "ORDER BY attempt_index DESC, updated_at DESC LIMIT 1",
-            (job_id,),
-        ).fetchone()
-        session_commit = session["result_commit_sha"] if session else None
-        retry_base = verification.get("evaluated_commit_sha") or session_commit
+        retry_base = recorded_base_commit_sha(con, job_id)
         return str(result["result_id"]), verification, retry_base
     finally:
         con.close()
@@ -159,7 +157,7 @@ def retry_reviewed_job(job_id: str, human_reason: str) -> dict:
         return {"status": "retry_rejected", "reason": "result_missing"}
     result_id, verification, retry_base = latest
     if not retry_base:
-        return {"status": "retry_rejected", "reason": "result_commit_missing"}
+        return {"status": "retry_rejected", "reason": "base_commit_missing"}
 
     verification = dict(verification)
     verification["human_fix_list"] = {
@@ -282,7 +280,11 @@ def handle_merged_pr(event: sqlite3.Row) -> dict:
 
     criteria_findings = verification.get("criteria_findings") if verification.get("verification_status") == "ok" else None
     if should_retry(verdict=verdict, integrity=integrity, job=job, project_yaml=project_yaml, criteria_findings=criteria_findings):
-        job["_retry_base_commit_sha"] = merge_commit_sha
+        # Strict same-base retry: the correction re-attempts this node from
+        # attempt 0's base, not from the merge commit it just rejected.
+        # Legacy jobs with no recorded base resolve it from their attempt-0
+        # session row inside allocate_retry_attempt.
+        job["_retry_base_commit_sha"] = job.get("expected_base_commit_sha")
         result = _redispatch_with_findings(job_id, job, node_id, verification, result_id)
         return result
 

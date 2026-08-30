@@ -47,6 +47,7 @@ from scripts.runtime.heartbeat.state_recorder import (
     get_executor_session_by_id,
     insert_job,
     insert_executor_session,
+    recorded_base_commit_sha,
     update_executor_session_state,
 )
 
@@ -87,6 +88,7 @@ CREATE TABLE jobs (
     attempt             INTEGER DEFAULT 0,
     max_attempts        INTEGER DEFAULT 3,
     plumbing_attempt    INTEGER NOT NULL DEFAULT 0,
+    expected_base_commit_sha TEXT,
     artifacts_dir       TEXT,
     required_artifacts  TEXT NOT NULL DEFAULT '[]',
     previous_findings   TEXT
@@ -144,19 +146,22 @@ def _insert_job(
     max_attempts=3,
     required_artifacts=None,
     previous_findings=None,
+    expected_base_commit_sha=None,
 ):
     """Insert a minimal job + queue record (no event needed; FKs off in tests)."""
     con.execute(
         "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
         "job_type, executor, queue_state, title, goal, status, attempt, "
-        "max_attempts, required_artifacts, previous_findings) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "max_attempts, required_artifacts, previous_findings, "
+        "expected_base_commit_sha) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             job_id, "2026-07-17T00:00:00+00:00", project_id, repo, node_id,
             "implementation", executor, status, "Test", "Test goal", status,
             attempt, max_attempts,
             json.dumps(required_artifacts or []),
             json.dumps(previous_findings) if previous_findings is not None else None,
+            expected_base_commit_sha,
         ),
     )
     con.execute(
@@ -418,6 +423,44 @@ def test_retry_allocation_persists_findings_for_db_replay(con):
     assert packet.previous_findings["findings"][0]["severity"] == "medium"
 
 
+def test_insert_job_persists_attempt_zero_base_on_the_jobs_row(con):
+    """Attempt 0's base must be durable on the job, not only on its session
+    row — that is what lets every later retry resolve the same base."""
+    con.execute(
+        "INSERT INTO events (event_id, received_at, source, event_type) "
+        "VALUES ('evt_base', '2026-07-17T00:00:00+00:00', 'manual', "
+        "'issue.opened')"
+    )
+    job = {
+        "job_id": "job_planned",
+        "created_at": "2026-07-17T00:00:00+00:00",
+        "event_id": "evt_base",
+        "project_id": "proj-1",
+        "repo": "owner/repo",
+        "node_id": "node-1",
+        "job_type": "implementation",
+        "executor": "jules_cli",
+        "queue_state": "ready",
+        "title": "Test",
+        "goal": "Test goal",
+        "why": "",
+        "constraints": "[]",
+        "acceptance_criteria": "[]",
+        "priority": "medium",
+        "status": "ready",
+        "attempt": 0,
+        "max_attempts": 3,
+        "artifacts_dir": "/tmp/job_planned/",
+        "required_artifacts": "[]",
+        "previous_findings": None,
+        "expected_base_commit_sha": "d" * 40,
+    }
+    insert_job(con, job)
+    con.commit()
+
+    assert recorded_base_commit_sha(con, "job_planned") == "d" * 40
+
+
 def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
     from scripts import init_db as init_db_module
 
@@ -462,8 +505,18 @@ def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
         row["name"]
         for row in migrated.execute("PRAGMA table_info(executor_sessions)")
     }
-    assert {"required_artifacts", "previous_findings"} <= job_columns
+    assert {
+        "required_artifacts",
+        "previous_findings",
+        "expected_base_commit_sha",
+    } <= job_columns
     assert {"execution_attempt_id", "attempt_index"} <= session_columns
+    # Additive: the pre-existing row survives, with the new column empty.
+    old_job = migrated.execute(
+        "SELECT * FROM jobs WHERE job_id = 'job_old'"
+    ).fetchone()
+    assert old_job["attempt"] == 1
+    assert old_job["expected_base_commit_sha"] is None
     rows = migrated.execute(
         "SELECT attempt_index, execution_attempt_id "
         "FROM executor_sessions ORDER BY created_at"
@@ -1179,6 +1232,198 @@ def test_reconcile_failed_session_allocates_one_retry_and_preserves_original(
     assert packet.execution_attempt_id == "job_fail:attempt:1"
     assert packet.required_artifacts == ("decision.md", "patch.diff")
     assert packet.previous_findings["findings"][0]["severity"] == "high"
+
+
+def test_reconcile_failed_session_retries_from_attempt_zero_base_after_head_moved(
+    con, tmp_path, monkeypatch
+):
+    """A retry re-attempts the same node from the same base. Unrelated commits
+    landing on HEAD between attempt 0 and its retry must not re-base the retry
+    — that would silently change what is being attempted."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    (repo / "unrelated.txt").write_text("someone else's work\n")
+    subprocess.run(["git", "add", "unrelated.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "unrelated work", "-q"], cwd=str(repo), check=True
+    )
+    moved_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert moved_head != base_sha
+
+    _insert_job(
+        con,
+        job_id="job_pinned",
+        executor="jules_cli",
+        status="running",
+        expected_base_commit_sha=base_sha,
+    )
+    insert_executor_session(
+        con,
+        "job_pinned",
+        "jules_cli",
+        "sess-pinned",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="boom")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    dispatched_jobs = []
+
+    def retry_dispatch(job, repo_name, repo_path=None):
+        dispatched_jobs.append(dict(job))
+        return ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "sess-pinned-retry"),
+        )
+
+    monkeypatch.setattr(reconciler, "dispatch", retry_dispatch)
+
+    reconciler.reconcile_sessions(con, repo)
+
+    job = con.execute(
+        "SELECT * FROM jobs WHERE job_id = ?", ("job_pinned",)
+    ).fetchone()
+    assert job["attempt"] == 1
+    assert job["expected_base_commit_sha"] == base_sha
+
+    replacement = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? "
+        "ORDER BY attempt_index DESC LIMIT 1",
+        ("job_pinned",),
+    ).fetchone()
+    assert replacement["attempt_index"] == 1
+    assert replacement["expected_base_commit_sha"] == base_sha
+
+    assert len(dispatched_jobs) == 1
+    assert dispatched_jobs[0]["expected_base_commit_sha"] == base_sha
+    packet = dispatcher._build_node_packet(dispatched_jobs[0])
+    assert packet.expected_base_commit_sha == base_sha
+
+
+def test_plumbing_retry_reuses_attempt_zero_base_after_head_moved(
+    con, tmp_path, monkeypatch
+):
+    """Plumbing retries are cold redispatches of the same attempt; they follow
+    the same base contract as work retries."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    (repo / "unrelated.txt").write_text("someone else's work\n")
+    subprocess.run(["git", "add", "unrelated.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "unrelated work", "-q"], cwd=str(repo), check=True
+    )
+
+    _insert_job(
+        con,
+        job_id="job_plumbing_base",
+        executor="local_subprocess",
+        status="running",
+        expected_base_commit_sha=base_sha,
+    )
+    insert_executor_session(
+        con,
+        "job_plumbing_base",
+        "local_subprocess",
+        "sess-plumbing-base",
+        expected_base_commit_sha=base_sha,
+    )
+    FakeAdapter = _make_fake_adapter(
+        status_state="failed",
+        status_error="exited without durable exit state",
+    )
+    monkeypatch.setattr(
+        reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda job, repo_name, repo_path=None: ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("local_subprocess", "sess-plumbing-retry"),
+        ),
+    )
+
+    reconciler.reconcile_sessions(con, repo)
+
+    replacement = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? "
+        "ORDER BY created_at DESC, session_db_id DESC LIMIT 1",
+        ("job_plumbing_base",),
+    ).fetchone()
+    assert replacement["session_id"] == "sess-plumbing-retry"
+    assert replacement["expected_base_commit_sha"] == base_sha
+
+
+def test_retry_base_falls_back_to_attempt_zero_session_row_on_legacy_jobs(
+    tmp_path, monkeypatch
+):
+    """Databases predating jobs.expected_base_commit_sha recorded the base only
+    on attempt 0's session row. Resolution must still find it there rather than
+    fall through to HEAD."""
+    legacy = sqlite3.connect(":memory:")
+    legacy.row_factory = sqlite3.Row
+    legacy.executescript(
+        _SCHEMA.replace("    expected_base_commit_sha TEXT,\n    artifacts_dir", "    artifacts_dir")
+    )
+    legacy.commit()
+    jobs_columns = {
+        row["name"]
+        for row in legacy.execute("PRAGMA table_info(jobs)").fetchall()
+    }
+    assert "expected_base_commit_sha" not in jobs_columns
+
+    repo, base_sha = _make_git_repo(tmp_path)
+    (repo / "unrelated.txt").write_text("later work\n")
+    subprocess.run(["git", "add", "unrelated.txt"], cwd=str(repo), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "later work", "-q"], cwd=str(repo), check=True
+    )
+
+    legacy.execute(
+        "INSERT INTO jobs (job_id, created_at, project_id, repo, node_id, "
+        "job_type, executor, queue_state, title, goal, status, attempt, "
+        "max_attempts, required_artifacts) "
+        "VALUES ('job_legacy', '2026-07-17T00:00:00+00:00', 'proj-1', "
+        "'owner/repo', 'node-1', 'implementation', 'jules_cli', 'running', "
+        "'Test', 'Test goal', 'running', 0, 3, '[]')"
+    )
+    legacy.execute(
+        "INSERT INTO queue_records (queue_item_id, job_id, queue, available_at) "
+        "VALUES ('qi_legacy', 'job_legacy', 'running', "
+        "'2026-07-17T00:00:00+00:00')"
+    )
+    insert_executor_session(
+        legacy,
+        "job_legacy",
+        "jules_cli",
+        "sess-legacy",
+        expected_base_commit_sha=base_sha,
+    )
+    legacy.commit()
+
+    assert recorded_base_commit_sha(legacy, "job_legacy") == base_sha
+
+    FakeAdapter = _make_fake_adapter(status_state="failed", status_error="boom")
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
+    monkeypatch.setattr(
+        reconciler,
+        "dispatch",
+        lambda job, repo_name, repo_path=None: ProtocolDispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_cli", "sess-legacy-retry"),
+        ),
+    )
+
+    reconciler.reconcile_sessions(legacy, repo)
+
+    replacement = legacy.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? "
+        "ORDER BY attempt_index DESC LIMIT 1",
+        ("job_legacy",),
+    ).fetchone()
+    assert replacement["attempt_index"] == 1
+    assert replacement["expected_base_commit_sha"] == base_sha
+    legacy.close()
 
 
 def test_auth_blocked_failure_parks_without_consuming_retry_budget(
@@ -2638,6 +2883,55 @@ def test_evaluator_retry_dispatches_on_nonpass_with_cited_findings(
     assert findings["verdict"] == "needs-human-review"
     assert findings["integrity_verdict"] == "drift"
     assert findings["findings"][0]["summary"] == "broke scripts/runtime/bridge.py:42"
+
+
+def test_evaluator_retry_rebases_on_attempt_zero_not_the_evaluated_commit(
+    con, tmp_path, monkeypatch
+):
+    """A non-pass verdict retries the same node from attempt 0's base. Stacking
+    the correction on the evaluated or result commit is continuation work, not
+    a retry, so neither may become the retry base."""
+    pending, job_id, _ = _retry_pending_and_job(con)
+    base_sha = "a" * 40
+    con.execute(
+        "UPDATE jobs SET expected_base_commit_sha = ? WHERE job_id = ?",
+        (base_sha, job_id),
+    )
+    con.commit()
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 1}},
+    )
+    dispatched_jobs = []
+
+    def capture_dispatch(job, repo, repo_path=None):
+        dispatched_jobs.append(dict(job))
+        return _successful_dispatch(job, repo, repo_path)
+
+    monkeypatch.setattr(reconciler, "dispatch", capture_dispatch)
+
+    verification = _nonpass_cited_verification()
+    reconciler._finalize_evaluation(
+        con, pending, verification, repo_path=tmp_path
+    )
+
+    evaluated = verification["evaluated_commit_sha"]
+    assert evaluated != base_sha
+    assert pending.result_commit_sha != base_sha
+
+    replacement = con.execute(
+        "SELECT * FROM executor_sessions WHERE job_id = ? "
+        "ORDER BY attempt_index DESC LIMIT 1",
+        (job_id,),
+    ).fetchone()
+    assert replacement["attempt_index"] == 1
+    assert replacement["expected_base_commit_sha"] == base_sha
+
+    assert len(dispatched_jobs) == 1
+    assert dispatched_jobs[0]["expected_base_commit_sha"] == base_sha
 
 
 def test_evaluator_retry_skips_when_findings_uncited(con, tmp_path, monkeypatch):
