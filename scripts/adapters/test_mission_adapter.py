@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
 from adapters.executor_protocol import (
+    AttemptContext,
     EngagementDispatchResult,
     ExecutorAdapter,
     NodePacket,
@@ -154,7 +155,14 @@ def test_single_packet_dispatch_uses_engagement_lifecycle(tmp_path, monkeypatch)
         ),
     )
 
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    attempt_dir = tmp_path / "attempt-0"
+    attempt_dir.mkdir()
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    result = adapter.dispatch(
+        packet,
+        attempt=AttemptContext(attempt_id="attempt-0", attempt_dir=attempt_dir),
+    )
 
     assert result.success is True
     assert result.session_ref == SessionRef("factory_mission", "eng-1")

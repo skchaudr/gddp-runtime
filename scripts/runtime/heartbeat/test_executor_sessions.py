@@ -2332,7 +2332,10 @@ def test_dispatcher_runs_local_executor_in_target_checkout(monkeypatch, tmp_path
             observed["repo"] = repo
             observed["cwd"] = cwd
 
-        def dispatch(self, packet):
+        def attempt_root(self):
+            return tmp_path
+
+        def dispatch(self, packet, *, attempt, continuity):
             return ProtocolDispatchResult(
                 success=True,
                 session_ref=SessionRef(

@@ -6,6 +6,7 @@ import signal
 import sqlite3
 import sys
 import time
+import uuid
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -17,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
 from adapters.executor_protocol import (
+    AttemptContext,
     Continuity,
     DispatchResult,
     ExecutorAdapter,
@@ -82,6 +84,16 @@ def _persisted_job(*, executor: str = "jules_api", attempt: int = 2) -> dict:
 
 def _packet(attempt: int = 2) -> NodePacket:
     return dispatcher._build_node_packet(_persisted_job(attempt=attempt))
+
+
+def _attempt_context(tmp_path: Path, packet: NodePacket) -> AttemptContext:
+    attempt_id = (
+        f"job-123-attempt-{packet.attempt_index}-{uuid.uuid4().hex[:8]}"
+    )
+    attempt_dir = tmp_path / attempt_id
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "packet.json").write_text(packet.to_json())
+    return AttemptContext(attempt_id=attempt_id, attempt_dir=attempt_dir)
 
 
 def _wait_for_terminal(adapter: LocalSubprocessAdapter, result: DispatchResult):
@@ -343,7 +355,10 @@ def test_jules_api_dispatch_poll_and_collect(monkeypatch, tmp_path):
 
     monkeypatch.setattr(adapter, "_request_json", request_json)
 
-    dispatched = adapter.dispatch(_packet())
+    packet = _packet()
+    dispatched = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     assert dispatched.success is True
     assert dispatched.session_ref == SessionRef("jules_api", "session-123")
@@ -392,12 +407,15 @@ def test_jules_api_status_mapping(monkeypatch, api_state, expected_state):
     assert status.state == expected_state
 
 
-def test_jules_api_dispatch_fails_without_configured_key(monkeypatch):
+def test_jules_api_dispatch_fails_without_configured_key(monkeypatch, tmp_path):
     monkeypatch.delenv("JULES_API_KEY", raising=False)
     monkeypatch.delenv("GDDP_JULES_KEY_CMD", raising=False)
     adapter = JulesApiAdapter("owner/repo")
 
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     assert result.success is False
     assert "JULES_API_KEY" in (result.error or "")
@@ -554,6 +572,66 @@ def test_dispatcher_decides_continuity_before_cursor_dispatch(
     assert continuity.token == expected_token
 
 
+def test_resume_marker_is_consumed_after_one_dispatch(monkeypatch, tmp_path):
+    _CapabilityAwareDispatchAdapter.root = tmp_path
+    _CapabilityAwareDispatchAdapter.observed = []
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS, "cursor_cli", _CapabilityAwareDispatchAdapter
+    )
+    request_dir = continuity_request_dir(tmp_path, "job-123")
+    request_dir.mkdir(parents=True)
+    (request_dir / RESUME_MARKER).write_text("session-token")
+    job = _persisted_job(executor="cursor_cli")
+
+    assert dispatcher.dispatch(job, "owner/repo").success is True
+    _, first_continuity = _CapabilityAwareDispatchAdapter.observed[0]
+    assert first_continuity.mode == "resume"
+
+    assert dispatcher.dispatch(job, "owner/repo").success is True
+    _, second_continuity = _CapabilityAwareDispatchAdapter.observed[1]
+    assert second_continuity.mode == "fresh"
+
+
+class _NoResumeDispatchAdapter:
+    observed: list[object] = []
+    root: Path
+
+    def __init__(self, repo, *, cwd=None):
+        self.repo = repo
+        self.cwd = cwd
+
+    def capabilities(self):
+        return ExecutorCapabilities(executor="jules_api")
+
+    def attempt_root(self):
+        return type(self).root
+
+    def dispatch(self, packet, *, attempt, continuity):
+        type(self).observed.append(attempt)
+        return DispatchResult(
+            success=True,
+            session_ref=SessionRef("jules_api", attempt.attempt_id),
+        )
+
+
+def test_no_resume_executor_still_reserves_attempt(monkeypatch, tmp_path):
+    _NoResumeDispatchAdapter.root = tmp_path
+    _NoResumeDispatchAdapter.observed = []
+    monkeypatch.setitem(
+        dispatcher.ADAPTERS, "jules_api", _NoResumeDispatchAdapter
+    )
+
+    result = dispatcher.dispatch(
+        _persisted_job(executor="jules_api"), "owner/repo"
+    )
+
+    assert result.success is True
+    attempt = _NoResumeDispatchAdapter.observed[0]
+    assert attempt.attempt_dir.is_dir()
+    assert (attempt.attempt_dir / "capabilities.json").exists()
+    assert (attempt.attempt_dir / "packet.json").exists()
+
+
 def test_preemptive_cancel_text_never_claims_remote_work_may_continue(
     monkeypatch,
 ):
@@ -621,8 +699,12 @@ def test_local_subprocess_persists_exact_packet_and_collects_after_reinstantiati
     adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
     packet = _packet()
 
-    first = adapter.dispatch(packet)
-    second = adapter.dispatch(packet)
+    first = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
+    second = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     assert first.success is True
     assert second.success is True
@@ -672,7 +754,10 @@ def test_collect_returns_commit_ref_not_patch(tmp_path):
         ),
     )
     adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
     assert _wait_for_terminal(adapter, result).state == "completed"
     collected = adapter.collect(result.session_ref, tmp_path / "out.json")
     assert collected.success is True
@@ -689,8 +774,10 @@ def test_local_subprocess_failure_is_durable_and_not_collectable(tmp_path):
     )
     adapter = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
 
-
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     status = _wait_for_terminal(adapter, result)
     assert status.state == "failed"
@@ -729,7 +816,10 @@ def test_failed_status_surfaces_handoff_worktree_path(tmp_path):
         ),
     )
     adapter = LocalSubprocessAdapter(repo="owner/repo", argv=argv, spool_root=tmp_path)
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     status = _wait_for_terminal(adapter, result)
     assert status.state == "failed"
@@ -747,7 +837,10 @@ def test_local_subprocess_default_cwd_is_attempt_isolated(tmp_path):
         spool_root=tmp_path,
     )
 
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     assert result.session_ref is not None
     attempt_dir = tmp_path / result.session_ref.session_id
@@ -779,7 +872,10 @@ def test_local_subprocess_supervisor_metadata_failure_stops_unpublished_session(
     monkeypatch.setattr(local_subprocess_adapter, "_atomic_write", fail_supervisor_pid)
     monkeypatch.setattr(local_subprocess_adapter.os, "killpg", killpg)
 
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
 
     assert result.success is False
     assert result.session_ref is None
@@ -816,7 +912,10 @@ def test_local_subprocess_cancel_best_effort_survives_reinstantiation(tmp_path):
         "import sys,time; sys.stdin.buffer.read(); time.sleep(30)",
     )
     adapter = LocalSubprocessAdapter(repo="", argv=argv, spool_root=tmp_path)
-    result = adapter.dispatch(_packet())
+    packet = _packet()
+    result = adapter.dispatch(
+        packet, attempt=_attempt_context(tmp_path, packet)
+    )
     assert result.session_ref is not None
 
     deadline = time.monotonic() + 5

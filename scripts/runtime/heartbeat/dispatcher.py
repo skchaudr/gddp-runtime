@@ -131,8 +131,6 @@ def dispatch(
         capabilities = adapter_capabilities(adapter, executor)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
-    if capabilities.resume == "none":
-        return adapter.dispatch(packet)
     try:
         attempt = _reserve_attempt(adapter, packet, capabilities)
     except (AttributeError, OSError, TypeError, ValueError) as exc:

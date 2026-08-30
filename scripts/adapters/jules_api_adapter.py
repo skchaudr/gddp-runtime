@@ -12,8 +12,11 @@ import urllib.request
 from pathlib import Path
 
 from adapters.executor_protocol import (
+    AttemptContext,
+    Continuity,
     DispatchResult,
     EngagementAdapterDefaults,
+    FRESH,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -46,7 +49,25 @@ class JulesApiAdapter(EngagementAdapterDefaults):
         )
         self.timeout = timeout
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
+    def attempt_root(self) -> Path:
+        runtime_root = Path(__file__).resolve().parents[2]
+        root = Path(
+            os.environ.get(
+                "GDDP_JULES_API_ATTEMPT_DIR",
+                runtime_root / "db" / "jules-api-attempts",
+            )
+        ).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def dispatch(
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
+    ) -> DispatchResult:
+        del attempt, continuity
         """Create one asynchronous Jules API session."""
         if not self.api_key:
             return DispatchResult(

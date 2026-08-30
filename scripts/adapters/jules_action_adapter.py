@@ -17,8 +17,15 @@ Usage:
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
-from adapters.executor_protocol import DispatchResult, NodePacket
+from adapters.executor_protocol import (
+    AttemptContext,
+    Continuity,
+    DispatchResult,
+    FRESH,
+    NodePacket,
+)
 
 
 def _flatten(item) -> str:
@@ -40,6 +47,17 @@ class JulesActionAdapter:
 
     def __init__(self, repo: str):
         self.repo = repo
+
+    def attempt_root(self) -> Path:
+        runtime_root = Path(__file__).resolve().parents[2]
+        root = Path(
+            os.environ.get(
+                "GDDP_JULES_ACTION_ATTEMPT_DIR",
+                runtime_root / "db" / "jules-action-attempts",
+            )
+        ).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return root
 
     @staticmethod
     def _github_token() -> str | None:
@@ -176,7 +194,14 @@ execution_attempt_id: {packet.execution_attempt_id}
 This block is parsed by the GDDP return router to create a structured review receipt when the PR merges. It does not advance graph truth automatically. Missing or malformed metadata prevents the runtime from linking the PR back to the job for review.
 {metadata_reminder}"""
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
+    def dispatch(
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
+    ) -> DispatchResult:
+        del attempt, continuity
         token = self._github_token()
         if not token:
             return DispatchResult(

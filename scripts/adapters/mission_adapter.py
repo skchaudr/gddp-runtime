@@ -16,9 +16,12 @@ from pathlib import Path
 import fcntl
 
 from .executor_protocol import (
+    AttemptContext,
+    Continuity,
     DispatchResult,
     EngagementAdapterDefaults,
     EngagementDispatchResult,
+    FRESH,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -86,7 +89,18 @@ class MissionAdapter(EngagementAdapterDefaults):
         )
         self._processes: dict[str, subprocess.Popen] = {}
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
+    def attempt_root(self) -> Path:
+        """Root where the runtime reserves transport attempts."""
+        return self.session_root
+
+    def dispatch(
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
+    ) -> DispatchResult:
+        del attempt, continuity
         result = self.dispatch_engagement([packet])
         return DispatchResult(
             success=result.success,

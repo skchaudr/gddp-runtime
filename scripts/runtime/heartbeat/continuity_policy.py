@@ -184,6 +184,15 @@ def read_resume_request(request_dir: Path) -> ResumeRequest | None:
     return ResumeRequest(token=text)
 
 
+def consume_resume_request(request_dir: Path) -> None:
+    """Remove a honored operator resume marker (one marker, one attempt)."""
+    path = Path(request_dir) / RESUME_MARKER
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def choose_continuity(
     *,
     request_dir: Path,
@@ -240,6 +249,7 @@ def choose_continuity(
                 ),
             )
 
+    consume_resume_request(request_dir)
     return Continuity(
         mode="resume", token=request.token, reason=OPERATOR_REQUESTED
     )
@@ -260,6 +270,7 @@ __all__ = [
     "ResumeRequest",
     "SessionPolicy",
     "choose_continuity",
+    "consume_resume_request",
     "continuity_request_dir",
     "parse_session_policy",
     "read_resume_request",

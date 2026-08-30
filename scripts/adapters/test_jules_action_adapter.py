@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -9,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 
-from adapters.executor_protocol import DispatchResult, NodePacket
+from adapters.executor_protocol import AttemptContext, DispatchResult, NodePacket
 from adapters.jules_action_adapter import JulesActionAdapter, _flatten
 
 
@@ -28,6 +29,15 @@ class TestJulesActionAdapter(unittest.TestCase):
             acceptance_criteria=("No leaks", ("test 1", "test 2")),
             required_artifacts=(),
             attempt_index=0,
+        )
+        self._attempt = self._attempt_context(self.sample_packet)
+
+    def _attempt_context(self, packet: NodePacket) -> AttemptContext:
+        attempt_dir = Path(tempfile.mkdtemp(prefix="jules-action-"))
+        (attempt_dir / "packet.json").write_text(packet.to_json())
+        return AttemptContext(
+            attempt_id=attempt_dir.name,
+            attempt_dir=attempt_dir,
         )
 
     def test_flatten_string(self):
@@ -85,7 +95,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_reports_missing_token_when_gh_auth_fails(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not logged in")
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertFalse(result.success)
         self.assertIsNone(result.issue_url)
@@ -112,7 +122,7 @@ class TestJulesActionAdapter(unittest.TestCase):
             ),
         ]
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertTrue(result.success)
         self.assertEqual(mock_run.call_count, 2)
@@ -125,7 +135,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_reports_missing_token_when_gh_auth_times_out(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh", "auth", "token"], timeout=10)
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertFalse(result.success)
         self.assertEqual(
@@ -142,7 +152,7 @@ class TestJulesActionAdapter(unittest.TestCase):
             stderr=""
         )
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertTrue(result.success)
         self.assertEqual(result.issue_url, "https://github.com/owner/repo/issues/42")
@@ -167,7 +177,7 @@ class TestJulesActionAdapter(unittest.TestCase):
             stderr="Error: repository not found"
         )
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertFalse(result.success)
         self.assertIsNone(result.issue_url)
@@ -178,7 +188,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_timeout(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "gh CLI timed out")
@@ -188,7 +198,7 @@ class TestJulesActionAdapter(unittest.TestCase):
     def test_dispatch_exception(self, mock_run):
         mock_run.side_effect = Exception("Unexpected error")
 
-        result = self.adapter.dispatch(self.sample_packet)
+        result = self.adapter.dispatch(self.sample_packet, attempt=self._attempt)
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "Unexpected error")

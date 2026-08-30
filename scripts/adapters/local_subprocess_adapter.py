@@ -7,13 +7,15 @@ import os
 import signal
 import subprocess
 import sys
-import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
 from adapters.executor_protocol import (
+    AttemptContext,
+    Continuity,
     DispatchResult,
     EngagementAdapterDefaults,
+    FRESH,
     NodePacket,
     PatchResult,
     SessionRef,
@@ -48,23 +50,28 @@ class LocalSubprocessAdapter(EngagementAdapterDefaults):
         configured_cwd = cwd if cwd is not None else os.environ.get(_CWD_ENV)
         self.cwd = Path(configured_cwd).resolve() if configured_cwd else None
 
-    def dispatch(self, packet: NodePacket) -> DispatchResult:
-        session_id = (
-            f"{_safe_component(packet.job_id)}-"
-            f"{_safe_component(packet.node_id)}-attempt-{packet.attempt_index}-"
-            f"{uuid.uuid4().hex}"
-        )
-        attempt_dir = self.spool_root / session_id
+    def attempt_root(self) -> Path:
+        """Root where the runtime reserves transport attempts."""
+        return self.spool_root
+
+    def dispatch(
+        self,
+        packet: NodePacket,
+        *,
+        attempt: AttemptContext,
+        continuity: Continuity = FRESH,
+    ) -> DispatchResult:
+        del packet, continuity  # packet is persisted by _reserve_attempt
+        session_id = attempt.attempt_id
+        attempt_dir = attempt.attempt_dir
         supervisor: subprocess.Popen[bytes] | None = None
         start_read: int | None = None
         start_write: int | None = None
         try:
-            attempt_dir.mkdir(parents=True, exist_ok=False)
             execution_cwd = self.cwd
             if execution_cwd is None:
                 execution_cwd = attempt_dir / "workspace"
-                execution_cwd.mkdir()
-            (attempt_dir / "packet.json").write_text(packet.to_json())
+                execution_cwd.mkdir(exist_ok=True)
             (attempt_dir / "command.json").write_text(
                 json.dumps(
                     {"argv": list(self.argv), "cwd": str(execution_cwd)},

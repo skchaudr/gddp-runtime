@@ -51,6 +51,19 @@ def test_operator_marker_holding_a_session_id_requests_resume(tmp_path):
     assert decision.mode == "resume"
     assert decision.token == "e130cd81-dcf7-4de8-bd50-58c80d951107"
     assert decision.reason == OPERATOR_REQUESTED
+    assert not (tmp_path / RESUME_MARKER).exists()
+
+
+def test_one_resume_request_honors_exactly_one_attempt(tmp_path):
+    (tmp_path / RESUME_MARKER).write_text("sess-1")
+
+    first = choose_continuity(request_dir=tmp_path, capabilities=CURSOR)
+    second = choose_continuity(request_dir=tmp_path, capabilities=CURSOR)
+
+    assert first.mode == "resume"
+    assert first.token == "sess-1"
+    assert second.mode == "fresh"
+    assert second.reason == "no operator resume request"
 
 
 def test_an_executor_that_cannot_resume_is_never_asked_to(tmp_path):
