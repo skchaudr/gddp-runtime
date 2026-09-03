@@ -18,28 +18,36 @@ import yaml
 
 DEFAULT_MISSION_ENGAGEMENT_SIZE = 1
 DEFAULT_MISSION_MAX_PAIRS = 5
-DEFAULT_EXECUTION_MODE_ALLOWLIST = frozenset(
+# Abstract modes: they name who may do the work at all, not which binary
+# does it. No adapter backs them and none should — `human` means the operator
+# takes the node, `agent` means any registered transport is acceptable.
+ABSTRACT_EXECUTION_MODES = frozenset({"agent", "human"})
+
+# The names dispatch can actually route. Mirrors dispatcher.ADAPTERS and
+# dispatcher.MEDIATED_ADAPTERS plus the abstract modes above; graph_reader
+# cannot import dispatcher (dispatcher imports this module), so
+# test_execution_mode_adapters_match_dispatch_registry fails loudly on drift
+# rather than letting this copy rot. It rotted before: `jules_cli`,
+# `pi_worker`, `vertex`, and `vm_worker` sat here with no adapter and no
+# usage in any graph, while `cursor_cli` had to be hand-added when its
+# adapter landed.
+EXECUTION_MODE_ADAPTERS = frozenset(
     {
-        "agent",
         "cursor_cli",
         "droid",
         "factory_mission",
-        "human",
         "jules",
         "jules_api",
-        "jules_cli",
         "local_subprocess",
         "pi_rpc",
-        "pi_worker",
-        "vertex",
-        "vm_worker",
     }
+    | ABSTRACT_EXECUTION_MODES
 )
 
 
 def validate_node_execution_modes(
     value: object,
-    allowed_modes: Iterable[str] = DEFAULT_EXECUTION_MODE_ALLOWLIST,
+    registered_adapters: Iterable[str] = EXECUTION_MODE_ADAPTERS,
 ) -> list[str]:
     """Return declared modes; unknown modes get a LOUD warning, not a crash.
 
@@ -47,24 +55,24 @@ def validate_node_execution_modes(
     a dispatch-time, one-job, self-explaining error ("unknown executor") into
     a tick-time, project-wide scan crash — the enforcement failed harder than
     the condition it guarded. The reader reads. Dispatch fails at the point
-    of use with context. The allowlist remains as the registry of known
+    of use with context. The adapter list remains as the registry of known
     executors so the warning can name exactly what is unregistered.
     """
     if not isinstance(value, list):
         raise ValueError("allowed_execution_modes must be a list")
 
-    allowlist = frozenset(allowed_modes)
+    registered = frozenset(registered_adapters)
     disallowed = [
         mode
         for mode in value
-        if not isinstance(mode, str) or mode not in allowlist
+        if not isinstance(mode, str) or mode not in registered
     ]
     if disallowed:
         banner = "!" * 72
         print(
             f"\n{banner}\n"
             f"!! UNREGISTERED EXECUTION MODE(S) DECLARED: {disallowed}\n"
-            f"!! Registered executors: {sorted(allowlist)}\n"
+            f"!! Registered executors: {sorted(registered)}\n"
             f"!! The node is being loaded anyway. If the mode is a typo, or the\n"
             f"!! adapter is not registered in dispatcher.ADAPTERS, dispatch of\n"
             f"!! this node WILL FAIL with 'Unknown executor'. A job will be lost.\n"
@@ -145,7 +153,7 @@ class GraphReader:
         self,
         config_path: Optional[str] = None,
         *,
-        execution_mode_allowlist: Iterable[str] | None = None,
+        execution_mode_adapters: Iterable[str] | None = None,
     ):
         # Resolve path: arg > env var > sibling directory convention
         if config_path:
@@ -163,10 +171,10 @@ class GraphReader:
                 "Set GDDP_CONFIG_PATH env var or pass config_path explicitly."
             )
 
-        self.execution_mode_allowlist = frozenset(
-            DEFAULT_EXECUTION_MODE_ALLOWLIST
-            if execution_mode_allowlist is None
-            else execution_mode_allowlist
+        self.execution_mode_adapters = frozenset(
+            EXECUTION_MODE_ADAPTERS
+            if execution_mode_adapters is None
+            else execution_mode_adapters
         )
 
         # Internal caches to eliminate redundant synchronous file I/O
@@ -254,9 +262,12 @@ class GraphReader:
             depends_on=data.get("depends_on", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
             constraints=data.get("constraints", []),
+            # An omitted field means "any registered agent", not a brand. The
+            # old default was ["jules"], which silently brand-locked a node
+            # nobody had made a transport decision about to a dead executor.
             allowed_execution_modes=validate_node_execution_modes(
-                data.get("allowed_execution_modes", ["jules"]),
-                self.execution_mode_allowlist,
+                data.get("allowed_execution_modes", ["agent"]),
+                self.execution_mode_adapters,
             ),
             required_artifacts=data.get("required_artifacts", []),
             priority=data.get("priority", "normal"),

@@ -11,11 +11,11 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-from .graph_reader import NodeData
+from .graph_reader import ABSTRACT_EXECUTION_MODES, NodeData
 
 
 _NODE_TAG_RE = re.compile(r"(?i)node[:\s-]+([a-z0-9_-]+)")
-_ABSTRACT_EXECUTION_MODES = frozenset({"agent", "human"})
+_ABSTRACT_EXECUTION_MODES = ABSTRACT_EXECUTION_MODES
 
 
 def _executor_allowed(selected: str, modes: list[str]) -> bool:

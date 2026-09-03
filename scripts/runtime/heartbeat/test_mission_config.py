@@ -48,10 +48,10 @@ def test_runtime_node_validator_warns_but_loads_unregistered_mode(
     that converts a contained dispatch-time error into a tick-time outage.
     """
     _write_factory_mission_node(tmp_path)
-    injected_allowlist = {"jules"}
+    injected_adapters = {"jules"}
     reader = GraphReader(
         str(tmp_path),
-        execution_mode_allowlist=injected_allowlist,
+        execution_mode_adapters=injected_adapters,
     )
 
     node = reader.load_node("mission-project", "mission-node")

@@ -1105,7 +1105,7 @@ def test_dispatcher_routes_cursor_cli_without_a_new_env_knob(
     tmp_path, monkeypatch, repo, fake_cursor
 ):
     from runtime.heartbeat import dispatcher
-    from runtime.heartbeat.graph_reader import DEFAULT_EXECUTION_MODE_ALLOWLIST
+    from runtime.heartbeat.graph_reader import EXECUTION_MODE_ADAPTERS
 
     binary, _ = fake_cursor
     spool = tmp_path / "spool"
@@ -1117,7 +1117,7 @@ def test_dispatcher_routes_cursor_cli_without_a_new_env_knob(
     )
     monkeypatch.delenv("GDDP_EXECUTOR_OVERRIDE", raising=False)
 
-    assert "cursor_cli" in DEFAULT_EXECUTION_MODE_ALLOWLIST
+    assert "cursor_cli" in EXECUTION_MODE_ADAPTERS
     assert dispatcher.executor_preflight_error("cursor_cli", "owner/repo") is None
     assert dispatcher.executor_supports_engagement("cursor_cli", "owner/repo") is False
 

@@ -267,6 +267,19 @@ def _has_pending_frontier_event(
     return row is not None
 
 
+def _auto_dispatch_routing(project) -> dict:
+    """Routing for an auto-advance event: the project's default, or nothing.
+
+    A project that never chose a default executor gets no preselection, so
+    the node's own declaration decides. The previous `or "jules"` fallback
+    injected a brand nobody configured, and the classifier then dropped the
+    whole event whenever the node did not happen to list jules — auto-advance
+    failing silently on a default the operator never set.
+    """
+    default_executor = project.execution_policy.get("default_executor")
+    return {"selected_executor": default_executor} if default_executor else {}
+
+
 def _inject_dispatch_event(
     con: sqlite3.Connection, project, node_id: str, now: datetime
 ) -> str:
@@ -291,11 +304,7 @@ def _inject_dispatch_event(
             f"frontier-dispatch://node: {node_id}",
             project.project_id,
             json.dumps([node_id]),
-            json.dumps({
-                "selected_executor": (
-                    project.execution_policy.get("default_executor") or "jules"
-                )
-            }),
+            json.dumps(_auto_dispatch_routing(project)),
             project.repo,
         ),
     )
