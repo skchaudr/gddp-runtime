@@ -79,7 +79,6 @@ Prefer pure, deterministic, sub-second tests with fixed values and no services, 
 
 Never invoke the heartbeat runner directly. Heartbeat operations use only `deploy/mini-heartbeat/bin/arm.sh`, `smoke.sh`, or launchd, which source `deploy/mini-heartbeat/env/gddp.env` through `common.sh`.
 
-Guide: [`docs/current/zed-debugging.md`](docs/current/zed-debugging.md). Visual: [`docs/artifacts/zed-debugging-visual-guide.html`](docs/artifacts/zed-debugging-visual-guide.html).
 
 ## Agent-driven development workflow
 
