@@ -15,6 +15,7 @@ from adapters.executor_protocol import (
     Continuity,
     DispatchResult,
     EngagementAdapterDefaults,
+    ExecutorCapabilities,
     FRESH,
     NodePacket,
     PatchResult,
@@ -53,6 +54,26 @@ class LocalSubprocessAdapter(EngagementAdapterDefaults):
     def attempt_root(self) -> Path:
         """Root where the runtime reserves transport attempts."""
         return self.spool_root
+
+    def capabilities(self) -> ExecutorCapabilities:
+        """Declare only what this transport demonstrably does.
+
+        Without this method `adapter_capabilities()` synthesized
+        `cancellation="none"` for local_subprocess and droid, while `cancel()`
+        actually SIGTERMs the process group and returns True (see `cancel`
+        below). `cancellation` is load-bearing — `dispatcher`'s
+        `cancel_remote_session` renders operator-facing outcome text from it —
+        so the default was telling the operator a killable attempt could not
+        be cancelled.
+
+        Fields left at their conservative defaults are not claims of absence,
+        only of unproven presence; add them when a test or a live artifact
+        demonstrates them.
+        """
+        return ExecutorCapabilities(
+            executor=self.executor_name,
+            cancellation="preemptive",
+        )
 
     def dispatch(
         self,

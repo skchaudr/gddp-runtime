@@ -16,6 +16,7 @@ from adapters.executor_protocol import (
     Continuity,
     DispatchResult,
     EngagementAdapterDefaults,
+    ExecutorCapabilities,
     FRESH,
     NodePacket,
     PatchResult,
@@ -48,6 +49,25 @@ class JulesApiAdapter(EngagementAdapterDefaults):
             or "main"
         )
         self.timeout = timeout
+
+    def capabilities(self) -> ExecutorCapabilities:
+        """`reply` is real here and was declared absent.
+
+        This adapter implements `reply()` against Jules's `:sendMessage`
+        endpoint for sessions parked in AWAITING_USER_FEEDBACK, but with no
+        `capabilities()` the synthesized declaration said `reply=False`. The
+        reconciler happens to probe `hasattr(adapter, "reply")` rather than
+        the declaration, so the standing-reply path worked while the
+        declaration contradicted it — the kind of divergence that makes the
+        declaration unusable as a policy input.
+
+        `cancellation` stays `"none"`: `cancel()` returns False because the
+        documented API has no non-destructive cancel. That default is true.
+        """
+        return ExecutorCapabilities(
+            executor="jules_api",
+            reply=True,
+        )
 
     def attempt_root(self) -> Path:
         runtime_root = Path(__file__).resolve().parents[2]

@@ -21,6 +21,7 @@ from .executor_protocol import (
     DispatchResult,
     EngagementAdapterDefaults,
     EngagementDispatchResult,
+    ExecutorCapabilities,
     FRESH,
     NodePacket,
     PatchResult,
@@ -110,6 +111,23 @@ class MissionAdapter(EngagementAdapterDefaults):
 
     def supports_engagement(self) -> bool:
         return True
+
+    def capabilities(self) -> ExecutorCapabilities:
+        """Declare engagement (the whole point of this transport) and the
+        cancellation kind `cancel()` actually implements.
+
+        `adapter_capabilities()` used to synthesize this from
+        `supports_engagement()` alone, which meant `cancellation` came back
+        `"none"` even though `cancel()` SIGTERMs the mission process group
+        and returns True. `cancellation` drives operator-facing outcome text
+        in `dispatcher.cancel_remote_session`, so the synthesized default was
+        reporting a killable mission as uncancellable.
+        """
+        return ExecutorCapabilities(
+            executor=self.executor_name,
+            cancellation="preemptive",
+            engagement=True,
+        )
 
     def dispatch_engagement(
         self, packets: list[NodePacket]
