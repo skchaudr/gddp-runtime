@@ -1,0 +1,3 @@
+{"ts":"2026-08-23T17:08:39.802889+00:00","project_id":"aa-cli-tui-pass","node_id":"tui-inventory-and-keymap-audit","from_status":"complete","to_status":"ready","reason":"re-doing entire pass updated","kind":"graph","source":"gddp operator menu"}
+{"ts":"2026-08-23T17:09:44.536134+00:00","project_id":"aa-cli-tui-pass","node_id":"tui-inventory-and-keymap-audit","from_status":"ready","to_status":"deferred","reason":"dude","kind":"graph","source":"gddp operator menu"}
+{"ts":"2026-08-24T10:43:27.299448+00:00","project_id":"aa-cli-tui-pass","node_id":"tui-inventory-and-keymap-audit","from_status":"deferred","to_status":"ready","reason":"runtime pi-rpc ready","kind":"graph","source":"gddp operator menu"}
