@@ -2,6 +2,10 @@
 
 Communication protocol: State each fact once. Never restate or rephrase a point you already made. No lead-in, no closing recap, no "to summarize." Stop when the answer is complete.
 
+## Strict compliance
+
+Do NOT use "not" or other negative phrasing. If you need to express the negation of a concept, use the opposite positive phrase.
+
 ## Common failure pattern (2026-07-30)
 
 This project is rife with an incredibly unfortunate failure pattern:
