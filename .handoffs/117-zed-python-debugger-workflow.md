@@ -8,12 +8,13 @@ Branch: main
 
 ## Empirical Reality (2-3 sentences max, anything more must be critically justifiable)
 
-Zed now exposes four repo-specific Debugpy launches: the active Python file, the active pytest file, the last failed test, and the intake server. The profiles use the selected Zed Python toolchain and set both repo root and `scripts/` on `PYTHONPATH` for the repository's two import styles.
+Zed now exposes three global Python Debugpy launches plus four repo-specific GDDP launches covering the active file, active pytest file, last failed test, and intake server. The repo profiles use the selected Zed Python toolchain and set both repo root and `scripts/` on `PYTHONPATH` for the repository's two import styles.
 
 ### Scope touched (One file per line, +/- for only what was changed)
 
 + `.zed/debug.json`
 + `.handoffs/117-zed-python-debugger-workflow.md`
++ `/home/sab-mini/.config/zed/debug.json` (user-level Zed config, outside Git)
 
 ### Constrained areas touched (none / list + justification)
 
@@ -25,7 +26,8 @@ none
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
-`.zed/debug.json` - Reusable Debugpy profiles for live entrypoints and failure-focused pytest debugging.
+`.zed/debug.json` - Reusable GDDP Debugpy profiles for live entrypoints and failure-focused pytest debugging.
+`/home/sab-mini/.config/zed/debug.json` - Generic current-file, current-pytest-file, and last-failed-test profiles merged into every Zed workspace.
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
