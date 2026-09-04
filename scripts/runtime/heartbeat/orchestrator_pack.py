@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .graph_reader import GraphReader
+from .orchestrator_decision import recent_decisions
 from .scope_checker import SATISFIED_DEP_STATUSES
 
 _default_root = Path(__file__).parent.parent.parent.parent
@@ -168,6 +169,9 @@ class OrchestratorPack:
     evaluator: EvaluatorSurface
     human_gate: list[dict]
     steer: list[dict]
+    # What earlier wakes concluded and why. Sleep takes the inference; these
+    # carry the operational continuity forward in its place.
+    decisions: list[dict]
     pointers: dict[str, str]
 
     def to_json_value(self) -> dict:
@@ -292,6 +296,8 @@ def assemble_pack(
     roots: dict[str, Path] | None = None,
     stall_s: int = 600,
     recent_verdicts: int = 5,
+    recent_wakes: int = 5,
+    receipts_root: Path | None = None,
 ) -> OrchestratorPack:
     """Build one wake pack for a project from graph YAML, SQLite, and spools."""
     now = now or datetime.now(timezone.utc)
@@ -566,6 +572,9 @@ def assemble_pack(
         evaluator=evaluator,
         human_gate=human_gate,
         steer=steer,
+        decisions=recent_decisions(
+            project_id, recent_wakes, receipts_root=receipts_root
+        ),
         pointers=pointers,
     )
 
@@ -634,6 +643,14 @@ def render_pack(pack: OrchestratorPack) -> str:
     add(f"\nSTEER {len(pack.steer)}")
     for row in pack.steer:
         add(f"  {row['attempt_id'][:16]} {row['path']} ({row['age_s']}s)")
+
+    add(f"\nEARLIER WAKES {len(pack.decisions)} (newest first)")
+    for row in pack.decisions:
+        effected = "effected" if row.get("effected") else "advice"
+        target = f" {row['node_id']}" if row.get("node_id") else ""
+        add(f"  {row['action']}{target} [{effected}] — {row['reason']}")
+        if row.get("expect"):
+            add(f"      expecting: {row['expect']}")
 
     add("\nPOINTERS")
     for key, value in sorted(pack.pointers.items()):
