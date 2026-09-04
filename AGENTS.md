@@ -69,6 +69,18 @@ Intent & architecture doctrine (read these before working on the evaluator or th
 - **Heavy dirs excluded from git:** `db/`, `jobs/`, `events/` (runtime state, never committed)
 - **Key files:** `scripts/intake_server.py`, `scripts/runtime/`
 
+## Zed debugger coaching
+
+When Sab asks for debugger help, coach **one UI action at a time** and wait for the observed result before the next. Inspect live repo state first; do not reuse remembered line numbers, profile args, or test results.
+
+Before Start, state: **profile**, **breakpoint** (`path:line` plus source text), **trigger** (exact test/node and whether the profile runs more than that node), **watches**, **expected stop** (file, line, call-stack function, locals), and **recovery**.
+
+Prefer pure, deterministic, sub-second tests with fixed values and no services, subprocesses, network, database, persistent runtime paths, or graph/job mutations. Explain each command by the next visible marker, call-stack, and local-value change. On mismatch, stop advancing, record what Sab sees, then recover to the last verified state.
+
+Never invoke the heartbeat runner directly. Heartbeat operations use only `deploy/mini-heartbeat/bin/arm.sh`, `smoke.sh`, or launchd, which source `deploy/mini-heartbeat/env/gddp.env` through `common.sh`.
+
+Guide: [`docs/current/zed-debugging.md`](docs/current/zed-debugging.md). Visual: [`docs/artifacts/zed-debugging-visual-guide.html`](docs/artifacts/zed-debugging-visual-guide.html).
+
 ## Agent-driven development workflow
 
 The default reader of this repo is often another agent. Optimize for the next session being able to start immediately, not for the current session merely appearing done.
