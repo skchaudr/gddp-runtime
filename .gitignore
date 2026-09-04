@@ -72,3 +72,6 @@ package-lock.json
 .pi-subagents/
 .worktrees/
 .superpowers/
+.atuin/
+.factory/
+.local/
