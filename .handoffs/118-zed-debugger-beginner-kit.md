@@ -25,7 +25,7 @@ none
 
 ### Current Git state (2-3 sentences max, anything more must be critically justifiable)
 
-`main` began clean at `7d6cd8b` and matched `origin/main`. The five listed repository files are the intended final checkpoint; no runtime Python code or runtime state was changed.
+`main` began clean at `7d6cd8b`. Remote commit `0735913` landed during validation, so the debugger-kit commit was rebased onto it before push; no runtime Python code or runtime state was changed.
 
 ### Artifacts (Filepath - Description, 1 line max per artifact)
 
