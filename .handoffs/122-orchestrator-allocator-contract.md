@@ -31,7 +31,7 @@ Clean, main == origin/main at 433d8bd. Parallel session owns executor-run plumbi
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
-Next per plan §7: G5 per-dispatch model (orchestrator grok vs executor composer through one `cursor_cli` adapter), G6 wake spool root (wakes stay out of the node job ledger), then Phase O in `run_heartbeat` behind an env flag, default off. Executor-side rendering of `worker_budget` from event routing into the executor prompt is still open — coordinate with the parallel plumbing session before touching `session_prompt.py` / `cursor_cli_adapter.py`.
+Update, 2026-09-05 ~02:30: G5, G6, and Phase O landed as d03940c (952 passed). The wake is live behind `GDDP_ORCHESTRATOR_WAKE` (default off): pack → grok turn → decision → event injection, wakes spooling under `jobs/orchestrator-wakes/`. Models resolve per role: `GDDP_CURSOR_CLI_MODEL_ORCHESTRATOR` / `_EXECUTOR` or execution_policy `models`. Remaining before trial 1: executor-side `worker_budget` rendering (coordinate with the parallel plumbing session), setting the two role models, and flipping the flag on one ready node.
 
 ------------------------------------------------ Agent Section END
 
