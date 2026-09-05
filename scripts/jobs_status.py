@@ -2,7 +2,7 @@
 jobs_status.py — Inspect and set runtime job state.
 
 Usage:
-    python3 scripts/jobs_status.py list [--state awaiting_review] [--project <id>]
+    python3 scripts/jobs_status.py list [--state awaiting_review]
     python3 scripts/jobs_status.py show <job_id | node_id> [--full]
     python3 scripts/jobs_status.py results [--all]
     python3 scripts/jobs_status.py set <job_id | node_id> <state> --reason "..."
@@ -128,36 +128,20 @@ def _paint(value: str, style_key: str | None = None, *, width: int | None = None
 
 def cmd_list(args):
     con = connect()
-    q = (
-        "SELECT job_id, project_id, node_id, queue_state, attempt, max_attempts, "
-        "created_at FROM jobs"
-    )
-    conditions = []
-    params = []
+    q = "SELECT job_id, node_id, queue_state, attempt, max_attempts, created_at FROM jobs"
+    params = ()
     if args.state:
-        conditions.append("queue_state = ?")
-        params.append(args.state)
-    if args.project:
-        conditions.append("project_id = ?")
-        params.append(args.project)
-    if conditions:
-        q += " WHERE " + " AND ".join(conditions)
+        q += " WHERE queue_state = ?"
+        params = (args.state,)
     q += " ORDER BY created_at DESC"
     rows = con.execute(q, params).fetchall()
     if not rows:
-        filters = []
-        if args.state:
-            filters.append(f"state={args.state}")
-        if args.project:
-            filters.append(f"project={args.project}")
-        suffix = f" ({', '.join(filters)})" if filters else ""
-        print("No jobs." + suffix)
+        print("No jobs." + (f" (state={args.state})" if args.state else ""))
         return
     for r in rows:
         state = r["queue_state"] or "?"
-        project = r["project_id"] or "-"
         print(
-            f"{r['job_id']}  {project:<16} {_paint(state, width=16)} {r['node_id']:<26} "
+            f"{r['job_id']}  {_paint(state, width=16)} {r['node_id']:<26} "
             f"attempt {r['attempt']}/{r['max_attempts']}  {r['created_at'][:10]}"
         )
 
@@ -657,7 +641,6 @@ def main(argv=None):
 
     p_list = sub.add_parser("list", help="list jobs and states")
     p_list.add_argument("--state", help="filter by queue_state")
-    p_list.add_argument("--project", help="filter by project_id")
     p_list.set_defaults(fn=cmd_list)
 
     p_show = sub.add_parser("show", help="show one job (accepts job_id or node_id)")
