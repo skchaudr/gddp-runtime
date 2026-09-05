@@ -85,6 +85,7 @@ class DispatchOutcome:
     issue_url: str = ""
     error: str = ""
     session_ref: object = None  # adapters.executor_protocol.SessionRef | None
+    attempt_dir: object = None  # pathlib.Path | None
 
 
 def connect() -> sqlite3.Connection:
@@ -642,6 +643,7 @@ def _execute_dispatches(
                         issue_url=getattr(result, "issue_url", None) or "",
                         error=result.error or "",
                         session_ref=getattr(result, "session_ref", None),
+                        attempt_dir=getattr(result, "attempt_dir", None),
                     )
             except Exception as exc:
                 for planned in group:
@@ -672,6 +674,9 @@ def _record_outcomes(
         )
 
         print(f"Recording: {event_id} ({planned.job['node_id']})")
+        recorded_attempt_dir = (
+            str(outcome.attempt_dir) if outcome.attempt_dir is not None else None
+        )
         if outcome.success:
             # Finalize the reservation before advancing job/queue state.
             if outcome.session_ref is not None:
@@ -682,6 +687,7 @@ def _record_outcomes(
                     executor=outcome.session_ref.executor,
                     session_id=outcome.session_ref.session_id,
                     expected_base_commit_sha=expected_base_commit_sha,
+                    attempt_dir=recorded_attempt_dir,
                 )
             else:
                 finalized = finalize_executor_session_dispatch(
@@ -690,6 +696,7 @@ def _record_outcomes(
                     state="mediated",
                     session_id=outcome.issue_url or None,
                     expected_base_commit_sha=expected_base_commit_sha,
+                    attempt_dir=recorded_attempt_dir,
                 )
             if not finalized:
                 cancellation = "reservation is no longer dispatching"
@@ -724,6 +731,7 @@ def _record_outcomes(
                 state="dispatch_failed",
                 error=outcome.error or "dispatch failed",
                 expected_base_commit_sha=expected_base_commit_sha,
+                attempt_dir=recorded_attempt_dir,
             )
             if not finalized:
                 mark_event_mapped(con, event_id)

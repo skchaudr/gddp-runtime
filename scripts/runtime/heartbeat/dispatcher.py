@@ -10,7 +10,7 @@ import os
 import sys
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -154,7 +154,10 @@ def dispatch(
         capabilities=capabilities,
         cwd=repo_path,
     )
-    return adapter.dispatch(packet, attempt=attempt, continuity=continuity)
+    result = adapter.dispatch(packet, attempt=attempt, continuity=continuity)
+    if result.attempt_dir is None:
+        return replace(result, attempt_dir=attempt.attempt_dir)
+    return result
 
 
 def dispatch_engagement(

@@ -32,6 +32,13 @@ from adapters.executor_protocol import (
 from adapters.session_prompt import merged_turn_pointers
 from runtime.context_coverage import compute_turn_context_coverage
 
+CANONICAL_SPOOL_ENV = "GDDP_ATTEMPT_SPOOL_DIR"
+LEGACY_SHARED_SPOOL_ENV = "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"
+DEFAULT_SPOOL_RELATIVE = Path("jobs") / "local-subprocess-spool"
+# One leftover on-disk root from the family-specific spool era. Discovery
+# scans it so history stays visible; new attempts use the canonical root.
+HISTORICAL_SPOOL_RELATIVE = Path("jobs") / "cursor-cli-spool"
+
 
 @dataclass(frozen=True)
 class AttemptPaths:
@@ -134,6 +141,100 @@ def attempt_dir_for(spool_root: Path, attempt_id: str) -> Path | None:
     return Path(spool_root) / attempt_id
 
 
+def configured_runtime_root(runtime_root: Path | None = None) -> Path:
+    """Runtime checkout that owns ``jobs/`` and ``db/``."""
+    if runtime_root is not None:
+        return Path(runtime_root).expanduser().resolve()
+    configured = os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get(
+        "OPCLAW_ROOT"
+    )
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return Path(__file__).resolve().parents[2]
+
+
+def resolve_attempt_spool_root(
+    spool_root: str | Path | None = None,
+    *,
+    runtime_root: Path | None = None,
+    legacy_env: str | None = None,
+) -> Path:
+    """Resolve the local attempt spool for new reservations.
+
+    Precedence: explicit ``spool_root``, ``GDDP_ATTEMPT_SPOOL_DIR``,
+    ``GDDP_LOCAL_SUBPROCESS_SPOOL_DIR``, optional family overlay, then
+    ``<runtime>/jobs/local-subprocess-spool``.
+    """
+    configured: str | Path | None
+    if spool_root is not None:
+        configured = spool_root
+    else:
+        configured = os.environ.get(CANONICAL_SPOOL_ENV) or os.environ.get(
+            LEGACY_SHARED_SPOOL_ENV
+        )
+        if configured is None and legacy_env:
+            configured = os.environ.get(legacy_env)
+    if configured is not None:
+        return Path(configured).expanduser().resolve()
+    return configured_runtime_root(runtime_root) / DEFAULT_SPOOL_RELATIVE
+
+
+def historical_attempt_spool_roots(
+    runtime_root: Path | None = None,
+) -> list[Path]:
+    """Existing leftover spool dirs that still hold attempt history."""
+    path = configured_runtime_root(runtime_root) / HISTORICAL_SPOOL_RELATIVE
+    return [path.resolve()] if path.is_dir() else []
+
+
+def discover_attempt_spool_roots(
+    runtime_root: Path | None = None,
+) -> list[Path]:
+    """Canonical write root plus leftover historical roots that still exist."""
+    root = configured_runtime_root(runtime_root)
+    found: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        found.append(resolved)
+
+    add(resolve_attempt_spool_root(runtime_root=root))
+    for historical in historical_attempt_spool_roots(root):
+        add(historical)
+    return found
+
+
+def locate_attempt_dir(
+    session_id: str,
+    *,
+    spool_root: Path | None = None,
+    recorded_dir: str | Path | None = None,
+    runtime_root: Path | None = None,
+) -> Path | None:
+    """Find one attempt directory from a durable path, then on-disk roots."""
+    if recorded_dir:
+        recorded = Path(recorded_dir).expanduser()
+        if recorded.is_dir():
+            return recorded.resolve()
+    root = (
+        Path(spool_root)
+        if spool_root is not None
+        else resolve_attempt_spool_root(runtime_root=runtime_root)
+    )
+    reserved = attempt_dir_for(root, session_id)
+    if reserved is not None and reserved.is_dir():
+        return reserved
+    for historical in historical_attempt_spool_roots(runtime_root):
+        candidate = attempt_dir_for(historical, session_id)
+        if candidate is not None and candidate.is_dir():
+            return candidate
+    return reserved
+
+
 def dispatch_worktree_attempt(
     *,
     packet: NodePacket,
@@ -203,6 +304,7 @@ def dispatch_worktree_attempt(
         return DispatchResult(
             success=False,
             error=f"{executor} dispatch failed: {exc}",
+            attempt_dir=attempt.attempt_dir,
         )
     finally:
         if start_read is not None:
@@ -212,7 +314,12 @@ def dispatch_worktree_attempt(
 
     return DispatchResult(
         success=True,
-        session_ref=SessionRef(executor=executor, session_id=attempt.attempt_id),
+        session_ref=SessionRef(
+            executor=executor,
+            session_id=attempt.attempt_id,
+            attempt_dir=str(attempt.attempt_dir),
+        ),
+        attempt_dir=attempt.attempt_dir,
     )
 
 

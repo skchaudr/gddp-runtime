@@ -349,6 +349,7 @@ def cancel_executor_session(con, session_db_id: str) -> str:
         session_ref = SessionRef(
             executor=executor,
             session_id=session["session_id"],
+            attempt_dir=_session_value(session, "attempt_dir"),
         )
         try:
             accepted = adapter.cancel(session_ref)
@@ -472,7 +473,11 @@ def _reconcile_one(
 
     if adapter is None:
         adapter = adapter_cls(repo=job_row["repo"] or "")
-    session_ref = SessionRef(executor=executor, session_id=session_id)
+    session_ref = SessionRef(
+        executor=executor,
+        session_id=session_id,
+        attempt_dir=_session_value(session, "attempt_dir"),
+    )
 
     # Poll the session. A transient polling error (CLI timeout, network blip)
     # must NOT kill the job — the session may be fine, we just couldn't reach
@@ -546,6 +551,7 @@ def _reconcile_engagement_group(
     session_ref = SessionRef(
         executor=str(sessions[0]["executor"]),
         session_id=str(sessions[0]["session_id"]),
+        attempt_dir=_session_value(sessions[0], "attempt_dir"),
     )
     status = adapter.status(session_ref)
     if status.state == "running":

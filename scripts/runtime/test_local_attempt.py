@@ -46,6 +46,59 @@ def test_attempt_dir_path_validation():
     assert local_attempt.attempt_dir_for(Path("/spool"), "") is None
 
 
+def test_resolve_attempt_spool_root_precedence(monkeypatch, tmp_path):
+    canonical = tmp_path / "canonical"
+    legacy = tmp_path / "legacy"
+    family = tmp_path / "family"
+    monkeypatch.setenv("GDDP_ATTEMPT_SPOOL_DIR", str(canonical))
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(legacy))
+    monkeypatch.setenv("GDDP_CURSOR_CLI_SPOOL_DIR", str(family))
+
+    assert local_attempt.resolve_attempt_spool_root(
+        legacy_env="GDDP_CURSOR_CLI_SPOOL_DIR"
+    ) == canonical.resolve()
+    assert local_attempt.resolve_attempt_spool_root(
+        tmp_path / "explicit", legacy_env="GDDP_CURSOR_CLI_SPOOL_DIR"
+    ) == (tmp_path / "explicit").resolve()
+
+
+def test_resolve_attempt_spool_root_legacy_then_family(monkeypatch, tmp_path):
+    legacy = tmp_path / "legacy"
+    family = tmp_path / "family"
+    monkeypatch.delenv("GDDP_ATTEMPT_SPOOL_DIR", raising=False)
+    monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(legacy))
+    monkeypatch.setenv("GDDP_CURSOR_CLI_SPOOL_DIR", str(family))
+
+    assert local_attempt.resolve_attempt_spool_root(
+        legacy_env="GDDP_CURSOR_CLI_SPOOL_DIR"
+    ) == legacy.resolve()
+    monkeypatch.delenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", raising=False)
+    assert local_attempt.resolve_attempt_spool_root(
+        legacy_env="GDDP_CURSOR_CLI_SPOOL_DIR"
+    ) == family.resolve()
+
+
+def test_locate_attempt_dir_prefers_recorded_then_historical(tmp_path):
+    recorded = tmp_path / "recorded" / "att-1"
+    recorded.mkdir(parents=True)
+    historical = tmp_path / "jobs" / "cursor-cli-spool" / "att-1"
+    historical.mkdir(parents=True)
+    canonical = tmp_path / "jobs" / "local-subprocess-spool"
+    canonical.mkdir(parents=True)
+
+    assert local_attempt.locate_attempt_dir(
+        "att-1",
+        spool_root=canonical,
+        recorded_dir=recorded,
+        runtime_root=tmp_path,
+    ) == recorded.resolve()
+    assert local_attempt.locate_attempt_dir(
+        "att-1",
+        spool_root=canonical,
+        runtime_root=tmp_path,
+    ) == historical.resolve()
+
+
 def test_exit_state_drives_structured_plumbing_without_error_prose(tmp_path):
     attempt_dir = tmp_path / "attempt"
     attempt_dir.mkdir()

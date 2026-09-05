@@ -246,6 +246,7 @@ def test_init_db_migrates_records_discipline_columns_idempotently(
         "completion_digest_sha256",
         "completion_quarantine_reason",
         "evidence_manifest_path",
+        "attempt_dir",
     }
     assert records_columns <= columns.keys()
     assert all(columns[name]["type"] == "TEXT" for name in records_columns)

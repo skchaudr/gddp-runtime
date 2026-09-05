@@ -106,12 +106,24 @@ def test_render_heartbeat_plist_substitutes_local_executor_config():
     plist = _render_heartbeat_plist(
         _base_render_env(
             GDDP_LOCAL_SUBPROCESS_ARGV=argv,
-            GDDP_LOCAL_SUBPROCESS_SPOOL_DIR=spool,
+            GDDP_ATTEMPT_SPOOL_DIR=spool,
         )
     )
     env = plist["EnvironmentVariables"]
 
     assert env["GDDP_LOCAL_SUBPROCESS_ARGV"] == argv
+    assert env["GDDP_ATTEMPT_SPOOL_DIR"] == spool
+    assert env["GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"] == spool
+
+
+def test_render_heartbeat_plist_legacy_spool_env_fills_canonical():
+    spool = "/tmp/legacy spool"
+    plist = _render_heartbeat_plist(
+        _base_render_env(GDDP_LOCAL_SUBPROCESS_SPOOL_DIR=spool)
+    )
+    env = plist["EnvironmentVariables"]
+
+    assert env["GDDP_ATTEMPT_SPOOL_DIR"] == spool
     assert env["GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"] == spool
 
 

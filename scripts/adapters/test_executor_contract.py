@@ -510,7 +510,11 @@ def test_dispatch_returns_common_receipt_and_passes_same_node_packet(
 
     result = dispatcher.dispatch(job, "owner/repo")
 
-    assert result is receipt
+    assert result.success is receipt.success
+    assert result.issue_url == receipt.issue_url
+    assert result.session_ref is receipt.session_ref
+    assert result.attempt_dir is not None
+    assert result.attempt_dir.is_dir()
     dispatched_packet = adapter_dispatch.call_args.args[0]
     assert isinstance(dispatched_packet, NodePacket)
     assert dispatched_packet.to_json_value() == _packet().to_json_value()

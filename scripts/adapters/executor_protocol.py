@@ -151,6 +151,7 @@ class SessionRef:
     """Durable reference to an executor session."""
     executor: str           # "jules_cli", "jules_api", "droid", etc.
     session_id: str         # executor-specific ID
+    attempt_dir: str | None = None  # reserved local attempt path, when known
 
 
 @dataclass
@@ -336,6 +337,7 @@ class DispatchResult:
     session_ref: SessionRef | None = None
     issue_url: str | None = None
     error: str | None = None
+    attempt_dir: Path | None = None
 
 
 @dataclass(frozen=True)

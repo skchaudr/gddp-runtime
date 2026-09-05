@@ -206,6 +206,10 @@ def execution_attempt_id(job_id: str, attempt_index: int) -> str:
     return f"{job_id}:attempt:{attempt_index}"
 
 
+def _session_columns(con: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in con.execute("PRAGMA table_info(executor_sessions)")}
+
+
 def insert_executor_session(
     con: sqlite3.Connection,
     job_id: str,
@@ -215,6 +219,7 @@ def insert_executor_session(
     *,
     attempt_index: int | None = None,
     state: str = "dispatched",
+    attempt_dir: str | None = None,
 ) -> str:
     """Insert one immutable attempt record and return its database id."""
     if attempt_index is None:
@@ -227,24 +232,30 @@ def insert_executor_session(
     attempt_id = execution_attempt_id(job_id, attempt_index)
     session_db_id = f"ses_{ts_id()}"
     ts = now()
+    columns = (
+        "session_db_id, job_id, executor, session_id, "
+        "execution_attempt_id, attempt_index, state, "
+        "expected_base_commit_sha, created_at, updated_at"
+    )
+    values: list[object] = [
+        session_db_id,
+        job_id,
+        executor,
+        session_id,
+        attempt_id,
+        attempt_index,
+        state,
+        expected_base_commit_sha,
+        ts,
+        ts,
+    ]
+    if "attempt_dir" in _session_columns(con):
+        columns += ", attempt_dir"
+        values.append(attempt_dir)
+    placeholders = ", ".join("?" * len(values))
     con.execute(
-        """INSERT INTO executor_sessions
-           (session_db_id, job_id, executor, session_id,
-            execution_attempt_id, attempt_index, state,
-            expected_base_commit_sha, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            session_db_id,
-            job_id,
-            executor,
-            session_id,
-            attempt_id,
-            attempt_index,
-            state,
-            expected_base_commit_sha,
-            ts,
-            ts,
-        ),
+        f"INSERT INTO executor_sessions ({columns}) VALUES ({placeholders})",
+        values,
     )
     return session_db_id
 
@@ -416,28 +427,35 @@ def finalize_executor_session_dispatch(
     session_id: str | None = None,
     expected_base_commit_sha: str | None = None,
     error: str | None = None,
+    attempt_dir: str | None = None,
 ) -> bool:
     """Finalize a reserved attempt only while it is still dispatching."""
+    assignments = [
+        "state = ?",
+        "executor = COALESCE(?, executor)",
+        "session_id = COALESCE(?, session_id)",
+        "expected_base_commit_sha = COALESCE(?, expected_base_commit_sha)",
+        "error = COALESCE(?, error)",
+        "updated_at = ?",
+    ]
+    values: list[object] = [
+        state,
+        executor,
+        session_id,
+        expected_base_commit_sha,
+        error,
+        now(),
+    ]
+    if "attempt_dir" in _session_columns(con):
+        assignments.insert(-1, "attempt_dir = COALESCE(?, attempt_dir)")
+        values.insert(-1, attempt_dir)
+    values.extend([session_db_id])
     updated = con.execute(
-        """UPDATE executor_sessions
-              SET state = ?,
-                  executor = COALESCE(?, executor),
-                  session_id = COALESCE(?, session_id),
-                  expected_base_commit_sha =
-                      COALESCE(?, expected_base_commit_sha),
-                  error = COALESCE(?, error),
-                  updated_at = ?
+        f"""UPDATE executor_sessions
+              SET {", ".join(assignments)}
             WHERE session_db_id = ?
               AND state = 'dispatching'""",
-        (
-            state,
-            executor,
-            session_id,
-            expected_base_commit_sha,
-            error,
-            now(),
-            session_db_id,
-        ),
+        values,
     )
     return updated.rowcount == 1
 

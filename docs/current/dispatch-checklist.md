@@ -45,7 +45,7 @@ Target machine: sab-mini
 
 - [ ] **Heartbeat active** — launchd `com.gddp.heartbeat` loaded (or run manually via `deploy/mini-heartbeat/bin/smoke.sh`).
 - [ ] **Job record present** — job row created in `db/queue.db` on target machine.
-- [ ] **Spool directory healthy** — session directory initialized under `GDDP_PI_RPC_SPOOL_DIR` (or `jobs/local-subprocess-spool/`).
+- [ ] **Spool directory healthy** — session directory initialized under `GDDP_ATTEMPT_SPOOL_DIR` (default `jobs/local-subprocess-spool/`).
 
 ### Invariants during execution
 

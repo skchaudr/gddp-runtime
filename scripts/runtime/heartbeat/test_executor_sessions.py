@@ -114,7 +114,8 @@ CREATE TABLE executor_sessions (
     patch_path               TEXT,
     error                    TEXT,
     created_at               TEXT NOT NULL,
-    updated_at               TEXT NOT NULL
+    updated_at               TEXT NOT NULL,
+    attempt_dir              TEXT
 );
 """
 
@@ -304,6 +305,31 @@ def test_insert_executor_session_creates_row(con):
     assert row["error"] is None
     assert row["attempt_index"] == 0
     assert row["execution_attempt_id"] == "job_a:attempt:0"
+    assert row["attempt_dir"] is None
+
+
+def test_insert_and_finalize_persist_attempt_dir(con):
+    _insert_job(con, job_id="job_path")
+    ses_id = insert_executor_session(
+        con,
+        "job_path",
+        "cursor_cli",
+        "job_path:attempt:0",
+        state="dispatching",
+    )
+    reserved = "/tmp/attempts/job_path-attempt-0-deadbeef"
+    finalized = finalize_executor_session_dispatch(
+        con,
+        ses_id,
+        state="dispatched",
+        session_id="job_path-attempt-0-deadbeef",
+        attempt_dir=reserved,
+    )
+    row = get_executor_session_by_id(con, ses_id)
+
+    assert finalized is True
+    assert row["session_id"] == "job_path-attempt-0-deadbeef"
+    assert row["attempt_dir"] == reserved
 
 
 def test_update_executor_session_state(con):
@@ -510,7 +536,7 @@ def test_init_db_safely_migrates_existing_attempt_rows(tmp_path, monkeypatch):
         "previous_findings",
         "expected_base_commit_sha",
     } <= job_columns
-    assert {"execution_attempt_id", "attempt_index"} <= session_columns
+    assert {"execution_attempt_id", "attempt_index", "attempt_dir"} <= session_columns
     # Additive: the pre-existing row survives, with the new column empty.
     old_job = migrated.execute(
         "SELECT * FROM jobs WHERE job_id = 'job_old'"

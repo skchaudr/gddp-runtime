@@ -59,13 +59,14 @@ from adapters.session_prompt import build_turn_prompt
 from prompt_topology import prompt_cache_report
 from runtime.local_attempt import (
     TurnOutcome,
-    attempt_dir_for,
     atomic_write,
     cancel_attempt,
     collect_persisted_result,
     dispatch_worktree_attempt,
+    locate_attempt_dir,
     read_attempt_status,
     read_text,
+    resolve_attempt_spool_root,
     run_attempt_supervisor,
     terminate_process_group,
 )
@@ -296,7 +297,11 @@ class CursorCliAdapter(EngagementAdapterDefaults):
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
         if session_ref.executor != self.executor_name:
             return None
-        return attempt_dir_for(self.spool_root, session_ref.session_id)
+        return locate_attempt_dir(
+            session_ref.session_id,
+            spool_root=self.spool_root,
+            recorded_dir=session_ref.attempt_dir,
+        )
 
 
 def read_cursor_cli_status(spool_root: Path, session_id: str) -> SessionStatus:
@@ -592,15 +597,7 @@ def _stream_turn(
 
 
 def _configured_spool_root(spool_root: str | Path | None) -> Path:
-    configured = (
-        spool_root
-        if spool_root is not None
-        else os.environ.get(_SPOOL_ENV)
-        or os.environ.get("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR")
-    )
-    if configured is None:
-        raise ValueError(f"cursor_cli spool root is required ({_SPOOL_ENV})")
-    return Path(configured).expanduser().resolve()
+    return resolve_attempt_spool_root(spool_root, legacy_env=_SPOOL_ENV)
 
 
 def _main(argv: Sequence[str]) -> int:

@@ -44,6 +44,8 @@
     <string>__GDDP_LOCAL_SUBPROCESS_ARGV__</string>
     <key>GDDP_DROID_SUBPROCESS_ARGV</key>
     <string>__GDDP_DROID_SUBPROCESS_ARGV__</string>
+    <key>GDDP_ATTEMPT_SPOOL_DIR</key>
+    <string>__GDDP_ATTEMPT_SPOOL_DIR__</string>
     <key>GDDP_LOCAL_SUBPROCESS_SPOOL_DIR</key>
     <string>__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__</string>
     <key>GDDP_PI_RPC_MODEL</key>

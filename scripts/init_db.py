@@ -18,6 +18,37 @@ RUNTIME_ROOT  = Path(os.environ.get("GDDP_RUNTIME_ROOT") or os.environ.get("OPCL
 DB_PATH       = RUNTIME_ROOT / "db" / "queue.db"
 
 
+def _backfill_attempt_dir(con: sqlite3.Connection, runtime_root: Path) -> None:
+    """Fill empty attempt_dir when session_id is a child of a known spool."""
+    roots: list[Path] = [
+        runtime_root / "jobs" / "local-subprocess-spool",
+        runtime_root / "jobs" / "cursor-cli-spool",
+    ]
+    for env_name in ("GDDP_ATTEMPT_SPOOL_DIR", "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"):
+        raw = os.environ.get(env_name)
+        if raw:
+            roots.append(Path(raw).expanduser())
+    rows = con.execute(
+        """SELECT session_db_id, session_id
+             FROM executor_sessions
+            WHERE attempt_dir IS NULL"""
+    ).fetchall()
+    for row in rows:
+        session_db_id = row[0]
+        session_id = row[1]
+        if not session_id or Path(session_id).name != session_id:
+            continue
+        for root in roots:
+            candidate = Path(root) / session_id
+            if candidate.is_dir():
+                con.execute(
+                    "UPDATE executor_sessions SET attempt_dir = ? "
+                    "WHERE session_db_id = ?",
+                    (str(candidate.resolve()), session_db_id),
+                )
+                break
+
+
 def _ensure_column(
     con: sqlite3.Connection,
     table: str,
@@ -202,6 +233,7 @@ def init_db():
         completion_digest_sha256   TEXT,               -- digest binding normalized completion evidence
         completion_quarantine_reason TEXT,             -- evidence conflict requiring human review
         evidence_manifest_path     TEXT,               -- per-node evidence manifest
+        attempt_dir                TEXT,               -- reserved local attempt directory
         error                      TEXT,
         created_at                 TEXT NOT NULL,
         updated_at                 TEXT NOT NULL,
@@ -245,6 +277,8 @@ def init_db():
         "evidence_manifest_path",
         "TEXT",
     )
+    _ensure_column(con, "executor_sessions", "attempt_dir", "TEXT")
+    _backfill_attempt_dir(con, RUNTIME_ROOT)
 
     # Old session rows predate first-class attempt identity. Their durable
     # creation order is the only available attempt ordering, so backfill it

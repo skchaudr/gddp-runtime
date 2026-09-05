@@ -99,7 +99,7 @@ files written under its configured spool:
 
 ```bash
 repo="$HOME/repos/gddp-runtime"
-spool="${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$repo/jobs/local-subprocess-spool}"
+spool="${GDDP_ATTEMPT_SPOOL_DIR:-${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$repo/jobs/local-subprocess-spool}}"
 active_writers() {
   pgrep -af '[s]cripts\.runtime\.heartbeat\.runner|[a]dapters\.local_subprocess_adapter --run-attempt' || true
   for pid_file in "$spool"/*/supervisor.pid "$spool"/*/pid; do
@@ -124,7 +124,7 @@ fi
 ```
 
 The empty final check is the snapshot gate. If the configured executor uses a
-non-default spool, set `GDDP_LOCAL_SUBPROCESS_SPOOL_DIR` to that live path first.
+non-default spool, set `GDDP_ATTEMPT_SPOOL_DIR` to that live path first.
 Hard stop if any manual/unrecognized GDDP writer remains or the process check
 cannot account for the configured executor. Keep pi-big disarmed whether Phase
 4 is used or skipped.

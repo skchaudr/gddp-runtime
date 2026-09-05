@@ -22,6 +22,7 @@ from adapters.executor_protocol import (
     SessionRef,
     SessionStatus,
 )
+from runtime.local_attempt import locate_attempt_dir, resolve_attempt_spool_root
 
 _ARGV_ENV = "GDDP_LOCAL_SUBPROCESS_ARGV"
 _SPOOL_ENV = "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"
@@ -225,14 +226,11 @@ class LocalSubprocessAdapter(EngagementAdapterDefaults):
     def _attempt_dir(self, session_ref: SessionRef) -> Path | None:
         if session_ref.executor != self.executor_name:
             return None
-        session_id = session_ref.session_id
-        if (
-            not session_id
-            or session_id in {".", ".."}
-            or Path(session_id).name != session_id
-        ):
-            return None
-        return self.spool_root / session_id
+        return locate_attempt_dir(
+            session_ref.session_id,
+            spool_root=self.spool_root,
+            recorded_dir=session_ref.attempt_dir,
+        )
 
 
 def read_local_subprocess_status(
@@ -386,10 +384,7 @@ class DroidSubprocessAdapter(LocalSubprocessAdapter):
 
 
 def _configured_spool_root(spool_root: str | Path | None) -> Path:
-    configured = spool_root if spool_root is not None else os.environ.get(_SPOOL_ENV)
-    if configured is None:
-        raise ValueError(f"local subprocess spool root is required ({_SPOOL_ENV})")
-    return Path(configured).expanduser().resolve()
+    return resolve_attempt_spool_root(spool_root, legacy_env=_SPOOL_ENV)
 
 
 def _safe_component(value: str) -> str:

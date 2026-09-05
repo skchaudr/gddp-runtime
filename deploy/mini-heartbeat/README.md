@@ -84,7 +84,7 @@ Refresh at arm time if you care about queue continuity.
 
 - `pass show api/deepseek` (bridge default) or export `DEEPSEEK_API_KEY`
 - `pass show api/jules` (Jules API adapter default) or export `JULES_API_KEY`
-- `GDDP_LOCAL_SUBPROCESS_ARGV` + `GDDP_LOCAL_SUBPROCESS_SPOOL_DIR` for local execution
+- `GDDP_LOCAL_SUBPROCESS_ARGV` + `GDDP_ATTEMPT_SPOOL_DIR` for local execution
 - `pass show gddp/webhook-secret` (or `GDDP_WEBHOOK_SECRET_CMD`)
 - `gh auth login` for Jules dispatch (`GITHUB_TOKEN` / `GH_TOKEN`)
 - Import the headless GPG key used for `pass` on big-ssd if you sync the store

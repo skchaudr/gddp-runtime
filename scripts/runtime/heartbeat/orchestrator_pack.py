@@ -64,14 +64,7 @@ LIVE_SESSION_STATES = (
 # Sessions whose work landed and now waits on the verification lane.
 EVALUATOR_PENDING_STATES = ("collected",)
 
-# Spool roots by executor, resolved from the same env the adapters read.
-_SPOOL_ENV = {
-    "cursor_cli": ("GDDP_CURSOR_CLI_SPOOL_DIR", "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"),
-    "pi_rpc": ("GDDP_PI_RPC_SPOOL_DIR", "GDDP_LOCAL_SUBPROCESS_SPOOL_DIR"),
-    "local_subprocess": ("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR",),
-    "droid": ("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR",),
-}
-_SPOOL_DEFAULT = RUNTIME_ROOT / "jobs" / "local-subprocess-spool"
+# Local attempt roots come from the shared resolver, not a family env map.
 
 
 # ---------------------------------------------------------------------------
@@ -242,25 +235,34 @@ def _pid_alive(path: Path) -> bool | None:
 
 
 def spool_roots() -> dict[str, Path]:
-    """Resolve each local executor's spool root from adapter env, with the
-    runtime default as the shared fallback."""
-    roots: dict[str, Path] = {}
-    for executor, env_names in _SPOOL_ENV.items():
-        configured = next(
-            (os.environ[name] for name in env_names if os.environ.get(name)),
-            None,
-        )
-        root = Path(configured).expanduser() if configured else _SPOOL_DEFAULT
-        roots[executor] = root
-    return roots
+    """Canonical local attempt root plus leftover historical roots."""
+    from runtime.local_attempt import discover_attempt_spool_roots
+
+    found: dict[str, Path] = {}
+    for index, path in enumerate(discover_attempt_spool_roots()):
+        key = "canonical" if index == 0 else f"historical-{index}"
+        found[key] = path
+    return found
 
 
-def _attempt_dir(executor: str, attempt_id: str, roots: dict[str, Path]) -> Path | None:
-    """Locate one attempt directory, rejecting anything past a direct child."""
-    root = roots.get(executor)
-    if root is None or not attempt_id or Path(attempt_id).name != attempt_id:
+def _attempt_dir(
+    attempt_id: str,
+    roots: dict[str, Path],
+    recorded: str | None = None,
+) -> Path | None:
+    """Locate one attempt directory from a durable path, then known roots."""
+    if recorded:
+        path = Path(recorded)
+        if path.is_dir():
+            return path
+    if not attempt_id or Path(attempt_id).name != attempt_id:
         return None
-    return root / attempt_id
+    for root in roots.values():
+        candidate = Path(root) / attempt_id
+        if candidate.is_dir():
+            return candidate
+    first = next(iter(roots.values()), None)
+    return (first / attempt_id) if first else None
 
 
 def _worker_verdict(
@@ -305,10 +307,17 @@ def assemble_pack(
 
     project = reader.load_project(project_id)
     repo = project.repo
+    session_columns = {
+        row[1] for row in con.execute("PRAGMA table_info(executor_sessions)")
+    }
+    attempt_dir_sql = (
+        "es.attempt_dir," if "attempt_dir" in session_columns else "NULL AS attempt_dir,"
+    )
 
     live = con.execute(
         f"""SELECT es.session_db_id, es.job_id, es.executor, es.session_id,
                    es.state, es.created_at, es.updated_at, es.attempt_index,
+                   {attempt_dir_sql}
                    j.node_id, j.attempt, j.max_attempts, j.created_at AS job_created_at
               FROM executor_sessions es
               JOIN jobs j ON es.job_id = j.job_id
@@ -326,7 +335,8 @@ def assemble_pack(
     for row in live:
         attempt_id = row["session_id"]
         executor = row["executor"]
-        directory = _attempt_dir(executor, attempt_id, roots)
+        recorded = row["attempt_dir"] if "attempt_dir" in row.keys() else None
+        directory = _attempt_dir(attempt_id, roots, recorded)
         present = bool(directory and directory.is_dir())
 
         events = directory / "events.jsonl" if present else None
@@ -542,7 +552,7 @@ def assemble_pack(
     for row in plumbing:
         if not row.spool_present:
             continue
-        for executor, root in roots.items():
+        for root in roots.values():
             candidate = root / row.attempt_id / "steer.jsonl"
             if candidate.exists():
                 steer.append(

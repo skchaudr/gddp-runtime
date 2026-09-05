@@ -281,12 +281,35 @@ def test_attempt_id_with_a_path_separator_resolves_to_nothing(db, config, tmp_pa
     assert pack.plumbing[0].spool_present is False
 
 
-def test_spool_roots_prefer_the_executor_specific_env(monkeypatch, tmp_path):
+def test_spool_roots_use_the_canonical_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("GDDP_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setenv("GDDP_ATTEMPT_SPOOL_DIR", str(tmp_path / "attempts"))
     monkeypatch.setenv("GDDP_CURSOR_CLI_SPOOL_DIR", str(tmp_path / "cursor"))
     monkeypatch.setenv("GDDP_LOCAL_SUBPROCESS_SPOOL_DIR", str(tmp_path / "shared"))
 
     roots = spool_roots()
 
-    assert roots["cursor_cli"] == tmp_path / "cursor"
-    assert roots["local_subprocess"] == tmp_path / "shared"
-    assert roots["pi_rpc"] == tmp_path / "shared"
+    assert roots["canonical"] == (tmp_path / "attempts").resolve()
+    assert "cursor_cli" not in roots
+
+
+def test_pack_locates_a_recorded_attempt_dir(db, config, tmp_path):
+    recorded = tmp_path / "elsewhere" / "att-recorded"
+    recorded.mkdir(parents=True)
+    (recorded / "events.jsonl").write_text('{"type":"turn_started"}\n')
+    (recorded / "pid").write_text("999999")
+    _job(db, "j1", "alpha", "running")
+    db.execute(
+        "ALTER TABLE executor_sessions ADD COLUMN attempt_dir TEXT"
+    )
+    db.execute(
+        "INSERT INTO executor_sessions (session_db_id, job_id, executor,"
+        " session_id, state, created_at, updated_at, attempt_index, attempt_dir)"
+        " VALUES ('s1','j1','cursor_cli','att-recorded','running',?,?,1,?)",
+        (_ago(100), _ago(100), str(recorded)),
+    )
+
+    pack = _pack(db, config, tmp_path / "unused-spool")
+
+    assert pack.plumbing[0].spool_present is True
+    assert pack.workers[0].verdict == "gone"

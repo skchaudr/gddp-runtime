@@ -64,7 +64,7 @@ render_plist() {
   droid_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_DROID_SUBPROCESS_ARGV:-}")")"
   jules_cmd="$(_sed_replacement_escape "$(_xml_escape "${GDDP_JULES_KEY_CMD:-pass show api/jules}")")"
   local_argv="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_ARGV:-}")")"
-  local_spool="$(_sed_replacement_escape "$(_xml_escape "${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$GDDP_RUNTIME_ROOT/jobs/local-subprocess-spool}")")"
+  local_spool="$(_sed_replacement_escape "$(_xml_escape "${GDDP_ATTEMPT_SPOOL_DIR:-${GDDP_LOCAL_SUBPROCESS_SPOOL_DIR:-$GDDP_RUNTIME_ROOT/jobs/local-subprocess-spool}}")")"
   pi_rpc_model="$(_sed_replacement_escape "$(_xml_escape "${GDDP_PI_RPC_MODEL:-}")")"
   pi_rpc_turn_timeout="$(_sed_replacement_escape "$(_xml_escape "${GDDP_PI_RPC_TURN_TIMEOUT_S:-}")")"
   pi_rpc_tools="$(_sed_replacement_escape "$(_xml_escape "${GDDP_PI_RPC_TOOLS:-}")")"
@@ -81,6 +81,7 @@ render_plist() {
     -e "s|__GDDP_DROID_SUBPROCESS_ARGV__|${droid_argv}|g" \
     -e "s|__GDDP_JULES_KEY_CMD__|${jules_cmd}|g" \
     -e "s|__GDDP_LOCAL_SUBPROCESS_ARGV__|${local_argv}|g" \
+    -e "s|__GDDP_ATTEMPT_SPOOL_DIR__|${local_spool}|g" \
     -e "s|__GDDP_LOCAL_SUBPROCESS_SPOOL_DIR__|${local_spool}|g" \
     -e "s|__GDDP_PI_RPC_MODEL__|${pi_rpc_model}|g" \
     -e "s|__GDDP_PI_RPC_TURN_TIMEOUT_S__|${pi_rpc_turn_timeout}|g" \
