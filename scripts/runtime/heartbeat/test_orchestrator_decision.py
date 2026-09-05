@@ -208,6 +208,39 @@ def test_absent_default_executor_leaves_routing_to_the_node(con, tmp_path):
     assert json.loads(row["routing"]) == {}
 
 
+def test_worker_budget_rides_the_routing(con, tmp_path):
+    """dispatch's to_n is the advised worker count; it must reach the event,
+    not survive only in the receipt."""
+    apply_decision(
+        con,
+        FakeProject(),
+        parse_decision({**_dispatch(), "to_n": 3}),
+        now=NOW,
+        receipts_root=tmp_path,
+    )
+
+    row = con.execute("SELECT routing FROM events").fetchone()
+    assert json.loads(row["routing"]) == {"worker_budget": 3}
+
+
+def test_worker_budget_shares_routing_with_a_default_executor(con, tmp_path):
+    project = FakeProject(execution_policy={"default_executor": "cursor_cli"})
+
+    apply_decision(
+        con,
+        project,
+        parse_decision({**_dispatch(), "to_n": 2}),
+        now=NOW,
+        receipts_root=tmp_path,
+    )
+
+    row = con.execute("SELECT routing FROM events").fetchone()
+    assert json.loads(row["routing"]) == {
+        "selected_executor": "cursor_cli",
+        "worker_budget": 2,
+    }
+
+
 @pytest.mark.parametrize("action", sorted(ACTIONS - {"dispatch"}))
 def test_advisory_actions_touch_no_runtime_state(con, tmp_path, action):
     applied = apply_decision(

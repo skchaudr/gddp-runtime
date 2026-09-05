@@ -218,19 +218,31 @@ def _node_is_spoken_for(con, project_id: str, node_id: str) -> str | None:
 
 
 def _inject_dispatch_event(
-    con, project, node_id: str, wake_id: str, now: datetime
+    con, project, decision: Decision, now: datetime
 ) -> str:
     """Insert a dispatch event in the schema the rest of the pipeline reads.
 
     Mirrors frontier._inject_dispatch_event so classify/scope/plan handle an
     orchestrator dispatch identically to an operator-injected one. The source
     differs so the origin of any job stays legible after the fact.
+
+    The worker budget rides in routing as `worker_budget` when the decision
+    carries one. The classifier ignores unknown routing keys, so this is
+    inert until the dispatch envelope renders it into the executor's prompt —
+    and recorded here from the first wake that proposes one, so the receipt
+    and the event agree about what was advised.
     """
+    node_id = decision.node_id
+    wake_id = decision.wake_id
     event_id = (
         f"evt_orch_{now.strftime('%Y%m%dT%H%M%S')}_{node_id}_{secrets.token_hex(3)}"
     )
+    routing: dict[str, Any] = {}
     default_executor = project.execution_policy.get("default_executor")
-    routing = {"selected_executor": default_executor} if default_executor else {}
+    if default_executor:
+        routing["selected_executor"] = default_executor
+    if decision.to_n is not None:
+        routing["worker_budget"] = decision.to_n
     con.execute(
         "INSERT INTO events (event_id, schema_version, received_at, source, "
         "event_type, actor, url, project_id, project_node_candidates, "
@@ -278,9 +290,7 @@ def apply_decision(
                 detail=f"dispatch declined: {occupied}",
             )
         else:
-            event_id = _inject_dispatch_event(
-                con, project, decision.node_id, decision.wake_id, now
-            )
+            event_id = _inject_dispatch_event(con, project, decision, now)
             applied = Applied(
                 decision=decision,
                 effected=True,
