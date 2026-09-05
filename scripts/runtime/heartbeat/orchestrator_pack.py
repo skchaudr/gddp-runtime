@@ -649,6 +649,8 @@ def render_pack(pack: OrchestratorPack) -> str:
         effected = "effected" if row.get("effected") else "advice"
         target = f" {row['node_id']}" if row.get("node_id") else ""
         add(f"  {row['action']}{target} [{effected}] — {row['reason']}")
+        if row.get("next_wake_s"):
+            add(f"      next wake advised in {row['next_wake_s']}s")
         if row.get("expect"):
             add(f"      expecting: {row['expect']}")
 

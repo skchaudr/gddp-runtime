@@ -60,14 +60,13 @@ runner on an interval (`deploy/mini-heartbeat/launchd/com.gddp.heartbeat.plist:7
 GDDP is a poll-based reconciliation loop today, so Option C matches the runtime's
 existing shape rather than adding a new one.
 
-The interval itself is a per-run operator decision, and this plan asserts no
-default. The 300s in the plist predates the orchestrator — it was chosen for
-the reconciler's plumbing pulse, and the wake that just read the pack has a
-strictly better estimate of when the next wake is worth spending than any
-constant picked here. Cadence advice belongs to the orchestrator: a
-`next_wake_s` hint on the decision receipt lets the entity holding the
-evidence say when to spend the next wake, and the operator sets the interval
-from that advice.
+The interval is set per run, by the operator or by the orchestrator; this
+plan asserts no default. The 300s in the plist predates the orchestrator —
+it was chosen for the reconciler's plumbing pulse. When the operator fixes a
+run's interval, that value wins. When the operator sets nothing, the
+orchestrator sets its own wait through `next_wake_s` on the decision
+receipt, and the pack carries the evidence for the estimate: worker ages,
+event cadence, evaluator and gate waits.
 
 ### Wake → act → wait → sleep, per cycle
 

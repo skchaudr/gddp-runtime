@@ -78,6 +78,9 @@ class Decision:
     node_id: str | None = None
     from_n: int | None = None
     to_n: int | None = None
+    # Seconds until the next wake, when the run's interval is the
+    # orchestrator's to set (the operator's fixed interval wins when set).
+    next_wake_s: int | None = None
     expect: str | None = None
     surfaces: dict[str, str] = field(default_factory=dict)
 
@@ -169,6 +172,7 @@ def parse_decision(raw: object, *, wake_id: str | None = None) -> Decision:
         node_id=node_id,
         from_n=_optional_count(raw, "from_n"),
         to_n=_optional_count(raw, "to_n"),
+        next_wake_s=_optional_count(raw, "next_wake_s"),
         expect=expect,
         surfaces={str(k): str(v) for k, v in surfaces.items()},
     )
@@ -377,6 +381,7 @@ def recent_decisions(
                 "node_id": decision.get("node_id"),
                 "reason": decision.get("reason"),
                 "expect": decision.get("expect"),
+                "next_wake_s": decision.get("next_wake_s"),
                 "effected": payload.get("effected"),
                 "at": payload.get("recorded_at"),
             }

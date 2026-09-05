@@ -64,11 +64,17 @@ Answer with one JSON object and nothing else:
   "node_id": required for dispatch, slice, reduce, steer, replace,
   "from_n": current worker count, for slice and reduce,
   "to_n": proposed worker count, for dispatch, slice, reduce,
+  "next_wake_s": seconds until the next wake should run,
   "reason": required — the evidence in the pack that justifies this action,
   "expect": what a later wake should observe if you were right,
   "surfaces": {"worker": "...", "plumbing": "...", "node": "...",
                "graph": "...", "evaluator": "...", "human_gate": "..."}
 }
+
+When the run block fixes no wake interval, next_wake_s is yours to set from
+the pack's evidence — worker ages, event cadence, evaluator and gate waits.
+Tight while workers are young or quiet, loose while the gate holds
+everything. An operator-fixed interval in the run block overrides your hint.
 
 A reason that names the pack evidence is mandatory; a decision without one is
 discarded unread. Capacity, scope, and duplicate-dispatch guards re-check

@@ -58,7 +58,10 @@ def test_every_parsed_field_is_named_in_the_contract():
     """The JSON example is the model's schema. A field the channel reads but
     the contract omits would arrive by improvisation; a field the contract
     shows but the channel ignores would be a promise the runtime breaks."""
-    for field in ("action", "node_id", "from_n", "to_n", "reason", "expect", "surfaces"):
+    for field in (
+        "action", "node_id", "from_n", "to_n", "next_wake_s", "reason", "expect",
+        "surfaces",
+    ):
         assert field in ALLOCATOR_CONTRACT
 
 

@@ -104,6 +104,8 @@ def test_counts_must_be_positive_integers():
         parse_decision({**_dispatch(), "to_n": 0})
     with pytest.raises(DecisionError, match="from_n"):
         parse_decision({**_dispatch(), "from_n": True})
+    with pytest.raises(DecisionError, match="next_wake_s"):
+        parse_decision({"action": "hold", "reason": "r", "next_wake_s": -30})
 
 
 def test_a_json_string_decision_parses():
@@ -304,6 +306,22 @@ def test_receipt_preserves_the_reasoning_a_wipe_would_take(con, tmp_path):
     assert payload["decision"]["to_n"] == 6
     assert payload["decision"]["reason"].startswith("two independent")
     assert payload["decision"]["expect"] == "independent progress on both slices"
+
+
+def test_next_wake_advice_round_trips_through_the_receipt(con, tmp_path):
+    """The wait a wake sets is exactly the state the next wake needs when the
+    run's interval is the orchestrator's to set."""
+    decision = parse_decision(
+        {"action": "hold", "reason": "gate holds everything", "next_wake_s": 120}
+    )
+
+    applied = apply_decision(
+        con, FakeProject(), decision, now=NOW, receipts_root=tmp_path
+    )
+    payload = json.loads(Path(applied.receipt_path).read_text())
+
+    assert payload["decision"]["next_wake_s"] == 120
+    assert recent_decisions("demo", 1, receipts_root=tmp_path)[0]["next_wake_s"] == 120
 
 
 def test_recent_decisions_returns_newest_first(con, tmp_path):
