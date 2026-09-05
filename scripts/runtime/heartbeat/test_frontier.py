@@ -226,6 +226,40 @@ def test_opt_out_by_default(config_root, con, tmp_path):
     assert _frontier_events(con) == []
 
 
+def test_cancelled_job_history_blocks_pending_auto_advance(config_root, con):
+    """Human-reset pending after a prior dispatch stays inert until re-ready."""
+    node_j = config_root / "graphs/proj/nodes/node-j.yaml"
+    node_j.write_text(
+        NODE_YAML.format(
+            node_id="node-j",
+            body="status: pending\ndepends_on:\n  - node-a",
+        )
+    )
+    project_yaml = config_root / "graphs/proj/project.yaml"
+    doc = yaml.safe_load(project_yaml.read_text())
+    doc["nodes"].append({"id": "node-j", "status": "pending"})
+    project_yaml.write_text(yaml.dump(doc, sort_keys=False))
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_j', 'proj', 'node-j', 'cancelled')"
+    )
+
+    reader = GraphReader(config_path=str(config_root))
+    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
+    assert _node_status(config_root, "node-j") == "pending"
+    assert _frontier_events(con) == [
+        ("frontier-dispatch://node: node-c", "received"),
+        ("frontier-dispatch://node: node-g", "received"),
+    ]
+
+
+def test_fresh_root_still_advances(config_root, con):
+    """Never-dispatched pending roots with satisfied deps still auto-advance."""
+    reader = GraphReader(config_path=str(config_root))
+    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
+    assert _node_status(config_root, "node-g") == "ready"
+    assert ("frontier-dispatch://node: node-g", "received") in _frontier_events(con)
+
+
 def test_rejected_provisional_dependency_reblocks(config_root, con):
     """A provisional dep rejected back to ready is no longer satisfied."""
     reader = GraphReader(config_path=str(config_root))

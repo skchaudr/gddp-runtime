@@ -97,6 +97,8 @@ def advance_frontier(
             continue
         if _has_pending_frontier_event(con, project_id, node_id):
             continue
+        if _has_dispatch_history(con, project_id, node_id):
+            continue
 
         node_text, _ = node_cli.replace_node_status(node_path.read_text(), "ready")
         project_text, _ = node_cli.replace_project_index_status(
