@@ -241,15 +241,13 @@ def _has_dispatch_history(
         (project_id, node_id),
     ).fetchone():
         return True
-    placeholders = ",".join("?" for _ in PENDING_EVENT_STATUSES)
     urls = (
         f"frontier-dispatch://node: {node_id}",
         f"manual-dispatch://node: {node_id}",
     )
     return con.execute(
-        f"SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) "
-        f"AND (source = 'frontier_auto' OR status IN ({placeholders})) LIMIT 1",
-        (project_id, *urls, *PENDING_EVENT_STATUSES),
+        "SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) LIMIT 1",
+        (project_id, *urls),
     ).fetchone() is not None
 
 

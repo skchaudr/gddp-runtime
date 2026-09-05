@@ -252,6 +252,30 @@ def test_cancelled_job_history_blocks_pending_auto_advance(config_root, con):
     ]
 
 
+def test_mapped_manual_dispatch_without_job_blocks_pending_advance(config_root, con):
+    """Terminal manual-dispatch history blocks re-promotion with zero job row."""
+    node_j = config_root / "graphs/proj/nodes/node-j.yaml"
+    node_j.write_text(
+        NODE_YAML.format(
+            node_id="node-j",
+            body="status: pending\ndepends_on:\n  - node-a",
+        )
+    )
+    project_yaml = config_root / "graphs/proj/project.yaml"
+    doc = yaml.safe_load(project_yaml.read_text())
+    doc["nodes"].append({"id": "node-j", "status": "pending"})
+    project_yaml.write_text(yaml.dump(doc, sort_keys=False))
+    con.execute(
+        "INSERT INTO events (event_id, received_at, source, event_type, url, "
+        "project_id, status) VALUES ('evt_manual', 'now', 'gddp', "
+        "'issue.opened', 'manual-dispatch://node: node-j', 'proj', 'mapped')"
+    )
+
+    reader = GraphReader(config_path=str(config_root))
+    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
+    assert _node_status(config_root, "node-j") == "pending"
+
+
 def test_fresh_root_still_advances(config_root, con):
     """Never-dispatched pending roots with satisfied deps still auto-advance."""
     reader = GraphReader(config_path=str(config_root))
