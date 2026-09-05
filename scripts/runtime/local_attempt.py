@@ -323,27 +323,12 @@ def dispatch_worktree_attempt(
     )
 
 
-def read_attempt_status(
-    spool_root: Path,
-    attempt_id: str,
+def read_attempt_status_from_dir(
+    attempt_dir: Path,
     *,
     executor: str,
 ) -> LocalAttemptStatus:
-    """Derive status from durable state first, then live process markers."""
-    attempt_dir = attempt_dir_for(Path(spool_root), attempt_id)
-    if attempt_dir is None:
-        return LocalAttemptStatus(
-            state="failed",
-            error=f"invalid {executor} session id",
-            plumbing=True,
-        )
-    if not attempt_dir.is_dir():
-        return LocalAttemptStatus(
-            state="failed",
-            error=f"{executor} spool not found",
-            plumbing=True,
-        )
-
+    """Derive status from one resolved attempt directory."""
     exit_path = attempt_dir / "exit.json"
     if exit_path.exists():
         try:
@@ -376,6 +361,29 @@ def read_attempt_status(
         error=f"{executor} attempt terminal record is missing",
         plumbing=True,
     )
+
+
+def read_attempt_status(
+    spool_root: Path,
+    attempt_id: str,
+    *,
+    executor: str,
+) -> LocalAttemptStatus:
+    """Derive status from durable state first, then live process markers."""
+    attempt_dir = attempt_dir_for(Path(spool_root), attempt_id)
+    if attempt_dir is None:
+        return LocalAttemptStatus(
+            state="failed",
+            error=f"invalid {executor} session id",
+            plumbing=True,
+        )
+    if not attempt_dir.is_dir():
+        return LocalAttemptStatus(
+            state="failed",
+            error=f"{executor} spool not found",
+            plumbing=True,
+        )
+    return read_attempt_status_from_dir(attempt_dir, executor=executor)
 
 
 def collect_persisted_result(

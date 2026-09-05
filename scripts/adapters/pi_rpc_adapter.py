@@ -322,7 +322,10 @@ class PiRpcAdapter:
         )
 
     def status(self, session_ref: SessionRef) -> SessionStatus:
-        return read_pi_rpc_status(self.spool_root, session_ref.session_id)
+        attempt_dir = self._attempt_dir(session_ref)
+        if attempt_dir is None or not attempt_dir.is_dir():
+            return read_pi_rpc_status(self.spool_root, session_ref.session_id)
+        return read_pi_rpc_status_from_dir(attempt_dir)
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
         status = self.status(session_ref)
@@ -409,18 +412,8 @@ class PiRpcAdapter:
         )
 
 
-def read_pi_rpc_status(spool_root: Path, session_id: str) -> SessionStatus:
-    """Read-only durable status of one pi_rpc session (operator-shell safe)."""
-    if (
-        not session_id
-        or session_id in {".", ".."}
-        or Path(session_id).name != session_id
-    ):
-        return SessionStatus(state="failed", error="invalid pi_rpc session id")
-    attempt_dir = Path(spool_root) / session_id
-    if not attempt_dir.is_dir():
-        return SessionStatus(state="failed", error="pi_rpc spool not found")
-
+def read_pi_rpc_status_from_dir(attempt_dir: Path) -> SessionStatus:
+    """Read-only durable status from one resolved pi_rpc attempt directory."""
     exit_path = attempt_dir / "exit.json"
     if exit_path.exists():
         try:
@@ -458,6 +451,20 @@ def read_pi_rpc_status(spool_root: Path, session_id: str) -> SessionStatus:
         state="failed",
         error="pi_rpc exited without durable exit state",
     )
+
+
+def read_pi_rpc_status(spool_root: Path, session_id: str) -> SessionStatus:
+    """Read-only durable status of one pi_rpc session (operator-shell safe)."""
+    if (
+        not session_id
+        or session_id in {".", ".."}
+        or Path(session_id).name != session_id
+    ):
+        return SessionStatus(state="failed", error="invalid pi_rpc session id")
+    attempt_dir = Path(spool_root) / session_id
+    if not attempt_dir.is_dir():
+        return SessionStatus(state="failed", error="pi_rpc spool not found")
+    return read_pi_rpc_status_from_dir(attempt_dir)
 
 
 # ---------------------------------------------------------------------------

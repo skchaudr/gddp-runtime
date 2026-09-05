@@ -65,6 +65,7 @@ from runtime.local_attempt import (
     dispatch_worktree_attempt,
     locate_attempt_dir,
     read_attempt_status,
+    read_attempt_status_from_dir,
     read_text,
     resolve_attempt_spool_root,
     run_attempt_supervisor,
@@ -257,7 +258,10 @@ class CursorCliAdapter(EngagementAdapterDefaults):
     def status(self, session_ref: SessionRef) -> SessionStatus:
         if session_ref.executor != self.executor_name:
             return SessionStatus(state="failed", error="invalid cursor_cli session")
-        return read_cursor_cli_status(self.spool_root, session_ref.session_id)
+        attempt_dir = self._attempt_dir(session_ref)
+        if attempt_dir is None or not attempt_dir.is_dir():
+            return read_cursor_cli_status(self.spool_root, session_ref.session_id)
+        return read_attempt_status_from_dir(attempt_dir, executor=_EXECUTOR)
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
         status = self.status(session_ref)

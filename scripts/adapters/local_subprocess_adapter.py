@@ -145,7 +145,10 @@ class LocalSubprocessAdapter(EngagementAdapterDefaults):
         )
 
     def status(self, session_ref: SessionRef) -> SessionStatus:
-        return read_local_subprocess_status(self.spool_root, session_ref.session_id)
+        attempt_dir = self._attempt_dir(session_ref)
+        if attempt_dir is None or not attempt_dir.is_dir():
+            return read_local_subprocess_status(self.spool_root, session_ref.session_id)
+        return read_local_subprocess_status_from_dir(attempt_dir)
 
     def collect(self, session_ref: SessionRef, dest_path: Path) -> PatchResult:
         status = self.status(session_ref)
@@ -233,27 +236,9 @@ class LocalSubprocessAdapter(EngagementAdapterDefaults):
         )
 
 
-def read_local_subprocess_status(
-    spool_root: Path, session_id: str
-) -> "SessionStatus":
-    """Read-only durable status of one local_subprocess session.
-
-    Computes the same verdict the adapter's status() would, but takes the
-    spool root as an explicit argument. Safe to call from a normal operator
-    shell that has neither the dispatch argv nor any local_subprocess env
-    set. Never mutates the spool, the adapter object, or any external state.
-    """
+def read_local_subprocess_status_from_dir(attempt_dir: Path) -> "SessionStatus":
+    """Read-only durable status from one resolved local_subprocess attempt dir."""
     from adapters.executor_protocol import SessionStatus
-
-    if (
-        not session_id
-        or session_id in {".", ".."}
-        or Path(session_id).name != session_id
-    ):
-        return SessionStatus(state="failed", error="invalid local subprocess session id")
-    attempt_dir = Path(spool_root) / session_id
-    if not attempt_dir.is_dir():
-        return SessionStatus(state="failed", error="local subprocess spool not found")
 
     exit_path = attempt_dir / "exit.json"
     if exit_path.exists():
@@ -296,6 +281,30 @@ def read_local_subprocess_status(
         state="failed",
         error="local subprocess exited without durable exit state",
     )
+
+
+def read_local_subprocess_status(
+    spool_root: Path, session_id: str
+) -> "SessionStatus":
+    """Read-only durable status of one local_subprocess session.
+
+    Computes the same verdict the adapter's status() would, but takes the
+    spool root as an explicit argument. Safe to call from a normal operator
+    shell that has neither the dispatch argv nor any local_subprocess env
+    set. Never mutates the spool, the adapter object, or any external state.
+    """
+    from adapters.executor_protocol import SessionStatus
+
+    if (
+        not session_id
+        or session_id in {".", ".."}
+        or Path(session_id).name != session_id
+    ):
+        return SessionStatus(state="failed", error="invalid local subprocess session id")
+    attempt_dir = Path(spool_root) / session_id
+    if not attempt_dir.is_dir():
+        return SessionStatus(state="failed", error="local subprocess spool not found")
+    return read_local_subprocess_status_from_dir(attempt_dir)
 
 
 def _configured_argv(
