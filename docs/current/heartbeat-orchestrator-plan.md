@@ -38,7 +38,8 @@ workers arrive through dispatch rather than through a subagent tool.
 ## 1. The loop, mapped to code that exists
 
 ```
-launchd StartInterval 300s
+launchd StartInterval <operator-set per run; the plist's 300s is the
+  inherited plumbing pulse, an arbitrary agent pick — see below>
   → runner.run_heartbeat()                    runner.py:142
       phase 0  reconcile_sessions()           runner.py:191   [exists]
       phase F  advance_frontier()             runner.py:201   [exists]
@@ -54,10 +55,19 @@ orchestrator reads reconciled state (phase 0 just refreshed it), writes a
 decision, and phase A executes that decision through the existing reservation
 and capacity path.
 
-The pulse cadence already exists and is already external: launchd fires the
-runner every 300s (`deploy/mini-heartbeat/launchd/com.gddp.heartbeat.plist:77`).
+The pulse mechanism already exists and is already external: launchd fires the
+runner on an interval (`deploy/mini-heartbeat/launchd/com.gddp.heartbeat.plist:77`).
 GDDP is a poll-based reconciliation loop today, so Option C matches the runtime's
 existing shape rather than adding a new one.
+
+The interval itself is a per-run operator decision, and this plan asserts no
+default. The 300s in the plist predates the orchestrator — it was chosen for
+the reconciler's plumbing pulse, and the wake that just read the pack has a
+strictly better estimate of when the next wake is worth spending than any
+constant picked here. Cadence advice belongs to the orchestrator: a
+`next_wake_s` hint on the decision receipt lets the entity holding the
+evidence say when to spend the next wake, and the operator sets the interval
+from that advice.
 
 ### Wake → act → wait → sleep, per cycle
 
@@ -181,7 +191,7 @@ attempt history. Give wakes their own spool root and session kind, keeping
 
 Confirmed present, reused as-is:
 
-- Pulse cadence — launchd 300s
+- Pulse mechanism — launchd interval, operator-set per run (no default asserted)
 - Fresh-context dispatch — `Continuity` defaults to `FRESH`
 - Attempt spool, `events.jsonl`, `exit.json`, `result.json` — `local_attempt.py`
 - Preemptive cancel — `cancel_attempt`, `cursor_cli_adapter.py:250`
