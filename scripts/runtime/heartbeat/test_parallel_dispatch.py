@@ -24,7 +24,7 @@ def test_execute_dispatches_passes_target_checkout(monkeypatch, tmp_path):
     target_repo.mkdir()
     observed = {}
 
-    def fake_dispatch(job, repo, repo_path=None):
+    def fake_dispatch(job, repo, repo_path=None, **_kwargs):
         observed.update(job=job, repo=repo, repo_path=repo_path)
         return DispatchResult(success=True, issue_url="https://example.test/job")
 
@@ -426,7 +426,7 @@ def test_parallel_dispatch_records_results_and_blocks_dependencies(test_env, mon
     dispatched_nodes = []
     dispatch_threads = set()
 
-    def fake_dispatch(job, repo, repo_path=None):
+    def fake_dispatch(job, repo, repo_path=None, **_kwargs):
         assert repo_path is None
         assert repo == "owner/repo"
         assert job["node_id"] in {"alpha-node", "beta-node"}
@@ -521,7 +521,7 @@ def test_reservation_capacity_counts_existing_running_jobs(test_env, monkeypatch
 
     dispatched_nodes = []
 
-    def fake_dispatch(job, repo, repo_path=None):
+    def fake_dispatch(job, repo, repo_path=None, **_kwargs):
         assert repo_path is None
         dispatched_nodes.append(job["node_id"])
         return DispatchResult(success=True, issue_url="https://example.test/job")

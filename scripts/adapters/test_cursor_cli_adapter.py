@@ -28,6 +28,7 @@ from adapters.cursor_cli_adapter import (
     build_argv,
     build_cursor_turn_prompt,
     read_cursor_cli_status,
+    resolve_model,
 )
 from adapters.events_cursor_cli import (
     CursorStreamTranslator,
@@ -524,6 +525,79 @@ def test_argv_matches_the_spike_invocation():
     assert build_argv(
         binary="cursor-agent", prompt="P", model="kimi-k3-max", resume_token="s-1"
     )[-5:] == ["--model", "kimi-k3-max", "--resume", "s-1", "P"]
+
+
+def test_role_scoped_env_beats_general_env_for_that_role(monkeypatch):
+    """Role-scoped ``GDDP_CURSOR_CLI_MODEL_<ROLE>`` wins over the transport-wide
+    env for that role; other roles and no-role calls still see the general var."""
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL", "general-model")
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL_REVIEWER", "scoped-reviewer")
+
+    assert resolve_model("reviewer") == "scoped-reviewer"
+    assert resolve_model("executor") == "general-model"
+    assert resolve_model() == "general-model"
+
+
+def test_execution_policy_models_used_when_role_scoped_env_unset(monkeypatch):
+    """``execution_policy['models'][role]`` supplies the model when no role-scoped
+    env var is set."""
+    monkeypatch.delenv("GDDP_CURSOR_CLI_MODEL_REVIEWER", raising=False)
+    monkeypatch.delenv("GDDP_CURSOR_CLI_MODEL", raising=False)
+    policy = {"models": {"reviewer": "composer-2.5"}}
+
+    assert resolve_model("reviewer", policy) == "composer-2.5"
+
+
+def test_role_scoped_env_beats_execution_policy_models(monkeypatch):
+    """Role-scoped env outranks ``execution_policy['models']`` when both are set."""
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL_REVIEWER", "from-env")
+    policy = {"models": {"reviewer": "from-policy"}}
+
+    assert resolve_model("reviewer", policy) == "from-env"
+
+
+def test_resolve_model_returns_none_when_no_sources_set(monkeypatch):
+    """With every env var cleared and no policy mapping, resolution yields None."""
+    monkeypatch.delenv("GDDP_CURSOR_CLI_MODEL", raising=False)
+    monkeypatch.delenv("GDDP_CURSOR_CLI_MODEL_REVIEWER", raising=False)
+
+    assert resolve_model("reviewer") is None
+    assert resolve_model("reviewer", {}) is None
+    assert resolve_model("reviewer", None) is None
+
+
+def test_resolve_model_falls_through_to_general_env_without_scoped_sources(monkeypatch):
+    """A role with no scoped env or policy entry inherits ``GDDP_CURSOR_CLI_MODEL``."""
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL", "general-model")
+    monkeypatch.delenv("GDDP_CURSOR_CLI_MODEL_EXECUTOR", raising=False)
+
+    assert resolve_model("executor") == "general-model"
+
+
+def test_cursor_cli_adapter_picks_up_role_scoped_model(tmp_path, monkeypatch):
+    """``CursorCliAdapter`` resolves its model from the role-scoped env when no
+    explicit ``model=`` kwarg is passed."""
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL_ORCHESTRATOR", "orchestrator-model")
+
+    adapter = CursorCliAdapter(
+        repo="owner/repo", spool_root=tmp_path, role="orchestrator"
+    )
+
+    assert adapter.model == "orchestrator-model"
+
+
+def test_explicit_model_kwarg_wins_over_role_scoped_env(tmp_path, monkeypatch):
+    """An explicit ``model=`` constructor argument beats every resolution source."""
+    monkeypatch.setenv("GDDP_CURSOR_CLI_MODEL_ORCHESTRATOR", "orchestrator-model")
+
+    adapter = CursorCliAdapter(
+        repo="owner/repo",
+        spool_root=tmp_path,
+        role="orchestrator",
+        model="explicit-model",
+    )
+
+    assert adapter.model == "explicit-model"
 
 
 # ---------------------------------------------------------------------------

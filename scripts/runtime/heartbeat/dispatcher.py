@@ -107,7 +107,12 @@ def executor_capabilities(
 
 
 def dispatch(
-    job: dict, repo: str, repo_path: str | None = None
+    job: dict,
+    repo: str,
+    repo_path: str | None = None,
+    *,
+    role: str | None = None,
+    execution_policy: Mapping[str, object] | None = None,
 ) -> DispatchResult:
     executor = job.get("executor")
     if not executor:
@@ -127,7 +132,14 @@ def dispatch(
 
     try:
         packet = _build_node_packet(job, repo_path=repo_path)
-        adapter = _build_adapter(adapter_cls, executor, repo, repo_path)
+        adapter = _build_adapter(
+            adapter_cls,
+            executor,
+            repo,
+            repo_path,
+            role=role,
+            execution_policy=execution_policy,
+        )
         capabilities = adapter_capabilities(adapter, executor)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return DispatchResult(success=False, error=f"Invalid dispatch packet: {exc}")
@@ -221,7 +233,15 @@ def _validate_engagement_order(
         preceding_node_ids.add(node_id)
 
 
-def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None):
+def _build_adapter(
+    adapter_cls,
+    executor: str,
+    repo: str,
+    repo_path: str | None,
+    *,
+    role: str | None = None,
+    execution_policy: Mapping[str, object] | None = None,
+):
     """Give only local transports the checkout they execute inside."""
     kwargs: dict[str, object] = {"repo": repo}
     if executor in _LOCAL_TRANSPORT_EXECUTORS and repo_path:
@@ -231,6 +251,15 @@ def _build_adapter(adapter_cls, executor: str, repo: str, repo_path: str | None)
         # rather than resolved by a default inside the adapter. Unset env
         # means the adapter raises, which surfaces as a configuration error.
         kwargs["model"] = os.environ.get("GDDP_PI_RPC_MODEL")
+    if executor == "cursor_cli":
+        # Role-scoped model resolution (GDDP_CURSOR_CLI_MODEL_<ROLE>, then
+        # execution_policy "models") happens inside the adapter. Passed only
+        # when set, so a None role reproduces the old constructor call
+        # exactly — test doubles and reconstructors keep working unchanged.
+        if role is not None:
+            kwargs["role"] = role
+        if execution_policy is not None:
+            kwargs["execution_policy"] = execution_policy
     return adapter_cls(**kwargs)
 
 

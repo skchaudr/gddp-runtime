@@ -80,6 +80,31 @@ _BINARY_ENV = "GDDP_CURSOR_CLI_BINARY"
 _MODEL_ENV = "GDDP_CURSOR_CLI_MODEL"
 _TIMEOUT_ENV = "GDDP_CURSOR_CLI_TURN_TIMEOUT_S"
 
+
+def resolve_model(
+    role: str | None = None,
+    execution_policy: Mapping[str, object] | None = None,
+) -> str | None:
+    """Model for one dispatch, most specific source first.
+
+    Open-ended on purpose: any role gets its own optional env var
+    (``GDDP_CURSOR_CLI_MODEL_ORCHESTRATOR``, ``..._EXECUTOR``, and any future
+    role) and its own key under the project's execution_policy ``models``
+    mapping — adding a role is configuration, never a code change here.
+    Falls back to the transport-wide ``GDDP_CURSOR_CLI_MODEL``, then None,
+    where cursor-agent picks its own default.
+    """
+    if role:
+        scoped = os.environ.get(f"{_MODEL_ENV}_{role.upper()}")
+        if scoped:
+            return scoped
+        models = (execution_policy or {}).get("models")
+        if isinstance(models, Mapping):
+            from_policy = models.get(role)
+            if isinstance(from_policy, str) and from_policy:
+                return from_policy
+    return os.environ.get(_MODEL_ENV) or None
+
 _DEFAULT_TIMEOUT_S = 1800.0
 # Spike measurement: SIGTERM -> process death 1.16s; SIGKILL -> 0.02s. The
 # grace is sized above the measured SIGTERM latency with headroom, not
@@ -147,13 +172,15 @@ class CursorCliAdapter(EngagementAdapterDefaults):
         binary: str | None = None,
         model: str | None = None,
         turn_timeout_s: float | None = None,
+        role: str | None = None,
+        execution_policy: Mapping[str, object] | None = None,
     ) -> None:
         self.repo = repo
         self.spool_root = _configured_spool_root(spool_root)
         configured_cwd = cwd if cwd is not None else os.environ.get("GDDP_CURSOR_CLI_CWD")
         self.cwd = Path(configured_cwd).resolve() if configured_cwd else None
         self.binary = binary or os.environ.get(_BINARY_ENV) or "cursor-agent"
-        self.model = model or os.environ.get(_MODEL_ENV) or None
+        self.model = model or resolve_model(role, execution_policy)
         if turn_timeout_s is not None:
             self.turn_timeout_s = float(turn_timeout_s)
         else:

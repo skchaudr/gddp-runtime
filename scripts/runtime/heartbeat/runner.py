@@ -40,6 +40,7 @@ from .dispatcher import (
 from .frontier import advance_frontier, ensure_ready_frontier_events
 from .graph_reader import GraphReader, parse_execution_policy
 from .job_factory import build_job
+from .orchestrator_wake import run_wake
 from .reconciler import (
     DEFAULT_MAX_CONCURRENT_EVALUATIONS,
     EvaluationBatch,
@@ -213,6 +214,18 @@ def run_heartbeat(
                     f"  → review reconciled: {node_id} reached terminal graph "
                     f"status; job {job_id} → {new_state}"
                 )
+
+            # Phase O: orchestrator wake (flag-gated, default off). Reads the
+            # freshly reconciled state, decides one action, and any dispatch
+            # lands as an event that phase A plans like any other. A failed
+            # wake is loud and never takes the tick down with it.
+            if os.environ.get("GDDP_ORCHESTRATOR_WAKE"):
+                try:
+                    applied_wake = run_wake(con, reader, project)
+                    if applied_wake is not None:
+                        print(f"  → orchestrator wake: {applied_wake.detail}")
+                except Exception as exc:
+                    print(f"  → orchestrator wake failed: {exc}", file=sys.stderr)
 
             # Phase A-C: Plan and dispatch new events.
             planned_dispatches = _plan_dispatches(
@@ -609,7 +622,12 @@ def _execute_dispatches(
                 )
             else:
                 future = executor.submit(
-                    dispatch, group[0].job, repo, repo_path
+                    dispatch,
+                    group[0].job,
+                    repo,
+                    repo_path,
+                    role="executor",
+                    execution_policy=execution_policy,
                 )
             future_to_group[future] = group
 
