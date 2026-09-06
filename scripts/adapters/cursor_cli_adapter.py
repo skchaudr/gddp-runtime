@@ -107,7 +107,8 @@ def resolve_model(
                 return from_policy
     return os.environ.get(_MODEL_ENV) or None
 
-_DEFAULT_TIMEOUT_S = 1800.0
+# Changed from 1800 after multiple worktree session deaths for no good reason 
+_DEFAULT_TIMEOUT_S = 18000.0.0
 # Spike measurement: SIGTERM -> process death 1.16s; SIGKILL -> 0.02s. The
 # grace is sized above the measured SIGTERM latency with headroom, not
 # guessed.
