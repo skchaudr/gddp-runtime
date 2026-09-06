@@ -40,6 +40,10 @@ Added `gddp timeline <project> [node]` in gddp-config (73beec7 module + wiring, 
 
 gddp-config a3e3128: `gddp` opens on the graph picker (six-group front page removed; Esc → heartbeat/config controls page); the graph hub prints graph status, last 8 timeline entries, and "what is wrong" above its unchanged n/d/w/m keys. `interactive_graphs` deleted (folded into `interactive_menu`). Menu path to act on a node is now picker → hub(truth) → nodes → node; was front page → g → picker → hub → n → node. gddp-config suite: 313 passed, same 2 pre-existing failures. Sab's ruling stands: the operator menu is the human channel into graph truth; simplify, never add.
 
+### Session 2, hub fit (08:30–08:50Z)
+
+Sab caught that the first hub cut pushed header + statuses off screen with no scroll keys. Walked the real TUI via pexpect+pyte (`/tmp/gddp_walk.py`, kept out of repo) at 100x24/104x40/120x30/120x50: picker → hub → nodes → node. gddp-config 10959ae: hub block is one row per line (ellipsis), warnings before history, history sized to leftover rows, footer line `N events · M things unseen · full story: gddp timeline <p>`. Seen and UNCHANGED: nodes page (table + 5 keys), node page (7 actions + prev/next/back/quit; `e evaluation`, `v evaluator`, `m more` are three doors to evidence). Next cut belongs to Sab's call.
+
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
 Validation: 965 passed, 10 failed/deselected all `flask` missing on this host (intake server, frozen). Operator decisions pending: (a) whether `def9f82` is adopted via `jobs adopt` or `nav-input-repair` is re-attempted on top of it; (b) whether the Jules branches are closed (recommended: both — nothing in them survives a rebase onto main worth keeping beyond the `--validate` flag); (c) whether the VM heartbeat keeps `--all-active` given it defers 7 events and writes 6 empty job dirs per tick. CLI simplification proposal is in the session's final response, not yet a node.
