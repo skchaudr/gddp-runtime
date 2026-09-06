@@ -22,6 +22,7 @@ from scripts.runtime.heartbeat.frontier import (
     ensure_ready_frontier_events,
 )
 from scripts.runtime.heartbeat.graph_reader import GraphReader
+from scripts.node_status_history import append_status_change
 
 # Same pattern as test_provisional_status.py: the writer uses gddp-config's
 # node_cli for surgical status rewrites; copy the real module so fixture
@@ -109,7 +110,7 @@ def con():
     con = sqlite3.connect(":memory:")
     con.execute(
         "CREATE TABLE jobs (job_id TEXT PRIMARY KEY, project_id TEXT, "
-        "node_id TEXT, status TEXT)"
+        "node_id TEXT, status TEXT, created_at TEXT)"
     )
     con.execute(
         "CREATE TABLE events (event_id TEXT PRIMARY KEY, schema_version TEXT, "
@@ -119,7 +120,7 @@ def con():
     )
     # node-e has an active job; node-i has a pending frontier event.
     con.execute(
-        "INSERT INTO jobs VALUES ('job_e', 'proj', 'node-e', 'running')"
+        "INSERT INTO jobs VALUES ('job_e', 'proj', 'node-e', 'running', 'now')"
     )
     con.execute(
         "INSERT INTO events (event_id, received_at, source, event_type, url, "
@@ -226,64 +227,6 @@ def test_opt_out_by_default(config_root, con, tmp_path):
     assert _frontier_events(con) == []
 
 
-def test_cancelled_job_history_blocks_pending_auto_advance(config_root, con):
-    """Human-reset pending after a prior dispatch stays inert until re-ready."""
-    node_j = config_root / "graphs/proj/nodes/node-j.yaml"
-    node_j.write_text(
-        NODE_YAML.format(
-            node_id="node-j",
-            body="status: pending\ndepends_on:\n  - node-a",
-        )
-    )
-    project_yaml = config_root / "graphs/proj/project.yaml"
-    doc = yaml.safe_load(project_yaml.read_text())
-    doc["nodes"].append({"id": "node-j", "status": "pending"})
-    project_yaml.write_text(yaml.dump(doc, sort_keys=False))
-    con.execute(
-        "INSERT INTO jobs VALUES ('job_j', 'proj', 'node-j', 'cancelled')"
-    )
-
-    reader = GraphReader(config_path=str(config_root))
-    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
-    assert _node_status(config_root, "node-j") == "pending"
-    assert _frontier_events(con) == [
-        ("frontier-dispatch://node: node-c", "received"),
-        ("frontier-dispatch://node: node-g", "received"),
-    ]
-
-
-def test_mapped_manual_dispatch_without_job_blocks_pending_advance(config_root, con):
-    """Terminal manual-dispatch history blocks re-promotion with zero job row."""
-    node_j = config_root / "graphs/proj/nodes/node-j.yaml"
-    node_j.write_text(
-        NODE_YAML.format(
-            node_id="node-j",
-            body="status: pending\ndepends_on:\n  - node-a",
-        )
-    )
-    project_yaml = config_root / "graphs/proj/project.yaml"
-    doc = yaml.safe_load(project_yaml.read_text())
-    doc["nodes"].append({"id": "node-j", "status": "pending"})
-    project_yaml.write_text(yaml.dump(doc, sort_keys=False))
-    con.execute(
-        "INSERT INTO events (event_id, received_at, source, event_type, url, "
-        "project_id, status) VALUES ('evt_manual', 'now', 'gddp', "
-        "'issue.opened', 'manual-dispatch://node: node-j', 'proj', 'mapped')"
-    )
-
-    reader = GraphReader(config_path=str(config_root))
-    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
-    assert _node_status(config_root, "node-j") == "pending"
-
-
-def test_fresh_root_still_advances(config_root, con):
-    """Never-dispatched pending roots with satisfied deps still auto-advance."""
-    reader = GraphReader(config_path=str(config_root))
-    assert advance_frontier(con, reader, "proj") == ["node-c", "node-g"]
-    assert _node_status(config_root, "node-g") == "ready"
-    assert ("frontier-dispatch://node: node-g", "received") in _frontier_events(con)
-
-
 def test_rejected_provisional_dependency_reblocks(config_root, con):
     """A provisional dep rejected back to ready is no longer satisfied."""
     reader = GraphReader(config_path=str(config_root))
@@ -294,3 +237,204 @@ def test_rejected_provisional_dependency_reblocks(config_root, con):
 
     assert advance_frontier(con, reader, "proj") == ["node-g"]
     assert _node_status(config_root, "node-c") == "pending"
+
+
+def test_pending_root_with_cancelled_history_still_advances(config_root, con):
+    node_j = config_root / "graphs/proj/nodes/node-j.yaml"
+    node_j.write_text(
+        NODE_YAML.format(
+            node_id="node-j",
+            body="status: pending\ndepends_on:\n  - node-a",
+        )
+    )
+    project_yaml = config_root / "graphs/proj/project.yaml"
+    doc = yaml.safe_load(project_yaml.read_text())
+    doc["nodes"].append({"id": "node-j", "status": "pending"})
+    project_yaml.write_text(yaml.dump(doc, sort_keys=False))
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_j', 'proj', 'node-j', 'cancelled', "
+        "'2026-01-01T00:00:00+00:00')"
+    )
+
+    reader = GraphReader(config_path=str(config_root))
+    transitioned = advance_frontier(con, reader, "proj")
+
+    assert "node-j" in transitioned
+    assert _node_status(config_root, "node-j") == "ready"
+    assert ("frontier-dispatch://node: node-j", "received") in _frontier_events(con)
+
+
+def test_ready_with_terminal_job_and_no_human_ready_record_stays_inert(
+    config_root, con
+):
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', "
+        "'2026-01-02T12:00:00+00:00')"
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(con, reader, "proj") == []
+
+
+def test_ready_reasserted_by_human_after_failed_attempt_dispatches(
+    config_root, con, tmp_path
+):
+    t1 = "2026-01-02T12:00:00+00:00"
+    t2 = "2026-01-03T12:00:00+00:00"
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', ?)", (t1,)
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="operator re-ready after failed attempt",
+        runtime_root=tmp_path,
+        ts=t2,
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == ["node-h"]
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []
+
+
+def test_stale_human_ready_record_before_attempt_stays_inert(
+    config_root, con, tmp_path
+):
+    t1 = "2026-01-03T12:00:00+00:00"
+    t2 = "2026-01-02T12:00:00+00:00"
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', ?)", (t1,)
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="stale ready before attempt",
+        runtime_root=tmp_path,
+        ts=t2,
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []
+
+
+def test_active_job_blocks_even_with_fresh_ready_record(config_root, con, tmp_path):
+    t1 = "2026-01-02T12:00:00+00:00"
+    t2 = "2026-01-03T12:00:00+00:00"
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'running', ?)", (t1,)
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="fresh ready while job active",
+        runtime_root=tmp_path,
+        ts=t2,
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []
+
+
+def test_unparseable_attempt_timestamp_stays_inert(config_root, con, tmp_path):
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', 'garbage')"
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="fresh ready with unparseable attempt ts",
+        runtime_root=tmp_path,
+        ts="2026-01-03T12:00:00+00:00",
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []
+
+
+def test_mixed_offset_attempt_timestamps_compare_chronologically(
+    config_root, con, tmp_path
+):
+    job_ts = "2026-01-02T23:00:00-08:00"
+    event_ts = "2026-01-03T01:00:00+00:00"
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', ?)",
+        (job_ts,),
+    )
+    con.execute(
+        "INSERT INTO events (event_id, received_at, source, event_type, url, "
+        "project_id, status) VALUES ('evt_attempt', ?, 'gddp', "
+        "'issue.opened', 'manual-dispatch://node: node-h', 'proj', 'mapped')",
+        (event_ts,),
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="ready before latest mixed-offset attempt",
+        runtime_root=tmp_path,
+        ts="2026-01-03T03:00:00+00:00",
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []
+
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="ready",
+        to_status="ready",
+        reason="fresh ready after mixed-offset attempt",
+        runtime_root=tmp_path,
+        ts="2026-01-03T08:00:00+00:00",
+    )
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == ["node-h"]
+
+
+def test_any_unparseable_attempt_timestamp_stays_inert(config_root, con, tmp_path):
+    con.execute(
+        "INSERT INTO jobs VALUES ('job_h', 'proj', 'node-h', 'failed', 'garbage')"
+    )
+    con.execute(
+        "INSERT INTO events (event_id, received_at, source, event_type, url, "
+        "project_id, status) VALUES ('evt_attempt', '2026-01-03T01:00:00+00:00', "
+        "'gddp', 'issue.opened', 'manual-dispatch://node: node-h', 'proj', "
+        "'mapped')"
+    )
+    append_status_change(
+        project_id="proj",
+        node_id="node-h",
+        from_status="pending",
+        to_status="ready",
+        reason="fresh ready with mixed parseable and garbage attempt ts",
+        runtime_root=tmp_path,
+        ts="2026-01-03T12:00:00+00:00",
+    )
+    reader = GraphReader(config_path=str(config_root))
+
+    assert ensure_ready_frontier_events(
+        con, reader, "proj", history_root=tmp_path
+    ) == []

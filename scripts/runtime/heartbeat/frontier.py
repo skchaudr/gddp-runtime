@@ -22,11 +22,12 @@ Per heartbeat tick, per project, one frontier hop:
      processes like any CLI-injected dispatch. The ledger keeps an audit
      trail of what the frontier triggered and why.
 
-Duplicate guards: a node with an active job (dispatched through review) or
-an already-pending frontier event is never re-triggered. The status
-snapshot is taken at tick start, so a single tick advances exactly one
-graph layer — evidence from one layer unlocks the next on the following
-tick.
+Duplicate guards: ``advance_frontier`` skips on an active job or a pending
+``frontier_auto`` event. ``ensure_ready_frontier_events`` skips on an active
+job, a pending frontier or manual dispatch event, or terminal attempt history
+without a newer human ``ready`` record in node_status_history; frontier
+pending→ready writes leave no history record, so a promoted node whose attempt
+failed stays inert until the operator acts. One tick advances one graph layer.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from pathlib import Path
 
 import yaml
 
+from scripts.node_status_history import load_history
 from ..gate_tokens import read_gate, write_gate
 from ..repo_resolver import resolve_project_repo_checkout
 from .graph_reader import GraphReader
@@ -97,8 +99,6 @@ def advance_frontier(
             continue
         if _has_pending_frontier_event(con, project_id, node_id):
             continue
-        if _has_dispatch_history(con, project_id, node_id):
-            continue
 
         node_text, _ = node_cli.replace_node_status(node_path.read_text(), "ready")
         project_text, _ = node_cli.replace_project_index_status(
@@ -128,13 +128,17 @@ def ensure_ready_frontier_events(
     project_id: str,
     *,
     now: datetime | None = None,
+    history_root: Path | None = None,
 ) -> list[str]:
     """Give an opted-in, already-ready frontier its one bootstrap event.
 
-    Graph ``ready`` is the governing dispatch signal.  The event is an internal
-    audit/transport record, so the heartbeat creates it when none exists.  Any
-    prior job or prior automatic event suppresses re-dispatch; retries remain an
-    explicit operator/runtime decision.
+    Graph ``ready`` is the governing dispatch signal; the event is audit/
+    transport only. Active jobs and pending frontier or manual dispatch events
+    suppress injection. Terminal attempt history suppresses re-dispatch until
+    a human re-asserts ``ready`` (a node_status_history graph record newer
+    than the last attempt). Frontier pending→ready promotion writes no history
+    record, so a frontier-promoted node whose attempt failed stays inert until
+    the operator acts.
     """
     project = reader.load_project(project_id)
     if not (project.execution_policy or {}).get("frontier_auto_advance"):
@@ -160,7 +164,9 @@ def ensure_ready_frontier_events(
             status_by_id.get(dep) in SATISFIED_DEP_STATUSES for dep in depends_on
         ):
             continue
-        if _has_dispatch_history(con, project_id, node_id):
+        if _readiness_already_dispatched(
+            con, project_id, node_id, history_root=history_root
+        ):
             continue
 
         _ensure_dependency_gates(reader.config_path, project_id, depends_on)
@@ -233,7 +239,28 @@ def _has_active_job(con: sqlite3.Connection, project_id: str, node_id: str) -> b
     return row is not None
 
 
-def _has_dispatch_history(
+def _dispatch_urls(node_id: str) -> tuple[str, str]:
+    return (
+        f"frontier-dispatch://node: {node_id}",
+        f"manual-dispatch://node: {node_id}",
+    )
+
+
+def _parse_iso_ts(ts: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except (TypeError, ValueError):
+        return None
+
+
+class _UnparseableAttemptTimestamps(Exception):
+    """At least one attempt timestamp row exists but failed ISO parsing."""
+
+
+def _has_attempt_history(
     con: sqlite3.Connection, project_id: str, node_id: str
 ) -> bool:
     if con.execute(
@@ -241,14 +268,123 @@ def _has_dispatch_history(
         (project_id, node_id),
     ).fetchone():
         return True
-    urls = (
-        f"frontier-dispatch://node: {node_id}",
-        f"manual-dispatch://node: {node_id}",
+    urls = _dispatch_urls(node_id)
+    return (
+        con.execute(
+            "SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) LIMIT 1",
+            (project_id, *urls),
+        ).fetchone()
+        is not None
     )
-    return con.execute(
-        "SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) LIMIT 1",
+
+
+def _last_attempt_ts(
+    con: sqlite3.Connection, project_id: str, node_id: str
+) -> str | None:
+    """Return the chronologically latest attempt timestamp.
+
+    Raises ``_UnparseableAttemptTimestamps`` when any non-empty job
+    ``created_at`` or dispatch-event ``received_at`` fails to parse.
+    Returns None when no timestamp values are present.
+    """
+    urls = _dispatch_urls(node_id)
+    raw_values: list[str] = []
+    for row in con.execute(
+        "SELECT created_at FROM jobs WHERE project_id = ? AND node_id = ?",
+        (project_id, node_id),
+    ):
+        if row[0]:
+            raw_values.append(row[0])
+    for row in con.execute(
+        "SELECT received_at FROM events WHERE project_id = ? AND url IN (?, ?)",
         (project_id, *urls),
-    ).fetchone() is not None
+    ):
+        if row[0]:
+            raw_values.append(row[0])
+    if not raw_values:
+        return None
+    parsed_pairs: list[tuple[datetime, str]] = []
+    for ts in raw_values:
+        parsed = _parse_iso_ts(ts)
+        if parsed is None:
+            raise _UnparseableAttemptTimestamps
+        parsed_pairs.append((parsed, ts))
+    return max(parsed_pairs, key=lambda pair: pair[0])[1]
+
+
+def _latest_human_ready_ts(
+    project_id: str,
+    node_id: str,
+    *,
+    history_root: Path | None,
+) -> str | None:
+    try:
+        records = load_history(
+            project_id,
+            node_id,
+            runtime_root=history_root,
+            strict=False,
+        )
+    except Exception:
+        return None
+    latest: str | None = None
+    latest_dt: datetime | None = None
+    for record in records:
+        if record.get("kind") != "graph" or record.get("to_status") != "ready":
+            continue
+        ts = record.get("ts")
+        if not isinstance(ts, str) or not ts:
+            continue
+        parsed = _parse_iso_ts(ts)
+        if parsed is None:
+            continue
+        if latest_dt is None or parsed > latest_dt:
+            latest_dt = parsed
+            latest = ts
+    return latest
+
+
+def _readiness_already_dispatched(
+    con: sqlite3.Connection,
+    project_id: str,
+    node_id: str,
+    *,
+    history_root: Path | None = None,
+) -> bool:
+    """True when bootstrap dispatch for an already-ready node should be skipped."""
+    if _has_active_job(con, project_id, node_id):
+        return True
+
+    placeholders = ",".join("?" for _ in PENDING_EVENT_STATUSES)
+    urls = _dispatch_urls(node_id)
+    if con.execute(
+        f"SELECT 1 FROM events WHERE project_id = ? AND url IN (?, ?) "
+        f"AND status IN ({placeholders}) LIMIT 1",
+        (project_id, *urls, *PENDING_EVENT_STATUSES),
+    ).fetchone():
+        return True
+
+    if not _has_attempt_history(con, project_id, node_id):
+        return False
+
+    try:
+        last_attempt_ts = _last_attempt_ts(con, project_id, node_id)
+    except _UnparseableAttemptTimestamps:
+        return True
+    if last_attempt_ts is None:
+        return True
+
+    human_ready_ts = _latest_human_ready_ts(
+        project_id, node_id, history_root=history_root
+    )
+    if human_ready_ts is None:
+        return True
+
+    parsed_ready = _parse_iso_ts(human_ready_ts)
+    parsed_attempt = _parse_iso_ts(last_attempt_ts)
+    if parsed_ready is None or parsed_attempt is None:
+        return True
+    return parsed_ready <= parsed_attempt
 
 
 def _has_pending_frontier_event(
