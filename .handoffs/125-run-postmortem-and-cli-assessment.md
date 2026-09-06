@@ -44,9 +44,9 @@ gddp-config a3e3128: `gddp` opens on the graph picker (six-group front page remo
 
 Sab caught that the first hub cut pushed header + statuses off screen with no scroll keys. Walked the real TUI via pexpect+pyte (`/tmp/gddp_walk.py`, kept out of repo) at 100x24/104x40/120x30/120x50: picker → hub → nodes → node. gddp-config 10959ae: hub block is one row per line (ellipsis), warnings before history, history sized to leftover rows, footer line `N events · M things unseen · full story: gddp timeline <p>`. Seen and UNCHANGED: nodes page (table + 5 keys), node page (7 actions + prev/next/back/quit; `e evaluation`, `v evaluator`, `m more` are three doors to evidence). Next cut belongs to Sab's call.
 
-### Session 2 close (08:57Z) — operator verdict
+### Session 2 close (08:57Z)
 
-Sab's verdict on this session's CLI work: the hub "what happened" block is useless and buried; the approach was "unique fixes" where "basics are best" was wanted. Landed on gddp-config main and left in place for the next agent to keep or revert as a unit: 73beec7 timeline module, eba48ce tests, a3e3128 front page removed, 10959ae hub fit, a9c2a5a live restored on the plane page. Revert path: `git revert a9c2a5a 10959ae a3e3128 eba48ce 73beec7`. Still broken and untouched: heartbeat page is launchd-only (blind on Linux hosts; the deploy kit `common.sh:94` refuses non-Darwin), so the menu can neither see nor stop a systemd timer. Basics Sab asked for, in his words: observability first (live, across graphs, on the first screen), fewer pages, no new mechanisms.
+Sab's words at close: the hub "what happened" block is useless and hidden behind pages; the session went for "unique" fixes where "basics are best" was wanted; observability (live, across graphs) belongs on the first screen. No ruling was made on keeping or reverting anything. Landed on gddp-config main this session: 73beec7 timeline module, eba48ce tests, a3e3128 front page removed, 10959ae hub fit, a9c2a5a live restored on the plane page. Still broken and untouched: heartbeat page is launchd-only (blind on Linux hosts; deploy kit `common.sh:94` refuses non-Darwin), so the menu can neither see nor stop a systemd timer.
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
