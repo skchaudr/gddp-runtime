@@ -30,6 +30,7 @@ gddp-runtime main == origin/main at 38ccf2b + this handoff. gddp-config main == 
 - gddp-config origin/fix-gddp-cli-ergonomics-10837814615865469817 (ad7e61d) - empty Jules commit
 - gddp-config origin/jules-7527605291157963530-dfb36d52 (6489d94) - stale-base Jules commit; unique content: dead `[f]/[v]/[q]` watch keys (`terminal.cbreak` is absent, `hasattr` guard skips them), `rapid_add --validate` prompt, one test
 - jobs/job_20260906T*/ - 35 empty dirs created by the `--all-active` VM heartbeat tonight (every tick, per active project, before executor preflight defers on missing GDDP_PI_RPC_MODEL)
+- db/queue.db events `evt_frontier_20260906T060450_nav-input-repair_9f1cbe` - VM heartbeat injected a cursor_cli dispatch for `nav-input-repair` at 06:04:50Z once main imported again; every tick since claims it then crashes at `state_recorder.insert_job` (`jobs` lacks `expected_base_commit_sha`; VM db is behind the 5-column migration handoff 123 applied on the Mac). The schema crash is the only thing between this VM and a second, unintended attempt on a node whose work already sits on aa-cli main. Left untouched on purpose: migrating the db or stopping the timer is an operator call.
 
 ### Resume point (2-3 sentences max, anything more must be critically justifiable)
 
