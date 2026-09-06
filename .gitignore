@@ -76,3 +76,6 @@ package-lock.json
 .atuin/
 .factory/
 .local/
+
+# local evidence index (tool output)
+.mygraph/
