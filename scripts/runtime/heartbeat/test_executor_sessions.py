@@ -50,6 +50,116 @@ from scripts.runtime.heartbeat.state_recorder import (
     recorded_base_commit_sha,
     update_executor_session_state,
 )
+from scripts.runtime.verification.schemas import (
+    DeterministicResult,
+    IntegrityFinding,
+    IntegrityOutput,
+    LaneExecutionStatus,
+    SemanticOutput,
+    Verdict,
+    VerdictReceipt,
+)
+
+
+def _write_test_receipt(
+    path: Path,
+    *,
+    project_id: str = "proj-1",
+    node_id: str = "node-1",
+    job_id: str = "job_1",
+    execution_attempt_id: str | None = None,
+    result_commit_sha: str = "b" * 40,
+    expected_base_commit_sha: str | None = "a" * 40,
+    verdict: Verdict | str = Verdict.PASS,
+    criteria_verdict: Verdict | str | None = Verdict.PASS,
+    completeness_status: str = "complete",
+    semantic_status: LaneExecutionStatus | str = LaneExecutionStatus.COMPLETED,
+    integrity_status: LaneExecutionStatus | str = LaneExecutionStatus.COMPLETED,
+    intent_preserved: bool = True,
+    graph_integrity_preserved: bool = True,
+    required_human_review: bool = False,
+    integrity_verdict: str = "pass",
+    findings: list | None = None,
+    reasoning: str = "test reason",
+) -> VerdictReceipt:
+    exec_attempt_id = execution_attempt_id or f"{job_id}:attempt:0"
+    typed_findings = []
+    for f in findings or []:
+        if isinstance(f, IntegrityFinding):
+            typed_findings.append(f)
+        elif isinstance(f, dict):
+            typed_findings.append(
+                IntegrityFinding(
+                    severity=f.get("severity", "medium"),
+                    summary=f.get("summary", ""),
+                    affected_node_ids=f.get("affected_node_ids", []),
+                )
+            )
+    semantic = SemanticOutput(
+        judgments=[],
+        overall_reasoning="semantic ok",
+        risks=None,
+        followup_candidates=None,
+        budget_exhausted=False,
+        lane_status=(
+            semantic_status
+            if isinstance(semantic_status, LaneExecutionStatus)
+            else LaneExecutionStatus(semantic_status)
+        ),
+    )
+    integrity = IntegrityOutput(
+        verdict=integrity_verdict,
+        intent_preserved=intent_preserved,
+        graph_integrity_preserved=graph_integrity_preserved,
+        required_human_review=required_human_review,
+        confidence=0.9,
+        findings=typed_findings,
+        reasoning=reasoning,
+        lane_status=(
+            integrity_status
+            if isinstance(integrity_status, LaneExecutionStatus)
+            else LaneExecutionStatus(integrity_status)
+        ),
+    )
+    deterministic = DeterministicResult(
+        criteria=[],
+        constraints=[],
+        artifacts_present={},
+        deps_status={},
+        criteria_mismatches=[],
+        missing_evidence=[],
+        human_review_questions=[],
+    )
+    receipt = VerdictReceipt(
+        project_id=project_id,
+        node_id=node_id,
+        verdict=verdict if isinstance(verdict, Verdict) else Verdict(verdict),
+        criteria_verdict=(
+            criteria_verdict
+            if isinstance(criteria_verdict, Verdict) or criteria_verdict is None
+            else Verdict(criteria_verdict)
+        ),
+        integrity=integrity,
+        confidence=0.9,
+        criteria_confidence=0.9,
+        completeness=1.0,
+        graph_readiness=1.0,
+        completeness_status=completeness_status,
+        deterministic=deterministic,
+        semantic=semantic,
+        decision_reasoning=reasoning,
+        required_next_action="proceed",
+        generated_at="2026-09-07T00:00:00+00:00",
+        evaluated_commit_sha=result_commit_sha,
+        merge_commit_sha=result_commit_sha,
+        expected_base_commit_sha=expected_base_commit_sha,
+        job_id=job_id,
+        execution_attempt_id=exec_attempt_id,
+    )
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(receipt.model_dump_json(indent=2), encoding="utf-8")
+    return receipt
 
 
 # --------------------------------------------------------------------------- #
@@ -116,6 +226,26 @@ CREATE TABLE executor_sessions (
     created_at               TEXT NOT NULL,
     updated_at               TEXT NOT NULL,
     attempt_dir              TEXT
+);
+
+CREATE TABLE IF NOT EXISTS results (
+    result_id                   TEXT PRIMARY KEY,
+    schema_version              TEXT NOT NULL DEFAULT '1.0',
+    job_id                      TEXT NOT NULL,
+    executor                    TEXT NOT NULL,
+    received_at                 TEXT NOT NULL,
+    execution_duration_seconds  INTEGER,
+    outcome                     TEXT NOT NULL,
+    status                      TEXT NOT NULL,
+    changed_files               TEXT,
+    patch_path                  TEXT,
+    summary_path                TEXT,
+    logs_path                   TEXT,
+    acceptance_check            TEXT,
+    risks                       TEXT,
+    followup_candidates         TEXT,
+    github_action               TEXT,
+    FOREIGN KEY(job_id) REFERENCES jobs(job_id)
 );
 """
 
@@ -582,14 +712,25 @@ def test_reconcile_completed_session_collects_and_commits(con, tmp_path, monkeyp
     FakeAdapter = _make_fake_adapter(status_state="completed")
     monkeypatch.setattr(reconciler, "ADAPTERS", {"jules_cli": FakeAdapter})
 
-    # The evaluator bridge is mocked: real verification needs config/repo
-    # checkouts that the test fixture does not provide.
-    monkeypatch.setattr(
-        reconciler, "verify_job_return",
-        lambda **kw: {"verification_status": "ok", "verdict": "pass"},
-    )
-    # write_result opens its own connection to the real DB_PATH; the test
-    # uses an in-memory DB, so mock it to avoid writing to disk.
+    def fake_verify(**kw):
+        result_sha = kw.get("merge_commit_sha")
+        path = tmp_path / "receipts" / "receipt.json"
+        _write_test_receipt(
+            path,
+            project_id=kw.get("project_id") or "proj-1",
+            node_id=kw.get("node_id") or "node-1",
+            job_id=kw.get("job_id") or "job_done",
+            execution_attempt_id=kw.get("execution_attempt_id") or f"{kw.get('job_id')}:attempt:0",
+            result_commit_sha=result_sha,
+            expected_base_commit_sha=kw.get("expected_base_commit_sha"),
+        )
+        return {
+            "verification_status": "ok",
+            "verdict": "pass",
+            "receipt_path": str(path),
+        }
+
+    monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
     monkeypatch.setattr(
         reconciler, "write_result", lambda **kw: None
     )
@@ -672,7 +813,17 @@ def test_evaluators_overlap_with_bounded_capacity_and_distinct_results(
         time.sleep(0.1)
         with lock:
             active -= 1
-        return {"verification_status": "ok", "verdict": "pass"}
+        path = tmp_path / f"receipt_{kwargs['job_id']}.json"
+        _write_test_receipt(
+            path,
+            project_id=kwargs.get("project_id") or "proj-1",
+            node_id=kwargs.get("node_id") or "node-1",
+            job_id=kwargs["job_id"],
+            execution_attempt_id=kwargs.get("execution_attempt_id") or f"{kwargs['job_id']}:attempt:0",
+            result_commit_sha=kwargs["merge_commit_sha"],
+            expected_base_commit_sha=kwargs.get("expected_base_commit_sha"),
+        )
+        return {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)}
 
     writes = []
     coordinator_thread = threading.get_ident()
@@ -727,7 +878,17 @@ def test_evaluator_failure_isolated_from_peer(con, tmp_path, monkeypatch):
     def fake_verify(**kwargs):
         if kwargs["job_id"] == failing[0]:
             raise RuntimeError("intentional evaluator failure")
-        return {"verification_status": "ok", "verdict": "pass"}
+        path = tmp_path / f"receipt_{kwargs['job_id']}.json"
+        _write_test_receipt(
+            path,
+            project_id=kwargs.get("project_id") or "proj-1",
+            node_id=kwargs.get("node_id") or "node-1",
+            job_id=kwargs["job_id"],
+            execution_attempt_id=kwargs.get("execution_attempt_id") or f"{kwargs['job_id']}:attempt:0",
+            result_commit_sha=kwargs["merge_commit_sha"],
+            expected_base_commit_sha=kwargs.get("expected_base_commit_sha"),
+        )
+        return {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)}
 
     writes = []
     monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
@@ -748,13 +909,16 @@ def test_evaluator_failure_isolated_from_peer(con, tmp_path, monkeypatch):
         successful[0]: "pass",
         failing[0]: "error",
     }
-    for job_id, session_db_id in (successful, failing):
-        assert get_executor_session_by_id(con, session_db_id)["state"] == "evaluated"
-        status = con.execute(
-            "SELECT status FROM jobs WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()["status"]
-        assert status == "awaiting_review"
+    assert get_executor_session_by_id(con, successful[1])["state"] == "evaluated"
+    assert get_executor_session_by_id(con, failing[1])["state"] == "collected"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?",
+        (successful[0],),
+    ).fetchone()["status"] == "awaiting_review"
+    assert con.execute(
+        "SELECT status FROM jobs WHERE job_id = ?",
+        (failing[0],),
+    ).fetchone()["status"] == "running"
 
 
 def test_evaluator_finalization_failure_leaves_only_that_session_collected(
@@ -775,10 +939,23 @@ def test_evaluator_finalization_failure_leaves_only_that_session_collected(
         "ADAPTERS",
         {"local_subprocess": object},
     )
+    def fake_verify(**kwargs):
+        path = tmp_path / f"receipt_{kwargs['job_id']}.json"
+        _write_test_receipt(
+            path,
+            project_id=kwargs.get("project_id") or "proj-1",
+            node_id=kwargs.get("node_id") or "node-1",
+            job_id=kwargs["job_id"],
+            execution_attempt_id=kwargs.get("execution_attempt_id") or f"{kwargs['job_id']}:attempt:0",
+            result_commit_sha=kwargs["merge_commit_sha"],
+            expected_base_commit_sha=kwargs.get("expected_base_commit_sha"),
+        )
+        return {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)}
+
     monkeypatch.setattr(
         reconciler,
         "verify_job_return",
-        lambda **kwargs: {"verification_status": "ok", "verdict": "pass"},
+        fake_verify,
     )
     monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
     real_finalize = reconciler._finalize_evaluation
@@ -833,7 +1010,17 @@ def test_external_evaluation_batch_defers_finalization(
     def fake_verify(**kwargs):
         started.set()
         assert release.wait(timeout=2)
-        return {"verification_status": "ok", "verdict": "pass"}
+        path = tmp_path / f"receipt_{kwargs['job_id']}.json"
+        _write_test_receipt(
+            path,
+            project_id=kwargs.get("project_id") or "proj-1",
+            node_id=kwargs.get("node_id") or "node-1",
+            job_id=kwargs["job_id"],
+            execution_attempt_id=kwargs.get("execution_attempt_id") or f"{kwargs['job_id']}:attempt:0",
+            result_commit_sha=kwargs["merge_commit_sha"],
+            expected_base_commit_sha=kwargs.get("expected_base_commit_sha"),
+        )
+        return {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)}
 
     monkeypatch.setattr(reconciler, "verify_job_return", fake_verify)
     monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
@@ -1020,9 +1207,22 @@ def test_reconcile_local_commit_ref_skips_apply_worktree(con, tmp_path, monkeypa
     monkeypatch.setattr(
         reconciler, "ADAPTERS", {"local_subprocess": FakeAdapter}
     )
+    def fake_verify_local(**kw):
+        path = tmp_path / "receipt_local.json"
+        _write_test_receipt(
+            path,
+            project_id=kw.get("project_id") or "proj-1",
+            node_id=kw.get("node_id") or "node-1",
+            job_id=kw["job_id"],
+            execution_attempt_id=kw.get("execution_attempt_id") or f"{kw['job_id']}:attempt:0",
+            result_commit_sha=kw["merge_commit_sha"],
+            expected_base_commit_sha=kw.get("expected_base_commit_sha"),
+        )
+        return {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)}
+
     monkeypatch.setattr(
         reconciler, "verify_job_return",
-        lambda **kw: {"verification_status": "ok", "verdict": "pass"},
+        fake_verify_local,
     )
     monkeypatch.setattr(reconciler, "write_result", lambda **kw: None)
 
@@ -2838,6 +3038,7 @@ def _retry_pending_and_job(con, index=1):
     job = con.execute(
         "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
     ).fetchone()
+    base_sha = job["expected_base_commit_sha"] or "a" * 40
     pending = reconciler.PendingEvaluation(
         session_db_id=session_db_id,
         session_id=f"retry-session-{index}",
@@ -2847,31 +3048,63 @@ def _retry_pending_and_job(con, index=1):
         job_id=job_id,
         attempt=int(job["attempt"]),
         result_commit_sha="b" * 40,
+        expected_base_commit_sha=base_sha,
+        execution_attempt_id=f"{job_id}:attempt:{int(job['attempt'])}",
     )
     return pending, job_id, session_db_id
 
 
-def _nonpass_cited_verification():
-    return {
+def _nonpass_cited_verification(
+    tmp_path: Path,
+    pending: reconciler.PendingEvaluation,
+    *,
+    findings: list | None = None,
+    reasoning: str = "broke scripts/runtime/bridge.py:42",
+    verdict: str = "needs-human-review",
+    criteria_findings: list | None = None,
+):
+    path = tmp_path / f"receipt_{pending.session_db_id}.json"
+    if findings is None:
+        findings = [
+            {
+                "severity": "high",
+                "summary": "broke scripts/runtime/bridge.py:42",
+                "affected_node_ids": [],
+            }
+        ]
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id or f"{pending.job_id}:attempt:{pending.attempt}",
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict=verdict,
+        criteria_verdict="pass",
+        integrity_verdict="drift",
+        intent_preserved=False,
+        findings=findings,
+        reasoning=reasoning,
+    )
+    result = {
         "verification_status": "ok",
-        "verdict": "needs-human-review",
-        "evaluated_commit_sha": "c" * 40,
+        "verdict": verdict,
+        "evaluated_commit_sha": pending.result_commit_sha,
+        "receipt_path": str(path),
         "integrity": {
             "verdict": "drift",
             "intent_preserved": False,
             "graph_integrity_preserved": False,
             "required_human_review": True,
             "confidence": 0.8,
-            "findings": [
-                {
-                    "severity": "high",
-                    "summary": "broke scripts/runtime/bridge.py:42",
-                    "affected_node_ids": [],
-                }
-            ],
-            "reasoning": "violates the runtime contract",
+            "findings": findings,
+            "reasoning": reasoning,
         },
     }
+    if criteria_findings is not None:
+        result["criteria_findings"] = criteria_findings
+    return result
 
 
 def _successful_dispatch(job, repo, repo_path=None):
@@ -2894,8 +3127,9 @@ def test_evaluator_retry_dispatches_on_nonpass_with_cited_findings(
     )
     monkeypatch.setattr(reconciler, "dispatch", _successful_dispatch)
 
+    verification = _nonpass_cited_verification(tmp_path, pending)
     reconciler._finalize_evaluation(
-        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+        con, pending, verification, repo_path=tmp_path
     )
 
     job = con.execute(
@@ -2924,6 +3158,18 @@ def test_evaluator_retry_rebases_on_attempt_zero_not_the_evaluated_commit(
         (base_sha, job_id),
     )
     con.commit()
+    pending = reconciler.PendingEvaluation(
+        session_db_id=pending.session_db_id,
+        session_id=pending.session_id,
+        executor=pending.executor,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        attempt=pending.attempt,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=base_sha,
+        execution_attempt_id=pending.execution_attempt_id,
+    )
     monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: None)
     monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: False)
     monkeypatch.setattr(
@@ -2939,7 +3185,7 @@ def test_evaluator_retry_rebases_on_attempt_zero_not_the_evaluated_commit(
 
     monkeypatch.setattr(reconciler, "dispatch", capture_dispatch)
 
-    verification = _nonpass_cited_verification()
+    verification = _nonpass_cited_verification(tmp_path, pending)
     reconciler._finalize_evaluation(
         con, pending, verification, repo_path=tmp_path
     )
@@ -2976,12 +3222,12 @@ def test_evaluator_retry_skips_when_findings_uncited(con, tmp_path, monkeypatch)
         lambda *a, **k: dispatched.append(1) or _successful_dispatch(*a, **k),
     )
 
-    verification = _nonpass_cited_verification()
-    # Strip the file-path citation: findings without evidence never retry.
-    verification["integrity"]["findings"] = [
-        {"severity": "medium", "summary": "the code feels wrong", "affected_node_ids": []}
-    ]
-    verification["integrity"]["reasoning"] = "vague"
+    verification = _nonpass_cited_verification(
+        tmp_path,
+        pending,
+        findings=[{"severity": "medium", "summary": "the code feels wrong", "affected_node_ids": []}],
+        reasoning="vague",
+    )
 
     reconciler._finalize_evaluation(
         con, pending, verification, repo_path=tmp_path
@@ -3006,8 +3252,9 @@ def test_evaluator_retry_skips_when_budget_exhausted(con, tmp_path, monkeypatch)
     )
     monkeypatch.setattr(reconciler, "dispatch", _successful_dispatch)
 
+    verification = _nonpass_cited_verification(tmp_path, pending)
     reconciler._finalize_evaluation(
-        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+        con, pending, verification, repo_path=tmp_path
     )
 
     job = con.execute(
@@ -3032,11 +3279,22 @@ def test_evaluator_retry_skips_on_pass(con, tmp_path, monkeypatch):
         "dispatch",
         lambda *a, **k: dispatched.append(1) or _successful_dispatch(*a, **k),
     )
+    path = tmp_path / f"receipt_{pending.session_db_id}.json"
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id or f"{pending.job_id}:attempt:{pending.attempt}",
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict="pass",
+    )
 
     reconciler._finalize_evaluation(
         con,
         pending,
-        {"verification_status": "ok", "verdict": "pass"},
+        {"verification_status": "ok", "verdict": "pass", "receipt_path": str(path)},
         repo_path=tmp_path,
     )
 
@@ -3075,7 +3333,8 @@ def test_evaluator_retry_skips_on_verification_error(con, tmp_path, monkeypatch)
         "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
     ).fetchone()
     assert job["attempt"] == 0
-    assert job["status"] == "awaiting_review"
+    assert job["status"] == "running"
+    assert get_executor_session_by_id(con, pending.session_db_id)["state"] == "collected"
     assert dispatched == []
 
 
@@ -3096,8 +3355,9 @@ def test_evaluator_retry_dispatch_failure_routes_to_review(con, tmp_path, monkey
         ),
     )
 
+    verification = _nonpass_cited_verification(tmp_path, pending)
     reconciler._finalize_evaluation(
-        con, pending, _nonpass_cited_verification(), repo_path=tmp_path
+        con, pending, verification, repo_path=tmp_path
     )
 
     job = con.execute(
@@ -3112,3 +3372,170 @@ def test_evaluator_retry_dispatch_failure_routes_to_review(con, tmp_path, monkey
     ).fetchall()
     states = {row["state"] for row in sessions}
     assert "dispatch_failed" in states
+
+
+def test_incomplete_or_crashed_lane_leaves_session_collected_and_consumes_no_repair(
+    con, tmp_path, monkeypatch
+):
+    """Incomplete evaluation or crashed lane leaves session collected, persists diagnostic, and consumes no repair."""
+    pending, job_id, session_db_id = _retry_pending_and_job(con, index=50)
+    writes = []
+    dispatched = []
+    provisional_calls = []
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: writes.append(kwargs))
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: provisional_calls.append(kwargs))
+    monkeypatch.setattr(reconciler, "dispatch", lambda *a, **k: dispatched.append(1))
+
+    # Create a receipt where semantic lane crashed and completeness is partial
+    path = tmp_path / f"receipt_crashed_{session_db_id}.json"
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        completeness_status="partial",
+        semantic_status=LaneExecutionStatus.CRASHED,
+    )
+
+    verification = {
+        "verification_status": "ok",
+        "verdict": "pass",
+        "receipt_path": str(path),
+    }
+
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    # Session stays collected
+    session_row = get_executor_session_by_id(con, session_db_id)
+    assert session_row["state"] == "collected"
+    assert "incomplete evaluation" in (session_row["error"] or "")
+
+    # Job remains running
+    job = con.execute("SELECT status, attempt FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    assert job["status"] == "running"
+    assert job["attempt"] == 0
+
+    # Diagnostic written to results table
+    assert len(writes) == 1
+    assert writes[0]["outcome"] == "error"
+    assert writes[0]["status"] == "error"
+
+    # No executor dispatch or provisional promotion
+    assert dispatched == []
+    assert provisional_calls == []
+
+
+def test_forged_cli_pass_against_durable_negative_receipt_rejects_pass(
+    con, tmp_path, monkeypatch
+):
+    """Forged CLI summary pass with durable fail receipt rejects pass admission."""
+    pending, job_id, session_db_id = _retry_pending_and_job(con, index=60)
+    writes = []
+    provisional_calls = []
+    monkeypatch.setattr(reconciler, "write_result", lambda **kwargs: writes.append(kwargs))
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: provisional_calls.append(kwargs))
+    monkeypatch.setattr(
+        reconciler,
+        "_load_project_yaml",
+        lambda project_id: {"execution_policy": {"retry_budget": 0}},
+    )
+
+    path = tmp_path / f"receipt_durable_fail_{session_db_id}.json"
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict="fail",
+        criteria_verdict="fail",
+        intent_preserved=False,
+    )
+
+    # Forged CLI summary says pass, but durable receipt says fail
+    verification = {
+        "verification_status": "ok",
+        "verdict": "pass",
+        "receipt_path": str(path),
+    }
+
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    # Admission is rejected; outcome is fail from durable receipt
+    assert len(writes) == 1
+    assert writes[0]["outcome"] == "fail"
+    assert get_executor_session_by_id(con, session_db_id)["state"] == "evaluated"
+    assert provisional_calls == []
+
+
+def test_recovery_replay_from_collected_zero_executor_dispatch(
+    con, tmp_path, monkeypatch
+):
+    """Replay from collected state evaluates stored result with executor dispatch count zero."""
+    repo, base_sha = _make_git_repo(tmp_path)
+    job_id = "job_recover"
+    _insert_job(con, job_id=job_id, executor="local_subprocess", repo="owner/repo", status="running")
+    ses_id = insert_executor_session(
+        con, job_id, "local_subprocess", "sess-rec",
+        expected_base_commit_sha=base_sha,
+    )
+    result_sha = "d" * 40
+    update_executor_session_state(con, ses_id, state="collected", result_commit_sha=result_sha)
+    con.commit()
+
+    dispatch_calls = []
+    provisional_calls = []
+    monkeypatch.setattr(reconciler, "ADAPTERS", {"local_subprocess": object})
+    monkeypatch.setattr(reconciler, "dispatch", lambda *a, **k: dispatch_calls.append(1))
+    monkeypatch.setattr(
+        reconciler,
+        "maybe_mark_provisional",
+        lambda **kwargs: provisional_calls.append(kwargs) or True,
+    )
+
+    # Tick 1: Verifier fails.
+    monkeypatch.setattr(
+        reconciler,
+        "verify_job_return",
+        lambda **kw: {"verification_status": "error", "error": "temporary verifier failure"},
+    )
+    reconciler.reconcile_sessions(con, repo)
+
+    # Session remains collected; executor dispatch count is zero
+    assert get_executor_session_by_id(con, ses_id)["state"] == "collected"
+    assert len(dispatch_calls) == 0
+    assert len(provisional_calls) == 0
+
+    # Tick 2: Verifier recovers with valid complete pass receipt.
+    receipt_path = tmp_path / "receipt_recover.json"
+    _write_test_receipt(
+        receipt_path,
+        project_id="proj-1",
+        node_id="node-1",
+        job_id=job_id,
+        execution_attempt_id=f"{job_id}:attempt:0",
+        result_commit_sha=result_sha,
+        expected_base_commit_sha=base_sha,
+        verdict="pass",
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "verify_job_return",
+        lambda **kw: {"verification_status": "ok", "verdict": "pass", "receipt_path": str(receipt_path)},
+    )
+    reconciler.reconcile_sessions(con, repo)
+
+    # Evaluated; executor dispatch count still zero; provisional called once
+    assert get_executor_session_by_id(con, ses_id)["state"] == "evaluated"
+    assert len(dispatch_calls) == 0
+    assert len(provisional_calls) == 1
+
+    # Tick 3: Repeated reconciliation produces no duplicate collection, dispatch, or promotion
+    reconciler.reconcile_sessions(con, repo)
+    assert len(dispatch_calls) == 0
+    assert len(provisional_calls) == 1

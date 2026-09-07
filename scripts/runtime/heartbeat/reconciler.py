@@ -30,8 +30,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from adapters.executor_protocol import PatchResult, SessionRef
 
 from ..results_store import write_result
+from ..verification import receipt_sink
+from ..verification.admission import (
+    ReceiptAdmissionError,
+    read_validated_receipt,
+    receipt_admits,
+    receipt_is_complete,
+)
 from ..verification.bridge import verify_job_return
 from ..verification.retry_budget import should_retry
+from ..verification.schemas import LaneExecutionStatus, Verdict
 from .completion_discipline import submit_completion
 from .dispatcher import ADAPTERS, cancel_remote_session, dispatch
 from .provisional_status import maybe_mark_provisional
@@ -125,6 +133,11 @@ class EvaluationBatch:
             if evidence_manifest_path is not None
             else _session_value(session, "evidence_manifest_path")
         )
+        attempt_val = int(job["attempt"] or 0)
+        exec_attempt_id = (
+            _session_value(session, "execution_attempt_id")
+            or f"{job['job_id']}:attempt:{attempt_val}"
+        )
         self._pending.append(
             PendingEvaluation(
                 session_db_id=str(session["session_db_id"]),
@@ -133,16 +146,14 @@ class EvaluationBatch:
                 project_id=str(job["project_id"] or ""),
                 node_id=str(job["node_id"]),
                 job_id=str(job["job_id"]),
-                attempt=int(job["attempt"] or 0),
+                attempt=attempt_val,
                 result_commit_sha=result_commit_sha,
                 expected_base_commit_sha=(
                     expected_base_commit_sha
                     if expected_base_commit_sha is not None
-                    else session["expected_base_commit_sha"]
+                    else _session_value(session, "expected_base_commit_sha")
                 ),
-                execution_attempt_id=_session_value(
-                    session, "execution_attempt_id"
-                ),
+                execution_attempt_id=exec_attempt_id,
                 evidence_manifest_sha256=_sha256_file(manifest_path),
                 mission_receipt_id=(
                     mission_receipt_id
@@ -1284,31 +1295,170 @@ def _finalize_evaluation(
 ) -> None:
     """Persist one evaluator outcome on the coordinator thread.
 
-    Evaluator evidence never advances graph truth. A verifier error is still
-    routed to awaiting review so the human sees the explicit failure record.
+    Binds a parsed persisted receipt to PendingEvaluation.
+    Evaluator evidence never advances graph truth.
+    On verification error or invalid/incomplete receipt:
+      - persists explicit diagnostic to results table using stable result_id
+      - leaves executor session collected for later evaluation
+      - never dispatches executor or calls provisional promotion.
+    On fully bound terminal negative verdict:
+      - marks session evaluated
+      - preserves cited-findings retry policy and budget
+      - does not call provisional promotion.
+    On fully bound complete pass:
+      - marks session evaluated
+      - drives review routing and provisional integration seam.
     """
-    status = verification.get("verification_status", "unknown")
-    print(f"  → evaluation: {status}")
-    if verification.get("verdict"):
-        print(f"  → verdict: {verification['verdict']}")
-    elif status == "error":
-        print(f"  → evaluation ERROR (non-fatal): {verification.get('error', '')}")
-
-    # Write a results row so jobs_status.py can display the evaluator output
-    # for human review. The verification dict from verify_job_return carries
-    # verdict/criteria/risks evidence; fields the dict does not provide get
-    # safe defaults. The important invariant is that a results row exists.
-    # session_db_id is the full primary key for this attempt. Truncating the
-    # executor's session_id caused distinct local sessions to share a result.
     result_id = f"res_{pending.session_db_id}"
-    v_status = status
-    # outcome reflects the evaluator's verdict; status reflects the job's
-    # routing state. A verification error is still routed to awaiting_review
-    # — the human is the final gate.
-    outcome = verification.get("verdict") or v_status
-    # Use the coordinator connection so the receipt, executor-session state,
-    # and runtime review routing commit together. If receipt persistence fails,
-    # EvaluationBatch rolls back and leaves the session collected for replay.
+    v_status = verification.get("verification_status", "unknown")
+    print(f"  → evaluation: {v_status}")
+
+    # Case 1: Evaluator returned an error (crash, timeout, spawn fail, etc.)
+    if v_status != "ok":
+        error_msg = verification.get("error") or "verification failed"
+        print(f"  → evaluation ERROR (non-fatal): {error_msg}")
+        write_result(
+            result_id=result_id,
+            job_id=pending.job_id,
+            executor=pending.executor,
+            outcome="error",
+            status="error",
+            acceptance_check=verification,
+            con=con,
+        )
+        update_executor_session_state(
+            con,
+            pending.session_db_id,
+            state="collected",
+            error=error_msg,
+        )
+        con.commit()
+        return
+
+    # Case 2: Attempt to read and validate the persisted receipt
+    receipt_file_path = verification.get("receipt_path")
+    if not receipt_file_path:
+        receipt_file_path = str(
+            receipt_sink.receipt_path(
+                pending.project_id,
+                pending.node_id,
+                job_id=pending.job_id,
+                attempt=pending.attempt,
+            )
+        )
+
+    expected_base = pending.expected_base_commit_sha
+    if not expected_base:
+        try:
+            expected_base = recorded_base_commit_sha(con, pending.job_id)
+        except Exception:
+            expected_base = None
+    exec_attempt_id = (
+        pending.execution_attempt_id
+        or f"{pending.job_id}:attempt:{pending.attempt}"
+    )
+
+    try:
+        receipt = read_validated_receipt(
+            receipt_file_path,
+            project_id=pending.project_id,
+            node_id=pending.node_id,
+            job_id=pending.job_id,
+            execution_attempt_id=exec_attempt_id,
+            result_commit_sha=pending.result_commit_sha,
+            expected_base_commit_sha=expected_base,
+        )
+    except ReceiptAdmissionError as exc:
+        error_msg = f"receipt admission error: {exc}"
+        print(f"  → receipt admission ERROR: {error_msg}")
+        diagnostic = dict(verification)
+        diagnostic["verification_status"] = "error"
+        diagnostic["error"] = error_msg
+        write_result(
+            result_id=result_id,
+            job_id=pending.job_id,
+            executor=pending.executor,
+            outcome="error",
+            status="error",
+            acceptance_check=diagnostic,
+            con=con,
+        )
+        update_executor_session_state(
+            con,
+            pending.session_db_id,
+            state="collected",
+            error=error_msg,
+        )
+        con.commit()
+        return
+
+    # Case 3: Receipt is bound, but evaluation was incomplete or a lane crashed
+    if not receipt_is_complete(receipt):
+        error_msg = f"incomplete evaluation: completeness_status={receipt.completeness_status}"
+        if receipt.semantic is None or receipt.semantic.lane_status not in (
+            LaneExecutionStatus.COMPLETED,
+            "completed",
+        ):
+            sem_status = (
+                receipt.semantic.lane_status.value
+                if (receipt.semantic and receipt.semantic.lane_status)
+                else "missing"
+            )
+            error_msg += f", semantic lane={sem_status}"
+        if receipt.integrity is None or receipt.integrity.lane_status not in (
+            LaneExecutionStatus.COMPLETED,
+            "completed",
+        ):
+            int_status = (
+                receipt.integrity.lane_status.value
+                if (receipt.integrity and receipt.integrity.lane_status)
+                else "missing"
+            )
+            error_msg += f", integrity lane={int_status}"
+        print(f"  → incomplete evaluation: {error_msg}")
+        diagnostic = dict(verification)
+        diagnostic["verification_status"] = "error"
+        diagnostic["error"] = error_msg
+        diagnostic["receipt"] = receipt.model_dump()
+        write_result(
+            result_id=result_id,
+            job_id=pending.job_id,
+            executor=pending.executor,
+            outcome="error",
+            status="error",
+            acceptance_check=diagnostic,
+            con=con,
+        )
+        update_executor_session_state(
+            con,
+            pending.session_db_id,
+            state="collected",
+            error=error_msg,
+        )
+        con.commit()
+        return
+
+    # Case 4: Evaluation completed. Determine pass admission vs terminal negative verdict.
+    # Summary pass plus durable fail each reject pass admission.
+    admits = (
+        verification.get("verdict") in (None, "pass", Verdict.PASS)
+        and receipt_admits(receipt)
+    )
+
+    acceptance_dict = dict(verification)
+    receipt_data = receipt.model_dump()
+    acceptance_dict.update(receipt_data)
+    if isinstance(acceptance_dict.get("verdict"), Verdict):
+        acceptance_dict["verdict"] = acceptance_dict["verdict"].value
+    if isinstance(acceptance_dict.get("criteria_verdict"), Verdict):
+        acceptance_dict["criteria_verdict"] = acceptance_dict["criteria_verdict"].value
+
+    outcome = "pass" if admits else (
+        receipt.verdict.value
+        if isinstance(receipt.verdict, Verdict)
+        else str(receipt.verdict)
+    )
+
     write_result(
         result_id=result_id,
         job_id=pending.job_id,
@@ -1316,47 +1466,39 @@ def _finalize_evaluation(
         outcome=outcome,
         status="awaiting_review",
         changed_files=verification.get("changed_files", []),
-        # The CLI summary has no top-level "acceptance_check" key — it
-        # returns verdict/criteria_verdict/integrity/lane_status/etc.
-        # directly. The mediated path (return_router.py) stores the
-        # whole verification dict as acceptance_check; mirror that here
-        # so jobs_status.py show has something to display instead of
-        # silently storing None on every direct-path result.
-        acceptance_check=verification,
-        risks=verification.get("risks"),
-        followup_candidates=verification.get("followup_candidates"),
+        acceptance_check=acceptance_dict,
+        risks=verification.get("risks") or (
+            receipt.semantic.risks if receipt.semantic else None
+        ),
+        followup_candidates=verification.get("followup_candidates") or (
+            receipt.semantic.followup_candidates if receipt.semantic else None
+        ),
         github_action=verification.get("github_action"),
         con=con,
     )
 
-    # Update session to evaluated.
     update_executor_session_state(
         con,
         pending.session_db_id,
         state="evaluated",
     )
-    # Evaluator-driven retry (mirrors return_router): a non-pass verdict with
-    # cited findings and budget room re-dispatches the same node with the
-    # findings as its fix-list; otherwise the job parks at awaiting_review for
-    # the human. Verification errors and passes never retry.
-    redispatched = _maybe_retry_evaluation(
-        con, pending, verification, repo_path=repo_path
-    )
-    if not redispatched:
-        # Mark job as awaiting_review (human decides graph truth).
-        mark_jobs_awaiting_review(con, (pending.job_id,))
-    con.commit()
 
-    # Provisional flow (mode 1 default): a qualifying verdict marks the node
-    # provisional so dependents unblock without waiting on the operator.
-    # complete remains human-only; this never writes it. human_gate nodes
-    # (mode 2) are skipped inside. Non-fatal by design.
-    maybe_mark_provisional(
-        project_id=pending.project_id,
-        node_id=pending.node_id,
-        verification=verification,
-        evidence_ref=result_id,
-    )
+    if admits:
+        mark_jobs_awaiting_review(con, (pending.job_id,))
+        con.commit()
+        maybe_mark_provisional(
+            project_id=pending.project_id,
+            node_id=pending.node_id,
+            verification=acceptance_dict,
+            evidence_ref=result_id,
+        )
+    else:
+        redispatched = _maybe_retry_evaluation(
+            con, pending, acceptance_dict, repo_path=repo_path
+        )
+        if not redispatched:
+            mark_jobs_awaiting_review(con, (pending.job_id,))
+        con.commit()
 
 
 def _config_root() -> Path:
