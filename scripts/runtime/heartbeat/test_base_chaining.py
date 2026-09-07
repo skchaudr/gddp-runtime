@@ -171,17 +171,30 @@ def _record_session_with_receipt(
     session_db_id = f"ses_{job_id}_{attempt_index}"
     exec_attempt_id = f"{job_id}:attempt:{attempt_index}"
 
-    con.execute(
-        """
-        INSERT INTO jobs (job_id, project_id, node_id, attempt, status,
-                          expected_base_commit_sha, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'ready', ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-            attempt = excluded.attempt,
-            updated_at = excluded.updated_at
-        """,
-        (job_id, project_id, node_id, attempt_index, expected_base_sha, updated_at, updated_at),
-    )
+    j_cols = {r[1] for r in con.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "updated_at" in j_cols:
+        con.execute(
+            """
+            INSERT INTO jobs (job_id, project_id, node_id, attempt, status,
+                              expected_base_commit_sha, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'ready', ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                attempt = excluded.attempt,
+                updated_at = excluded.updated_at
+            """,
+            (job_id, project_id, node_id, attempt_index, expected_base_sha, updated_at, updated_at),
+        )
+    else:
+        con.execute(
+            """
+            INSERT INTO jobs (job_id, project_id, node_id, attempt, status,
+                              expected_base_commit_sha, created_at, job_type, executor, repo, title, goal)
+            VALUES (?, ?, ?, ?, 'ready', ?, ?, 'task', 'jules', 'owner/repo', 'Title', 'Goal')
+            ON CONFLICT(job_id) DO UPDATE SET
+                attempt = excluded.attempt
+            """,
+            (job_id, project_id, node_id, attempt_index, expected_base_sha, updated_at),
+        )
 
     con.execute(
         """
@@ -607,13 +620,92 @@ def test_ancestor_of_head_uses_head_only_after_receipt_validation(
     assert base is None and "no recorded result commit" in reason
 
 
-def test_provisional_result_without_repo_path_keeps_result(con, chain_repo, tmp_path):
+def test_provisional_result_without_repo_path_defers(con, chain_repo, tmp_path):
+    """Provisional candidate without a declared repo_path defers commit verification."""
     _, parent_sha, tip_sha = chain_repo
     _record_session_with_receipt(
         con, tmp_path, project_id="proj", node_id="dep-a", result_sha=parent_sha
     )
     base, reason = _chained_base(
         con, _node("dep-a"), "proj",
-        _reader({"dep-a": "provisional"}), tip_sha,
+        _reader({"dep-a": "provisional"}), tip_sha, repo_path=None,
     )
-    assert base == parent_sha and reason is None
+    assert base is None
+    assert reason is not None
+    assert "requires declared repository checkout" in reason
+
+
+def test_plan_dispatches_missing_repo_path_defers_and_reserves_nothing(
+    tmp_path, monkeypatch
+):
+    """Actual _plan_dispatches with missing repo_path defers and reserves zero child jobs/sessions."""
+    from unittest.mock import patch
+    from scripts import init_db
+    from scripts.runtime.heartbeat import runner
+    from scripts.runtime.heartbeat.test_scope_checker import _node as full_node
+
+    db_path = tmp_path / "queue.db"
+    monkeypatch.setattr(init_db, "DB_PATH", db_path)
+    init_db.init_db()
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+
+    # Parent candidate: valid evaluated passing receipt
+    parent_sha = "a" * 40
+    _record_session_with_receipt(
+        con,
+        tmp_path,
+        project_id="proj",
+        node_id="dep-a",
+        job_id="job-parent",
+        result_sha=parent_sha,
+        verdict=Verdict.PASS,
+    )
+
+    # Insert pending event for child dispatch
+    con.execute(
+        """
+        INSERT INTO events (
+            event_id, schema_version, received_at, source, event_type,
+            repo, project_id, status
+        ) VALUES ('evt-child-1', '1.0', '2026-07-30T00:00:00', 'manual',
+                  'manual.dispatch', 'owner/repo', 'proj', 'received')
+        """
+    )
+    con.commit()
+
+    reader = _reader({"dep-a": "provisional"})
+    child_node = full_node("child", "dep-a")
+
+    # With Jules/fake adapter where preflight succeeds without repo_path
+    with patch.object(
+        runner,
+        "classify",
+        return_value={"matched_node_id": "child", "executor_recommendation": "jules"},
+    ):
+        planned = runner._plan_dispatches(
+            con, "proj", "owner/repo", [child_node], reader, repo_path=None
+        )
+
+    # Assert zero planned dispatches
+    assert len(planned) == 0
+
+    # Assert zero child job reservation
+    child_jobs = con.execute(
+        "SELECT COUNT(*) FROM jobs WHERE node_id = 'child'"
+    ).fetchone()[0]
+    assert child_jobs == 0
+
+    # Assert zero child executor session reservation
+    child_sessions = con.execute(
+        "SELECT COUNT(*) FROM executor_sessions WHERE job_id LIKE '%child%'"
+    ).fetchone()[0]
+    assert child_sessions == 0
+
+    # Assert event was deferred back to 'received' with claimed_at cleared
+    evt = con.execute(
+        "SELECT status, claimed_at FROM events WHERE event_id = 'evt-child-1'"
+    ).fetchone()
+    assert evt["status"] == "received"
+    assert evt["claimed_at"] is None

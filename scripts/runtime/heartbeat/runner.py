@@ -798,57 +798,34 @@ def _chained_base(
     dep = provisional[0]
 
     cur = con.cursor()
-    table_names = {
-        r[0]
-        for r in cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
-    }
-    if (
-        "executor_sessions" not in table_names
-        or "jobs" not in table_names
-        or "results" not in table_names
-    ):
+    query = """
+        SELECT es.session_db_id,
+               es.job_id,
+               es.result_commit_sha,
+               es.expected_base_commit_sha,
+               es.execution_attempt_id,
+               es.attempt_index,
+               j.expected_base_commit_sha AS job_expected_base,
+               j.attempt AS job_attempt,
+               es.updated_at
+          FROM executor_sessions es
+          JOIN jobs j ON j.job_id = es.job_id
+         WHERE j.project_id = ?
+           AND j.node_id = ?
+           AND es.state = 'evaluated'
+           AND es.result_commit_sha IS NOT NULL
+         ORDER BY es.updated_at DESC, es.session_db_id DESC
+    """
+    try:
+        cur.execute(query, (project_id, dep))
+        rows = cur.fetchall()
+    except sqlite3.OperationalError:
         return None, (
             f"base-chaining deferred: provisional dep '{dep}' has no "
             "recorded result commit yet"
         )
 
-    j_cols = {row[1] for row in cur.execute("PRAGMA table_info(jobs)").fetchall()}
-    es_cols = {
-        row[1]
-        for row in cur.execute("PRAGMA table_info(executor_sessions)").fetchall()
-    }
-
-    where_clauses = ["j.node_id = ?", "es.result_commit_sha IS NOT NULL"]
-    params: list[object] = [dep]
-
-    if "project_id" in j_cols:
-        where_clauses.insert(0, "j.project_id = ?")
-        params.insert(0, project_id)
-
-    if "state" in es_cols:
-        where_clauses.append("es.state = 'evaluated'")
-
-    query = f"""
-        SELECT es.session_db_id,
-               es.job_id,
-               es.result_commit_sha,
-               es.expected_base_commit_sha,
-               {"es.execution_attempt_id" if "execution_attempt_id" in es_cols else "NULL AS execution_attempt_id"},
-               {"es.attempt_index" if "attempt_index" in es_cols else "NULL AS attempt_index"},
-               {"j.expected_base_commit_sha AS job_expected_base" if "expected_base_commit_sha" in j_cols else "NULL AS job_expected_base"},
-               {"j.attempt AS job_attempt" if "attempt" in j_cols else "NULL AS job_attempt"},
-               es.updated_at
-          FROM executor_sessions es
-          JOIN jobs j ON j.job_id = es.job_id
-         WHERE {" AND ".join(where_clauses)}
-         ORDER BY es.updated_at DESC, es.session_db_id DESC
-    """
-    cur.execute(query, tuple(params))
-    rows = cur.fetchall()
     col_names = [d[0] for d in cur.description]
-
     valid_candidate_sha: str | None = None
 
     for raw_row in rows:
@@ -881,59 +858,18 @@ def _chained_base(
 
         res_cur = con.cursor()
         res_cur.execute(
-            "SELECT acceptance_check, outcome FROM results WHERE result_id = ?",
+            "SELECT acceptance_check FROM results WHERE result_id = ?",
             (f"res_{session_db_id}",),
         )
         res_row = res_cur.fetchone()
-        if res_row is None:
-            res_cur.execute(
-                "SELECT acceptance_check, outcome FROM results WHERE result_id IN (?, ?)",
-                (job_id, f"res_{job_id}"),
-            )
-            res_row = res_cur.fetchone()
-        if res_row is None:
-            res_cur.execute(
-                "SELECT acceptance_check, outcome FROM results WHERE job_id = ?",
-                (job_id,),
-            )
-            all_res = res_cur.fetchall()
-            if len(all_res) == 1:
-                res_row = all_res[0]
-            elif len(all_res) > 1:
-                for candidate_res in all_res:
-                    chk = (
-                        candidate_res[0]
-                        if isinstance(candidate_res, tuple)
-                        else candidate_res["acceptance_check"]
-                    )
-                    if chk:
-                        try:
-                            chk_dict = (
-                                json.loads(chk) if isinstance(chk, str) else chk
-                            )
-                            if (
-                                isinstance(chk_dict, dict)
-                                and chk_dict.get("execution_attempt_id")
-                                == exec_attempt_id
-                            ):
-                                res_row = candidate_res
-                                break
-                        except Exception:
-                            pass
-
-        if res_row is None:
+        if not res_row or not res_row[0]:
             continue
 
-        res_cols = [d[0] for d in res_cur.description]
-        res_dict = dict(zip(res_cols, res_row))
-        acceptance_raw = res_dict.get("acceptance_check")
-        if not acceptance_raw:
-            continue
-
+        acceptance_raw = res_row[0]
         if isinstance(acceptance_raw, str):
             try:
                 check_dict = json.loads(acceptance_raw)
-            except Exception:
+            except json.JSONDecodeError:
                 continue
         elif isinstance(acceptance_raw, dict):
             check_dict = acceptance_raw
@@ -943,9 +879,7 @@ def _chained_base(
         if not isinstance(check_dict, dict):
             continue
 
-        receipt_path = check_dict.get("receipt_path") or check_dict.get(
-            "evidence_path"
-        )
+        receipt_path = check_dict.get("receipt_path")
         if not receipt_path:
             continue
 
@@ -959,9 +893,7 @@ def _chained_base(
                 result_commit_sha=result_sha,
                 expected_base_commit_sha=expected_base,
             )
-        except ReceiptAdmissionError:
-            continue
-        except Exception:
+        except (ReceiptAdmissionError, OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
 
         if not receipt_admits(receipt):
@@ -976,14 +908,20 @@ def _chained_base(
             "recorded result commit yet"
         )
 
-    if repo_path:
-        if not _commit_exists(repo_path, valid_candidate_sha):
-            return None, (
-                f"base-chaining deferred: provisional dep '{dep}' result commit "
-                f"'{valid_candidate_sha}' not found in repository"
-            )
-        if head_sha and _is_ancestor(repo_path, valid_candidate_sha, head_sha):
-            return head_sha, None
+    if not repo_path:
+        return None, (
+            f"base-chaining deferred: provisional dep '{dep}' requires declared "
+            f"repository checkout to verify commit '{valid_candidate_sha}'"
+        )
+
+    if not _commit_exists(repo_path, valid_candidate_sha):
+        return None, (
+            f"base-chaining deferred: provisional dep '{dep}' result commit "
+            f"'{valid_candidate_sha}' not found in repository"
+        )
+
+    if head_sha and _is_ancestor(repo_path, valid_candidate_sha, head_sha):
+        return head_sha, None
 
     return valid_candidate_sha, None
 
