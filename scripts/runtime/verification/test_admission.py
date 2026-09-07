@@ -183,6 +183,21 @@ def test_read_validated_receipt_malformed_json(tmp_path: Path) -> None:
         )
 
 
+def test_read_validated_receipt_malformed_encoding(tmp_path: Path) -> None:
+    bad_file = tmp_path / "broken_encoding.json"
+    bad_file.write_bytes(b"\xff")
+
+    with pytest.raises(ReceiptAdmissionError, match="failed to read receipt file"):
+        read_validated_receipt(
+            bad_file,
+            project_id="proj-1",
+            node_id="node-1",
+            job_id="job-1",
+            execution_attempt_id="job-1:attempt:0",
+            result_commit_sha="b" * 40,
+        )
+
+
 def test_read_validated_receipt_invalid_schema(tmp_path: Path) -> None:
     bad_file = tmp_path / "invalid_schema.json"
     bad_file.write_text(json.dumps({"project_id": "proj-1"}), encoding="utf-8")

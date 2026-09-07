@@ -72,7 +72,7 @@ def read_validated_receipt(
         raise ReceiptAdmissionError(f"receipt file missing: {p}")
     try:
         content = p.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise ReceiptAdmissionError(f"failed to read receipt file {p}: {exc}") from exc
 
     try:

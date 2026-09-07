@@ -3510,6 +3510,10 @@ def test_recovery_replay_from_collected_zero_executor_dispatch(
     assert get_executor_session_by_id(con, ses_id)["state"] == "collected"
     assert len(dispatch_calls) == 0
     assert len(provisional_calls) == 0
+    res_rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(res_rows) == 1
+    assert res_rows[0]["result_id"] == f"res_{ses_id}"
+    assert res_rows[0]["outcome"] == "error"
 
     # Tick 2: Verifier recovers with valid complete pass receipt.
     receipt_path = tmp_path / "receipt_recover.json"
@@ -3534,8 +3538,180 @@ def test_recovery_replay_from_collected_zero_executor_dispatch(
     assert get_executor_session_by_id(con, ses_id)["state"] == "evaluated"
     assert len(dispatch_calls) == 0
     assert len(provisional_calls) == 1
+    res_rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(res_rows) == 1
+    assert res_rows[0]["result_id"] == f"res_{ses_id}"
+    assert res_rows[0]["outcome"] == "pass"
 
     # Tick 3: Repeated reconciliation produces no duplicate collection, dispatch, or promotion
     reconciler.reconcile_sessions(con, repo)
     assert len(dispatch_calls) == 0
     assert len(provisional_calls) == 1
+
+
+def test_gate_rejected_pass_contradictory_gates_persist_diagnostic_and_recover_on_same_row(
+    con, tmp_path, monkeypatch
+):
+    """Gate-rejected combined pass receipts persist diagnostic, remain collected,
+    consume zero repair/dispatch/promotion, and recover on the same results row."""
+    pending, job_id, session_db_id = _retry_pending_and_job(con, index=70)
+    dispatched = []
+    provisional_calls = []
+    monkeypatch.setattr(reconciler, "dispatch", lambda *a, **k: dispatched.append(1))
+    monkeypatch.setattr(
+        reconciler,
+        "maybe_mark_provisional",
+        lambda **kwargs: provisional_calls.append(kwargs) or True,
+    )
+
+    path = tmp_path / f"receipt_contradictory_{session_db_id}.json"
+
+    # Step 1: required_human_review = True contradicts combined pass
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict=Verdict.PASS,
+        criteria_verdict=Verdict.PASS,
+        required_human_review=True,
+    )
+    verification = {
+        "verification_status": "ok",
+        "verdict": "pass",
+        "receipt_path": str(path),
+    }
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    sess = get_executor_session_by_id(con, session_db_id)
+    assert sess["state"] == "collected"
+    assert "required_human_review=True" in (sess["error"] or "")
+
+    rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["result_id"] == f"res_{session_db_id}"
+    assert rows[0]["outcome"] == "error"
+    assert rows[0]["status"] == "error"
+
+    assert len(dispatched) == 0
+    assert len(provisional_calls) == 0
+
+    # Step 2: criteria_verdict = fail contradicts combined pass
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict=Verdict.PASS,
+        criteria_verdict=Verdict.FAIL,
+        required_human_review=False,
+    )
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    sess = get_executor_session_by_id(con, session_db_id)
+    assert sess["state"] == "collected"
+    assert "criteria_verdict" in (sess["error"] or "")
+
+    rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["result_id"] == f"res_{session_db_id}"
+    assert rows[0]["outcome"] == "error"
+    assert len(dispatched) == 0
+    assert len(provisional_calls) == 0
+
+    # Step 3: integrity_verdict = drift contradicts combined pass
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict=Verdict.PASS,
+        criteria_verdict=Verdict.PASS,
+        integrity_verdict="drift",
+        intent_preserved=False,
+        required_human_review=False,
+    )
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    sess = get_executor_session_by_id(con, session_db_id)
+    assert sess["state"] == "collected"
+    assert "integrity_verdict=drift" in (sess["error"] or "")
+    rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(rows) == 1
+    assert len(dispatched) == 0
+    assert len(provisional_calls) == 0
+
+    # Step 4: Recovery to valid fully-admitted evidence updates the same row
+    _write_test_receipt(
+        path,
+        project_id=pending.project_id,
+        node_id=pending.node_id,
+        job_id=pending.job_id,
+        execution_attempt_id=pending.execution_attempt_id,
+        result_commit_sha=pending.result_commit_sha,
+        expected_base_commit_sha=pending.expected_base_commit_sha,
+        verdict=Verdict.PASS,
+        criteria_verdict=Verdict.PASS,
+        integrity_verdict="pass",
+        intent_preserved=True,
+        graph_integrity_preserved=True,
+        required_human_review=False,
+    )
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    sess = get_executor_session_by_id(con, session_db_id)
+    assert sess["state"] == "evaluated"
+
+    rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["result_id"] == f"res_{session_db_id}"
+    assert rows[0]["outcome"] == "pass"
+    assert rows[0]["status"] == "awaiting_review"
+
+    assert len(dispatched) == 0
+    assert len(provisional_calls) == 1
+
+
+def test_malformed_utf8_receipt_decoding_persists_diagnostic_leaves_collected_and_zero_dispatch(
+    con, tmp_path, monkeypatch
+):
+    """Malformed UTF-8 bytes in receipt file normalize into ReceiptAdmissionError,
+    persisting diagnostic results, leaving session collected, with zero executor repairs."""
+    pending, job_id, session_db_id = _retry_pending_and_job(con, index=80)
+    dispatched = []
+    provisional_calls = []
+    monkeypatch.setattr(reconciler, "dispatch", lambda *a, **k: dispatched.append(1))
+    monkeypatch.setattr(reconciler, "maybe_mark_provisional", lambda **kwargs: provisional_calls.append(kwargs))
+
+    bad_path = tmp_path / f"receipt_malformed_{session_db_id}.json"
+    bad_path.write_bytes(b"\xff")
+
+    verification = {
+        "verification_status": "ok",
+        "verdict": "pass",
+        "receipt_path": str(bad_path),
+    }
+
+    reconciler._finalize_evaluation(con, pending, verification, repo_path=tmp_path)
+
+    sess = get_executor_session_by_id(con, session_db_id)
+    assert sess["state"] == "collected"
+    assert "receipt admission error" in (sess["error"] or "")
+
+    rows = con.execute("SELECT * FROM results WHERE job_id = ?", (job_id,)).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["result_id"] == f"res_{session_db_id}"
+    assert rows[0]["outcome"] == "error"
+    assert rows[0]["status"] == "error"
+
+    assert len(dispatched) == 0
+    assert len(provisional_calls) == 0

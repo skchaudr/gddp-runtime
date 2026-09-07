@@ -1453,6 +1453,49 @@ def _finalize_evaluation(
     if isinstance(acceptance_dict.get("criteria_verdict"), Verdict):
         acceptance_dict["criteria_verdict"] = acceptance_dict["criteria_verdict"].value
 
+    # Complete combined-pass receipt that fails admission (contradictory gates)
+    if not admits and receipt.verdict in (Verdict.PASS, "pass"):
+        reasons = []
+        if receipt.criteria_verdict not in (Verdict.PASS, "pass"):
+            reasons.append(f"criteria_verdict={receipt.criteria_verdict}")
+        if receipt.integrity is None:
+            reasons.append("integrity lane missing")
+        else:
+            if receipt.integrity.verdict not in (Verdict.PASS, "pass"):
+                reasons.append(f"integrity_verdict={receipt.integrity.verdict}")
+            if receipt.integrity.intent_preserved is not True:
+                reasons.append(f"intent_preserved={receipt.integrity.intent_preserved}")
+            if receipt.integrity.graph_integrity_preserved is not True:
+                reasons.append(f"graph_integrity_preserved={receipt.integrity.graph_integrity_preserved}")
+            if receipt.integrity.required_human_review is not False:
+                reasons.append(f"required_human_review={receipt.integrity.required_human_review}")
+        if verification.get("verdict") not in (None, "pass", Verdict.PASS):
+            reasons.append(f"cli_verdict={verification.get('verdict')}")
+        reason_str = ", ".join(reasons) if reasons else "admission gates failed"
+        error_msg = f"receipt admission rejected: combined pass contradicts admission gates ({reason_str})"
+        print(f"  → receipt admission ERROR: {error_msg}")
+        diagnostic = dict(verification)
+        diagnostic.update(receipt_data)
+        diagnostic["verification_status"] = "error"
+        diagnostic["error"] = error_msg
+        write_result(
+            result_id=result_id,
+            job_id=pending.job_id,
+            executor=pending.executor,
+            outcome="error",
+            status="error",
+            acceptance_check=diagnostic,
+            con=con,
+        )
+        update_executor_session_state(
+            con,
+            pending.session_db_id,
+            state="collected",
+            error=error_msg,
+        )
+        con.commit()
+        return
+
     outcome = "pass" if admits else (
         receipt.verdict.value
         if isinstance(receipt.verdict, Verdict)
