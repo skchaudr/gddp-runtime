@@ -42,15 +42,23 @@ def check_scope(
     #    awaiting_review counts as active: a node whose work sits in the human
     #    review queue must not be dispatched again by a later heartbeat.
     cur = con.cursor()
-    cur.execute(
-        "SELECT job_id FROM jobs WHERE node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
-        (node.node_id,),
-    )
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(jobs)")}
+    if "project_id" in cols:
+        cur.execute(
+            "SELECT job_id FROM jobs WHERE project_id = ? AND node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
+            (project_id, node.node_id),
+        )
+    else:
+        cur.execute(
+            "SELECT job_id FROM jobs WHERE node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
+            (node.node_id,),
+        )
     active = cur.fetchone()
     if active:
+        job_id = active["job_id"] if hasattr(active, "keys") else active[0]
         return ScopeCheckResult(
             safe=False,
-            reason=f"Active job already exists for {node.node_id}: {active['job_id']}",
+            reason=f"Active job already exists for {node.node_id}: {job_id}",
         )
 
     # 2. Dependency check — all depends_on must be satisfied in the graph.

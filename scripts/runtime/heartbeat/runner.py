@@ -63,6 +63,11 @@ from .state_recorder import (
 
 from ..repo_resolver import resolution_candidates, resolve_repo_checkout
 from ..return_router import handle_merged_pr
+from ..verification.admission import (
+    ReceiptAdmissionError,
+    read_validated_receipt,
+    receipt_admits,
+)
 
 # GDDP_RUNTIME_ROOT points to the runtime state root; OPCLAW_ROOT remains a legacy fallback.
 _default_root = Path(__file__).parent.parent.parent.parent
@@ -791,28 +796,217 @@ def _chained_base(
             f"({', '.join(provisional)}); operator merge/accept required first"
         )
     dep = provisional[0]
-    row = con.execute(
-        """SELECT es.result_commit_sha
-             FROM executor_sessions es
-             JOIN jobs j ON j.job_id = es.job_id
-            WHERE j.node_id = ? AND es.result_commit_sha IS NOT NULL
-            ORDER BY es.updated_at DESC, es.session_db_id DESC
-            LIMIT 1""",
-        (dep,),
-    ).fetchone()
-    result_sha = row["result_commit_sha"] if row else None
-    if not result_sha:
+
+    cur = con.cursor()
+    table_names = {
+        r[0]
+        for r in cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if (
+        "executor_sessions" not in table_names
+        or "jobs" not in table_names
+        or "results" not in table_names
+    ):
         return None, (
             f"base-chaining deferred: provisional dep '{dep}' has no "
             "recorded result commit yet"
         )
-    if head_sha and repo_path and _is_ancestor(repo_path, result_sha, head_sha):
-        # The dep's result is already reachable from the checkout tip — e.g.
-        # sibling fan-out whose parents landed as a commit chain on one
-        # branch. Build on the tip so siblings share one engagement base;
-        # chaining each to its own parent's commit can never co-dispatch.
-        return head_sha, None
-    return result_sha, None
+
+    j_cols = {row[1] for row in cur.execute("PRAGMA table_info(jobs)").fetchall()}
+    es_cols = {
+        row[1]
+        for row in cur.execute("PRAGMA table_info(executor_sessions)").fetchall()
+    }
+
+    where_clauses = ["j.node_id = ?", "es.result_commit_sha IS NOT NULL"]
+    params: list[object] = [dep]
+
+    if "project_id" in j_cols:
+        where_clauses.insert(0, "j.project_id = ?")
+        params.insert(0, project_id)
+
+    if "state" in es_cols:
+        where_clauses.append("es.state = 'evaluated'")
+
+    query = f"""
+        SELECT es.session_db_id,
+               es.job_id,
+               es.result_commit_sha,
+               es.expected_base_commit_sha,
+               {"es.execution_attempt_id" if "execution_attempt_id" in es_cols else "NULL AS execution_attempt_id"},
+               {"es.attempt_index" if "attempt_index" in es_cols else "NULL AS attempt_index"},
+               {"j.expected_base_commit_sha AS job_expected_base" if "expected_base_commit_sha" in j_cols else "NULL AS job_expected_base"},
+               {"j.attempt AS job_attempt" if "attempt" in j_cols else "NULL AS job_attempt"},
+               es.updated_at
+          FROM executor_sessions es
+          JOIN jobs j ON j.job_id = es.job_id
+         WHERE {" AND ".join(where_clauses)}
+         ORDER BY es.updated_at DESC, es.session_db_id DESC
+    """
+    cur.execute(query, tuple(params))
+    rows = cur.fetchall()
+    col_names = [d[0] for d in cur.description]
+
+    valid_candidate_sha: str | None = None
+
+    for raw_row in rows:
+        session = dict(zip(col_names, raw_row))
+        session_db_id = session.get("session_db_id")
+        job_id = session.get("job_id")
+        result_sha = session.get("result_commit_sha")
+        if not result_sha:
+            continue
+
+        attempt_idx = session.get("attempt_index")
+        if attempt_idx is None:
+            attempt_idx = session.get("job_attempt")
+        if attempt_idx is None:
+            attempt_idx = 0
+        else:
+            try:
+                attempt_idx = int(attempt_idx)
+            except (ValueError, TypeError):
+                attempt_idx = 0
+
+        exec_attempt_id = session.get("execution_attempt_id")
+        if not exec_attempt_id:
+            exec_attempt_id = f"{job_id}:attempt:{attempt_idx}"
+
+        expected_base = (
+            session.get("expected_base_commit_sha")
+            or session.get("job_expected_base")
+        )
+
+        res_cur = con.cursor()
+        res_cur.execute(
+            "SELECT acceptance_check, outcome FROM results WHERE result_id = ?",
+            (f"res_{session_db_id}",),
+        )
+        res_row = res_cur.fetchone()
+        if res_row is None:
+            res_cur.execute(
+                "SELECT acceptance_check, outcome FROM results WHERE result_id IN (?, ?)",
+                (job_id, f"res_{job_id}"),
+            )
+            res_row = res_cur.fetchone()
+        if res_row is None:
+            res_cur.execute(
+                "SELECT acceptance_check, outcome FROM results WHERE job_id = ?",
+                (job_id,),
+            )
+            all_res = res_cur.fetchall()
+            if len(all_res) == 1:
+                res_row = all_res[0]
+            elif len(all_res) > 1:
+                for candidate_res in all_res:
+                    chk = (
+                        candidate_res[0]
+                        if isinstance(candidate_res, tuple)
+                        else candidate_res["acceptance_check"]
+                    )
+                    if chk:
+                        try:
+                            chk_dict = (
+                                json.loads(chk) if isinstance(chk, str) else chk
+                            )
+                            if (
+                                isinstance(chk_dict, dict)
+                                and chk_dict.get("execution_attempt_id")
+                                == exec_attempt_id
+                            ):
+                                res_row = candidate_res
+                                break
+                        except Exception:
+                            pass
+
+        if res_row is None:
+            continue
+
+        res_cols = [d[0] for d in res_cur.description]
+        res_dict = dict(zip(res_cols, res_row))
+        acceptance_raw = res_dict.get("acceptance_check")
+        if not acceptance_raw:
+            continue
+
+        if isinstance(acceptance_raw, str):
+            try:
+                check_dict = json.loads(acceptance_raw)
+            except Exception:
+                continue
+        elif isinstance(acceptance_raw, dict):
+            check_dict = acceptance_raw
+        else:
+            continue
+
+        if not isinstance(check_dict, dict):
+            continue
+
+        receipt_path = check_dict.get("receipt_path") or check_dict.get(
+            "evidence_path"
+        )
+        if not receipt_path:
+            continue
+
+        try:
+            receipt = read_validated_receipt(
+                receipt_path,
+                project_id=project_id,
+                node_id=dep,
+                job_id=job_id,
+                execution_attempt_id=exec_attempt_id,
+                result_commit_sha=result_sha,
+                expected_base_commit_sha=expected_base,
+            )
+        except ReceiptAdmissionError:
+            continue
+        except Exception:
+            continue
+
+        if not receipt_admits(receipt):
+            continue
+
+        valid_candidate_sha = result_sha
+        break
+
+    if not valid_candidate_sha:
+        return None, (
+            f"base-chaining deferred: provisional dep '{dep}' has no "
+            "recorded result commit yet"
+        )
+
+    if repo_path:
+        if not _commit_exists(repo_path, valid_candidate_sha):
+            return None, (
+                f"base-chaining deferred: provisional dep '{dep}' result commit "
+                f"'{valid_candidate_sha}' not found in repository"
+            )
+        if head_sha and _is_ancestor(repo_path, valid_candidate_sha, head_sha):
+            return head_sha, None
+
+    return valid_candidate_sha, None
+
+
+def _commit_exists(repo_path: str | Path | None, commit_sha: str | None) -> bool:
+    """True if commit_sha exists and is a commit in repo_path.
+
+    Any git failure (missing objects, corrupt repo, timeout) returns False.
+    Never fetches from a remote.
+    """
+    if not repo_path or not commit_sha:
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
 
 
 def _is_ancestor(repo_path: str | None, maybe_ancestor: str, descendant: str) -> bool:
