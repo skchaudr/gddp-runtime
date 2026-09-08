@@ -10,7 +10,7 @@
     "node_status_history": "node_status_history/invariants.json",
     "scripts": "scripts/invariants.json"
   },
-  "core_system_invariants": [
+  "invariants": [
     {
       "id": "system.human-authority-on-graph-truth",
       "name": "Human Authority on Graph Truth",
