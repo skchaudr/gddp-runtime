@@ -84,6 +84,38 @@ Prefer pure, deterministic, sub-second tests with fixed values and no services, 
 Never invoke the heartbeat runner directly. Heartbeat operations use only `deploy/mini-heartbeat/bin/arm.sh`, `smoke.sh`, or launchd, which source `deploy/mini-heartbeat/env/gddp.env` through `common.sh`.
 
 
+## Invariant-directed decision workflow
+
+Every core subsystem contains a dedicated, machine-searchable `invariants.json` manifest (`deploy/`, `entities/`, `events/`, `jobs/`, `node_status_history/`, `scripts/`, and `docs/invariants/`). Each manifest provides:
+- `id`: Stable kebab-case invariant identifier
+- `name`: Human-readable invariant title
+- `quoted_invariant`: Canonical doctrine quotation
+- `rule`: Positive operational directive to uphold
+- `drift_pattern`: Common failure mode or incorrect assumption to avoid
+- `source`: Exact canonical document pointer
+
+### Pre-decision lookup pattern
+
+Prior to modifying code, queue states, deploy targets, or architecture in a subsystem, perform a single targeted query against that subsystem's `invariants.json`. This returns bounded context (~30–50 lines) establishing the operational boundary before taking action.
+
+1. **Subsystem Direct Read (Recommended):**
+   Execute `read` on `<subsystem>/invariants.json` (for example, `read(path="deploy/invariants.json")`) to inspect all subsystem rules and drift patterns in one bounded call.
+
+2. **Topic-Targeted Ripgrep:**
+   Execute a targeted ripgrep to locate specific rules and drift patterns across all manifests:
+   ```bash
+   rg -C 3 "<topic>" */invariants.json
+   ```
+   Examples:
+   - Check heartbeat rules: `rg -C 4 "heartbeat" deploy/invariants.json`
+   - Check authority rules: `rg -C 4 "acceptance" entities/invariants.json`
+   - Check queue rules: `rg -C 4 "queue" jobs/invariants.json`
+   - Scan common drift traps: `rg -C 2 "drift_pattern" <subsystem>/invariants.json`
+
+3. **Master Catalog Reference:**
+   Consult `docs/invariants/invariants.json` for the global system index and core governance rules.
+
+
 ## Agent-driven development workflow
 
 The default reader of this repo is often another agent. Optimize for the next session being able to start immediately, not for the current session merely appearing done.
@@ -99,6 +131,7 @@ The default reader of this repo is often another agent. Optimize for the next se
 ### During-work rules
 
 - Keep changes scoped to the requested task. Separate formatting-only churn from functional/doc changes unless the formatter is the task.
+- Query target subsystem invariants (`<subsystem>/invariants.json`) before making structural decisions, verifying alignment with rules and avoiding known drift patterns.
 - Update `.gitignore` as soon as a tool creates repeatable local noise (`node_modules/`, `dist/`, caches, local logs, generated media, temp exports), but do not hide meaningful source artifacts just to get a clean status.
 - Co-author ALL Git commits with `<agent-name> + <model>`. This is crucial for traceability.
 - Make small commits at coherent checkpoints. A repo with hours of uncommitted agent work is an unsafe handoff state.
