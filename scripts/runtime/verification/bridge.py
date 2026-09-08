@@ -425,7 +425,27 @@ def _run_cli(
     # configurable via GDDP_DEEPSEEK_KEY_CMD (default: the `pass` password
     # manager, which is Big Pi-specific). Best-effort: if the fetch fails, the
     # verifier's own error surfaces in the error record.
-    if semantic_provider == "deepseek" and not env.get("DEEPSEEK_API_KEY"):
+    if semantic_provider in ("openrouter", "auto") and not env.get("OPENROUTER_API_KEY"):
+        key_cmd = os.environ.get("GDDP_OPENROUTER_KEY_CMD")
+        if key_cmd:
+            parts = shlex.split(key_cmd)
+            binary = parts[0] if parts else ""
+            if binary and shutil.which(binary) is not None:
+                try:
+                    cred_proc = subprocess.run(
+                        parts,
+                        capture_output=True, text=True, timeout=15, check=False,
+                    )
+                    key = cred_proc.stdout.strip()
+                    if cred_proc.returncode == 0 and key:
+                        env["OPENROUTER_API_KEY"] = key
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+
+    if (
+        semantic_provider == "deepseek"
+        or (semantic_provider == "auto" and not env.get("OPENROUTER_API_KEY"))
+    ) and not env.get("DEEPSEEK_API_KEY"):
         key_cmd = os.environ.get("GDDP_DEEPSEEK_KEY_CMD", "pass show api/deepseek")
         parts = shlex.split(key_cmd)
         binary = parts[0] if parts else ""

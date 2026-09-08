@@ -98,9 +98,43 @@ def test_missing_approved_auth_fails_before_pi_starts(tmp_path: Path) -> None:
         )
 
 
+def test_openrouter_environment_removes_competing_routes(tmp_path: Path) -> None:
+    inherited_agent_dir = tmp_path / "inherited-agent"
+    real_pi = _write_exec(tmp_path / "real" / "pi")
+    env = build_pi_environment(
+        "openrouter",
+        tmp_path / "sandbox",
+        source_env={
+            "HOME": str(tmp_path / "home"),
+            "PATH": "/usr/bin",
+            "OPENROUTER_API_KEY": "openrouter-key",
+            "DEEPSEEK_API_KEY": "wrong-deepseek-key",
+            "OPENAI_API_KEY": "wrong-openai-key",
+            "PI_CODING_AGENT_DIR": str(inherited_agent_dir),
+            "PI_REAL_BIN": str(real_pi),
+            "PI_MODEL": "leaked-model",
+            "PI_PROVIDER": "leaked-provider",
+        },
+    )
+
+    assert env["OPENROUTER_API_KEY"] == "openrouter-key"
+    assert env["PATH"] == "/usr/bin"
+    assert env["PI_CODING_AGENT_DIR"] == str(tmp_path / "sandbox" / "agent")
+    assert env["PI_REAL_BIN"] == str(real_pi)
+    assert "DEEPSEEK_API_KEY" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "PI_MODEL" not in env
+    assert "PI_PROVIDER" not in env
+
+
+def test_missing_openrouter_key_fails_before_pi_starts(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
+        build_pi_environment("openrouter", tmp_path / "openrouter", source_env={})
+
+
 def test_unapproved_provider_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="approved providers"):
-        build_pi_environment("openrouter", tmp_path / "sandbox", source_env={})
+        build_pi_environment("anthropic", tmp_path / "sandbox", source_env={})
 
 
 def test_symlinked_agent_wrapper_is_skipped(tmp_path: Path) -> None:

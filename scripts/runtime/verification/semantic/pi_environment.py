@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 
-APPROVED_PI_PROVIDERS = {"deepseek", "openai-codex"}
+APPROVED_PI_PROVIDERS = {"deepseek", "openai-codex", "openrouter"}
 
 _WRAPPER_BASENAMES = ("pi", "pi-lite", "pi-full", "pi-studio")
 
@@ -23,6 +23,8 @@ _ROUTING_ENV_NAMES = {
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_GATEWAY_ID",
     "PI_CODING_AGENT_DIR",
+    "PI_MODEL",
+    "PI_PROVIDER",
 }
 
 
@@ -42,7 +44,7 @@ def build_pi_environment(
     if provider not in APPROVED_PI_PROVIDERS:
         raise RuntimeError(
             f"unsupported evaluator Pi provider {provider!r}; "
-            "approved providers are deepseek and openai-codex"
+            "approved providers are deepseek, openai-codex, and openrouter"
         )
 
     ambient = dict(os.environ if source_env is None else source_env)
@@ -67,6 +69,11 @@ def build_pi_environment(
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY is required for evaluator Pi provider deepseek")
         env["DEEPSEEK_API_KEY"] = api_key
+    elif provider == "openrouter":
+        api_key = ambient.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is required for evaluator Pi provider openrouter")
+        env["OPENROUTER_API_KEY"] = api_key
     else:
         auth_file = _chatgpt_auth_file(ambient)
         _require_chatgpt_oauth(auth_file)

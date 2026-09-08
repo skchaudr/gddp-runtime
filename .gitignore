@@ -38,6 +38,7 @@ Thumbs.db
 
 # Logs
 *.log
+pi-session-*.html
 
 # Graphify rebuild cache
 graphify-out/cache/

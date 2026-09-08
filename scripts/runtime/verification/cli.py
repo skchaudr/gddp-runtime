@@ -41,10 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--semantic-provider",
-        choices=["auto", "deepseek", "chatgpt", "glm"],
+        choices=["auto", "openrouter", "deepseek", "chatgpt", "glm"],
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
         help=(
-            "Evaluator provider. Pi allows DeepSeek or ChatGPT OAuth; GLM is rejected."
+            "Evaluator provider. Pi allows OpenRouter, DeepSeek or ChatGPT OAuth; GLM is rejected."
         ),
     )
     parser.add_argument(
@@ -115,21 +115,25 @@ def _offline_semantic_skip(**_kwargs):
 def _pi_provider(args) -> str:
     """Map the gddp --semantic-provider name to a pi provider name."""
     requested = args.semantic_provider
+    if requested == "openrouter":
+        return "openrouter"
     if requested == "deepseek":
         return "deepseek"
     if requested == "chatgpt":
         return "openai-codex"
     if requested == "glm":
         raise RuntimeError(
-            "evaluator Pi does not allow GLM; use deepseek or chatgpt (openai-codex OAuth)"
+            "evaluator Pi does not allow GLM; use openrouter, deepseek, or chatgpt (openai-codex OAuth)"
         )
-    # auto: prefer the explicit DeepSeek key, then ChatGPT OAuth.
+    # auto: prefer OpenRouter when key present, fallback to explicit DeepSeek key, then ChatGPT OAuth.
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return "openrouter"
     if os.environ.get("DEEPSEEK_API_KEY"):
         return "deepseek"
     if has_chatgpt_oauth():
         return "openai-codex"
     raise RuntimeError(
-        "--semantic-harness pi needs DEEPSEEK_API_KEY or configured openai-codex OAuth"
+        "--semantic-harness pi needs OPENROUTER_API_KEY, DEEPSEEK_API_KEY, or configured openai-codex OAuth"
     )
 
 
@@ -145,9 +149,16 @@ def main(argv: list[str] | None = None) -> int:
         # Deterministic floor only — never construct agent infrastructure.
         semantic_harness = _offline_semantic_skip
     else:
+        provider = _pi_provider(args)
+        model = args.semantic_pi_model or None
+        if not model:
+            if provider == "openrouter":
+                model = "google/gemini-3.8-flash"
+            elif provider == "deepseek":
+                model = "deepseek-v4-flash"
         pi_runner = PiHarnessRunner(
-            provider=_pi_provider(args),
-            model=args.semantic_pi_model or None,
+            provider=provider,
+            model=model,
             thinking=args.semantic_thinking,
             config_root=args.config_root.resolve() if args.config_root else None,
         )
@@ -155,9 +166,16 @@ def main(argv: list[str] | None = None) -> int:
 
     integrity_harness = None
     if args.integrity == "on":
+        provider = _pi_provider(args)
+        model = args.semantic_pi_model or None
+        if not model:
+            if provider == "openrouter":
+                model = "google/gemini-3.8-flash"
+            elif provider == "deepseek":
+                model = "deepseek-v4-flash"
         integrity_pi_runner = IntegrityHarnessRunner(
-            provider=_pi_provider(args),
-            model=args.semantic_pi_model or None,
+            provider=provider,
+            model=model,
             thinking=args.semantic_thinking,
         )
         integrity_harness = integrity_pi_runner.run
