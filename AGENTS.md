@@ -24,7 +24,7 @@ Nodes are evaluated by an agentic evaluator; its purpose is to protect user inte
 
 Evaluator does not modify the graph; as source of truth and embodiment of human intent (organizational or business logic, etc.), only a human operator tasked with overseeing the graph may modify it. There is only ONE path to nodes being accepted, and that is through the human operator; anything else is provisional at best.
 
-`gddp` is the operator-facing control plane. Runtime job reads and writes route through `scripts/jobs_status.py`; that backend may update runtime job/queue state but must never update graph/node status.
+`gddp` is the canonical control plane for operators and agents. Job and queue operations route through `gddp jobs` (`gddp jobs list`, `gddp jobs show <ref>`, `gddp jobs set <ref> <state> --reason "..."`, `gddp jobs retry <ref> --reason "..."`). The runtime backend (`scripts/jobs_status.py`) updates queue records under `gddp jobs` authority, while graph truth remains strictly human-governed.
 
 **Heartbeat entrypoint (agents):** never invoke directly  
 Use the mini-heartbeat kit only — `deploy/mini-heartbeat/bin/` (`arm.sh`, `smoke.sh`, launchd) which sources `deploy/mini-heartbeat/env/gddp.env` via `common.sh`. Raw runner calls skip `GDDP_LOCAL_SUBPROCESS_ARGV` / spool and create failed jobs before any executor launches.
