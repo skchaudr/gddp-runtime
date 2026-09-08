@@ -86,34 +86,37 @@ Never invoke the heartbeat runner directly. Heartbeat operations use only `deplo
 
 ## Invariant-directed decision workflow
 
-Every core subsystem contains a dedicated, machine-searchable `invariants.json` manifest (`deploy/`, `entities/`, `events/`, `jobs/`, `node_status_history/`, `scripts/`, and `docs/invariants/`). Each manifest provides:
-- `id`: Stable kebab-case invariant identifier
-- `name`: Human-readable invariant title
-- `quoted_invariant`: Canonical doctrine quotation
+Every core subsystem contains a dedicated JSON-structured manifest at `<subsystem>/AGENTS.md` (`deploy/`, `entities/`, `events/`, `jobs/`, `node_status_history/`, `scripts/`, and `docs/invariants/`). Each manifest separates deliberate permanent system invariants from current implementation realities. Each entry provides:
+- `id`: Stable kebab-case identifier
+- `name`: Human-readable title
+- `is_invariant`: Boolean indicating permanent invariant status
+- `invariant`: Canonical doctrine quotation or reference, or "n/a" for current implementation details
 - `rule`: Positive operational directive to uphold
-- `drift_pattern`: Common failure mode or incorrect assumption to avoid
-- `source`: Exact canonical document pointer
+- `current_implementation`: Description of present system mechanics or architectural state
+- `drift_pattern`: Failure mode or incorrect assumption to avoid
+- `source`: Exact origin pointer
 
 ### Pre-decision lookup pattern
 
-Prior to modifying code, queue states, deploy targets, or architecture in a subsystem, consult relevant invariants to verify operational boundaries before taking action. Retrieval adapts to scope: perform a targeted topic query or inspect the subsystem manifest directly.
+Prior to modifying code, queue states, deploy targets, or architecture in a subsystem, consult relevant invariants and implementation boundaries to verify system alignment before taking action. Retrieval adapts to scope: perform a targeted topic query or inspect the subsystem manifest directly.
 
 1. **Subsystem Direct Read (Recommended):**
-   Execute `read` on `<subsystem>/invariants.json` (for example, `read(path="deploy/invariants.json")`) to inspect all subsystem rules and drift patterns in one bounded call.
+   Execute `read` on `<subsystem>/AGENTS.md` (for example, `read(path="deploy/AGENTS.md")`) to inspect all subsystem rules, implementation postures, and drift patterns in one bounded call.
 
 2. **Topic-Targeted Ripgrep:**
    Execute a targeted ripgrep to locate specific rules and drift patterns across all manifests:
    ```bash
-   rg -C 3 "<topic>" */invariants.json
+   rg -C 3 "<topic>" */AGENTS.md
    ```
    Examples:
-   - Check heartbeat rules: `rg -C 4 "heartbeat" deploy/invariants.json`
-   - Check authority rules: `rg -C 4 "acceptance" entities/invariants.json`
-   - Check queue rules: `rg -C 4 "queue" jobs/invariants.json`
-   - Scan common drift traps: `rg -C 2 "drift_pattern" <subsystem>/invariants.json`
+   - Check heartbeat rules: `rg -C 4 "heartbeat" deploy/AGENTS.md`
+   - Check authority rules: `rg -C 4 "acceptance" entities/AGENTS.md`
+   - Check queue rules: `rg -C 4 "queue" jobs/AGENTS.md`
+   - Scan common drift traps: `rg -C 2 "drift_pattern" <subsystem>/AGENTS.md`
+   - Inspect true invariants: `rg -C 2 '"is_invariant": true' <subsystem>/AGENTS.md`
 
 3. **Master Catalog Reference:**
-   Consult `docs/invariants/invariants.json` for the global system index and core governance rules.
+   Consult `docs/invariants/AGENTS.md` for the global system index and core governance rules.
 
 
 ## Agent-driven development workflow
@@ -131,7 +134,7 @@ The default reader of this repo is often another agent. Optimize for the next se
 ### During-work rules
 
 - Keep changes scoped to the requested task. Separate formatting-only churn from functional/doc changes unless the formatter is the task.
-- Consult relevant subsystem invariants (`<subsystem>/invariants.json`) via targeted query or direct manifest inspection before making structural decisions, verifying alignment with rules and avoiding known drift patterns.
+- Consult relevant subsystem boundaries (`<subsystem>/AGENTS.md`) via targeted query or direct manifest inspection before making structural decisions, verifying alignment with rules and avoiding known drift patterns.
 - Update `.gitignore` as soon as a tool creates repeatable local noise (`node_modules/`, `dist/`, caches, local logs, generated media, temp exports), but do not hide meaningful source artifacts just to get a clean status.
 - Co-author ALL Git commits with `<agent-name> + <model>`. This is crucial for traceability.
 - Make small commits at coherent checkpoints. A repo with hours of uncommitted agent work is an unsafe handoff state.
