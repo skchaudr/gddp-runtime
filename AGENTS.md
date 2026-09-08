@@ -96,7 +96,7 @@ Every core subsystem contains a dedicated, machine-searchable `invariants.json` 
 
 ### Pre-decision lookup pattern
 
-Prior to modifying code, queue states, deploy targets, or architecture in a subsystem, perform a single targeted query against that subsystem's `invariants.json`. This returns bounded context (~30–50 lines) establishing the operational boundary before taking action.
+Prior to modifying code, queue states, deploy targets, or architecture in a subsystem, consult relevant invariants to verify operational boundaries before taking action. Retrieval adapts to scope: perform a targeted topic query or inspect the subsystem manifest directly.
 
 1. **Subsystem Direct Read (Recommended):**
    Execute `read` on `<subsystem>/invariants.json` (for example, `read(path="deploy/invariants.json")`) to inspect all subsystem rules and drift patterns in one bounded call.
@@ -131,7 +131,7 @@ The default reader of this repo is often another agent. Optimize for the next se
 ### During-work rules
 
 - Keep changes scoped to the requested task. Separate formatting-only churn from functional/doc changes unless the formatter is the task.
-- Query target subsystem invariants (`<subsystem>/invariants.json`) before making structural decisions, verifying alignment with rules and avoiding known drift patterns.
+- Consult relevant subsystem invariants (`<subsystem>/invariants.json`) via targeted query or direct manifest inspection before making structural decisions, verifying alignment with rules and avoiding known drift patterns.
 - Update `.gitignore` as soon as a tool creates repeatable local noise (`node_modules/`, `dist/`, caches, local logs, generated media, temp exports), but do not hide meaningful source artifacts just to get a clean status.
 - Co-author ALL Git commits with `<agent-name> + <model>`. This is crucial for traceability.
 - Make small commits at coherent checkpoints. A repo with hours of uncommitted agent work is an unsafe handoff state.
