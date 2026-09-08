@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "scope": "entities",
+  "description": "System invariants governing domain entities, node authority, and evaluation boundaries.",
+  "invariants": [
+    {
+      "id": "entities.sole-acceptance-authority",
+      "name": "Sole Acceptance Authority on Graph Truth",
+      "quoted_invariant": "Only a human operator modifying graph truth (gddp node browse) can transition a node to accepted.",
+      "rule": "Reserve node acceptance transitions exclusively for human operators using gddp control plane tooling.",
+      "drift_pattern": "Allowing evaluators, executors, or automated test suites to mark graph nodes accepted.",
+      "source": "docs/invariants/invariants.md#1-human-authority-on-graph-truth"
+    },
+    {
+      "id": "entities.automated-gates-second-to-last",
+      "name": "Automated Gates are Second-to-Last",
+      "quoted_invariant": "Passing unit tests, clean linter outputs, executor success, and passing evaluator verdicts are evidence for human review, never graph truth.",
+      "rule": "Treat all test results, execution receipts, and evaluator verdicts as advisory evidence presented for human review.",
+      "drift_pattern": "Equating green test passes or positive verdicts with completed graph truth.",
+      "source": "docs/invariants/invariants.md#1-human-authority-on-graph-truth"
+    },
+    {
+      "id": "entities.node-atomic-unit-of-intent",
+      "name": "Node as Atomic Unit of Intent",
+      "quoted_invariant": "A node is the atomic unit of project intent. It defines the goal, constraints, and acceptance criteria.",
+      "rule": "Scope all implementation, validation, and evaluation strictly to the declared boundaries and criteria of the target node.",
+      "drift_pattern": "Expanding node boundaries during execution or treating surrounding uncommitted ideas as part of the node scope.",
+      "source": "docs/invariants/invariants.md#2-intent-preservation--node-integrity"
+    },
+    {
+      "id": "entities.context-separation-evaluator",
+      "name": "Context Separation Between Execution and Evaluation",
+      "quoted_invariant": "The evaluator must not inherit the worker's operational framing or executor-specific workflow instructions. Its evaluation context is independently constructed around project intent, graph truth, relevant evidence, and the needs of the evaluation itself.",
+      "rule": "Construct evaluation contexts independently from project intent and graph truth, isolating the evaluator from executor scratchpads and transient prompts.",
+      "drift_pattern": "Feeding executor conversation histories or worker reasoning directly into the evaluator prompt.",
+      "source": "docs/invariants/invariants.md#3-evaluator--verification-integrity"
+    },
+    {
+      "id": "entities.node-immutability-during-retries",
+      "name": "Node Immutability During Retries",
+      "quoted_invariant": "A retry re-attempts the exact same node definition unchanged. Evaluator findings are injected strictly as the retry's fix-list; the scope of the node is never altered during retries.",
+      "rule": "Maintain node YAML definitions intact during retry attempts, injecting previous evaluator findings into executor prompts as corrective tasks.",
+      "drift_pattern": "Modifying acceptance criteria or loosening constraints in node YAML to force failing retries to pass.",
+      "source": "docs/invariants/invariants.md#2-intent-preservation--node-integrity"
+    }
+  ]
+}

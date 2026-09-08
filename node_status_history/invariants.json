@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scope": "node_status_history",
+  "description": "System invariants governing historical transition records and operator audit trails.",
+  "invariants": [
+    {
+      "id": "node_status_history.append-only-evidence",
+      "name": "Append-Only Audit Evidence",
+      "quoted_invariant": "Historical transition entries are durable evidence of past operator decisions. Never overwrite or delete historical lines.",
+      "rule": "Preserve all historical status transition records as immutable, append-only logs.",
+      "drift_pattern": "Deleting or editing past JSONL entries to scrub failed attempts or alter timestamps.",
+      "source": "node_status_history/context.md#2-invariants"
+    },
+    {
+      "id": "node_status_history.tooling-managed-transitions",
+      "name": "Tooling-Managed Transitions",
+      "quoted_invariant": "Transitions are recorded via scripts/node_status_history.py during operator actions (gddp node browse).",
+      "rule": "Generate status history entries exclusively through established control plane commands and designated scripts.",
+      "drift_pattern": "Manually authoring arbitrary lines in node_status_history JSONL files.",
+      "source": "node_status_history/context.md#2-invariants"
+    },
+    {
+      "id": "node_status_history.audit-trail-distinct-from-graph-state",
+      "name": "Audit Trail Distinct from Graph State",
+      "quoted_invariant": "Evidence, Not Live Status: Current graph status lives in gddp-config/graphs/<project>/nodes/*.yaml. This directory provides the audit trail explaining why status changed.",
+      "rule": "Read current graph frontier status from node YAML definitions in gddp-config, using node_status_history purely for historical audit context.",
+      "drift_pattern": "Querying node_status_history to determine current readiness or frontier dispatchability.",
+      "source": "node_status_history/context.md#2-invariants"
+    }
+  ]
+}

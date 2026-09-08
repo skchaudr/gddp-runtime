@@ -2,8 +2,10 @@
 db/
 jobs/*
 !jobs/context.md
+!jobs/invariants.json
 events/*
 !events/context.md
+!events/invariants.json
 *.db
 *.sqlite
 *.sqlite3

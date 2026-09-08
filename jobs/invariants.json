@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scope": "jobs",
+  "description": "System invariants governing execution workspaces, worktree isolation, and queue state.",
+  "invariants": [
+    {
+      "id": "jobs.ephemeral-runtime-isolation",
+      "name": "Ephemeral Runtime Isolation",
+      "quoted_invariant": "All subdirectories and job artifacts in jobs/ are local runtime state and must never be committed to git.",
+      "rule": "Exclude all execution directories, run spools, and intermediate outputs under jobs/ from repository commits.",
+      "drift_pattern": "Accidentally checking in job workspace folders or local subprocess spools.",
+      "source": "jobs/context.md#2-invariants"
+    },
+    {
+      "id": "jobs.worktree-isolation",
+      "name": "Worktree Isolation",
+      "quoted_invariant": "Every agent execution session operates in a dedicated, isolated git worktree (.worktrees/ or session temporary directory). Open-heart surgery on repository checkouts is forbidden.",
+      "rule": "Perform all executor modifications within isolated dedicated worktrees, preserving repository checkouts intact.",
+      "drift_pattern": "Editing the active repository checkout directly during node implementation runs.",
+      "source": "docs/invariants/invariants.md#5-execution-isolation--infrastructure-boundaries"
+    },
+    {
+      "id": "jobs.database-as-rebuildable-cache",
+      "name": "Database as Rebuildable Cache",
+      "quoted_invariant": "Files are Truth: Durable files (GDDP_RECEIPTS_PATH, verdict YAMLs, git worktrees) constitute primary truth. The SQLite database (db/queue.db) is a rebuildable cache and index; nothing of architectural value is lost if queue.db is purged.",
+      "rule": "Treat filesystem receipts and commit artifacts as primary evidence, treating queue.db as an index that can regenerate at will.",
+      "drift_pattern": "Relying on database tables as the sole authority while omitting durable disk receipts.",
+      "source": "docs/invariants/invariants.md#4-storage--evidence-doctrine"
+    },
+    {
+      "id": "jobs.runtime-queue-separation-from-graph-truth",
+      "name": "Runtime Queue Separation from Graph Truth",
+      "quoted_invariant": "Job completion in jobs/ updates job queue records in SQLite, never graph truth in gddp-config.",
+      "rule": "Route job transitions through runtime queue state while preserving graph truth strictly for human modification.",
+      "drift_pattern": "Attempting to update graph node statuses from executor completion handlers.",
+      "source": "jobs/context.md#2-invariants"
+    }
+  ]
+}
