@@ -62,10 +62,11 @@ def _ensure_column(
         con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
 
-def init_db():
+def init_db(db_path: Path | str | None = None, *, quiet: bool = False):
     # A fresh rig checkout has no db/ yet; sqlite3.connect will not create it.
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    path = Path(db_path) if db_path is not None else DB_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(path)
     cur = con.cursor()
 
     cur.executescript("""
@@ -323,8 +324,9 @@ def init_db():
 
     con.commit()
     con.close()
-    print(f"Initialized: {DB_PATH}")
-    print("Tables: events, jobs, queue_records, results, artifact_verifications, decision_results, executor_sessions")
+    if not quiet:
+        print(f"Initialized: {path}")
+        print("Tables: events, jobs, queue_records, results, artifact_verifications, decision_results, executor_sessions")
 
 
 if __name__ == "__main__":

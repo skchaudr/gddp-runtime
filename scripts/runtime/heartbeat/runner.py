@@ -93,6 +93,13 @@ class DispatchOutcome:
     attempt_dir: object = None  # pathlib.Path | None
 
 
+def ensure_schema() -> None:
+    """Run scripts/init_db.py against this process's DB_PATH (idempotent)."""
+    from scripts.init_db import init_db
+
+    init_db(DB_PATH, quiet=True)
+
+
 def connect() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row

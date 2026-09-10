@@ -14,4 +14,4 @@ Description=GDDP heartbeat tick (mini-heartbeat Linux port)
 Type=oneshot
 KillMode=process
 WorkingDirectory=%h/gddp-runtime
-ExecStart=/usr/bin/bash -lc "source %h/gddp-runtime/deploy/mini-heartbeat/env/gddp.env && exec /usr/bin/python3 -m scripts.runtime.heartbeat.runner --all-active --config-path %h/gddp-config"
+ExecStart=/usr/bin/bash -lc "source %h/gddp-runtime/deploy/mini-heartbeat/env/gddp.env && /usr/bin/python3 %h/gddp-runtime/scripts/init_db.py && exec /usr/bin/python3 -m scripts.runtime.heartbeat.runner --all-active --config-path %h/gddp-config"
