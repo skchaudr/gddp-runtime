@@ -6,7 +6,9 @@ The **node** is the fundamental atomic unit of project intent. It defines the di
 
 ## Lifecycle & Invariants
 
-- **State Progression:** `proposed` → `ready` → `running` → `evaluated` → `accepted` / `rejected` / `deferred` / `superseded`.
+- **Canonical Status:** `pending`, `ready`, `provisional`, `complete`, or `deferred`, as defined in [`gddp-config/schemas/v1/node.yaml`](../../gddp-config/schemas/v1/node.yaml). `complete` records human review and acceptance.
+- **Provisional Promotion:** The runtime writes `provisional` into node and project YAML after a qualifying evaluator pass, allowing dependents to advance while human acceptance remains pending. Eligibility requires a persisted receipt bound to the current job/attempt and actual result commit, terminal criteria and integrity lanes, preserved intent and graph integrity, and automatic advancement permitted by the integrity findings. `human_gate: true` reserves promotion for human review; existing `complete` and `deferred` statuses are preserved. The evaluator supplies evidence; the runtime applies the status transition.
+- **Execution State:** Execution states such as `running` and `failed` belong to jobs and queue records. Evaluator verdicts provide evidence for human decisions.
 - **Proposal Semantics:** Every node is a human-owned proposal, not a commitment. Acceptance is never assumed.
 - **Retry Semantics:** Retries re-attempt the identical node unchanged. Verified evaluator findings are injected strictly as the retry's fix-list; what is attempted does not change.
 - **Out-of-Scope Work:** Discovered work beyond node scope becomes a *continuation proposal* (YAML in proposals ledger), invisible to the frontier until human-promoted.

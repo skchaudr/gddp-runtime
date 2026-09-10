@@ -39,11 +39,13 @@ def check_scope(
     """
 
     # 1. Active job guard — reject if a job for this node is already in flight.
-    #    awaiting_review counts as active: a node whose work sits in the human
-    #    review queue must not be dispatched again by a later heartbeat.
+    #    awaiting_result (adopt / waiting on executor return) and
+    #    awaiting_review (human queue) both count: frontier and adopt already
+    #    treat them as active, so reclaim of a stranded event cannot double-dispatch.
     cur = con.cursor()
     cur.execute(
-        "SELECT job_id FROM jobs WHERE node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
+        "SELECT job_id FROM jobs WHERE node_id = ? AND status IN "
+        "('ready', 'running', 'awaiting_result', 'awaiting_review')",
         (node.node_id,),
     )
     active = cur.fetchone()
