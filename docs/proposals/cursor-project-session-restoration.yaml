@@ -1,0 +1,51 @@
+# Frontier-invisible implementation proposal. Human materialization supplies graph status.
+schema_version: '1.0'
+schema_type: node
+node_id: cursor-project-session-restoration
+title: Restore Cursor project-session workspaces and intended execution capabilities
+type: capability
+why: Preserve forward progress across packets in one project-session worktree, following Sab's 2026-09-10
+  correction recorded in docs/decisions/Cursor-project-session-boundary.md. Cursor currently creates and
+  removes worktrees per attempt while pi_rpc already retains a session workspace.
+depends_on: []
+acceptance_criteria:
+- id: session-worktree-packet-commits
+  criterion: Two sequential packets for one project session use the same worktree and produce distinct
+    attributable commits and attempt refs; the second packet sees the first packet's work.
+- id: attempt-evidence-independent-of-process
+  criterion: Each packet retains its own result, events, start/result commit evidence, and attempt identity
+    across supported executor process boundaries; invocation count and worktree allocation are independent.
+- id: retry-and-cancel-preservation
+  criterion: Checks demonstrate workspace preservation across retry, cancellation, executor death, and
+    session teardown; retries carry the unchanged node intent and concrete findings, while earlier work
+    remains recoverable.
+- id: cursor-subagent-and-skill-evidence
+  criterion: A bounded run on the installed Cursor CLI records explicit GDDP skill loading and invocation
+    of a configured custom subagent. Prompts allow the intended execution role, and capability declarations
+    match measured behavior.
+- id: explicit-model-forwarding
+  criterion: Existing explicit model resolution remains covered and the bounded Cursor run records its
+    selected model.
+- id: human-owned-graph-truth
+  criterion: Per-packet evidence remains available for evaluator and human review; human acceptance exclusively
+    owns graph completion.
+constraints:
+- Apply docs/decisions/Cursor-project-session-boundary.md as the operator-selected target; reuse the current
+  pi_rpc session lifecycle and existing attempt/result machinery where appropriate.
+- Scope implementation to the Cursor adapter, its shared local-attempt and continuity/dispatch seams,
+  GDDP skill/custom-agent configuration, focused tests, and directly conflicting design documentation.
+- Serialize packet writes within a shared session workspace and preserve declared cross-project capacity
+  and isolation.
+- Keep planned and actual commit bases as distinct evidence; route returned work through evaluation and
+  human review, including base differences.
+- Preserve every piece of work before checkout cleanup; verify the recovery copy or durable ref.
+- Preserve existing transports and runtime entrypoints; keep service configuration and unrelated nodes
+  unchanged.
+- Use a human-selected bounded test batch and model for live verification.
+allowed_execution_modes:
+- agent
+required_artifacts:
+- result-summary.md
+- patch.diff
+priority: high
+unlocks: []

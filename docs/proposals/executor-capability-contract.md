@@ -1,7 +1,10 @@
 # Executor capability contract
 
-Status: proposal / analysis. Read-only pass over the executor surface ahead of
-`cursor_cli_adapter.py`. No code changed.
+Status: historical proposal / analysis. Apply the operator's 2026-09-10
+[project-session correction](../decisions/Cursor-project-session-boundary.md)
+to workspace lifetime, continuity, and subagent policy. Capability declarations
+record verified transport behavior; the original spike's coverage limits are
+research gaps to test.
 
 Scope: what GDDP code assumes about an executor today, which of those
 assumptions are contract vs capability vs transport vs policy, and a concrete

@@ -16,6 +16,14 @@ This project is rife with an incredibly unfortunate failure pattern:
 
 None of the architecture or implementation is considered sacred or unchallengeable.
 
+**Operator correction (2026-09-10):** follow
+[`Cursor project-session boundary`](docs/decisions/Cursor-project-session-boundary.md)
+when working on Cursor execution. The target is one worktree per project session,
+with each packet committed in that tree. Read current `pi_rpc` session behavior
+as reuse evidence; treat conflicting agent-authored proposals as historical
+implementation analysis. Keep node attempts, process invocations, conversational
+continuity, and worktree lifetime distinct.
+
 ---
 
 Nodes are evaluated by an agentic evaluator; its purpose is to protect user intent and project integrity by assessing work done both:

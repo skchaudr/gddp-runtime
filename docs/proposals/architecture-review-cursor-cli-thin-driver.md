@@ -1,5 +1,11 @@
 # Architecture review — is cursor_cli_adapter.py a thin driver?
 
+> Historical review. Apply the operator's 2026-09-10
+> [project-session correction](../decisions/Cursor-project-session-boundary.md)
+> before acting on lifecycle or capability recommendations below. Reuse findings
+> remain evidence to verify against current code; the review's authorship gives
+> its architectural assumptions the standing of a proposal.
+
 Reviewer: architecture-reviewer subagent (Opus 5), 2026-08-29.
 Scope: `git diff 6f12d37..HEAD` (capability-contract scaffold + cursor_cli
 transport). Question posed by the operator: is `cursor_cli_adapter.py` actually

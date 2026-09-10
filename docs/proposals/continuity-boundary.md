@@ -1,6 +1,10 @@
 # Continuity boundary — what survives an executor turn, and what `--resume` would have to earn
 
-**Status:** analysis / proposal. No code changed. Read-only lane feeding `cursor_cli_adapter.py`.
+**Status:** historical analysis. The operator's 2026-09-10
+[project-session correction](../decisions/Cursor-project-session-boundary.md)
+supersedes this document's cold-only policy conclusions and attempt-scoped
+workspace assumptions. Measurements below describe the original probe coverage;
+use current code and fresh checks for implementation claims.
 **Date:** 2026-08-29
 **Lane:** cold-turn / stateless lifecycle architecture.
 
