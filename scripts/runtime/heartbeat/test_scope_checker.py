@@ -66,7 +66,9 @@ def test_no_dependencies_and_no_jobs_is_safe():
     assert bool(result) is True
 
 
-@pytest.mark.parametrize("status", ["ready", "running", "awaiting_review"])
+@pytest.mark.parametrize(
+    "status", ["ready", "running", "awaiting_result", "awaiting_review"]
+)
 def test_active_job_in_same_project_blocks_dispatch(status: str):
     con = _mem_con()
     con.execute(
@@ -150,12 +152,13 @@ def test_satisfied_dependency_provisional_allows_dispatch():
     assert result.safe is True
 
 
-def test_legacy_jobs_table_without_project_id_supported():
+@pytest.mark.parametrize("status", ["running", "awaiting_result"])
+def test_legacy_jobs_table_without_project_id_blocks_active_job(status: str):
     con = sqlite3.connect(":memory:")
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE jobs (job_id TEXT, node_id TEXT, status TEXT)")
     con.execute(
-        "INSERT INTO jobs VALUES ('legacy-job', 'node-a', 'running')"
+        "INSERT INTO jobs VALUES ('legacy-job', 'node-a', ?)", (status,)
     )
     result = check_scope(_node("node-a"), "proj-1", con, _reader())
     assert result.safe is False

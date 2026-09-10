@@ -25,7 +25,9 @@ def _mem_con() -> sqlite3.Connection:
 
 
 class TestAwaitingReviewGuard:
-    @pytest.mark.parametrize("status", ["ready", "running", "awaiting_review"])
+    @pytest.mark.parametrize(
+        "status", ["ready", "running", "awaiting_result", "awaiting_review"]
+    )
     def test_active_job_blocks_dispatch(self, status):
         con = _mem_con()
         con.execute("INSERT INTO jobs VALUES ('job_1', 'node-a', ?)", (status,))

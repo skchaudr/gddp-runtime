@@ -39,18 +39,18 @@ def check_scope(
     """
 
     # 1. Active job guard — reject if a job for this node is already in flight.
-    #    awaiting_review counts as active: a node whose work sits in the human
-    #    review queue must not be dispatched again by a later heartbeat.
+    #    awaiting_result (waiting on executor return) and awaiting_review (the
+    #    human queue) both prevent a later heartbeat from dispatching again.
     cur = con.cursor()
     cols = {row[1] for row in cur.execute("PRAGMA table_info(jobs)")}
     if "project_id" in cols:
         cur.execute(
-            "SELECT job_id FROM jobs WHERE project_id = ? AND node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
+            "SELECT job_id FROM jobs WHERE project_id = ? AND node_id = ? AND status IN ('ready', 'running', 'awaiting_result', 'awaiting_review')",
             (project_id, node.node_id),
         )
     else:
         cur.execute(
-            "SELECT job_id FROM jobs WHERE node_id = ? AND status IN ('ready', 'running', 'awaiting_review')",
+            "SELECT job_id FROM jobs WHERE node_id = ? AND status IN ('ready', 'running', 'awaiting_result', 'awaiting_review')",
             (node.node_id,),
         )
     active = cur.fetchone()
