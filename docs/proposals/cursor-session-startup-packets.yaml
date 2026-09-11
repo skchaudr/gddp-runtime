@@ -1,9 +1,10 @@
 plan_id: cursor-session-startup
 shape: pipeline
-problem: Separate the agreed Cursor workspace change from verification of the deployed startup path, and
-  connect hooks before graph execution.
-goal: Return the Cursor implementation and an instrumented startup/run result that Sab can inspect and
-  review.
+problem: Bootstrap Cursor workspace persistence on its current execution path, then connect hooks before
+  the instrumented small batch.
+goal: Return the Cursor implementation and startup/run evidence for Sab's review.
+operator_plan: gddp-config/proposals/cursor-dogfood/README.md governs the six-stage sequence and minimal
+  node criteria. These two recipes support stages 1 and 3; their checks supply evidence for review.
 sources:
 - docs/decisions/Cursor-project-session-boundary.md
 - docs/proposals/cursor-project-session-restoration.yaml
@@ -24,22 +25,22 @@ authority:
 terminology:
   test: An explicit action or runnable check with an expected observation.
   result: The observed outcome plus saved artifacts, including failures and limitations.
-  scenario: 'Two node identities, A and B, with one retry of A: three attempts, A0 then A1 then B0.'
+  scenario: Two or three selected nodes; A0/A1/B0 is an available two-node, three-attempt retry check.
 live_gate:
   name: cursor-hooks-ready
-  owner: Hook integration work, separate from these two packets
-  required: Before the first graph attempt, load the intended Cursor hooks and record a bounded hook-readiness
+  owner: Stage 2, cursor-hooks-attribution in gddp-config/proposals/cursor-dogfood
+  required: Before the stage-3 batch, load the intended Cursor hooks and record a bounded hook-readiness
     probe reaching the observation sink. Verify the session/node/attempt correlation mechanism across
     a shared cwd; use explicit attempt/turn identity alongside the workspace identity.
   record: Hook configuration identity, probe event, sink location, and correlation result are referenced
     in packet 2 results.
-  hold_behavior: Keep graph execution held while hooks are being connected; packet 1 local checks and
-    packet 2 read-only startup inspection can proceed.
+  hold_behavior: Hold the stage-3 batch until hook readiness. Bootstrap stages 1 and 2 through the current
+    Cursor execution path; read-only startup inspection can proceed alongside them.
 milestones:
 - id: M1
   outcome: Cursor session implementation committed with local lifecycle checks.
 - id: M2
-  outcome: Hook-instrumented startup and three-attempt results returned for review.
+  outcome: Hook-instrumented startup and selected-batch results returned for review.
 completion:
   owner: Sab
   evidence: Packet 1 code/test results and packet 2 startup/session/hook trace with explicit observed
@@ -53,7 +54,8 @@ packets:
   run: direct
   status: draft
   milestone: M1
-  gate: Sab authorizes implementation under the human-owned cursor-project-session-restoration work item.
+  gate: Sab authorizes graph placement and execution. Dispatch through GDDP using Cursor's current path,
+    accepting its existing per-attempt worktrees while this packet implements persistent sessions.
   boundary: Cursor adapter, required shared local-attempt/continuity seams, and focused tests; retain
     sibling transport behavior and graph state. Capture broader discoveries as proposals.
   work:
@@ -119,10 +121,10 @@ packets:
   - Run the deployed startup recipe through the supported kit/service entrypoint in an isolated service
     instance with dedicated queue, database, graph, project checkout, spool, and test evidence paths.
     Verify effective isolation before its first dispatch. Preserve the production service state and record
-    the fixture overrides; the acceptance workload consists solely of A0, A1, and B0.
-  - After hook readiness, run A0 and preserve its result commit. Use a cited test finding to request A1
-    with unchanged node intent; restart Cursor between invocations. Then run B0 in the same logical session
-    and workspace. Capture each invocation through hooks and runtime receipts.
+    the fixture overrides; the workload consists of the two or three nodes selected by Sab.
+  - After hook readiness, run the selected nodes in the same logical project session. Capture each
+    invocation through hooks and runtime receipts. Exercise restart or retry where useful; retries retain
+    unchanged node intent and concrete findings. A0/A1/B0 remains an available two-node retry scenario.
   tests:
   - action: Exercise fresh/legacy startup using an isolated service instance that follows the deployed
       startup recipe; record the deliberate fixture-path and service-name overrides.
@@ -131,16 +133,14 @@ packets:
   - action: Ask a resumed Cursor invocation to recall a harmless marker from the earlier conversation,
       with the marker held out of current prompts and workspace files.
     expected: The saved conversation ID and recalled marker demonstrate actual conversational resumption.
-  - action: Inspect A0, A1, and B0 session, worktree, conversation, commit, and event records.
-    expected: Two node identities, three attempts, one persistent session/worktree/conversation, separate
-      attributable commits and receipts, and hook events joined to the correct attempt.
+  - action: Inspect the selected batch's session, worktree, conversation, commit, and event records.
+    expected: Two or three node identities share the project session/workspace; each attempt retains
+      attributable commits, receipts and hook events. Record actual behavior and any deviations.
   - action: Observe result collection through the real runtime after each return.
     expected: Durable results are collected under their original attempt identities, and the next invocation
       sees accumulated workspace state. Human graph acceptance remains a separate decision.
   checkpoint:
     evidence: startup-result.md with redacted effective configuration and schema/startup outcomes; session-trace.json
-      with per-attempt IDs, paths, tokens or safe token fingerprints, commits, hook-event references,
-      and collection results.
+      with per-attempt IDs, paths, safe token fingerprints, commits, hook-event references, and collection results.
     verify: Resolve each artifact reference and compare expected versus observed behavior. Report separate
-      outcomes for schema helper checks, startup integration, hook delivery, and the operational three-attempt
-      run.
+      outcomes for schema helper checks, startup integration, hook delivery, and the selected batch.

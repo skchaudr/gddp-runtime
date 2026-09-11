@@ -1,56 +1,24 @@
-# Frontier-invisible implementation proposal. Human materialization supplies graph status.
+# Draft mirrored from gddp-config/proposals/cursor-dogfood/cursor-project-session-restoration.yaml.
+# Sab supplies graph status; the six-stage ledger supersedes the earlier multi-criterion draft.
 schema_version: '1.0'
 schema_type: node
 node_id: cursor-project-session-restoration
-title: Restore Cursor project-session workspaces and intended execution capabilities
+title: Persist Cursor project sessions
 type: capability
-why: Preserve forward progress across packets in one project-session worktree, following Sab's 2026-09-10
-  correction recorded in docs/decisions/Cursor-project-session-boundary.md. Cursor currently creates and
-  removes worktrees per attempt while pi_rpc already retains a session workspace.
+why: Keep project work and conversation available across Cursor process restarts. Bootstrap this change using the
+  existing Cursor execution path, including its current per-attempt worktrees.
 depends_on: []
 acceptance_criteria:
-- id: session-worktree-packet-commits
-  criterion: Two sequential packets for one project session use the same worktree and produce distinct
-    attributable commits and attempt refs; the second packet sees the first packet's work.
-- id: attempt-evidence-independent-of-process
-  criterion: Each packet retains its own result, events, start/result commit evidence, and attempt identity
-    across supported executor process boundaries; invocation count and worktree allocation are independent.
-- id: logical-session-survives-process-restart
-  criterion: A Cursor orchestrator starts, stops, and resumes under the same logical project-session identity
-    and worktree path. After a process restart, a packet for another node continues in that workspace
-    with earlier commits and recoverable edits intact; attempt IDs remain distinct. Workspace retirement
-    is an explicit session-lifecycle operation.
-- id: retry-and-cancel-preservation
-  criterion: Checks demonstrate workspace preservation across retry, cancellation, executor death, and
-    session teardown; retries carry the unchanged node intent and concrete findings, while earlier work
-    remains recoverable.
-- id: cursor-subagent-and-skill-evidence
-  criterion: A bounded run on the installed Cursor CLI records explicit GDDP skill loading and invocation
-    of a configured custom subagent. Prompts allow the intended execution role, and capability declarations
-    match measured behavior.
-- id: explicit-model-forwarding
-  criterion: Existing explicit model resolution remains covered and the bounded Cursor run records its
-    selected model.
-- id: human-owned-graph-truth
-  criterion: Per-packet evidence remains available for evaluator and human review; human acceptance exclusively
-    owns graph completion.
+- id: cursor-project-session-restoration
+  criterion: Cursor resumes the same project workspace and conversation after a process restart.
 constraints:
-- Apply docs/decisions/Cursor-project-session-boundary.md as the operator-selected target; reuse the current
-  pi_rpc session lifecycle and existing attempt/result machinery where appropriate.
-- Scope implementation to the Cursor adapter, its shared local-attempt and continuity/dispatch seams,
-  GDDP skill/custom-agent configuration, focused tests, and directly conflicting design documentation.
-- Serialize packet writes within a shared session workspace and preserve declared cross-project capacity
-  and isolation.
-- Keep planned and actual commit bases as distinct evidence; route returned work through evaluation and
-  human review, including base differences.
-- Preserve every piece of work before checkout cleanup; verify the recovery copy or durable ref.
-- Preserve existing transports and runtime entrypoints; keep service configuration and unrelated nodes
-  unchanged.
-- Use a human-selected bounded test batch and model for live verification.
+- Follow gddp-runtime/docs/decisions/Cursor-project-session-boundary.md; scope changes to Cursor session ownership
+  and its shared runtime seams.
+- Preserve accumulated work and distinct attempt evidence.
 allowed_execution_modes:
-- agent
-required_artifacts:
-- result-summary.md
-- patch.diff
+- cursor_cli
+required_artifacts: []
+human_gate: true
 priority: high
-unlocks: []
+unlocks:
+- cursor-hooks-attribution
