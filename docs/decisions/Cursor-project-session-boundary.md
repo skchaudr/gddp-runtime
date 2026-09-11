@@ -19,20 +19,36 @@ Keep these lifetimes distinct:
 - Conversational continuity belongs to the executor session and its supported resume mechanism.
 - The project session owns the workspace across packets and their attempt records.
 
+Each Cursor orchestrator belongs to one logical project session: one session,
+one worktree, many nodes. That session can start, stop, and resume. Its identity,
+Cursor conversation association, and worktree mapping survive those process
+transitions. Attempts remain distinct records within the session. A stopped
+process leaves the workspace available for the session's next invocation.
+
 A packet return retains the workspace. Record attributable start/result commits
 and an attempt ref for each packet. Preserve earlier work when handling retries;
 retry packets retain the same node intent and carry the concrete findings.
 Record planned-base and actual-base evidence distinctly, and treat their
-differences as evaluation/integration concerns. Session teardown preserves every
-piece of work before removing its checkout.
+differences as evaluation/integration concerns. Workspace retirement is an
+explicit logical-session lifecycle operation, separate from process exit or
+idle timeout, and preserves every piece of work before checkout removal.
 
 ## Verified implementation gap
 
 - Commit `ed0407b` and `.handoffs/101-session-worktree.md` record the August 16
   session-worktree change. Current `scripts/adapters/pi_rpc_adapter.py` still
   creates `session_worktree` once in `run_orchestrator` and persists successive
-  packet results in that tree. Its failure cleanup requires preservation review
-  when reusing the lifecycle.
+  packet results in that tree. Its `finally` cleanup removes the checkout when
+  the orchestrator process exits. Reuse its multi-packet behavior; change that
+  cleanup to retain the logical session's workspace across process stops.
+- Mini's preserved `aa-cli-tui-pass` spool provides a concrete reuse example,
+  verified read-only on 2026-09-10. Twelve attempt directories from August 24–25
+  reference the same `gddp-agent-wt-mf4i0xvw` checkout and the same session file,
+  `2026-08-24T22-15-52-682Z_01a035d8-246a-7fbb-ad49-beec72119baf.jsonl` under
+  `jobs/local-subprocess-spool/_orchestrators/aa-cli-tui-pass/pi-session/`.
+  They cover five node IDs and record ten distinct result commits. This proves
+  recorded multi-node/attempt reuse; cross-process restart persistence remains
+  an implementation acceptance check.
 - `scripts/adapters/cursor_cli_adapter.py::dispatch` calls
   `scripts/runtime/local_attempt.py::dispatch_worktree_attempt`, which creates a
   fresh tree. `_run_cursor_turn` supplies a singleton packet list;

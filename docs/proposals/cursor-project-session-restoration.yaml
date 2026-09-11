@@ -15,6 +15,11 @@ acceptance_criteria:
 - id: attempt-evidence-independent-of-process
   criterion: Each packet retains its own result, events, start/result commit evidence, and attempt identity
     across supported executor process boundaries; invocation count and worktree allocation are independent.
+- id: logical-session-survives-process-restart
+  criterion: A Cursor orchestrator starts, stops, and resumes under the same logical project-session identity
+    and worktree path. After a process restart, a packet for another node continues in that workspace
+    with earlier commits and recoverable edits intact; attempt IDs remain distinct. Workspace retirement
+    is an explicit session-lifecycle operation.
 - id: retry-and-cancel-preservation
   criterion: Checks demonstrate workspace preservation across retry, cancellation, executor death, and
     session teardown; retries carry the unchanged node intent and concrete findings, while earlier work
