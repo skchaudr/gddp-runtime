@@ -1,0 +1,146 @@
+plan_id: cursor-session-startup
+shape: pipeline
+problem: Separate the agreed Cursor workspace change from verification of the deployed startup path, and
+  connect hooks before graph execution.
+goal: Return the Cursor implementation and an instrumented startup/run result that Sab can inspect and
+  review.
+sources:
+- docs/decisions/Cursor-project-session-boundary.md
+- docs/proposals/cursor-project-session-restoration.yaml
+- .handoffs/131-persistent-session-and-live-reuse-evidence.md
+- scripts/adapters/pi_rpc_adapter.py
+- scripts/adapters/cursor_cli_adapter.py
+- scripts/runtime/local_attempt.py
+- deploy/mini-heartbeat/bin/common.sh
+- deploy/mini-heartbeat/bin/smoke.sh
+- deploy/mini-heartbeat/launchd/com.gddp.heartbeat.plist
+- deploy/mini-heartbeat/systemd/gddp-heartbeat.service
+authority:
+  execution: These two packets are drafts requested by Sab; implementation follows human-authorized graph
+    placement and packet execution.
+  external: Sab selects the live host, bounded graph workload, and service-change window; remote repository
+    updates use Git.
+  completion: Sab reviews results and owns graph acceptance.
+terminology:
+  test: An explicit action or runnable check with an expected observation.
+  result: The observed outcome plus saved artifacts, including failures and limitations.
+  scenario: 'Two node identities, A and B, with one retry of A: three attempts, A0 then A1 then B0.'
+live_gate:
+  name: cursor-hooks-ready
+  owner: Hook integration work, separate from these two packets
+  required: Before the first graph attempt, load the intended Cursor hooks and record a bounded hook-readiness
+    probe reaching the observation sink. Verify the session/node/attempt correlation mechanism across
+    a shared cwd; use explicit attempt/turn identity alongside the workspace identity.
+  record: Hook configuration identity, probe event, sink location, and correlation result are referenced
+    in packet 2 results.
+  hold_behavior: Keep graph execution held while hooks are being connected; packet 1 local checks and
+    packet 2 read-only startup inspection can proceed.
+milestones:
+- id: M1
+  outcome: Cursor session implementation committed with local lifecycle checks.
+- id: M2
+  outcome: Hook-instrumented startup and three-attempt results returned for review.
+completion:
+  owner: Sab
+  evidence: Packet 1 code/test results and packet 2 startup/session/hook trace with explicit observed
+    outcomes.
+packets:
+- id: CURSOR-01
+  title: Implement persistent Cursor project workspace and conversation resumption
+  outcome: One logical Cursor project session owns one worktree across nodes, retries, and executor process
+    restarts.
+  depends_on: []
+  run: direct
+  status: draft
+  milestone: M1
+  gate: Sab authorizes implementation under the human-owned cursor-project-session-restoration work item.
+  boundary: Cursor adapter, required shared local-attempt/continuity seams, and focused tests; retain
+    sibling transport behavior and graph state. Capture broader discoveries as proposals.
+  work:
+  - 'Reuse the project grouping and multi-packet workspace behavior in pi_rpc and the measured Mini example:
+    12 attempts, five nodes, ten result commits, one worktree and session file. Preserve the distinction
+    between this observed reuse and the new process-restart requirement.'
+  - Replace Cursor dispatch through the fresh-worktree allocator with persistent session lookup under
+    _cursor_sessions/{project_key}. Persist and validate the project/session/worktree association and
+    serialize writers sharing it.
+  - Create the workspace once. Preserve it across packet returns, retries, cancellation, and process exit;
+    explicit session retirement preserves all work before removal.
+  - Persist the Cursor conversation token observed from the executor and reuse it with the installed CLI
+    resume interface. Return an actionable blocked result with preserved workspace if resumption fails.
+  - Keep per-attempt supervisors, events, result commits, refs, and receipts. Capture actual start/result
+    commits independently from the planned base.
+  tests:
+  - action: Use a controlled Cursor-process stand-in to dispatch A0, stop the process, retry A as A1,
+      stop again, and dispatch B0.
+    expected: One session ID and worktree; three distinct attempt records and attributable commits; later
+      invocations receive the saved conversation token and earlier file changes.
+  - action: Exercise competing dispatch, interrupted session metadata/result writes, failed resumption,
+      and cancellation with recoverable edits.
+    expected: Serialized workspace writes, preserved prior state and edits, explicit failure receipts,
+      and restart recovery using the recorded session association.
+  - action: Make the controlled Cursor process reject the saved resume token after a successful packet.
+    expected: An actionable blocked result retains the original session association, workspace, and edits;
+      a later recovery invocation can reuse them.
+  - action: Run focused Cursor and shared-helper regression checks.
+    expected: Existing sibling transport and attempt-evidence contracts remain covered.
+  checkpoint:
+    evidence: Committed patch and focused tests; result-summary.md records commands, outcomes, commit
+      hash, and local lifecycle trace.
+    verify: Replay the local checks and inspect IDs/paths/commits in the trace. Actual Cursor resumption
+      is verified by packet 2 after hook readiness.
+- id: CURSOR-02
+  title: Verify and correct the actual deployed startup path, then run the instrumented acceptance scenario
+  outcome: The selected service entrypoint starts the intended Cursor executor with the expected configuration,
+    hooks, and persistent session behavior.
+  depends_on:
+  - CURSOR-01
+  run: direct
+  status: draft
+  milestone: M2
+  gate: CURSOR-01 results verified; cursor-hooks-ready recorded; Sab selects the host and bounded test-node
+    window. Read-only startup inspection may begin earlier.
+  boundary: Selected host startup chain, its runtime/schema initialization and Cursor configuration, and
+    the selected test workload. Preserve unrelated services, active work, graph state, and credentials;
+    expose broader repairs separately.
+  work:
+  - Identify the actual host, armed service/timer, installed unit or plist, repository commit, working
+    directory, Python executable, configuration and queue paths, and spool. Trace the real invocation
+    rather than borrowing the interactive shell environment.
+  - Compare effective service argv/environment with the kit configuration and project policy. Record Cursor
+    binary/version, selected executor and model for each participating role, authentication readiness,
+    hook configuration, and environment drift with secret values redacted.
+  - Trace automatic schema initialization before queue access. The checked-in Linux unit currently invokes
+    scripts/init_db.py before the runner; compare the installed unit. Check one fresh and one representative
+    legacy database fixture through startup and keep helper-only results separate from startup results.
+    Scope schema work to invocation and readiness; migration-algorithm repairs become separate work items.
+  - Apply bounded startup corrections discovered in that chain, with focused checks, commits, and Git
+    deployment. Preserve existing databases and configurations before service changes; report blockers
+    outside this scope.
+  - Run the deployed startup recipe through the supported kit/service entrypoint in an isolated service
+    instance with dedicated queue, database, graph, project checkout, spool, and test evidence paths.
+    Verify effective isolation before its first dispatch. Preserve the production service state and record
+    the fixture overrides; the acceptance workload consists solely of A0, A1, and B0.
+  - After hook readiness, run A0 and preserve its result commit. Use a cited test finding to request A1
+    with unchanged node intent; restart Cursor between invocations. Then run B0 in the same logical session
+    and workspace. Capture each invocation through hooks and runtime receipts.
+  tests:
+  - action: Exercise fresh/legacy startup using an isolated service instance that follows the deployed
+      startup recipe; record the deliberate fixture-path and service-name overrides.
+    expected: Effective queue, database, graph, checkout, and spool paths belong to the fixture before
+      dispatch; schema is ready before queue operations, and Cursor launches with the selected configuration.
+  - action: Ask a resumed Cursor invocation to recall a harmless marker from the earlier conversation,
+      with the marker held out of current prompts and workspace files.
+    expected: The saved conversation ID and recalled marker demonstrate actual conversational resumption.
+  - action: Inspect A0, A1, and B0 session, worktree, conversation, commit, and event records.
+    expected: Two node identities, three attempts, one persistent session/worktree/conversation, separate
+      attributable commits and receipts, and hook events joined to the correct attempt.
+  - action: Observe result collection through the real runtime after each return.
+    expected: Durable results are collected under their original attempt identities, and the next invocation
+      sees accumulated workspace state. Human graph acceptance remains a separate decision.
+  checkpoint:
+    evidence: startup-result.md with redacted effective configuration and schema/startup outcomes; session-trace.json
+      with per-attempt IDs, paths, tokens or safe token fingerprints, commits, hook-event references,
+      and collection results.
+    verify: Resolve each artifact reference and compare expected versus observed behavior. Report separate
+      outcomes for schema helper checks, startup integration, hook delivery, and the operational three-attempt
+      run.
