@@ -85,11 +85,16 @@ packets:
       a later recovery invocation can reuse them.
   - action: Run focused Cursor and shared-helper regression checks.
     expected: Existing sibling transport and attempt-evidence contracts remain covered.
+  - action: Run the installed Cursor through the changed adapter in a bounded local fixture, stop the
+      executor process, then resume it. Recall a harmless earlier-chat marker held out of current prompts
+      and workspace files, and inspect the recorded workspace and conversation association.
+    expected: Actual Cursor resumes the original workspace and conversation after the process restart.
+      This bootstrap check uses adapter receipts and Cursor output; stage 2 later adds hook attribution.
   checkpoint:
     evidence: Committed patch and focused tests; result-summary.md records commands, outcomes, commit
-      hash, and local lifecycle trace.
-    verify: Replay the local checks and inspect IDs/paths/commits in the trace. Actual Cursor resumption
-      is verified by packet 2 after hook readiness.
+      hash, local lifecycle trace, and the actual Cursor restart/resume result.
+    verify: Replay the checks and inspect the actual Cursor result before stage-1 review. Packet 2 may
+      repeat the observation with hooks connected.
 - id: CURSOR-02
   title: Verify and correct the actual deployed startup path, then run the instrumented acceptance scenario
   outcome: The selected service entrypoint starts the intended Cursor executor with the expected configuration,
