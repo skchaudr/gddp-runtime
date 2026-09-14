@@ -15,6 +15,10 @@ Selecting the appropriate topology is the primary determinant of system reliabil
 | State Management | Shared context between agents | Persistent, explicit state machine tracking |
 | Human Review | Integrated via agent prompts/delegation | Built-in checkpoints and "human-in-the-loop" pauses |
 
+Standard report files store text and code natively, so standard text renders ASCII art unless formatted within explicit **Mermaid.js** syntax.
+
+Here are the complete visual **Mermaid diagrams** for all core agent topologies, ready to be rendered graphically by any Mermaid-compatible viewer. ASCII sketches remain under each pattern as the text-native form of the same shapes.
+
 ## 2. Pattern 1: The Linear Chain (Sequential Task Processing)
 
 The Linear Chain is the foundational building block for low-ambiguity workflows. It is best suited for predictable, deterministic tasks where the output of node $N$ is the required input for node $N+1$, such as a simple researcher lookup where the identity must be validated before data retrieval.
@@ -82,6 +86,8 @@ app = workflow.compile()
 
 To handle heterogeneous data sources (DocumentDB, Graph, Vector Index) while minimizing latency, the Diamond topology executes multiple specialized tool calls simultaneously. This architecture creates a "barrier" where results must be collected before the synthesis node begins.
 
+The workhorse shape for research, market scans, and code reviews. One node splits the objective, parallel subagents process isolated contexts concurrently, deterministic code flattens/filters the output, and a final synthesis node generates the answer.
+
 ### Visual Topology
 
 ```
@@ -89,6 +95,22 @@ To handle heterogeneous data sources (DocumentDB, Graph, Vector Index) while min
 [Router] ----> [Semantic Search] ------> [Synthesizer] --> [End]
           \--> [Graph Traversal] ----/
 ```
+
+```mermaid
+graph TD
+    A[Splitter Node] -->|Subtask 1| B1[Worker Subagent 1]
+    A -->|Subtask 2| B2[Worker Subagent 2]
+    A -->|Subtask 3| B3[Worker Subagent 3]
+
+    B1 -->|Structured Result 1| C[Code Edge: Flatten, Filter & Dedupe]
+    B2 -->|Structured Result 2| C
+    B3 -->|Structured Result 3| C
+
+    C -->|Zero-Token Cleaned Context| D[Merge / Synthesis Node]
+```
+
+- **Data Contract:** Subagents return schema-validated JSON.
+- **Orchestration:** The edge between workers and the merge node lives in plain code (saving model tokens).
 
 ### State Schema & Reducers
 
@@ -146,6 +168,8 @@ async function parallelRetrieval(query: string) {
 
 The ReAct (Reasoning + Acting) loop is required for multi-step queries where the next action depends on previous observations. Following Figure 3.3 of the ISU component, the system iterates through a formal "Thought" process before acting.
 
+Designed for **unknown-size discovery** (e.g., bug sweeps, security audits) where finding one issue uncovers new leads.
+
 ### Visual Topology
 
 ```
@@ -153,6 +177,21 @@ The ReAct (Reasoning + Acting) loop is required for multi-step queries where the
                ^                                 |
                \---------- [Conditional Edge] ---/
 ```
+
+```mermaid
+graph TD
+    Start([Task Initiated]) --> Find[Finder Node]
+    Find --> Dedupe{Dedupe Against ALL Previously Seen}
+
+    Dedupe -->|New Findings Found| Verify[Verifier Gate Node]
+    Dedupe -->|K Consecutive Empty Rounds| End([Graph Converged & Stopped])
+
+    Verify -->|Passed Audit| Store[Confirmed Knowledge Base]
+    Verify -->|Re-inject Leads| Find
+```
+
+- **Convergence Rule:** Halts after $K$ consecutive empty rounds.
+- **Deduplication:** Deduplicates against *everything ever seen* (including dead ends) so the agent never pays to rediscover rejected leads.
 
 ### Data Contract: Safety & Transparency
 
@@ -185,6 +224,8 @@ workflow.add_conditional_edges("agent", should_continue)
 
 To address the "Evaluation Gap," a Verifier node acts as a grounding judge. It compares the generator's final_answer against the tool_outputs stored in the state.
 
+Improves system reliability by gating edges with dedicated verifier nodes before findings can reach downstream stages.
+
 ### Visual Topology
 
 ```
@@ -192,6 +233,22 @@ To address the "Evaluation Gap," a Verifier node acts as a grounding judge. It c
                     |
                  (Pass) --> [End]
 ```
+
+```mermaid
+graph LR
+    Worker[Worker Node] -->|Candidate Finding| V1[Skeptic 1: Security Lens]
+    Worker -->|Candidate Finding| V2[Skeptic 2: Logic Lens]
+    Worker -->|Candidate Finding| V3[Skeptic 3: Performance Lens]
+
+    V1 --> Judge{Majority Panel / Adjudicator}
+    V2 --> Judge
+    V3 --> Judge
+
+    Judge -->|Approved| Pass[Pass Downstream]
+    Judge -->|Refuted| Drop[Drop / Quarantine]
+```
+
+- **Verification Lenses:** Employs adversarial skeptics or diverse perspectives (correctness, security, reproducibility) to filter out false positives.
 
 ### Implementation (Python)
 
@@ -213,6 +270,8 @@ def verifier_node(state: AgentState):
 
 This pattern addresses the "Stale Data" failure mode by creating an escape hatch for real-time information using Model Context Protocol (MCP) triggers.
 
+Routes execution paths dynamically at runtime based on model classification while maintaining code-level determinism.
+
 ### Visual Topology
 
 ```
@@ -220,6 +279,21 @@ This pattern addresses the "Stale Data" failure mode by creating an escape hatch
 [Router Node]
              \-- (Default) -----------> [DocumentDB (Cached)]
 ```
+
+```mermaid
+graph TD
+    Input[Incoming Work Request] --> Router[Router Node - Fast/Cheap Model]
+
+    Router -->|Extraction / Classification| Small[Worker Fleet - Small/Cheap Model]
+    Router -->|Complex Audit / Reasoning| Large[Audit Node - Top Tier Model]
+
+    Small --> CodeEdge[JS Code: Flatten & Filter]
+    Large --> CodeEdge
+
+    CodeEdge --> Synthesis[Synthesis Node - Top Tier Model]
+```
+
+- **Model Tiering:** Routes repetitive tasks to smaller, inexpensive models while reserving top-tier models for synthesis and adjudication.
 
 ### Implementation (Python)
 
@@ -235,6 +309,8 @@ def router(state: AgentState):
 ## 7. Pattern 6: Model Tiering (Cost-Efficiency Optimization)
 
 Platform architects must optimize "Return-on-AI" by offloading lower-complexity reasoning to smaller models. The ISU report achieved a $0.00095 average query cost by using GPT-4o-mini for routing and reserve GPT-4o for final synthesis.
+
+The router/tiering Mermaid diagram in Pattern 5 is the graphical form of this split: cheap model for extraction and classification, top-tier model for audit and synthesis.
 
 ### State Schema: Token Economics
 
@@ -257,6 +333,8 @@ workflow.add_node("complex_reasoning", ChatOpenAI(model="gpt-4o"))
 
 When an agent manages high-complexity queries, "Tool Selection Confusion" often occurs. ISU Chapter 6.3 highlights a specific failure where agents confuse find_connection (Graph tool) with get_shared_publications (DocumentDB tool). Hierarchical orchestration isolates these tools.
 
+A centralized supervisor agent coordinates specialized subagents across iterative cycles.
+
 ### State Schema: Global Context
 
 ```python
@@ -274,6 +352,25 @@ class GlobalContext(TypedDict):
 [Supervisor Node] <---> [Search Agent (Isolates lookup/search)]
                    \--> [Live Agent (Isolates MCP tools)]
 ```
+
+```mermaid
+graph TD
+    User([User Objective]) --> Sup[Supervisor Agent]
+
+    Sup -->|Delegate Subtask| Research[Researcher Agent]
+    Sup -->|Delegate Subtask| Coder[Coder Agent]
+    Sup -->|Delegate Subtask| Audit[Security Auditor]
+
+    Research -->|Return Context| Sup
+    Coder -->|Return Patch| Sup
+    Audit -->|Return Report| Sup
+
+    Sup -->|Evaluate State| Check{Objective Met?}
+    Check -->|No - Loop Back| Sup
+    Check -->|Yes - Finish| Output([Final Deliverable])
+```
+
+- **State Synchronization:** Every specialist returns control to the supervisor, which reads shared state to determine the next action.
 
 **Analysis:** By isolating semantically similar tools into different sub-agent domains, the LLM is forced to select an agent intent first, significantly reducing the probability of the tool-confusion failure mode.
 
