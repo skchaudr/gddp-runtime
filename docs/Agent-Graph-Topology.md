@@ -1,5 +1,26 @@
 # Agent Graph Topology: A Production-Grade Technical Implementation Guide
 
+## Summary
+
+Production agent systems are **graphs**, not prompt chains. Reliability comes from topology plus explicit **state**: Iowa State data puts even strong graphs at an **81% pass rate**, with the remaining **19%** failing at intent-parsing (similar tools confused). Target query cost is **$0.001**; ISU hit **$0.00095** with model tiering. Zero-hallucination in that report came from prompt grounding plus a verifier node.
+
+**Frameworks:** AutoGen is conversation-centric (agents message and delegate, human-in-the-loop via prompts). LangGraph is state-centric (nodes + edges, persistent state machine, checkpoints). Sections below keep ASCII for plain-text readers and **Mermaid.js** for graphical renderers.
+
+| Pattern | Shape | Use when |
+|---|---|---|
+| 1 Linear chain | Start → validate → lookup → format → End | Low-ambiguity, $N$ feeds $N{+}1$ |
+| 2 Diamond | Split → parallel workers → code flatten/dedupe → synthesize | Heterogeneous sources, latency |
+| 3 Cycle / ReAct | Thought → act → observe → loop | Unknown-size discovery; halt after $K$ empty rounds |
+| 4 Verifier on the edge | Worker → skeptic panel → pass or quarantine | Ground answers against tool output |
+| 5 Runtime router | Fast model classifies → live MCP vs cached DB | Stale-data escape hatch |
+| 6 Model tiering | Cheap model for extract; top-tier for audit/synthesis | Cost |
+| 7 Supervisor | Supervisor delegates to isolated specialists, loops until done | Tool-selection confusion |
+| Observability | Arize Phoenix traces by `session_id` / `user_id` | Every node transition and token spend |
+
+**Contracts that keep the graph honest:** typed state (`TypedDict` / TS interface); `operator.add` reducers so parallel nodes merge instead of overwrite; workers return schema-validated JSON; flatten/filter on a **code edge** (zero model tokens); iterate with an `iteration_count`; supervisor reads shared state after every specialist return.
+
+Continue below for schemas, LangGraph/TypeScript snippets, ASCII, and Mermaid for each pattern.
+
 ## 1. Introduction: The Architecture of Agentic Reason
 
 The evolution of agentic AI marks a strategic shift from linear, single-prompt pipelines toward complex multi-agent graph topologies. While initial implementations relied on simple prompt chaining, production-grade systems require the ability to reason, adapt, and iterate through sophisticated workflows. This architectural transition is primarily defined by the choice of framework: Microsoft’s AutoGen and LangChain’s LangGraph. Synthesizing the core differences reveals that AutoGen utilizes a "conversation-centric" model, prioritizing LLM-to-LLM and human-in-the-loop interactions where agents collaborate like a coordinated team. In contrast, LangGraph employs a "state-centric" model, treating the agentic process as a structured state machine. In LangGraph, agents and tools are nodes within a graph, allowing for explicit control over loops, persistence, and error handling.
