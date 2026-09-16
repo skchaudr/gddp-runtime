@@ -1,0 +1,4 @@
+## 2024-06-25 - [Fail-Open Webhook Signature Verification]
+**Vulnerability:** The `/webhook` endpoint in `scripts/intake_server.py` had a fail-open design for signature verification. If the `WEBHOOK_SECRET` environment variable was not set, `verify_signature` would return `True` and the route condition `if WEBHOOK_SECRET and not verify_signature(...)` would not trigger the check, allowing unauthenticated requests to be accepted.
+**Learning:** Security checks that can be bypassed by missing configuration are extremely dangerous. Missing configuration should result in a secure default state (fail-closed).
+**Prevention:** Always default to a secure posture. When writing validation logic, explicitly return a failure state if required configuration or secrets are missing. Do not condition security enforcement on the existence of optional configuration variables if those variables govern security.
