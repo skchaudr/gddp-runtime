@@ -127,8 +127,8 @@ def test_verify_signature_no_secret():
     intake_server.WEBHOOK_SECRET = ""
     try:
         payload = b'{"action": "opened"}'
-        # When no secret is configured, it should always return True
-        assert intake_server.verify_signature(payload, "any_signature") is True
+        # When no secret is configured, it MUST fail to verify
+        assert intake_server.verify_signature(payload, "any_signature") is False
     finally:
         intake_server.WEBHOOK_SECRET = original_secret
 
