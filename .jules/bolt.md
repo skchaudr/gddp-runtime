@@ -1,0 +1,3 @@
+## 2024-06-06 - O(E*N) node lookup bottleneck in event loop
+**Learning:** Found a performance bottleneck inside the `_plan_dispatches` loop in `scripts/runtime/heartbeat/runner.py`. For every event (E) being processed, it searched through all ready nodes (N) using an O(N) `next(...)` iterator to find the matched node. This resulted in O(E*N) complexity.
+**Action:** Convert the `ready_nodes` list into a dictionary keyed by `node_id` outside the loop. This changes the inner loop lookup to O(1) via dictionary `.get()`, reducing overall complexity to O(E + N). Keep an eye out for similar nested list lookups inside frequently executed loops in the codebase.
