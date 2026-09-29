@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from scripts.runtime.verification.capture import EvaluationCapture
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.semantic.integrity_runner import IntegrityHarnessRunner
@@ -167,6 +168,20 @@ def main(argv: list[str] | None = None) -> int:
     shape_profile = _load_yaml(args.shape_profile) if args.shape_profile else None
     repo = args.repo.resolve()
 
+    capture = (EvaluationCapture.start(args, node_yaml, project_yaml)
+               if args.semantic_mode == "live" or args.integrity == "on" else None)
+
+    try:
+        return _evaluate(args, node_yaml, project_yaml, shape_profile, repo, capture)
+    except Exception as exc:
+        if capture and capture.path:
+            capture.write(capture.path / "error.json", {
+                "type": type(exc).__name__, "message": str(exc),
+            })
+        raise
+
+
+def _evaluate(args, node_yaml, project_yaml, shape_profile, repo, capture) -> int:
     semantic_harness = None
     if args.semantic_mode == "offline":
         # Deterministic floor only — never construct agent infrastructure.
@@ -174,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         provider = _pi_provider(args)
         pi_runner = PiHarnessRunner(
+            capture=capture,
             provider=provider,
             model=_pi_model(provider, args.semantic_pi_model),
             thinking=_pi_thinking(provider, args.semantic_thinking),
@@ -185,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.integrity == "on":
         provider = _pi_provider(args)
         integrity_pi_runner = IntegrityHarnessRunner(
+            capture=capture,
             provider=provider,
             model=_pi_model(provider, args.semantic_pi_model),
             thinking=_pi_thinking(provider, args.semantic_thinking),
@@ -207,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
         evidence_manifest_sha256=args.evidence_manifest_sha256,
         mission_receipt_id=args.mission_receipt_id,
     )
+    if capture:
+        receipt.evaluation_capture_path = str(capture.path) if capture.path else None
+        receipt.evaluation_capture_errors = capture.errors
+        if capture.path:
+            capture.write(capture.path / "receipt.json", receipt.model_dump(mode="json"))
+        receipt.evaluation_capture_errors = list(capture.errors)
     path = write_receipt(
         receipt,
         receipt.project_id,
@@ -216,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     summary = {
         "receipt_path": str(path),
+        "evaluation_capture_path": receipt.evaluation_capture_path,
+        "evaluation_capture_errors": receipt.evaluation_capture_errors,
         "verdict": receipt.verdict.value,
         "criteria_confidence": receipt.criteria_confidence,
         "completeness_status": receipt.completeness_status,

@@ -51,6 +51,7 @@ def tee_subprocess(cmd, env, cwd, stdout_path, stderr_path, timeout_seconds):
             for line in iter(stream.readline, b""):
                 text = line.decode("utf-8", errors="replace")
                 f.write(text)
+                f.flush()
                 out_stream.write(text)
                 out_stream.flush()
         stream.close()

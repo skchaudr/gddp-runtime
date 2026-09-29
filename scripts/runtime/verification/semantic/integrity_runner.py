@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from scripts.runtime.verification.capture import EvaluationCapture
 from scripts.runtime.verification.schemas import (
     GraphRecommendation,
     IntegrityOutput,
@@ -123,11 +124,13 @@ class IntegrityHarnessRunner:
         self,
         *,
         provider: str,
+        capture: EvaluationCapture | None = None,
         model: str | None = None,
         thinking: str = "medium",
         extra_args: list[str] | None = None,
         pi_binary: str = "pi",
     ) -> None:
+        self.capture = capture
         self.provider = provider
         self.model = model
         self.thinking = thinking
@@ -163,17 +166,25 @@ class IntegrityHarnessRunner:
             node, graph, deterministic_result, neighbors, config_root, canonical,
         )
 
-        with tempfile.NamedTemporaryFile(
-            prefix="gddp-integrity-", suffix=".json", delete=False
-        ) as vf:
-            verdict_path = vf.name
-        os.unlink(verdict_path)
+        lane_capture = self.capture.lane(
+            "integrity", system_prompt=sys_prompt, user_prompt=user_prompt,
+            provider=self.provider, model=self.model, thinking=self.thinking,
+        ) if self.capture else None
+        if lane_capture:
+            verdict_path = str(lane_capture / "verdict.json")
+            trace_path = str(lane_capture / "tool-trace.jsonl")
+        else:
+            with tempfile.NamedTemporaryFile(
+                prefix="gddp-integrity-", suffix=".json", delete=False
+            ) as vf:
+                verdict_path = vf.name
+            os.unlink(verdict_path)
 
-        with tempfile.NamedTemporaryFile(
-            prefix="gddp-integrity-trace-", suffix=".jsonl", delete=False
-        ) as tf:
-            trace_path = tf.name
-        os.unlink(trace_path)
+            with tempfile.NamedTemporaryFile(
+                prefix="gddp-integrity-trace-", suffix=".jsonl", delete=False
+            ) as tf:
+                trace_path = tf.name
+            os.unlink(trace_path)
 
         sandbox_home = tempfile.mkdtemp(prefix="gddp-pi-integrity-home-")
         try:
@@ -184,9 +195,11 @@ class IntegrityHarnessRunner:
             if not Path(argv0).is_file() and not shutil.which(argv0):
                 raise RuntimeError(f"pi binary not found: {argv0}")
             cmd = self._build_command(sys_prompt, user_prompt, repo, argv0)
+            if lane_capture:
+                self.capture.write(lane_capture / "command.json", cmd)
             # Tee the investigator stream while preserving failure evidence.
-            stdout_path = tempfile.mktemp(prefix="gddp-integrity-stdout-")
-            stderr_path = tempfile.mktemp(prefix="gddp-integrity-stderr-")
+            stdout_path = str(lane_capture / "events.jsonl") if lane_capture else tempfile.mktemp(prefix="gddp-integrity-stdout-")
+            stderr_path = str(lane_capture / "stderr.log") if lane_capture else tempfile.mktemp(prefix="gddp-integrity-stderr-")
             try:
                 proc = _tee_subprocess(
                     cmd, env, str(repo), stdout_path, stderr_path, PI_TIMEOUT_SECONDS,
@@ -239,10 +252,9 @@ class IntegrityHarnessRunner:
         if trace:
             raw["tool_trace"] = trace
         raw["lane_status"] = LaneExecutionStatus.COMPLETED.value
-        # Success: the verdict was recorded, so the temp stdout/stderr logs are
-        # no longer needed. Best-effort cleanup; never raise. On failure paths
-        # the logs are preserved and linked into harness_error instead.
-        _cleanup_logs(stdout_path, stderr_path)
+        # Durable captures survive success; legacy temporary logs retain their cleanup.
+        if lane_capture is None:
+            _cleanup_logs(stdout_path, stderr_path)
         return IntegrityOutput.model_validate(raw)
 
     def _build_command(

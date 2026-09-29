@@ -201,6 +201,8 @@ class EvaluationTiming(BaseModel):
 
 
 class VerdictReceipt(BaseModel):
+    evaluation_capture_path: str | None = None
+    evaluation_capture_errors: list[str] = Field(default_factory=list)
     project_id: str
     node_id: str
     verdict: Verdict
