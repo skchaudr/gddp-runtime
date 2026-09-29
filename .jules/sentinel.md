@@ -1,0 +1,9 @@
+## 2024-03-24 - Webhook Authentication Fail-Open Risk
+**Vulnerability:** The webhook verification logic in `scripts/intake_server.py` failed open by returning `True` (bypassing verification) if no `WEBHOOK_SECRET` was configured, and the endpoint similarly skipped verification if the secret wasn't set.
+**Learning:** Security controls like webhook signatures must always fail closed. Treating unconfigured security settings as an implicit opt-out compromises the security posture, especially when handling untrusted external payloads.
+**Prevention:** Always implement fail-closed defaults. Ensure verification routines return `False` when prerequisites (like secrets) are missing, and unconditionally call verification logic in route handlers rather than checking for the existence of secrets first.
+
+## 2024-03-24 - Unhandled Exceptions in Data Pipeline Exposing Internal State
+**Vulnerability:** The `/webhook` endpoint in `scripts/intake_server.py` lacked explicit error handling for `json.JSONDecodeError` and `sqlite3.Error`, meaning malformed JSON or database failures would bubble up, potentially leaking stack traces and internal architecture details via generic 500 error pages.
+**Learning:** External-facing endpoints in data pipelines are prime targets for fuzzing and malformed data injection. Unhandled exceptions not only cause instability but can disclose sensitive internal paths, database schemas, or logic via stack traces.
+**Prevention:** Wrap all parsing of untrusted inputs and downstream infrastructure interactions (like database insertions) in explicit `try/except` blocks. Return standardized, generic error responses (e.g., 400 for bad payloads, 500 for internal errors) that do not leak the underlying exception details or stack traces.
