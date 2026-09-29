@@ -28,6 +28,7 @@ from adapters.cursor_cli_adapter import (
     build_argv,
     build_cursor_turn_prompt,
     read_cursor_cli_status,
+    reading_budget_reason,
     resolve_model,
 )
 from adapters.events_cursor_cli import (
@@ -1312,3 +1313,11 @@ def test_turn_usage_reads_the_single_terminal_record():
     assert usage is not None
     assert usage.scope == "turn"
     assert usage.cached_input_tokens == 59408
+
+
+def test_reading_budget_stops_after_six_greps_or_fifteen_reads() -> None:
+    assert reading_budget_reason("grep", 6, 0) is None
+    assert reading_budget_reason("grep", 7, 0) == "grep budget exceeded (6)"
+    assert reading_budget_reason("read", 0, 15) is None
+    assert reading_budget_reason("read", 0, 16) == "read budget exceeded (15)"
+    assert "at most 6 grep calls and 15 read calls" in cursor_cli_adapter._CURSOR_PREAMBLE

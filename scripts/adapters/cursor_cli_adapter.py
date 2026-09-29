@@ -114,6 +114,8 @@ _DEFAULT_TIMEOUT_S = 18000.0
 # guessed.
 _CANCEL_GRACE_S = 3.0
 _CANCEL_SIGNALS = (signal.SIGTERM, signal.SIGKILL)
+_MAX_GREP_CALLS = 6
+_MAX_READ_CALLS = 15
 
 # Protocol zone for cursor turns. Deliberately NOT pi's preamble: pi's text
 # instructs subagent fan-out and reviewer dispatch, and cursor_cli declares
@@ -138,6 +140,8 @@ _CURSOR_PREAMBLE = (
     "4. Stop when the acceptance criteria are addressed. An evaluator reads "
     "your work next, and a human accepts or rejects it; you never mark a "
     "node complete yourself.\n\n"
+    "Reading budget: at most 6 grep calls and 15 read calls in this turn. "
+    "Hit either limit and the turn is terminated.\n\n"
     "This process runs ONE turn against ONE git worktree — the worktree_path "
     "named below, which is already your working directory. Everything you "
     "create must live there. Never modify graph truth or runtime databases. "
@@ -324,6 +328,15 @@ def read_cursor_cli_status(spool_root: Path, session_id: str) -> SessionStatus:
 # ---------------------------------------------------------------------------
 
 
+def reading_budget_reason(tool: str, grep_count: int, read_count: int) -> str | None:
+    """Return a termination reason once grep or read calls pass the cap."""
+    if tool == "grep" and grep_count > _MAX_GREP_CALLS:
+        return f"grep budget exceeded ({_MAX_GREP_CALLS})"
+    if tool == "read" and read_count > _MAX_READ_CALLS:
+        return f"read budget exceeded ({_MAX_READ_CALLS})"
+    return None
+
+
 def build_argv(
     *,
     binary: str,
@@ -485,6 +498,9 @@ def _stream_turn(
     writer: EventWriter | None = None
     pending_ends: list[TranslatedEvent] = []
     timed_out = threading.Event()
+    budget_reason: str | None = None
+    grep_count = 0
+    read_count = 0
     returncode = -1
 
     with (attempt_dir / "stderr").open("wb") as stderr_file:
@@ -567,6 +583,23 @@ def _stream_turn(
                         raw_type=translated.raw_type,
                         **translated.fields,
                     )
+                    if translated.type == "tool_started":
+                        tool_name = translated.fields.get("tool")
+                        if tool_name == "grep":
+                            grep_count += 1
+                        elif tool_name == "read":
+                            read_count += 1
+                        budget_reason = reading_budget_reason(
+                            str(tool_name or ""), grep_count, read_count
+                        )
+                        if budget_reason:
+                            terminate_process_group(
+                                proc.pid,
+                                grace_s=_CANCEL_GRACE_S,
+                                graceful_signal=_CANCEL_SIGNALS[0],
+                                final_signal=_CANCEL_SIGNALS[1],
+                            )
+                            break
                     if translated.type == "session_started" and translator.session_id:
                         # Persisted on EVERY dispatch, cold included: it is
                         # the operator's only handle for a future
@@ -578,6 +611,8 @@ def _stream_turn(
         finally:
             watchdog.cancel()
 
+    if budget_reason:
+        return returncode, budget_reason, writer, pending_ends
     if timed_out.is_set():
         return (
             returncode,
