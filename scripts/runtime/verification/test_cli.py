@@ -135,31 +135,29 @@ def test_pi_provider_supports_clinepass() -> None:
     assert cli._pi_provider(args) == "clinepass"
 
 
-def test_pi_provider_auto_prefers_clinepass_over_env_key(monkeypatch) -> None:
+def test_pi_provider_auto_prefers_terra_over_env_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-ds-key")
-    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "clinepass")
-    args = cli.build_parser().parse_args(
-        ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
-    )
-    assert cli._pi_provider(args) == "clinepass"
-
-
-def test_pi_provider_auto_falls_back_to_chatgpt(monkeypatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
-    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "openai-codex")
+    monkeypatch.setattr(cli, "pi_provider_ready", lambda _provider: True)
     args = cli.build_parser().parse_args(
         ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
     )
     assert cli._pi_provider(args) == "openai-codex"
+    assert cli._pi_model("openai-codex", "") == "gpt-5.6-terra"
+    assert cli._pi_thinking("openai-codex", "medium") == "high"
 
 
-def test_pi_provider_auto_falls_back_to_openrouter(monkeypatch) -> None:
-    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "openrouter")
+def test_pi_provider_auto_falls_back_to_openrouter_deepseek_flash(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
+    monkeypatch.setattr(
+        cli, "pi_provider_ready", lambda provider: provider == "openrouter"
+    )
     args = cli.build_parser().parse_args(
         ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
     )
     assert cli._pi_provider(args) == "openrouter"
+    assert cli._pi_model("openrouter", "") == "deepseek/deepseek-v4.1-flash"
+    assert cli._pi_thinking("openrouter", "medium") == "medium"
 
 
 def test_pi_provider_auto_raises_when_pi_has_none_ready(monkeypatch) -> None:
@@ -171,7 +169,7 @@ def test_pi_provider_auto_raises_when_pi_has_none_ready(monkeypatch) -> None:
     try:
         cli._pi_provider(args)
     except RuntimeError as exc:
-        assert "clinepass" in str(exc)
+        assert "chatgpt" in str(exc)
     else:
         raise AssertionError("expected auto to stop when Pi reports none ready")
 

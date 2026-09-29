@@ -10,10 +10,10 @@ from pathlib import Path
 
 
 APPROVED_PI_PROVIDERS = {"clinepass", "deepseek", "openai-codex", "openrouter"}
-# Evaluator auto order. Pi already holds these logins; do not probe the filesystem.
-AUTO_PI_PROVIDER_ORDER = ("clinepass", "openai-codex", "openrouter")
-# These three authenticate through Pi's own store (keychain / Pi login).
-_PI_HELD_PROVIDERS = frozenset(AUTO_PI_PROVIDER_ORDER)
+# Evaluator auto order. Pi already holds these logins.
+AUTO_PI_PROVIDER_ORDER = ("openai-codex", "openrouter")
+# These authenticate through Pi's own store (keychain / Pi login).
+_PI_HELD_PROVIDERS = frozenset({"clinepass", "openai-codex", "openrouter"})
 
 _WRAPPER_BASENAMES = ("pi", "pi-lite", "pi-full", "pi-studio")
 

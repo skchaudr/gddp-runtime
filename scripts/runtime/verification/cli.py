@@ -47,8 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "clinepass", "chatgpt", "openrouter", "deepseek", "glm"],
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
         help=(
-            "Evaluator provider. auto asks Pi in order: clinepass, chatgpt, openrouter. "
-            "GLM is rejected."
+            "Evaluator provider. auto asks Pi in order: chatgpt (gpt-5.6-terra), "
+            "then openrouter (deepseek/deepseek-v4.1-flash). GLM is rejected."
         ),
     )
     parser.add_argument(
@@ -68,7 +68,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--semantic-pi-model",
         default=os.environ.get("GDDP_SEMANTIC_PI_MODEL", ""),
-        help="Pi model id (e.g. deepseek-v4-flash) for --semantic-harness pi. Defaults to provider default.",
+        help=(
+            "Pi model id for --semantic-harness pi. "
+            "Defaults: gpt-5.6-terra, deepseek/deepseek-v4.1-flash on openrouter."
+        ),
     )
     parser.add_argument(
         "--integrity",
@@ -129,15 +132,32 @@ def _pi_provider(args) -> str:
         return "openai-codex"
     if requested == "glm":
         raise RuntimeError(
-            "evaluator Pi does not allow GLM; use clinepass, chatgpt, or openrouter"
+            "evaluator Pi does not allow GLM; use chatgpt or openrouter"
         )
-    # auto: Pi's own login, in this order. Ambient API keys do not jump the queue.
+    # auto: ChatGPT GPT-5.6-Terra, then OpenRouter DeepSeek-Flash.
     for provider in AUTO_PI_PROVIDER_ORDER:
         if pi_provider_ready(provider):
             return provider
     raise RuntimeError(
-        "pi auth check found none of clinepass, chatgpt, or openrouter ready"
+        "pi auth check found neither chatgpt nor openrouter ready"
     )
+
+
+def _pi_model(provider: str, requested: str) -> str | None:
+    if requested:
+        return requested
+    return {
+        "openai-codex": "gpt-5.6-terra",
+        "openrouter": "deepseek/deepseek-v4.1-flash",
+        "deepseek": "deepseek-v4-flash",
+    }.get(provider)
+
+
+def _pi_thinking(provider: str, requested: str) -> str:
+    # Terra runs at high. The medium default stays on the OpenRouter backup.
+    if provider == "openai-codex" and requested == "medium":
+        return "high"
+    return requested
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,16 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         semantic_harness = _offline_semantic_skip
     else:
         provider = _pi_provider(args)
-        model = args.semantic_pi_model or None
-        if not model:
-            if provider == "openrouter":
-                model = "google/gemini-3.8-flash"
-            elif provider == "deepseek":
-                model = "deepseek-v4-flash"
         pi_runner = PiHarnessRunner(
             provider=provider,
-            model=model,
-            thinking=args.semantic_thinking,
+            model=_pi_model(provider, args.semantic_pi_model),
+            thinking=_pi_thinking(provider, args.semantic_thinking),
             config_root=args.config_root.resolve() if args.config_root else None,
         )
         semantic_harness = pi_runner.run
@@ -170,16 +184,10 @@ def main(argv: list[str] | None = None) -> int:
     integrity_harness = None
     if args.integrity == "on":
         provider = _pi_provider(args)
-        model = args.semantic_pi_model or None
-        if not model:
-            if provider == "openrouter":
-                model = "google/gemini-3.8-flash"
-            elif provider == "deepseek":
-                model = "deepseek-v4-flash"
         integrity_pi_runner = IntegrityHarnessRunner(
             provider=provider,
-            model=model,
-            thinking=args.semantic_thinking,
+            model=_pi_model(provider, args.semantic_pi_model),
+            thinking=_pi_thinking(provider, args.semantic_thinking),
         )
         integrity_harness = integrity_pi_runner.run
 
