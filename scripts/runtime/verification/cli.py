@@ -11,7 +11,10 @@ import yaml
 from scripts.runtime.verification.orchestrator import verify
 from scripts.runtime.verification.receipt_sink import write_receipt
 from scripts.runtime.verification.semantic.integrity_runner import IntegrityHarnessRunner
-from scripts.runtime.verification.semantic.pi_environment import has_chatgpt_oauth
+from scripts.runtime.verification.semantic.pi_environment import (
+    AUTO_PI_PROVIDER_ORDER,
+    pi_provider_ready,
+)
 from scripts.runtime.verification.semantic.pi_runner import PiHarnessRunner
 
 
@@ -41,10 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--semantic-provider",
-        choices=["auto", "openrouter", "deepseek", "chatgpt", "glm"],
+        choices=["auto", "clinepass", "chatgpt", "openrouter", "deepseek", "glm"],
         default=os.environ.get("GDDP_SEMANTIC_PROVIDER", "auto"),
         help=(
-            "Evaluator provider. Pi allows OpenRouter, DeepSeek or ChatGPT OAuth; GLM is rejected."
+            "Evaluator provider. auto asks Pi in order: clinepass, chatgpt, openrouter. "
+            "GLM is rejected."
         ),
     )
     parser.add_argument(
@@ -115,6 +119,8 @@ def _offline_semantic_skip(**_kwargs):
 def _pi_provider(args) -> str:
     """Map the gddp --semantic-provider name to a pi provider name."""
     requested = args.semantic_provider
+    if requested == "clinepass":
+        return "clinepass"
     if requested == "openrouter":
         return "openrouter"
     if requested == "deepseek":
@@ -123,17 +129,14 @@ def _pi_provider(args) -> str:
         return "openai-codex"
     if requested == "glm":
         raise RuntimeError(
-            "evaluator Pi does not allow GLM; use openrouter, deepseek, or chatgpt (openai-codex OAuth)"
+            "evaluator Pi does not allow GLM; use clinepass, chatgpt, or openrouter"
         )
-    # auto: prefer OpenRouter when key present, fallback to explicit DeepSeek key, then ChatGPT OAuth.
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return "openrouter"
-    if os.environ.get("DEEPSEEK_API_KEY"):
-        return "deepseek"
-    if has_chatgpt_oauth():
-        return "openai-codex"
+    # auto: Pi's own login, in this order. Ambient API keys do not jump the queue.
+    for provider in AUTO_PI_PROVIDER_ORDER:
+        if pi_provider_ready(provider):
+            return provider
     raise RuntimeError(
-        "--semantic-harness pi needs OPENROUTER_API_KEY, DEEPSEEK_API_KEY, or configured openai-codex OAuth"
+        "pi auth check found none of clinepass, chatgpt, or openrouter ready"
     )
 
 

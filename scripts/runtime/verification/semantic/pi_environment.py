@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
 
-APPROVED_PI_PROVIDERS = {"deepseek", "openai-codex", "openrouter"}
+APPROVED_PI_PROVIDERS = {"clinepass", "deepseek", "openai-codex", "openrouter"}
+# Evaluator auto order. Pi already holds these logins; do not probe the filesystem.
+AUTO_PI_PROVIDER_ORDER = ("clinepass", "openai-codex", "openrouter")
+# These three authenticate through Pi's own store (keychain / Pi login).
+_PI_HELD_PROVIDERS = frozenset(AUTO_PI_PROVIDER_ORDER)
 
 _WRAPPER_BASENAMES = ("pi", "pi-lite", "pi-full", "pi-studio")
 
@@ -36,15 +41,14 @@ def build_pi_environment(
 ) -> dict[str, str]:
     """Expose exactly one approved auth route to Pi.
 
-    DeepSeek receives only ``DEEPSEEK_API_KEY``. ChatGPT uses Pi's
-    ``openai-codex`` OAuth credential through an auth-only agent directory.
-    Competing API keys and inherited Pi config paths are removed so provider
-    selection cannot silently fall through to ambient configuration.
+    ClinePass, ChatGPT, and OpenRouter use the login Pi already has. Ambient
+    API keys are removed so an env key cannot override that login. DeepSeek
+    still receives only ``DEEPSEEK_API_KEY``.
     """
     if provider not in APPROVED_PI_PROVIDERS:
         raise RuntimeError(
             f"unsupported evaluator Pi provider {provider!r}; "
-            "approved providers are deepseek, openai-codex, and openrouter"
+            "approved providers are clinepass, deepseek, openai-codex, and openrouter"
         )
 
     ambient = dict(os.environ if source_env is None else source_env)
@@ -59,28 +63,23 @@ def build_pi_environment(
         ):
             env.pop(name, None)
 
-    agent_dir = sandbox_home / "agent"
-    env["HOME"] = str(sandbox_home)
-    # HOME alone is insufficient when a parent process exports this override.
-    env["PI_CODING_AGENT_DIR"] = str(agent_dir)
-
     if provider == "deepseek":
+        env["HOME"] = str(sandbox_home)
+        env["PI_CODING_AGENT_DIR"] = str(sandbox_home / "agent")
         api_key = ambient.get("DEEPSEEK_API_KEY", "")
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY is required for evaluator Pi provider deepseek")
         env["DEEPSEEK_API_KEY"] = api_key
-    elif provider == "openrouter":
-        api_key = ambient.get("OPENROUTER_API_KEY", "")
-        if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY is required for evaluator Pi provider openrouter")
-        env["OPENROUTER_API_KEY"] = api_key
+    elif provider in _PI_HELD_PROVIDERS:
+        # Pi's login lives with the operator account. A sandbox HOME would hide it.
+        home = ambient.get("HOME")
+        if home:
+            env["HOME"] = home
+        inherited_agent_dir = ambient.get("PI_CODING_AGENT_DIR")
+        if inherited_agent_dir:
+            env["PI_CODING_AGENT_DIR"] = inherited_agent_dir
     else:
-        auth_file = _chatgpt_auth_file(ambient)
-        _require_chatgpt_oauth(auth_file)
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        # Pi may refresh OAuth during a run. A symlink keeps refreshes in the
-        # operator-owned auth store while withholding models/settings/extensions.
-        (agent_dir / "auth.json").symlink_to(auth_file)
+        raise RuntimeError(f"unsupported evaluator Pi provider {provider!r}")
 
     # Resolve against ambient HOME/PATH before the sandbox remap. pi-lite's
     # skip list is derived from those vars, so a remapped HOME makes the
@@ -162,6 +161,29 @@ def _normalized(path: Path) -> Path:
         return path.resolve()
     except OSError:
         return path
+
+
+def pi_provider_ready(provider: str) -> bool:
+    """Ask Pi whether this provider login is ready. Never prints the credential."""
+    try:
+        pi_bin = str(resolve_real_pi_bin())
+    except RuntimeError:
+        pi_bin = "pi"
+    try:
+        proc = subprocess.run(
+            [pi_bin, "auth", "check", "--provider", provider, "--json", "--no-refresh"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return False
+    return payload.get("status") == "ready"
 
 
 def has_chatgpt_oauth(source_env: Mapping[str, str] | None = None) -> bool:

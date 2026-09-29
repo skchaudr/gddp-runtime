@@ -123,38 +123,57 @@ def test_pi_provider_supports_openrouter(monkeypatch) -> None:
     assert cli._pi_provider(args) == "openrouter"
 
 
-def test_pi_provider_auto_selects_openrouter_when_key_present(monkeypatch) -> None:
+def test_pi_provider_supports_clinepass() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "--node-yaml", "node.yaml",
+            "--project-yaml", "project.yaml",
+            "--repo", ".",
+            "--semantic-provider", "clinepass",
+        ]
+    )
+    assert cli._pi_provider(args) == "clinepass"
+
+
+def test_pi_provider_auto_prefers_clinepass_over_env_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-ds-key")
+    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "clinepass")
+    args = cli.build_parser().parse_args(
+        ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
+    )
+    assert cli._pi_provider(args) == "clinepass"
+
+
+def test_pi_provider_auto_falls_back_to_chatgpt(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
+    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "openai-codex")
+    args = cli.build_parser().parse_args(
+        ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
+    )
+    assert cli._pi_provider(args) == "openai-codex"
+
+
+def test_pi_provider_auto_falls_back_to_openrouter(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "pi_provider_ready", lambda provider: provider == "openrouter")
     args = cli.build_parser().parse_args(
         ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
     )
     assert cli._pi_provider(args) == "openrouter"
 
 
-def test_pi_provider_auto_falls_back_to_deepseek_when_openrouter_absent(monkeypatch) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+def test_pi_provider_auto_raises_when_pi_has_none_ready(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-ds-key")
+    monkeypatch.setattr(cli, "pi_provider_ready", lambda _provider: False)
     args = cli.build_parser().parse_args(
         ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
     )
-    assert cli._pi_provider(args) == "deepseek"
-
-
-def test_pi_provider_auto_falls_back_to_chatgpt_oauth(monkeypatch, tmp_path: Path) -> None:
-    auth_file = tmp_path / "auth.json"
-    auth_file.write_text(
-        json.dumps({"openai-codex": {"type": "oauth", "access": "test"}}),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("GDDP_PI_AUTH_FILE", str(auth_file))
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    args = cli.build_parser().parse_args(
-        ["--node-yaml", "node.yaml", "--project-yaml", "project.yaml", "--repo", "."]
-    )
-
-    assert cli._pi_provider(args) == "openai-codex"
+    try:
+        cli._pi_provider(args)
+    except RuntimeError as exc:
+        assert "clinepass" in str(exc)
+    else:
+        raise AssertionError("expected auto to stop when Pi reports none ready")
 
 
 def test_pi_provider_rejects_glm() -> None:

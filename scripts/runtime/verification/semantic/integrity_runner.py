@@ -257,7 +257,7 @@ class IntegrityHarnessRunner:
             "--no-skills",
             "--no-prompt-templates",
             "--no-themes",
-            "--no-extensions",
+            *(["--no-extensions"] if self.provider != "clinepass" else []),
             "--no-session",
             "-e", str(EXTENSION_PATH),
             "-e", str(GUARD_EXTENSION_PATH),

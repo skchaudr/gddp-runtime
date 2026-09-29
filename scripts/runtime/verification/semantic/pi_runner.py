@@ -334,7 +334,9 @@ class PiHarnessRunner:
             "--no-skills",
             "--no-prompt-templates",
             "--no-themes",
-            "--no-extensions",
+            # ClinePass is a Pi extension. Discovery stays on so Pi can load the
+            # provider it already has. Other providers stay extension-locked.
+            *(["--no-extensions"] if self.provider != "clinepass" else []),
             "--no-session",
             "-e", str(EXTENSION_PATH),
             "-e", str(GUARD_EXTENSION_PATH),

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -9,7 +8,6 @@ import pytest
 from scripts.runtime.verification.semantic.pi_environment import (
     build_pi_environment,
     evaluator_pi_argv0,
-    has_chatgpt_oauth,
     resolve_real_pi_bin,
 )
 
@@ -48,54 +46,31 @@ def test_deepseek_environment_removes_competing_routes(tmp_path: Path) -> None:
     assert "OPENAI_BASE_URL" not in env
 
 
-def test_chatgpt_environment_exposes_oauth_without_api_keys(tmp_path: Path) -> None:
-    auth_file = tmp_path / "operator-auth.json"
-    auth_file.write_text(
-        json.dumps(
-            {
-                "openai-codex": {"type": "oauth", "access": "test-access"},
-                "openrouter": {"type": "api_key", "key": "wrong-key"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    sandbox = tmp_path / "sandbox"
+def test_chatgpt_environment_keeps_pi_login_and_drops_api_keys(tmp_path: Path) -> None:
     real_pi = _write_exec(tmp_path / "real" / "pi")
+    home = tmp_path / "home"
     env = build_pi_environment(
         "openai-codex",
-        sandbox,
+        tmp_path / "sandbox",
         source_env={
-            "HOME": str(tmp_path / "home"),
+            "HOME": str(home),
             "PATH": "/usr/bin",
-            "GDDP_PI_AUTH_FILE": str(auth_file),
             "DEEPSEEK_API_KEY": "wrong-deepseek-key",
             "OPENROUTER_API_KEY": "wrong-openrouter-key",
             "PI_REAL_BIN": str(real_pi),
         },
     )
 
-    linked_auth = Path(env["PI_CODING_AGENT_DIR"]) / "auth.json"
-    assert linked_auth.is_symlink()
-    assert linked_auth.resolve() == auth_file.resolve()
+    assert env["HOME"] == str(home)
+    assert "PI_CODING_AGENT_DIR" not in env
     assert "DEEPSEEK_API_KEY" not in env
     assert "OPENROUTER_API_KEY" not in env
-    assert has_chatgpt_oauth(
-        {"HOME": str(tmp_path / "home"), "GDDP_PI_AUTH_FILE": str(auth_file)}
-    )
+    assert env["PI_REAL_BIN"] == str(real_pi)
 
 
 def test_missing_approved_auth_fails_before_pi_starts(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
         build_pi_environment("deepseek", tmp_path / "deepseek", source_env={})
-
-    with pytest.raises(RuntimeError, match="openai-codex OAuth"):
-        auth_file = tmp_path / "auth.json"
-        auth_file.write_text("{}", encoding="utf-8")
-        build_pi_environment(
-            "openai-codex",
-            tmp_path / "chatgpt",
-            source_env={"GDDP_PI_AUTH_FILE": str(auth_file)},
-        )
 
 
 def test_openrouter_environment_removes_competing_routes(tmp_path: Path) -> None:
@@ -117,19 +92,35 @@ def test_openrouter_environment_removes_competing_routes(tmp_path: Path) -> None
         },
     )
 
-    assert env["OPENROUTER_API_KEY"] == "openrouter-key"
+    assert env["HOME"] == str(tmp_path / "home")
     assert env["PATH"] == "/usr/bin"
-    assert env["PI_CODING_AGENT_DIR"] == str(tmp_path / "sandbox" / "agent")
+    assert env["PI_CODING_AGENT_DIR"] == str(inherited_agent_dir)
     assert env["PI_REAL_BIN"] == str(real_pi)
+    assert "OPENROUTER_API_KEY" not in env
     assert "DEEPSEEK_API_KEY" not in env
     assert "OPENAI_API_KEY" not in env
     assert "PI_MODEL" not in env
     assert "PI_PROVIDER" not in env
 
 
-def test_missing_openrouter_key_fails_before_pi_starts(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
-        build_pi_environment("openrouter", tmp_path / "openrouter", source_env={})
+def test_clinepass_environment_keeps_pi_home(tmp_path: Path) -> None:
+    real_pi = _write_exec(tmp_path / "real" / "pi")
+    home = tmp_path / "home"
+    env = build_pi_environment(
+        "clinepass",
+        tmp_path / "sandbox",
+        source_env={
+            "HOME": str(home),
+            "PATH": "/usr/bin",
+            "OPENROUTER_API_KEY": "ambient-key",
+            "PI_REAL_BIN": str(real_pi),
+        },
+    )
+
+    assert env["HOME"] == str(home)
+    assert env["HOME"] != str(tmp_path / "sandbox")
+    assert "OPENROUTER_API_KEY" not in env
+    assert env["PI_REAL_BIN"] == str(real_pi)
 
 
 def test_unapproved_provider_is_rejected(tmp_path: Path) -> None:
