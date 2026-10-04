@@ -1,0 +1,4 @@
+## 2025-02-23 - [Webhook Signature Fail-Open and Stack Trace Leaks]
+**Vulnerability:** Webhook signature validation incorrectly returned `True` when `WEBHOOK_SECRET` was missing, causing it to fail open and allow unauthenticated requests. Additionally, invalid JSON and database exceptions were uncaught, which could leak internal path or stack trace details.
+**Learning:** Security validations should always "fail closed" by default to prevent bypassing controls when configuration is missing. Additionally, unhandled exceptions in routes that interact with user input and the database can lead to information disclosure vulnerabilities.
+**Prevention:** Explicitly return `False` or an error when a required authentication secret is unconfigured. Wrap external input parsing (`json.loads`) and state mutations (`con.execute`) in try-except blocks, and return generic 400/500 error messages instead of leaking framework internals.
