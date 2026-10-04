@@ -1,0 +1,4 @@
+## 2026-05-30 - Fix Authentication Bypass in Webhook Verification
+**Vulnerability:** The webhook intake server (`scripts/intake_server.py`) was failing open by skipping signature verification (returning `True`) when the `WEBHOOK_SECRET` environment variable was not configured. This allowed unauthenticated requests to bypass the mandatory signature check.
+**Learning:** Security controls like authentication or signature verification must always fail closed. A missing configuration (like an absent secret) should result in rejecting the request, not allowing it.
+**Prevention:** Always default to `False` or an error state when security-critical configuration is missing. Ensure the route handler unconditionally enforces the check without an optional bypass (`if SECRET and not check()` is dangerous).
