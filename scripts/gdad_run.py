@@ -1037,12 +1037,15 @@ def _prepare_prompt(project: str, node: str, run_id: str, root: Path, cfg: Path)
 
 
 def _pi_command(session_id: str, prompt: str) -> list[str]:
+    tool = workflow_tool_name()
     command = ["pi", "-ne"]
     for path in extensions():
         command.extend(["-e", path])
+    # Only the workflow tools, so the orchestrator cannot explore or rewrite the script.
     command.extend([
+        "--tools", f"{tool},workflow_respond,workflow_status",
         "--append-system-prompt",
-        "Call only the workflow tool named in the user message. Do not explore the filesystem.",
+        "Call the workflow tool with the scriptPath from the user message. Do not inline a different script.",
         "--session-id", session_id,
         "--approve",
         prompt,
