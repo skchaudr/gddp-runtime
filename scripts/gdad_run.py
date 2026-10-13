@@ -1249,7 +1249,9 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
     if not wid or not qid or rev is None:
         raise JournalError("resume handle needs wid, qid, and rev")
     message = str(packet.get("question") or "resume")
-    request = f"{packet['packet_id']}-answer"
+    # Request ids are global in pi-durable-subagents. Packet ids restart per node,
+    # so key the answer on the question id or a later packet collides with an old one.
+    request = f"answer-{qid}"
     pane = _load_pane(project, node, root)
     if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])):
         resumed = dsa_cmd("resume", wid)
