@@ -56,11 +56,12 @@ const bridge = {
     }
     console.log(`shell ${command.slice(0, 120)}`);
     const result = await runShell(command);
+    if (result.exitCode) {
+      console.error(result.stderr.slice(0, 800));
+      throw new Error(`shell exited ${result.exitCode}`);
+    }
     fs.appendFileSync(replayPath, JSON.stringify({ key, result }) + "\n");
     done.set(key, result);
-    if (result.exitCode) {
-      console.error(result.stderr.slice(0, 500));
-    }
     return result;
   },
   async checkpoint(input) {

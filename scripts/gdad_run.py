@@ -1148,6 +1148,10 @@ def follow(project: str, node: str, *, decider: str, timeout: float, root: Path 
                 continue
         if last_state in {"accepted", "rejected", "blocked"}:
             return last_state
+        pane = _load_pane(project, node, root)
+        if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])) and last_state == "running":
+            journal(project, node, "blocked", note="workflow host exited", root=root)
+            return "blocked"
         status = read_status(project, node, root)
         failure = workflow_failure(status.get("pi_session_id") or "", status.get("workflow_run_id") or "")
         if failure and last_state == "running":
