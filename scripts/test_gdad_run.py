@@ -419,16 +419,33 @@ class PaneLifecycleTests(unittest.TestCase):
 
 class SafetyFixTests(unittest.TestCase):
     def test_decider_argv_restricts_tools_and_skips_no_permissions_flag(self):
-        argv = gdad_run.claude_invocation_argv("claude-fable-5-1", "packet", tools="")
+        argv = gdad_run.claude_invocation_argv("claude-fable-5-1", tools="")
         joined = " ".join(argv)
         self.assertIn("--tools", argv)
         self.assertEqual(argv[argv.index("--tools") + 1], "")
         self.assertEqual(joined.find("dangerously-skip-permissions"), -1)
+        self.assertNotIn("packet", argv)
 
     def test_reviewer_argv_restricts_tools_and_skips_no_permissions_flag(self):
-        argv = gdad_run.claude_invocation_argv("opus", "review", tools="")
+        argv = gdad_run.claude_invocation_argv("opus", tools="")
         self.assertEqual(argv[argv.index("--tools") + 1], "")
         self.assertEqual(" ".join(argv).find("dangerously-skip-permissions"), -1)
+        self.assertNotIn("review", argv)
+
+    def test_run_claude_passes_prompt_on_stdin_not_argv(self):
+        prompt = "review prompt body\nwith lines"
+        captured: dict = {}
+
+        def fake_run(argv, **kwargs):
+            captured["argv"] = list(argv)
+            captured["input"] = kwargs.get("input")
+            return subprocess.CompletedProcess(argv, 0, stdout='{"type":"result","subtype":"success","is_error":false,"result":"{}"}', stderr="")
+
+        with mock.patch.object(gdad_run.subprocess, "run", side_effect=fake_run):
+            gdad_run._run_claude("opus", prompt, tools="")
+        self.assertEqual(captured["input"], prompt)
+        self.assertEqual(captured["argv"], gdad_run.claude_invocation_argv("opus", tools=""))
+        self.assertNotIn(prompt, captured["argv"])
 
     def test_pi_bin_expands_tilde_from_settings(self):
         with tempfile.TemporaryDirectory() as tmp:

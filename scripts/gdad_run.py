@@ -674,7 +674,8 @@ def _artifact_lines(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def claude_invocation_argv(model: str, prompt: str, *, tools: str) -> list[str]:
+def claude_invocation_argv(model: str, *, tools: str) -> list[str]:
+    """Argv for ``claude -p``; prompt must be supplied on stdin (``--tools`` is variadic)."""
     return [
         "claude",
         "-p",
@@ -684,13 +685,13 @@ def claude_invocation_argv(model: str, prompt: str, *, tools: str) -> list[str]:
         "json",
         "--tools",
         tools,
-        prompt,
     ]
 
 
 def _run_claude(model: str, prompt: str, *, tools: str) -> tuple[int, str]:
     proc = subprocess.run(
-        claude_invocation_argv(model, prompt, tools=tools),
+        claude_invocation_argv(model, tools=tools),
+        input=prompt,
         text=True,
         capture_output=True,
         check=False,
