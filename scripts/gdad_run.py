@@ -635,13 +635,15 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
     template = (cfg / "schemas" / "gdad" / "review-prompt.md").read_text(encoding="utf-8")
     body = hello.read_text(encoding="utf-8") if hello.is_file() else ""
     count = len(_artifact_lines(hello))
-    prompt = template.format(
-        brief=brief,
-        listing="\n".join(listing) or "(none)",
-        hello=body or "(missing)",
-        count=count,
-        verdict_path=str(artifacts / "verdict.json"),
-    )
+    prompt = template
+    for key, value in {
+        "brief": brief,
+        "listing": "\n".join(listing) or "(none)",
+        "hello": body or "(missing)",
+        "count": str(count),
+        "verdict_path": str(artifacts / "verdict.json"),
+    }.items():
+        prompt = prompt.replace("{" + key + "}", value)
     journal(project, node, "review", artifacts=[str(hello)] if hello.is_file() else [], root=runtime)
     code, raw = _run_claude("opus", prompt)
     raw_path = artifacts / "review-raw.txt"
