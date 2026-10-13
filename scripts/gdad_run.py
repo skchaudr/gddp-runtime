@@ -152,17 +152,32 @@ def _decision_state(reply: dict, lines: list[dict]) -> str:
     if kind == "redispatch":
         return "pending"
     if kind == "next":
-        verdict = _latest_verdict(lines)
+        verdict = _latest_verdict(lines, _current_run_id(lines))
         if verdict == "accept":
             return "accepted"
         return "rejected"
     raise JournalError(f"unknown reply {kind}")
 
 
-def _latest_verdict(lines: list[dict]) -> str | None:
+def _current_run_id(lines: list[dict]) -> str:
+    if not lines:
+        return ""
+    return str(lines[-1].get("run_id") or "")
+
+
+def _latest_verdict(lines: list[dict], run_id: str | None = None) -> str | None:
+    run_id = run_id if run_id is not None else _current_run_id(lines)
+    if not run_id:
+        return None
+    review_idx = None
+    for index, line in enumerate(lines):
+        if line.get("type") == "review" and line.get("run_id") == run_id:
+            review_idx = index
+    if review_idx is None:
+        return None
     found = None
-    for line in lines:
-        if line.get("type") == "verdict":
+    for line in lines[review_idx + 1 :]:
+        if line.get("type") == "verdict" and line.get("run_id") == run_id:
             found = line
     if not found:
         return None
@@ -366,6 +381,12 @@ def _issue_gate(repo: Path | str | None, node: str, verdict_path: Path | str | N
     verdict = Path(verdict_path)
     if not verdict.is_file():
         raise JournalError(f"verdict file missing: {verdict}")
+    try:
+        on_disk = parse_verdict_object(json.loads(verdict.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise JournalError(f"verdict file is unreadable: {exc}") from exc
+    if on_disk["verdict"] != "accept":
+        raise JournalError("gate requires verdict accept in verdict.json")
     scripts = Path(__file__).resolve().parent
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
@@ -815,6 +836,21 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
     return packet
 
 
+def _validate_decide_target(reply: dict, packet: dict) -> None:
+    if reply.get("reply") != "resume":
+        return
+    kind = packet.get("kind")
+    if kind != "ambiguity":
+        raise JournalError(f"resume is only valid on ambiguity packets, not {kind}")
+    option_id = reply.get("option_id")
+    if not option_id:
+        return
+    options = packet.get("options") or []
+    allowed = {str(item.get("id")) for item in options if isinstance(item, dict) and item.get("id")}
+    if option_id not in allowed:
+        raise JournalError(f"option_id {option_id} is not among packet options")
+
+
 def decide(
     packet_id: str,
     reply: dict,
@@ -834,6 +870,14 @@ def decide(
     except JournalError as exc:
         journal(project, node, "blocked", note=f"invalid reply: {exc}", root=root)
         raise
+    _validate_decide_target(reply, packet)
+    if perform and reply["reply"] == "resume":
+        try:
+            _perform_resume(project, node, packet, root)
+        except JournalError as exc:
+            arts = _resume_failure_artifacts(project, node, packet, root, exc)
+            journal(project, node, "blocked", note=str(exc), artifacts=arts, root=root)
+            raise
     line = journal(project, node, "decision", reply=reply, who=who, artifacts=[str(node_dir(project, node, root) / "packets" / f"{packet_id}.json")], root=root)
     if not perform:
         return line
@@ -846,9 +890,6 @@ def decide(
             _gate_from_latest(project, node, root)
         return line
     if kind == "resume":
-        _perform_resume(project, node, packet, root)
-        if packet.get("kind") == "acceptance" and _latest_verdict(_read_lines(node_dir(project, node, root))) == "accept":
-            _gate_from_latest(project, node, root)
         return line
     return line
 
@@ -866,8 +907,17 @@ def _write_changes_prompt(project: str, node: str, run_id: str, changes: str, ro
 
 def _latest_verdict_path(project: str, node: str, root: Path) -> Path | None:
     lines = _read_lines(node_dir(project, node, root))
-    for line in reversed(lines):
-        if line.get("type") == "verdict":
+    run_id = _current_run_id(lines)
+    if not run_id:
+        return None
+    review_idx = None
+    for index, line in enumerate(lines):
+        if line.get("type") == "review" and line.get("run_id") == run_id:
+            review_idx = index
+    if review_idx is None:
+        return None
+    for line in reversed(lines[review_idx + 1 :]):
+        if line.get("type") == "verdict" and line.get("run_id") == run_id:
             for art in line.get("artifacts") or []:
                 path = Path(str(art))
                 if path.is_file():
@@ -1241,6 +1291,42 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
     return ensure_pi_pane(project, node, run_id, session_id=session_id, root=root)
 
 
+def _confirm_answer_send(proc: subprocess.CompletedProcess[str], qid: str) -> dict:
+    raw = (proc.stdout or "").strip()
+    if proc.returncode == 75:
+        raise JournalError(raw or proc.stderr.strip() or "answer timed out")
+    try:
+        payload = _dsa_json(proc)
+    except JournalError:
+        detail = proc.stderr.strip() or raw or f"pi-durable-subagents exited {proc.returncode}"
+        raise JournalError(detail) from None
+    expected = f"answer-{qid}"
+    if proc.returncode != 0 or payload.get("applied") is not True:
+        reason = payload.get("reason") or proc.stderr.strip() or raw or "answer was refused"
+        raise JournalError(str(reason))
+    if payload.get("request") != expected:
+        raise JournalError(f"answer request mismatch: expected {expected}, got {payload.get('request')}")
+    return payload
+
+
+def _resume_failure_artifacts(
+    project: str,
+    node: str,
+    packet: dict,
+    root: Path,
+    error: JournalError,
+) -> list[str]:
+    run_id = str(packet.get("run_id") or read_status(project, node, root).get("run_id") or "unknown")
+    art = node_dir(project, node, root) / "runs" / run_id / "artifacts"
+    art.mkdir(parents=True, exist_ok=True)
+    path = art / "resume-send-payload.json"
+    payload = getattr(error, "send_payload", None)
+    if isinstance(payload, dict):
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return [str(path)]
+    return []
+
+
 def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
     handle = packet.get("resume_handle") or {}
     wid = str(handle.get("wid") or read_status(project, node, root).get("wid") or "")
@@ -1255,7 +1341,7 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
     pane = _load_pane(project, node, root)
     if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])):
         resumed = dsa_cmd("resume", wid)
-        if resumed.returncode not in {0, 75}:
+        if resumed.returncode != 0:
             raise JournalError(resumed.stderr.strip() or "resume was refused")
         if pane.get("pi_session_id"):
             launch_pi(project, node, packet["run_id"], session_id=str(pane["pi_session_id"]), root=root)
@@ -1265,17 +1351,33 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
         "--qid", qid, "--rev", str(rev), "--message", message, "--json",
         wait_ms=20000,
     )
-    if proc.returncode not in {0, 75}:
-        raise JournalError(proc.stderr.strip() or proc.stdout.strip() or "answer was refused")
+    try:
+        payload = _confirm_answer_send(proc, qid)
+    except JournalError as exc:
+        try:
+            exc.send_payload = _dsa_json(proc)  # type: ignore[attr-defined]
+        except JournalError:
+            exc.send_payload = {"stdout": proc.stdout, "stderr": proc.stderr, "returncode": proc.returncode}  # type: ignore[attr-defined]
+        raise exc
+    packet["_last_send_payload"] = payload
 
 
-def prompt_fable(packet_md: str, cfg: Path | None = None) -> dict:
+def prompt_fable(packet_md: str, cfg: Path | None = None, *, raw_artifact: Path | None = None) -> dict:
     cfg = cfg or config_root()
     template = (cfg / "schemas" / "gdad" / "decider-prompt.md").read_text(encoding="utf-8")
     code, raw = _run_claude("claude-fable-5-1", template + "\n\n" + packet_md)
     if code != 0:
+        if raw_artifact is not None:
+            raw_artifact.parent.mkdir(parents=True, exist_ok=True)
+            raw_artifact.write_text(raw, encoding="utf-8")
         raise JournalError(f"fable exited {code}")
-    return parse_claude_envelope(raw)
+    try:
+        return parse_claude_envelope(raw)
+    except JournalError:
+        if raw_artifact is not None:
+            raw_artifact.parent.mkdir(parents=True, exist_ok=True)
+            raw_artifact.write_text(raw, encoding="utf-8")
+        raise
 
 
 def follow(project: str, node: str, *, decider: str, timeout: float, root: Path | None = None) -> str:
@@ -1312,10 +1414,15 @@ def follow(project: str, node: str, *, decider: str, timeout: float, root: Path 
                 pkt = fresh[-1]
                 decided.add(pkt["packet_id"])
                 md = (node_dir(project, node, root) / "packets" / f"{pkt['packet_id']}.md").read_text(encoding="utf-8")
+                status = read_status(project, node, root)
+                run_id = str(status.get("run_id") or "unknown")
+                raw_path = node_dir(project, node, root) / "runs" / run_id / "artifacts" / "decider-raw.txt"
                 try:
-                    reply = prompt_fable(md)
+                    reply = prompt_fable(md, raw_artifact=raw_path)
                     decide(pkt["packet_id"], reply, who="fable", root=root)
                 except JournalError as exc:
+                    arts = [str(raw_path)] if raw_path.is_file() else []
+                    journal(project, node, "blocked", note=str(exc), artifacts=arts, root=root)
                     print(f"decider blocked: {exc}", file=sys.stderr)
                     return current_state(project, node, root)
                 continue

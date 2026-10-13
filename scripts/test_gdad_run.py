@@ -153,6 +153,129 @@ class JournalTests(unittest.TestCase):
         )
         self.assertEqual(line["state"], "accepted")
 
+    def test_next_on_second_run_ignores_first_run_accept_verdict(self):
+        lines = [
+            {"type": "dispatch", "run_id": "line-pair-1", "state": "running"},
+            {"type": "review", "run_id": "line-pair-1", "state": "review"},
+            {"type": "verdict", "run_id": "line-pair-1", "state": "review", "note": "accept: ok"},
+            {"type": "dispatch", "run_id": "line-pair-2", "state": "running"},
+            {"type": "packet", "run_id": "line-pair-2", "state": "awaiting-decision"},
+        ]
+        reply = {"reply": "next", "packet_id": "pkt-2", "workflow": None}
+        self.assertEqual(gdad_run._decision_state(reply, lines), "rejected")
+        self.assertEqual(gdad_run._latest_verdict(lines, "line-pair-2"), None)
+
+    def test_gate_refuses_non_accept_verdict_json(self):
+        receipt = self.root / "verdict.json"
+        receipt.write_text(json.dumps({"verdict": "reject", "reasons": ["count=3"]}), encoding="utf-8")
+        with self.assertRaises(gdad_run.JournalError):
+            gdad_run._issue_gate(self.root, "line-pair", receipt)
+
+    def test_resume_on_verdict_packet_writes_nothing(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "pause", note="checkpoint after-workers", root=self.root)
+        gdad_run.ambiguity_packet("gdad-demo", "line-pair", root=self.root)
+        gdad_run.journal(
+            "gdad-demo", "line-pair", "decision", who="fable",
+            reply={"reply": "resume", "packet_id": "pkt-1", "option_id": "resume"},
+            root=self.root,
+        )
+        gdad_run.journal("gdad-demo", "line-pair", "review", root=self.root)
+        gdad_run.journal("gdad-demo", "line-pair", "verdict", verdict="reject", note="count=3", root=self.root)
+        packet = gdad_run.write_packet(
+            "gdad-demo", "line-pair",
+            kind="verdict",
+            question="Redispatch?",
+            done=["rejected"],
+            options=[{"id": "redispatch", "label": "Redispatch", "consequence": "new run"}],
+            evidence="count=3",
+            artifacts=[],
+            checkpoint="",
+            suggested="{}",
+            root=self.root,
+        )
+        directory = gdad_run.node_dir("gdad-demo", "line-pair", self.root)
+        before = (directory / "journal.jsonl").read_bytes()
+        with self.assertRaises(gdad_run.JournalError):
+            gdad_run.decide(
+                packet["packet_id"],
+                {"reply": "resume", "packet_id": packet["packet_id"], "option_id": "redispatch"},
+                root=self.root,
+            )
+        self.assertEqual((directory / "journal.jsonl").read_bytes(), before)
+        self.assertTrue(gdad_run.load_packet("gdad-demo", "line-pair", packet["packet_id"], self.root)["open"])
+
+    def test_resume_rejects_unknown_option_without_journal(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "pause", note="checkpoint after-workers", root=self.root)
+        packet = gdad_run.ambiguity_packet("gdad-demo", "line-pair", root=self.root)
+        directory = gdad_run.node_dir("gdad-demo", "line-pair", self.root)
+        before = (directory / "journal.jsonl").read_bytes()
+        with self.assertRaises(gdad_run.JournalError):
+            gdad_run.decide(
+                packet["packet_id"],
+                {"reply": "resume", "packet_id": packet["packet_id"], "option_id": "nope"},
+                root=self.root,
+            )
+        self.assertEqual((directory / "journal.jsonl").read_bytes(), before)
+
+    def test_follow_journals_blocked_when_fable_fails(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "pause", note="checkpoint after-workers", root=self.root)
+        gdad_run.ambiguity_packet("gdad-demo", "line-pair", root=self.root)
+        with mock.patch.object(gdad_run, "_run_claude", return_value=(1, "bad stdout")):
+            state = gdad_run.follow("gdad-demo", "line-pair", decider="fable", timeout=2.0, root=self.root)
+        self.assertEqual(state, "blocked")
+        lines = gdad_run._read_lines(gdad_run.node_dir("gdad-demo", "line-pair", self.root))
+        self.assertEqual(lines[-1]["type"], "blocked")
+        raw = gdad_run.node_dir("gdad-demo", "line-pair", self.root) / "runs" / "line-pair-1" / "artifacts" / "decider-raw.txt"
+        self.assertTrue(raw.is_file())
+        self.assertEqual(raw.read_text(encoding="utf-8"), "bad stdout")
+
+    def test_resume_blocks_when_send_not_applied(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "pause", note="checkpoint after-workers", root=self.root)
+        directory = gdad_run.node_dir("gdad-demo", "line-pair", self.root)
+        packet_id = "pkt-resume"
+        packet = {
+            "packet_id": packet_id,
+            "project": "gdad-demo",
+            "node": "line-pair",
+            "run_id": "line-pair-1",
+            "kind": "ambiguity",
+            "done": ["Workers finished"],
+            "question": "Resume?",
+            "options": [{"id": "resume", "label": "Resume", "consequence": "continue"}],
+            "evidence": "ask",
+            "artifacts": [],
+            "resume_handle": {"wid": "wid-1", "qid": "q-test", "rev": 1, "to": "wid-1/gate"},
+            "open": True,
+        }
+        folder = directory / "packets"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{packet_id}.json").write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
+        gdad_run.journal("gdad-demo", "line-pair", "packet", note=f"{packet_id} ambiguity", root=self.root)
+
+        def fake_dsa(*args: str, wait_ms: int | None = None) -> subprocess.CompletedProcess[str]:
+            if args and args[0] == "send":
+                body = json.dumps({"request": "answer-q-test", "applied": False, "reason": "held"})
+                return subprocess.CompletedProcess(list(args), 1, stdout=body, stderr="")
+            return subprocess.CompletedProcess(list(args), 0, stdout="{}", stderr="")
+
+        with mock.patch.object(gdad_run, "dsa_cmd", fake_dsa):
+            with self.assertRaises(gdad_run.JournalError):
+                gdad_run.decide(
+                    packet_id,
+                    {"reply": "resume", "packet_id": packet_id, "option_id": "resume"},
+                    root=self.root,
+                )
+        self.assertEqual(gdad_run.current_state("gdad-demo", "line-pair", self.root), "blocked")
+        self.assertTrue(gdad_run.load_packet("gdad-demo", "line-pair", packet_id, self.root)["open"])
+        payload_path = directory / "runs" / "line-pair-1" / "artifacts" / "resume-send-payload.json"
+        self.assertTrue(payload_path.is_file())
+        saved = json.loads(payload_path.read_text(encoding="utf-8"))
+        self.assertFalse(saved.get("applied"))
+
 
 class PaneLifecycleTests(unittest.TestCase):
     def setUp(self):
