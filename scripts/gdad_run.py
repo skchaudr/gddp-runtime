@@ -1232,7 +1232,10 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "tools": ["write"],
         "writer": False,
         "cwd": art_s,
-        "task": f"Do not read the repository. Write {art / 'hello-a.txt'} now with exactly these two lines and nothing else:\nalpha\nbeta\nThen stop.",
+        "task": (
+            f"{prompt}\n\nYou are worker A. Do only the Worker A part. "
+            f"Write {art / 'hello-a.txt'} and no other file. Then stop."
+        ),
     }
     worker_b = {
         "key": "b",
@@ -1241,7 +1244,10 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "tools": ["write"],
         "writer": False,
         "cwd": art_s,
-        "task": f"Do not read the repository. Write {art / 'hello-b.txt'} now with exactly this one line and nothing else:\ngamma\nThen stop.",
+        "task": (
+            f"{prompt}\n\nYou are worker B. Do only the Worker B part. "
+            f"Write {art / 'hello-b.txt'} and no other file. Then stop."
+        ),
     }
     gate = {
         "agent": "scribe",
