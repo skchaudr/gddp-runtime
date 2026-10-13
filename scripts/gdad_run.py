@@ -1216,15 +1216,16 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "tasks": [
             {
                 "key": "a",
+                "tools": ["write", "ask"],
                 "task": (
-                    f"{prompt}\nYou are worker A. Write only {art / 'hello-a.txt'}. "
-                    "When that file exists, call ask with exactly this question and wait: "
-                    "Workers finished. Resume to review?"
+                    f"Do not read the repository. Write {art / 'hello-a.txt'} now with exactly these two lines and nothing else:\nalpha\nbeta\n"
+                    "Then call ask with exactly this question and wait: Workers finished. Resume to review?"
                 ),
             },
             {
                 "key": "b",
-                "task": f"{prompt}\nYou are worker B. Write only {art / 'hello-b.txt'}. Do not call ask.",
+                "tools": ["write"],
+                "task": f"Do not read the repository. Write {art / 'hello-b.txt'} now with exactly this one line and nothing else:\ngamma\n",
             },
         ],
     }
