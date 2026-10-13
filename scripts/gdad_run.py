@@ -1208,10 +1208,25 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
     art = run / "artifacts"
     prompt = (run / "prompt.txt").read_text(encoding="utf-8").rstrip()
     art_s = str(art)
+    agent_dir = art / ".pi" / "agents"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "scribe.md").write_text(
+        "---\n"
+        "name: scribe\n"
+        "description: Writes one file or asks one question\n"
+        "tools: write, ask\n"
+        "systemPromptMode: replace\n"
+        "inheritProjectContext: false\n"
+        "defaultContext: fresh\n"
+        "---\n"
+        "Do only the task. Do not explore. If the task says to write a file, write it and stop. "
+        "If the task says to call ask, call ask and stop.\n",
+        encoding="utf-8",
+    )
     model = "openrouter/deepseek/deepseek-v4-flash"
     worker_a = {
         "key": "a",
-        "agent": "worker",
+        "agent": "scribe",
         "model": model,
         "tools": ["write"],
         "writer": False,
@@ -1220,7 +1235,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
     }
     worker_b = {
         "key": "b",
-        "agent": "worker",
+        "agent": "scribe",
         "model": model,
         "tools": ["write"],
         "writer": False,
@@ -1228,7 +1243,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "task": f"Do not read the repository. Write {art / 'hello-b.txt'} now with exactly this one line and nothing else:\ngamma\nThen stop.",
     }
     gate = {
-        "agent": "worker",
+        "agent": "scribe",
         "model": model,
         "tools": ["ask"],
         "writer": False,
