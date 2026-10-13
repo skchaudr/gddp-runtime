@@ -1055,7 +1055,10 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
     cfg = config_root()
     _prepare_prompt(project, node, run_id, root, cfg)
     session_id = session_id or str(uuid.uuid4())
-    cwd = str(node_dir(project, node, root))
+    # Keep the pi cwd empty so the orchestrator does not treat prompt.txt as its task.
+    cwd_path = node_dir(project, node, root) / "pi-cwd"
+    cwd_path.mkdir(parents=True, exist_ok=True)
+    cwd = str(cwd_path)
     workspace = _focused_workspace()
     env_args: list[str] = []
     for key, value in _pi_env(project, node, run_id, root).items():
