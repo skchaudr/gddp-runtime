@@ -1121,13 +1121,6 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
         raise JournalError("resume handle needs wid, qid, and rev")
     message = str(packet.get("question") or "resume")
     request = f"{packet['packet_id']}-answer"
-    proc = dsa_cmd(
-        "send", "--request", request, "--to", wid, "--kind", "answer",
-        "--qid", qid, "--rev", str(rev), "--message", message, "--json",
-        wait_ms=20000,
-    )
-    if proc.returncode not in {0, 75}:
-        raise JournalError(proc.stderr.strip() or proc.stdout.strip() or "answer was refused")
     pane = _load_pane(project, node, root)
     if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])):
         resumed = dsa_cmd("resume", wid, "--json", wait_ms=20000)
@@ -1135,6 +1128,13 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
             raise JournalError(resumed.stderr.strip() or "resume was refused")
         if pane.get("pi_session_id"):
             launch_pi(project, node, packet["run_id"], session_id=str(pane["pi_session_id"]), root=root)
+    proc = dsa_cmd(
+        "send", "--request", request, "--to", wid, "--kind", "answer",
+        "--qid", qid, "--rev", str(rev), "--message", message, "--json",
+        wait_ms=20000,
+    )
+    if proc.returncode not in {0, 75}:
+        raise JournalError(proc.stderr.strip() or proc.stdout.strip() or "answer was refused")
 
 
 def prompt_fable(packet_md: str, cfg: Path | None = None) -> dict:
@@ -1292,7 +1292,7 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
         question = questions[0]
         qid = str(question.get("qid") or "")
         rev = question.get("rev", 0)
-        text = str(question.get("question") or "Workers finished. Resume to review?")
+        text = str(question.get("question") or question.get("text") or "Workers finished. Resume to review?")
         _ambiguity_from_question(project, node, root, qid, rev, text)
         return
     if state == "sealed":
