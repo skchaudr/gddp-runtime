@@ -1360,7 +1360,8 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
     art = run / "artifacts"
     prompt = (run / "prompt.txt").read_text(encoding="utf-8").rstrip()
     art_s = str(art)
-    agent_dir = art / ".pi" / "agents"
+    run_s = str(run)
+    agent_dir = run / ".pi" / "agents"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "scribe.md").write_text(
         "---\n"
@@ -1382,7 +1383,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "model": model,
         "tools": ["write"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": (
             f"{prompt}\n\nYou are worker A. Do only the Worker A part. "
             f"Write {art / 'hello-a.txt'} and no other file. Then stop."
@@ -1394,7 +1395,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "model": model,
         "tools": ["write"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": (
             f"{prompt}\n\nYou are worker B. Do only the Worker B part. "
             f"Write {art / 'hello-b.txt'} and no other file. Then stop."
@@ -1405,14 +1406,14 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "model": model,
         "tools": ["ask"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": "Call the ask tool now with exactly this question and then stop: Workers finished. Resume to review?",
     }
     source = (
         f"await runs.all([{json.dumps(worker_a)}, {json.dumps(worker_b)}]);\n"
         f"await runs.run(\"gate\", {json.dumps(gate)});\n"
     )
-    spec = {"name": "line-pair", "cwd": art_s, "source": source}
+    spec = {"name": "line-pair", "cwd": run_s, "source": source}
     path = run / "spec.json"
     path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     return path

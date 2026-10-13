@@ -335,6 +335,31 @@ class SafetyFixTests(unittest.TestCase):
             self.assertEqual(gdad_run.decider_model(), "custom-decider")
             self.assertEqual(gdad_run.worker_model(), "custom-worker")
 
+    def test_scribe_agent_lives_outside_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"
+            cfg = Path(tmp) / "config"
+            root.mkdir()
+            cfg.mkdir()
+            os.environ["GDDP_RUNTIME_ROOT"] = str(root)
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_RUNTIME_ROOT", None)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            def_dir = cfg / "graphs" / "gdad-demo" / "gdad" / "line-pair"
+            def_dir.mkdir(parents=True)
+            (def_dir / "first-prompt.txt").write_text("Write hello files.")
+            node = gdad_run.node_dir("gdad-demo", "line-pair", root)
+            node.mkdir(parents=True)
+            run_id = "run-1"
+            gdad_run._spec_for("gdad-demo", "line-pair", run_id, root, cfg)
+            art = node / "runs" / run_id / "artifacts"
+            run = node / "runs" / run_id
+            scribe = run / ".pi" / "agents" / "scribe.md"
+            self.assertTrue(scribe.is_file())
+            self.assertFalse((art / ".pi").exists())
+            spec = json.loads((run / "spec.json").read_text())
+            self.assertEqual(spec["cwd"], str(run))
+
 
 if __name__ == "__main__":
     unittest.main()
