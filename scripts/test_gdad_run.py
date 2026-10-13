@@ -360,6 +360,23 @@ class SafetyFixTests(unittest.TestCase):
             spec = json.loads((run / "spec.json").read_text())
             self.assertEqual(spec["cwd"], str(run))
 
+    def test_cap_field_appends_truncated_marker(self):
+        huge = "x" * 5000
+        capped = gdad_run._cap_field(huge, cap=100)
+        self.assertIn("[truncated]", capped)
+        self.assertLessEqual(len(capped.encode("utf-8")), 100)
+
+    def test_cap_packet_truncates_question_in_json(self):
+        packet = gdad_run._cap_packet({
+            "packet_id": "pkt-1",
+            "question": "q" * 5000,
+            "evidence": "e",
+            "done": [],
+            "options": [],
+        })
+        self.assertIn("[truncated]", packet["question"])
+        self.assertLessEqual(len(packet["question"].encode("utf-8")), gdad_run.MD_CAP_BYTES)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,7 @@ from pathlib import Path
 
 JOURNAL_VERSION = 1
 MD_CAP_BYTES = 2048
+TRUNCATED_SUFFIX = "\n[truncated]"
 DEFAULT_DECIDER_MODEL = "claude-fable-5-1"
 DEFAULT_WORKER_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 WHO = {
@@ -436,7 +437,40 @@ def _next_packet_id(directory: Path) -> str:
     return f"pkt-{max(nums, default=0) + 1}"
 
 
+def _cap_field(text: str, cap: int = MD_CAP_BYTES) -> str:
+    if not isinstance(text, str):
+        text = json.dumps(text)
+    raw = text.encode("utf-8")
+    suffix = TRUNCATED_SUFFIX.encode("utf-8")
+    if len(raw) <= cap:
+        return text
+    budget = cap - len(suffix)
+    if budget < 1:
+        return TRUNCATED_SUFFIX.strip()
+    return raw[:budget].decode("utf-8", errors="ignore") + TRUNCATED_SUFFIX
+
+
+def _cap_packet(packet: dict) -> dict:
+    capped = dict(packet)
+    capped["question"] = _cap_field(str(capped.get("question") or ""))
+    capped["evidence"] = _cap_field(str(capped.get("evidence") or ""))
+    capped["done"] = [_cap_field(str(item)) for item in (capped.get("done") or [])[:5]]
+    options = []
+    for opt in capped.get("options") or []:
+        if not isinstance(opt, dict):
+            continue
+        options.append({
+            "id": _cap_field(str(opt.get("id") or "")),
+            "label": _cap_field(str(opt.get("label") or "")),
+            "consequence": _cap_field(str(opt.get("consequence") or "")),
+        })
+    capped["options"] = options
+    return capped
+
+
 def _render_packet_md(packet: dict, suggested: str) -> str:
+    packet = _cap_packet(packet)
+    suggested = _cap_field(suggested)
     done = packet["done"][:5]
     option_lines = [f"- {opt['id']}: {opt['label']} ({opt['consequence']})" for opt in packet["options"]]
     evidence = packet["evidence"]
@@ -469,11 +503,7 @@ def _render_packet_md(packet: dict, suggested: str) -> str:
         json.dumps(packet["resume_handle"]),
         "",
     ]
-    text = "\n".join(parts)
-    raw = text.encode("utf-8")
-    if len(raw) > MD_CAP_BYTES:
-        text = raw[: MD_CAP_BYTES - 1].decode("utf-8", errors="ignore") + "\n"
-    return text
+    return "\n".join(parts)
 
 
 def write_packet(
@@ -495,7 +525,7 @@ def write_packet(
     directory = node_dir(project, node, root)
     status = read_status(project, node, root)
     packet_id = _next_packet_id(directory)
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -512,7 +542,7 @@ def write_packet(
             "rev": 0,
         },
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
@@ -752,7 +782,7 @@ def _packet_with_suggestion(
             "packet_id": packet_id,
             "workflow": None,
         })
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -769,7 +799,7 @@ def _packet_with_suggestion(
             "rev": 0,
         },
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
@@ -797,7 +827,7 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
     directory = node_dir(project, node, root)
     packet_id = _next_packet_id(directory)
     suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -810,7 +840,7 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
         "artifacts": listing,
         "resume_handle": {"wid": status.get("wid") or "", "qid": "", "rev": 0},
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
