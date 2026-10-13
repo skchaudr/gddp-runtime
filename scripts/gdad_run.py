@@ -22,6 +22,9 @@ from pathlib import Path
 
 JOURNAL_VERSION = 1
 MD_CAP_BYTES = 2048
+TRUNCATED_SUFFIX = "\n[truncated]"
+DEFAULT_DECIDER_MODEL = "claude-fable-5-1"
+DEFAULT_WORKER_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 WHO = {
     "dispatch": "gdad-executor",
     "pause": "pi-workflow",
@@ -455,7 +458,40 @@ def _next_packet_id(directory: Path) -> str:
     return f"pkt-{max(nums, default=0) + 1}"
 
 
+def _cap_field(text: str, cap: int = MD_CAP_BYTES) -> str:
+    if not isinstance(text, str):
+        text = json.dumps(text)
+    raw = text.encode("utf-8")
+    suffix = TRUNCATED_SUFFIX.encode("utf-8")
+    if len(raw) <= cap:
+        return text
+    budget = cap - len(suffix)
+    if budget < 1:
+        return TRUNCATED_SUFFIX.strip()
+    return raw[:budget].decode("utf-8", errors="ignore") + TRUNCATED_SUFFIX
+
+
+def _cap_packet(packet: dict) -> dict:
+    capped = dict(packet)
+    capped["question"] = _cap_field(str(capped.get("question") or ""))
+    capped["evidence"] = _cap_field(str(capped.get("evidence") or ""))
+    capped["done"] = [_cap_field(str(item)) for item in (capped.get("done") or [])[:5]]
+    options = []
+    for opt in capped.get("options") or []:
+        if not isinstance(opt, dict):
+            continue
+        options.append({
+            "id": _cap_field(str(opt.get("id") or "")),
+            "label": _cap_field(str(opt.get("label") or "")),
+            "consequence": _cap_field(str(opt.get("consequence") or "")),
+        })
+    capped["options"] = options
+    return capped
+
+
 def _render_packet_md(packet: dict, suggested: str) -> str:
+    packet = _cap_packet(packet)
+    suggested = _cap_field(suggested)
     done = packet["done"][:5]
     option_lines = [f"- {opt['id']}: {opt['label']} ({opt['consequence']})" for opt in packet["options"]]
     evidence = packet["evidence"]
@@ -488,11 +524,7 @@ def _render_packet_md(packet: dict, suggested: str) -> str:
         json.dumps(packet["resume_handle"]),
         "",
     ]
-    text = "\n".join(parts)
-    raw = text.encode("utf-8")
-    if len(raw) > MD_CAP_BYTES:
-        text = raw[: MD_CAP_BYTES - 1].decode("utf-8", errors="ignore") + "\n"
-    return text
+    return "\n".join(parts)
 
 
 def write_packet(
@@ -514,7 +546,7 @@ def write_packet(
     directory = node_dir(project, node, root)
     status = read_status(project, node, root)
     packet_id = _next_packet_id(directory)
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -531,7 +563,7 @@ def write_packet(
             "rev": 0,
         },
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
@@ -601,9 +633,23 @@ def _artifact_lines(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _run_claude(model: str, prompt: str) -> tuple[int, str]:
+def claude_invocation_argv(model: str, prompt: str, *, tools: str) -> list[str]:
+    return [
+        "claude",
+        "-p",
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--tools",
+        tools,
+        prompt,
+    ]
+
+
+def _run_claude(model: str, prompt: str, *, tools: str) -> tuple[int, str]:
     proc = subprocess.run(
-        ["claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions", prompt],
+        claude_invocation_argv(model, prompt, tools=tools),
         text=True,
         capture_output=True,
         check=False,
@@ -671,7 +717,7 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
     }.items():
         prompt = prompt.replace("{" + key + "}", value)
     journal(project, node, "review", artifacts=[str(hello)] if hello.is_file() else [], root=runtime)
-    code, raw = _run_claude("opus", prompt)
+    code, raw = _run_claude("opus", prompt, tools="")
     raw_path = artifacts / "review-raw.txt"
     artifacts.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(raw, encoding="utf-8")
@@ -680,11 +726,7 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
         if code != 0:
             raise JournalError(f"claude exited {code}")
         obj = parse_verdict_object(parse_claude_envelope(raw))
-        if not verdict_path.is_file():
-            raise JournalError("reviewer did not write verdict.json")
-        on_disk = parse_verdict_object(json.loads(verdict_path.read_text(encoding="utf-8")))
-        if on_disk != obj:
-            raise JournalError("verdict.json does not match claude's result")
+        verdict_path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
     except (JournalError, json.JSONDecodeError, OSError) as exc:
         journal(project, node, "blocked", note=str(exc), artifacts=[str(raw_path)], root=runtime)
         raise
@@ -761,7 +803,7 @@ def _packet_with_suggestion(
             "packet_id": packet_id,
             "workflow": None,
         })
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -778,7 +820,7 @@ def _packet_with_suggestion(
             "rev": 0,
         },
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
@@ -806,7 +848,7 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
     directory = node_dir(project, node, root)
     packet_id = _next_packet_id(directory)
     suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
-    packet = {
+    packet = _cap_packet({
         "packet_id": packet_id,
         "project": project,
         "node": node,
@@ -819,7 +861,7 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
         "artifacts": listing,
         "resume_handle": {"wid": status.get("wid") or "", "qid": "", "rev": 0},
         "open": True,
-    }
+    })
     rendered = _render_packet_md(packet, suggested)
     folder = directory / "packets"
     folder.mkdir(parents=True, exist_ok=True)
@@ -938,6 +980,14 @@ def _gate_repo() -> Path:
     if env:
         return Path(env).expanduser().resolve()
     return config_root()
+
+
+def decider_model() -> str:
+    return _setting("GDAD_DECIDER_MODEL") or DEFAULT_DECIDER_MODEL
+
+
+def worker_model() -> str:
+    return _setting("GDAD_WORKER_MODEL") or DEFAULT_WORKER_MODEL
 
 
 def _setting(name: str) -> str:
@@ -1365,7 +1415,7 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
 def prompt_fable(packet_md: str, cfg: Path | None = None, *, raw_artifact: Path | None = None) -> dict:
     cfg = cfg or config_root()
     template = (cfg / "schemas" / "gdad" / "decider-prompt.md").read_text(encoding="utf-8")
-    code, raw = _run_claude("claude-fable-5-1", template + "\n\n" + packet_md)
+    code, raw = _run_claude(decider_model(), template + "\n\n" + packet_md, tools="")
     if code != 0:
         if raw_artifact is not None:
             raw_artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -1447,7 +1497,8 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
     art = run / "artifacts"
     prompt = (run / "prompt.txt").read_text(encoding="utf-8").rstrip()
     art_s = str(art)
-    agent_dir = art / ".pi" / "agents"
+    run_s = str(run)
+    agent_dir = run / ".pi" / "agents"
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "scribe.md").write_text(
         "---\n"
@@ -1462,14 +1513,14 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "If the task says to call ask, call ask and stop.\n",
         encoding="utf-8",
     )
-    model = "openrouter/deepseek/deepseek-v4-flash"
+    model = worker_model()
     worker_a = {
         "key": "a",
         "agent": "scribe",
         "model": model,
         "tools": ["write"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": (
             f"{prompt}\n\nYou are worker A. Do only the Worker A part. "
             f"Write {art / 'hello-a.txt'} and no other file. Then stop."
@@ -1481,7 +1532,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "model": model,
         "tools": ["write"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": (
             f"{prompt}\n\nYou are worker B. Do only the Worker B part. "
             f"Write {art / 'hello-b.txt'} and no other file. Then stop."
@@ -1492,14 +1543,14 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "model": model,
         "tools": ["ask"],
         "writer": False,
-        "cwd": art_s,
+        "cwd": run_s,
         "task": "Call the ask tool now with exactly this question and then stop: Workers finished. Resume to review?",
     }
     source = (
         f"await runs.all([{json.dumps(worker_a)}, {json.dumps(worker_b)}]);\n"
         f"await runs.run(\"gate\", {json.dumps(gate)});\n"
     )
-    spec = {"name": "line-pair", "cwd": art_s, "source": source}
+    spec = {"name": "line-pair", "cwd": run_s, "source": source}
     path = run / "spec.json"
     path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     return path

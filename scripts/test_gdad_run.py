@@ -417,5 +417,89 @@ class PaneLifecycleTests(unittest.TestCase):
             self.assertEqual(len(self.tabs), 1)
 
 
+class SafetyFixTests(unittest.TestCase):
+    def test_decider_argv_restricts_tools_and_skips_no_permissions_flag(self):
+        argv = gdad_run.claude_invocation_argv("claude-fable-5-1", "packet", tools="")
+        joined = " ".join(argv)
+        self.assertIn("--tools", argv)
+        self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertEqual(joined.find("dangerously-skip-permissions"), -1)
+
+    def test_reviewer_argv_restricts_tools_and_skips_no_permissions_flag(self):
+        argv = gdad_run.claude_invocation_argv("opus", "review", tools="")
+        self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertEqual(" ".join(argv).find("dangerously-skip-permissions"), -1)
+
+    def test_pi_bin_expands_tilde_from_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp)
+            (cfg / "runtime").mkdir()
+            (cfg / "runtime" / "settings.env").write_text("GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n")
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            bindir = gdad_run.pi_bin()
+            self.assertEqual(bindir, Path("~/.local/pi-1.0.4/bin").expanduser())
+
+    def test_decider_and_worker_models_default_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp)
+            (cfg / "runtime").mkdir()
+            settings = cfg / "runtime" / "settings.env"
+            settings.write_text("GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n")
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            self.assertEqual(gdad_run.decider_model(), gdad_run.DEFAULT_DECIDER_MODEL)
+            self.assertEqual(gdad_run.worker_model(), gdad_run.DEFAULT_WORKER_MODEL)
+            settings.write_text(
+                "GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n"
+                "GDAD_DECIDER_MODEL=custom-decider\n"
+                "GDAD_WORKER_MODEL=custom-worker\n"
+            )
+            self.assertEqual(gdad_run.decider_model(), "custom-decider")
+            self.assertEqual(gdad_run.worker_model(), "custom-worker")
+
+    def test_scribe_agent_lives_outside_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"
+            cfg = Path(tmp) / "config"
+            root.mkdir()
+            cfg.mkdir()
+            os.environ["GDDP_RUNTIME_ROOT"] = str(root)
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_RUNTIME_ROOT", None)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            def_dir = cfg / "graphs" / "gdad-demo" / "gdad" / "line-pair"
+            def_dir.mkdir(parents=True)
+            (def_dir / "first-prompt.txt").write_text("Write hello files.")
+            node = gdad_run.node_dir("gdad-demo", "line-pair", root)
+            node.mkdir(parents=True)
+            run_id = "run-1"
+            gdad_run._spec_for("gdad-demo", "line-pair", run_id, root, cfg)
+            art = node / "runs" / run_id / "artifacts"
+            run = node / "runs" / run_id
+            scribe = run / ".pi" / "agents" / "scribe.md"
+            self.assertTrue(scribe.is_file())
+            self.assertFalse((art / ".pi").exists())
+            spec = json.loads((run / "spec.json").read_text())
+            self.assertEqual(spec["cwd"], str(run))
+
+    def test_cap_field_appends_truncated_marker(self):
+        huge = "x" * 5000
+        capped = gdad_run._cap_field(huge, cap=100)
+        self.assertIn("[truncated]", capped)
+        self.assertLessEqual(len(capped.encode("utf-8")), 100)
+
+    def test_cap_packet_truncates_question_in_json(self):
+        packet = gdad_run._cap_packet({
+            "packet_id": "pkt-1",
+            "question": "q" * 5000,
+            "evidence": "e",
+            "done": [],
+            "options": [],
+        })
+        self.assertIn("[truncated]", packet["question"])
+        self.assertLessEqual(len(packet["question"].encode("utf-8")), gdad_run.MD_CAP_BYTES)
+
+
 if __name__ == "__main__":
     unittest.main()
