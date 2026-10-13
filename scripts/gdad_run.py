@@ -11,12 +11,12 @@ import argparse
 import fcntl
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,7 +36,7 @@ WHO = {
 }
 # Implicit empty journal counts as pending.
 LEGAL = {
-    "dispatch": {"pending", "blocked"},
+    "dispatch": {"pending", "blocked", "rejected"},
     "pause": {"running"},
     "resume": {"paused"},
     "packet": {"paused", "review"},
@@ -94,6 +94,50 @@ def definition_dir(project: str, node: str, root: Path | None = None) -> Path:
 def _lock_path(directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     return directory / ".lock"
+
+
+@contextmanager
+def _node_lock(directory: Path):
+    lock = _lock_path(directory)
+    with lock.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _packet_sort_key(path: Path) -> int:
+    suffix = path.stem.split("-", 1)[-1]
+    return int(suffix) if suffix.isdigit() else 0
+
+
+def _project_retry_budget(project: str) -> int:
+    path = config_root() / "graphs" / project / "project.yaml"
+    if not path.is_file():
+        return 0
+    try:
+        import yaml
+    except ImportError:
+        return 0
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    policy = doc.get("execution_policy") or {}
+    raw = policy.get("retry_budget", 0)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _redispatch_count(lines: list[dict]) -> int:
+    count = 0
+    for line in lines:
+        if line.get("type") != "decision":
+            continue
+        note = str(line.get("note") or "")
+        if note.startswith("redispatch:"):
+            count += 1
+    return count
 
 
 def _read_lines(directory: Path) -> list[dict]:
@@ -265,9 +309,13 @@ def journal(
             )
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    _post_journal(project, node, root, line)
+    return line
+
+
+def _post_journal(project: str, node: str, root: Path | None, line: dict) -> None:
     if _pi_work_finished(line):
         release_pi_pane(project, node, root)
-    return line
 
 
 def _journal_locked(
@@ -413,16 +461,6 @@ def ensure_pause(project: str, node: str, note: str, root: Path | None = None) -
     raise JournalError(f"pause is illegal from {state}")
 
 
-def mark_resumed(project: str, node: str, root: Path | None = None) -> dict | None:
-    """Journal resume only when the decider has not already moved the node to running."""
-    state = current_state(project, node, root)
-    if state == "paused":
-        return journal(project, node, "resume", root=root)
-    if state == "running":
-        return None
-    raise JournalError(f"resume is illegal from {state}")
-
-
 def _next_packet_id(directory: Path) -> str:
     packets = directory / "packets"
     packets.mkdir(parents=True, exist_ok=True)
@@ -491,44 +529,47 @@ def write_packet(
     if kind not in {"verdict", "ambiguity", "acceptance"}:
         raise JournalError(f"unknown packet kind {kind}")
     directory = node_dir(project, node, root)
-    status = read_status(project, node, root)
-    packet_id = _next_packet_id(directory)
-    packet = {
-        "packet_id": packet_id,
-        "project": project,
-        "node": node,
-        "run_id": status.get("run_id") or "",
-        "kind": kind,
-        "done": done[:5],
-        "question": question,
-        "options": options,
-        "evidence": evidence,
-        "artifacts": artifacts,
-        "resume_handle": {
-            "wid": status.get("wid") or "",
-            "qid": "",
-            "rev": 0,
-        },
-        "open": True,
-    }
-    rendered = _render_packet_md(packet, suggested)
-    folder = directory / "packets"
-    folder.mkdir(parents=True, exist_ok=True)
-    json_path = folder / f"{packet_id}.json"
-    md_path = folder / f"{packet_id}.md"
-    json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
-    md_path.write_text(rendered, encoding="utf-8")
-    try:
-        journal(
-            project, node, "packet",
-            note=f"{packet_id} {kind}",
-            artifacts=[str(md_path)],
-            root=root,
-        )
-    except Exception:
-        json_path.unlink(missing_ok=True)
-        md_path.unlink(missing_ok=True)
-        raise
+    with _node_lock(directory):
+        status = read_status(project, node, root)
+        packet_id = _next_packet_id(directory)
+        packet = {
+            "packet_id": packet_id,
+            "project": project,
+            "node": node,
+            "run_id": status.get("run_id") or "",
+            "kind": kind,
+            "done": done[:5],
+            "question": question,
+            "options": options,
+            "evidence": evidence,
+            "artifacts": artifacts,
+            "resume_handle": {
+                "wid": status.get("wid") or "",
+                "qid": "",
+                "rev": 0,
+            },
+            "open": True,
+        }
+        rendered = _render_packet_md(packet, suggested)
+        folder = directory / "packets"
+        folder.mkdir(parents=True, exist_ok=True)
+        json_path = folder / f"{packet_id}.json"
+        md_path = folder / f"{packet_id}.md"
+        json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(rendered, encoding="utf-8")
+        try:
+            line = _journal_locked(
+                directory, project, node, "packet",
+                note=f"{packet_id} {kind}",
+                artifacts=[str(md_path)],
+                who=None, request_id=None, wid=None,
+                reply=None, verdict=None, repo=None, verdict_path=None,
+            )
+        except Exception:
+            json_path.unlink(missing_ok=True)
+            md_path.unlink(missing_ok=True)
+            raise
+        _post_journal(project, node, root, line)
     return packet
 
 
@@ -567,7 +608,7 @@ def open_packets(project: str | None = None, node: str | None = None, root: Path
             folder = node_path / "packets"
             if not folder.is_dir():
                 continue
-            for path in sorted(folder.glob("pkt-*.json")):
+            for path in sorted(folder.glob("pkt-*.json"), key=_packet_sort_key):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("open") is True:
                     found.append(data)
@@ -681,6 +722,10 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
 def _write_review_packet(project: str, node: str, verdict: dict, listing: list[str], root: Path) -> dict:
     reasons = "; ".join(verdict["reasons"])
     if verdict["verdict"] == "reject":
+        lines = _read_lines(node_dir(project, node, root))
+        if _redispatch_count(lines) >= _project_retry_budget(project):
+            journal(project, node, "blocked", note="retry budget exhausted", root=root)
+            return {}
         changes = (
             "Worker A: write exactly one line, the single word one, to hello-a.txt and no other file. "
             "Worker B: write exactly one line, the single word two, to hello-b.txt and no other file. "
@@ -726,51 +771,59 @@ def _packet_with_suggestion(
 ) -> dict:
     """Write the packet, then fill the suggested reply once the id exists."""
     directory = node_dir(project, node, root)
-    status = read_status(project, node, root)
-    packet_id = _next_packet_id(directory)
-    if kind == "verdict":
-        suggested = json.dumps({
-            "reply": "redispatch",
+    with _node_lock(directory):
+        status = read_status(project, node, root)
+        packet_id = _next_packet_id(directory)
+        if kind == "verdict":
+            suggested = json.dumps({
+                "reply": "redispatch",
+                "packet_id": packet_id,
+                "changes": changes,
+            })
+        else:
+            suggested = json.dumps({
+                "reply": "next",
+                "packet_id": packet_id,
+                "workflow": None,
+            })
+        packet = {
             "packet_id": packet_id,
-            "changes": changes,
-        })
-    else:
-        suggested = json.dumps({
-            "reply": "next",
-            "packet_id": packet_id,
-            "workflow": None,
-        })
-    packet = {
-        "packet_id": packet_id,
-        "project": project,
-        "node": node,
-        "run_id": status.get("run_id") or "",
-        "kind": kind,
-        "done": done[:5],
-        "question": question,
-        "options": options,
-        "evidence": evidence,
-        "artifacts": artifacts,
-        "resume_handle": {
-            "wid": status.get("wid") or "",
-            "qid": "",
-            "rev": 0,
-        },
-        "open": True,
-    }
-    rendered = _render_packet_md(packet, suggested)
-    folder = directory / "packets"
-    folder.mkdir(parents=True, exist_ok=True)
-    json_path = folder / f"{packet_id}.json"
-    md_path = folder / f"{packet_id}.md"
-    json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
-    md_path.write_text(rendered, encoding="utf-8")
-    try:
-        journal(project, node, "packet", note=f"{packet_id} {kind}", artifacts=[str(md_path)], root=root)
-    except Exception:
-        json_path.unlink(missing_ok=True)
-        md_path.unlink(missing_ok=True)
-        raise
+            "project": project,
+            "node": node,
+            "run_id": status.get("run_id") or "",
+            "kind": kind,
+            "done": done[:5],
+            "question": question,
+            "options": options,
+            "evidence": evidence,
+            "artifacts": artifacts,
+            "resume_handle": {
+                "wid": status.get("wid") or "",
+                "qid": "",
+                "rev": 0,
+            },
+            "open": True,
+        }
+        rendered = _render_packet_md(packet, suggested)
+        folder = directory / "packets"
+        folder.mkdir(parents=True, exist_ok=True)
+        json_path = folder / f"{packet_id}.json"
+        md_path = folder / f"{packet_id}.md"
+        json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(rendered, encoding="utf-8")
+        try:
+            line = _journal_locked(
+                directory, project, node, "packet",
+                note=f"{packet_id} {kind}",
+                artifacts=[str(md_path)],
+                who=None, request_id=None, wid=None,
+                reply=None, verdict=None, repo=None, verdict_path=None,
+            )
+        except Exception:
+            json_path.unlink(missing_ok=True)
+            md_path.unlink(missing_ok=True)
+            raise
+        _post_journal(project, node, root, line)
     return packet
 
 
@@ -778,40 +831,48 @@ def ambiguity_packet(project: str, node: str, root: Path | None = None) -> dict:
     """Journal pause, then write the after-workers ambiguity packet."""
     root = root or runtime_root()
     ensure_pause(project, node, "checkpoint after-workers", root=root)
-    status = read_status(project, node, root)
-    run_id = status.get("run_id") or ""
-    artifacts = node_dir(project, node, root) / "runs" / run_id / "artifacts"
-    listing = sorted(str(path) for path in artifacts.rglob("*") if path.is_file()) if artifacts.is_dir() else []
     directory = node_dir(project, node, root)
-    packet_id = _next_packet_id(directory)
-    suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
-    packet = {
-        "packet_id": packet_id,
-        "project": project,
-        "node": node,
-        "run_id": run_id,
-        "kind": "ambiguity",
-        "done": ["Workers finished", "hello.txt is the concatenation of hello-a.txt and hello-b.txt"],
-        "question": "Workers finished. Resume the workflow so the reviewer can run?",
-        "options": [{"id": "resume", "label": "Resume", "consequence": "Continue to the Opus review"}],
-        "evidence": "checkpoint after-workers",
-        "artifacts": listing,
-        "resume_handle": {"wid": status.get("wid") or "", "qid": "", "rev": 0},
-        "open": True,
-    }
-    rendered = _render_packet_md(packet, suggested)
-    folder = directory / "packets"
-    folder.mkdir(parents=True, exist_ok=True)
-    json_path = folder / f"{packet_id}.json"
-    md_path = folder / f"{packet_id}.md"
-    json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
-    md_path.write_text(rendered, encoding="utf-8")
-    try:
-        journal(project, node, "packet", note=f"{packet_id} ambiguity", artifacts=[str(md_path)], root=root)
-    except Exception:
-        json_path.unlink(missing_ok=True)
-        md_path.unlink(missing_ok=True)
-        raise
+    with _node_lock(directory):
+        status = read_status(project, node, root)
+        run_id = status.get("run_id") or ""
+        artifacts = directory / "runs" / run_id / "artifacts"
+        listing = sorted(str(path) for path in artifacts.rglob("*") if path.is_file()) if artifacts.is_dir() else []
+        packet_id = _next_packet_id(directory)
+        suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
+        packet = {
+            "packet_id": packet_id,
+            "project": project,
+            "node": node,
+            "run_id": run_id,
+            "kind": "ambiguity",
+            "done": ["Workers finished", "hello.txt is the concatenation of hello-a.txt and hello-b.txt"],
+            "question": "Workers finished. Resume the workflow so the reviewer can run?",
+            "options": [{"id": "resume", "label": "Resume", "consequence": "Continue to the Opus review"}],
+            "evidence": "checkpoint after-workers",
+            "artifacts": listing,
+            "resume_handle": {"wid": status.get("wid") or "", "qid": "", "rev": 0},
+            "open": True,
+        }
+        rendered = _render_packet_md(packet, suggested)
+        folder = directory / "packets"
+        folder.mkdir(parents=True, exist_ok=True)
+        json_path = folder / f"{packet_id}.json"
+        md_path = folder / f"{packet_id}.md"
+        json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(rendered, encoding="utf-8")
+        try:
+            line = _journal_locked(
+                directory, project, node, "packet",
+                note=f"{packet_id} ambiguity",
+                artifacts=[str(md_path)],
+                who=None, request_id=None, wid=None,
+                reply=None, verdict=None, repo=None, verdict_path=None,
+            )
+        except Exception:
+            json_path.unlink(missing_ok=True)
+            md_path.unlink(missing_ok=True)
+            raise
+        _post_journal(project, node, root, line)
     return packet
 
 
@@ -834,6 +895,11 @@ def decide(
     except JournalError as exc:
         journal(project, node, "blocked", note=f"invalid reply: {exc}", root=root)
         raise
+    if reply.get("reply") == "redispatch":
+        lines = _read_lines(node_dir(project, node, root))
+        if _redispatch_count(lines) >= _project_retry_budget(project):
+            journal(project, node, "blocked", note="retry budget exhausted", root=root)
+            raise JournalError("retry budget exhausted")
     line = journal(project, node, "decision", reply=reply, who=who, artifacts=[str(node_dir(project, node, root) / "packets" / f"{packet_id}.json")], root=root)
     if not perform:
         return line
@@ -934,67 +1000,6 @@ def _dsa_json(proc: subprocess.CompletedProcess[str]) -> dict:
         raise JournalError(f"pi-durable-subagents returned non-JSON: {exc}") from exc
 
 
-def workflow_tool_name(extension_js: str | None = None) -> str:
-    path = Path(extension_js or extensions()[0])
-    text = path.read_text(encoding="utf-8", errors="replace")
-    if 'name: "piewf_workflow"' in text or "name: 'piewf_workflow'" in text:
-        return "piewf_workflow"
-    return "workflow"
-
-
-def _safe_part(value: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9._-]", "_", value)
-
-
-def discover_workflow_run_ids(session_id: str, name: str | None = None) -> list[str]:
-    root = Path.home() / ".pi" / "workflows" / "projects"
-    if not root.is_dir():
-        return []
-    sid = _safe_part(session_id)
-    scored: list[tuple[float, str]] = []
-    for runs in root.glob(f"*/sessions/{sid}/runs"):
-        if not runs.is_dir():
-            continue
-        for child in runs.iterdir():
-            if not child.is_dir() or child.name.startswith("."):
-                continue
-            summary_path = child / "summary.json"
-            wname = ""
-            if summary_path.is_file():
-                try:
-                    wname = str(json.loads(summary_path.read_text(encoding="utf-8")).get("workflowName") or "")
-                except (json.JSONDecodeError, OSError):
-                    wname = ""
-            if name and wname and wname != name:
-                continue
-            scored.append((child.stat().st_mtime, child.name))
-    scored.sort()
-    return [run_id for _, run_id in scored]
-
-
-def workflow_failure(session_id: str, run_id: str) -> str | None:
-    root = Path.home() / ".pi" / "workflows" / "projects"
-    sid = _safe_part(session_id)
-    for summary_path in root.glob(f"*/sessions/{sid}/runs/{run_id}/summary.json"):
-        try:
-            summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
-        if summary.get("state") == "failed":
-            err = summary.get("error") or {}
-            return str(err.get("message") or err or "workflow failed")
-    return None
-
-
-def wait_running(project: str, node: str, timeout: float = 180.0, root: Path | None = None) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if current_state(project, node, root) == "running":
-            return
-        time.sleep(0.5)
-    raise JournalError("timed out waiting for running")
-
-
 def _herdr_proc(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["herdr", *args], text=True, capture_output=True, check=False)
 
@@ -1049,8 +1054,8 @@ def _close_tab(tab_id: str) -> None:
         _herdr_proc(["tab", "close", tab_id])
 
 
-def _close_gdad_tabs(node: str, *, keep: str | None) -> None:
-    label = f"gdad-{node}"
+def _close_gdad_tabs(project: str, node: str, *, keep: str | None) -> None:
+    label = _gdad_tab_label(project, node)
     try:
         rows = _tab_rows()
     except JournalError:
@@ -1137,10 +1142,6 @@ def _pi_env(project: str, node: str, run_id: str, root: Path) -> dict[str, str]:
         "GDAD_RUN_ID": run_id,
         "GDAD_PROMPT_FILE": str(prompt),
         "GDAD_ARTIFACTS": str(art),
-        "GDAD_WORKER_SH": str(definition_dir(project, node) / "worker.sh"),
-        "GDAD_SCRIPT": str(definition_dir(project, node) / "workflow.js"),
-        "GDAD_REPLAY": str(node_dir(project, node, root) / "runs" / run_id / "replay.jsonl"),
-        "GDAD_RELEASE": str(node_dir(project, node, root) / "runs" / run_id / "release"),
     }
 
 
@@ -1179,7 +1180,7 @@ def release_pi_pane(project: str, node: str, root: Path | None = None) -> None:
     pane_id = str(recorded.get("pane_id") or "")
     if pane_id and _pane_alive(pane_id):
         _stop_pi(pane_id)
-    _close_gdad_tabs(node, keep=None)
+    _close_gdad_tabs(project, node, keep=None)
     _close_tab(str(recorded.get("tab_id") or ""))
     (node_dir(project, node, root) / "pane.json").unlink(missing_ok=True)
 
@@ -1191,8 +1192,12 @@ def _run_pi_in_pane(pane_id: str, session_id: str) -> None:
         raise JournalError(proc.stderr.strip() or "herdr pane run failed")
 
 
+def _gdad_tab_label(project: str, node: str) -> str:
+    return f"gdad-{project}-{node}"
+
+
 def _create_pi_pane(project: str, node: str, run_id: str, session_id: str, root: Path) -> dict:
-    _close_gdad_tabs(node, keep=None)
+    _close_gdad_tabs(project, node, keep=None)
     _prepare_prompt(project, node, run_id, root, config_root())
     cwd_path = node_dir(project, node, root) / "pi-cwd"
     cwd_path.mkdir(parents=True, exist_ok=True)
@@ -1204,7 +1209,7 @@ def _create_pi_pane(project: str, node: str, run_id: str, session_id: str, root:
         "tab", "create",
         "--workspace", _focused_workspace(),
         "--cwd", cwd,
-        "--label", f"gdad-{node}",
+        "--label", _gdad_tab_label(project, node),
         "--no-focus",
         *env_args,
     ])
@@ -1226,7 +1231,7 @@ def ensure_pi_pane(project: str, node: str, run_id: str, *, session_id: str | No
     pane_id = str(recorded.get("pane_id") or "")
     tab_id = str(recorded.get("tab_id") or "")
     if pane_id and _pane_alive(pane_id):
-        _close_gdad_tabs(node, keep=tab_id)
+        _close_gdad_tabs(project, node, keep=tab_id)
         if not _pi_pids(pane_id):
             session_id = str(recorded.get("pi_session_id") or session_id or uuid.uuid4())
             _run_pi_in_pane(pane_id, session_id)
@@ -1253,12 +1258,13 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
     # so key the answer on the question id or a later packet collides with an old one.
     request = f"answer-{qid}"
     pane = _load_pane(project, node, root)
-    if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])):
+    pane_id = str(pane.get("pane_id") or "")
+    if (not pane_id) or (not _pane_alive(pane_id)):
         resumed = dsa_cmd("resume", wid)
         if resumed.returncode not in {0, 75}:
             raise JournalError(resumed.stderr.strip() or "resume was refused")
-        if pane.get("pi_session_id"):
-            launch_pi(project, node, packet["run_id"], session_id=str(pane["pi_session_id"]), root=root)
+        session_id = str(pane.get("pi_session_id") or "") or None
+        launch_pi(project, node, packet["run_id"], session_id=session_id, root=root)
     target = str(handle.get("to") or f"{wid}/gate")
     proc = dsa_cmd(
         "send", "--request", request, "--to", target, "--kind", "answer",
@@ -1472,34 +1478,45 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
 
 def _ambiguity_from_question(project: str, node: str, root: Path, qid: str, rev: object, text: str, target: str) -> None:
     ensure_pause(project, node, "subagent question", root=root)
-    status = read_status(project, node, root)
-    packet_id = _next_packet_id(node_dir(project, node, root))
-    suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
-    packet = {
-        "packet_id": packet_id,
-        "project": project,
-        "node": node,
-        "run_id": status.get("run_id") or "",
-        "kind": "ambiguity",
-        "done": ["Workers are waiting on a question"],
-        "question": text,
-        "options": [{"id": "resume", "label": "Resume", "consequence": "Answer the subagent and continue"}],
-        "evidence": text,
-        "artifacts": [],
-        "resume_handle": {
-            "wid": status.get("wid") or "",
-            "qid": qid,
-            "rev": rev,
-            "to": target,
-        },
-        "open": True,
-    }
-    rendered = _render_packet_md(packet, suggested)
-    folder = node_dir(project, node, root) / "packets"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{packet_id}.json").write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
-    (folder / f"{packet_id}.md").write_text(rendered, encoding="utf-8")
-    journal(project, node, "packet", note=f"{packet_id} ambiguity", artifacts=[str(folder / f"{packet_id}.md")], root=root)
+    directory = node_dir(project, node, root)
+    with _node_lock(directory):
+        status = read_status(project, node, root)
+        packet_id = _next_packet_id(directory)
+        suggested = json.dumps({"reply": "resume", "packet_id": packet_id, "option_id": "resume"})
+        packet = {
+            "packet_id": packet_id,
+            "project": project,
+            "node": node,
+            "run_id": status.get("run_id") or "",
+            "kind": "ambiguity",
+            "done": ["Workers are waiting on a question"],
+            "question": text,
+            "options": [{"id": "resume", "label": "Resume", "consequence": "Answer the subagent and continue"}],
+            "evidence": text,
+            "artifacts": [],
+            "resume_handle": {
+                "wid": status.get("wid") or "",
+                "qid": qid,
+                "rev": rev,
+                "to": target,
+            },
+            "open": True,
+        }
+        rendered = _render_packet_md(packet, suggested)
+        folder = directory / "packets"
+        folder.mkdir(parents=True, exist_ok=True)
+        json_path = folder / f"{packet_id}.json"
+        md_path = folder / f"{packet_id}.md"
+        json_path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(rendered, encoding="utf-8")
+        line = _journal_locked(
+            directory, project, node, "packet",
+            note=f"{packet_id} ambiguity",
+            artifacts=[str(md_path)],
+            who=None, request_id=None, wid=None,
+            reply=None, verdict=None, repo=None, verdict_path=None,
+        )
+        _post_journal(project, node, root, line)
 
 
 def _concat_and_review(project: str, node: str, root: Path) -> None:
@@ -1650,7 +1667,9 @@ def watch_node(project: str, node: str, root: Path | None = None) -> int:
     if not path.is_file():
         print(f"no journal at {path}", file=sys.stderr)
         return 2
-    cursor = "0:0"
+    root = root or runtime_root()
+    wid = str(read_status(project, node, root).get("wid") or "")
+    cursor: str | None = None
     with path.open("r", encoding="utf-8") as handle:
         print(handle.read(), end="")
         while True:
@@ -1658,7 +1677,10 @@ def watch_node(project: str, node: str, root: Path | None = None) -> int:
             if line:
                 print(line, end="")
                 sys.stdout.flush()
-            events = dsa_cmd("events", "--all", "--since", cursor, "--limit", "50", "--wait-ms", "1000")
+            cmd = ["events", "--limit", "50", "--wait-ms", "1000"]
+            if cursor:
+                cmd.extend(["--since", cursor])
+            events = dsa_cmd(*cmd)
             for raw in (events.stdout or "").splitlines():
                 raw = raw.strip()
                 if not raw.startswith("{"):
@@ -1667,10 +1689,16 @@ def watch_node(project: str, node: str, root: Path | None = None) -> int:
                     rec = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
+                if rec.get("type") == "head" and rec.get("cursor"):
+                    cursor = str(rec["cursor"])
+                    continue
                 if rec.get("cursor"):
                     cursor = str(rec["cursor"])
-                if rec.get("type"):
-                    print(f"event {rec.get('type')} {rec.get('wid', '')} {rec.get('question', rec.get('status', ''))}")
+                event_wid = str(rec.get("wid") or "")
+                if wid and event_wid and event_wid != wid:
+                    continue
+                if rec.get("type") and rec.get("type") != "head":
+                    print(f"event {rec.get('type')} {event_wid} {rec.get('question', rec.get('status', ''))}")
             if not line:
                 time.sleep(0.2)
 
@@ -1750,21 +1778,6 @@ def build_parser() -> argparse.ArgumentParser:
     journal_p.add_argument("--repo")
     journal_p.add_argument("--verdict-path")
     journal_p.set_defaults(func=_cmd_journal)
-
-    pause_p = sub.add_parser("pause-packet")
-    pause_p.add_argument("project")
-    pause_p.add_argument("node")
-    pause_p.set_defaults(func=lambda args: _call(lambda: ambiguity_packet(args.project, args.node) or None))
-
-    resumed_p = sub.add_parser("mark-resumed")
-    resumed_p.add_argument("project")
-    resumed_p.add_argument("node")
-    resumed_p.set_defaults(func=lambda args: _call(lambda: mark_resumed(args.project, args.node)))
-
-    wait_p = sub.add_parser("wait-running")
-    wait_p.add_argument("project")
-    wait_p.add_argument("node")
-    wait_p.set_defaults(func=lambda args: _call(lambda: wait_running(args.project, args.node)))
 
     review_p = sub.add_parser("review")
     review_p.add_argument("project")
