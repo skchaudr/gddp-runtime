@@ -916,19 +916,44 @@ def _safe_part(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "_", value)
 
 
-def discover_workflow_run_ids(session_id: str) -> list[str]:
+def discover_workflow_run_ids(session_id: str, name: str | None = None) -> list[str]:
     root = Path.home() / ".pi" / "workflows" / "projects"
     if not root.is_dir():
         return []
     sid = _safe_part(session_id)
-    found = []
+    scored: list[tuple[float, str]] = []
     for runs in root.glob(f"*/sessions/{sid}/runs"):
         if not runs.is_dir():
             continue
         for child in runs.iterdir():
-            if child.is_dir() and not child.name.startswith("."):
-                found.append(child.name)
-    return found
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            summary_path = child / "summary.json"
+            wname = ""
+            if summary_path.is_file():
+                try:
+                    wname = str(json.loads(summary_path.read_text(encoding="utf-8")).get("workflowName") or "")
+                except (json.JSONDecodeError, OSError):
+                    wname = ""
+            if name and wname and wname != name:
+                continue
+            scored.append((child.stat().st_mtime, child.name))
+    scored.sort()
+    return [run_id for _, run_id in scored]
+
+
+def workflow_failure(session_id: str, run_id: str) -> str | None:
+    root = Path.home() / ".pi" / "workflows" / "projects"
+    sid = _safe_part(session_id)
+    for summary_path in root.glob(f"*/sessions/{sid}/runs/{run_id}/summary.json"):
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        if summary.get("state") == "failed":
+            err = summary.get("error") or {}
+            return str(err.get("message") or err or "workflow failed")
+    return None
 
 
 def wait_running(project: str, node: str, timeout: float = 180.0, root: Path | None = None) -> None:
@@ -993,6 +1018,7 @@ def _pi_env(project: str, node: str, run_id: str, root: Path) -> dict[str, str]:
         "GDAD_RUN_ID": run_id,
         "GDAD_PROMPT_FILE": str(prompt),
         "GDAD_ARTIFACTS": str(art),
+        "GDAD_WORKER_SH": str(definition_dir(project, node) / "worker.sh"),
     }
 
 
@@ -1014,7 +1040,13 @@ def _pi_command(session_id: str, prompt: str) -> list[str]:
     command = ["pi", "-ne"]
     for path in extensions():
         command.extend(["-e", path])
-    command.extend(["--session-id", session_id, "--approve", prompt])
+    command.extend([
+        "--append-system-prompt",
+        "Call only the workflow tool named in the user message. Do not explore the filesystem.",
+        "--session-id", session_id,
+        "--approve",
+        prompt,
+    ])
     return command
 
 
@@ -1047,8 +1079,9 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
         prompt = resume_prompt
     else:
         prompt = (
-            f"Call the {tool} tool exactly once with scriptPath {script} "
-            f"name {node} and foreground true. Do not edit files yourself."
+            f"Call the {tool} tool now, exactly once, and then stop. "
+            f"scriptPath={script} name={node} foreground=true. "
+            "Do not explore files and do not write files yourself."
         )
     command = _pi_command(session_id, prompt)
     proc = subprocess.run(["herdr", "pane", "run", pane["pane_id"], *command], text=True, capture_output=True, check=False)
@@ -1150,6 +1183,11 @@ def follow(project: str, node: str, *, decider: str, timeout: float, root: Path 
                 continue
         if last_state in {"accepted", "rejected", "blocked"}:
             return last_state
+        status = read_status(project, node, root)
+        failure = workflow_failure(status.get("pi_session_id") or "", status.get("workflow_run_id") or "")
+        if failure and last_state == "running":
+            journal(project, node, "blocked", note=failure, root=root)
+            return "blocked"
         time.sleep(0.5)
     raise JournalError("follow timed out")
 
