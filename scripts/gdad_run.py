@@ -1190,7 +1190,7 @@ def follow(project: str, node: str, *, decider: str, timeout: float, root: Path 
                 continue
         if last_state in {"accepted", "rejected", "blocked"}:
             return last_state
-        if last_state == "running":
+        if last_state in {"running", "paused"}:
             try:
                 _advance_from_describe(project, node, root)
             except JournalError as exc:
@@ -1304,7 +1304,7 @@ def _questions(described: dict) -> list[dict]:
 def _advance_from_describe(project: str, node: str, root: Path) -> None:
     status = read_status(project, node, root)
     request_id = status.get("request_id") or ""
-    if not request_id or current_state(project, node, root) != "running":
+    if not request_id or current_state(project, node, root) not in {"running", "paused"}:
         return
     proc = dsa_cmd("describe", "--key", request_id, "--json")
     if proc.returncode != 0:
@@ -1321,7 +1321,7 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
         qid = str(question.get("qid") or "")
         rev = question.get("rev", 0)
         text = str(question.get("question") or question.get("text") or "Workers finished. Resume to review?")
-        _ambiguity_from_question(project, node, root, qid, rev, text)
+        _ambiguity_from_question(project, node, root, qid, rev, text, str(question.get("to") or ""))
         return
     if state == "sealed":
         calls = described.get("calls") or []
@@ -1333,7 +1333,7 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
         _concat_and_review(project, node, root)
 
 
-def _ambiguity_from_question(project: str, node: str, root: Path, qid: str, rev: object, text: str) -> None:
+def _ambiguity_from_question(project: str, node: str, root: Path, qid: str, rev: object, text: str, target: str) -> None:
     ensure_pause(project, node, "subagent question", root=root)
     status = read_status(project, node, root)
     packet_id = _next_packet_id(node_dir(project, node, root))
@@ -1353,7 +1353,7 @@ def _ambiguity_from_question(project: str, node: str, root: Path, qid: str, rev:
             "wid": status.get("wid") or "",
             "qid": qid,
             "rev": rev,
-            "to": str(question.get("to") or ""),
+            "to": target,
         },
         "open": True,
     }
