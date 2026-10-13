@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -256,7 +257,7 @@ def journal(
     with lock.open("a+", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
-            return _journal_locked(
+            line = _journal_locked(
                 directory, project, node, typ,
                 note=note, artifacts=artifacts, who=who,
                 request_id=request_id, wid=wid,
@@ -264,6 +265,9 @@ def journal(
             )
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    if _pi_work_finished(line):
+        release_pi_pane(project, node, root)
+    return line
 
 
 def _journal_locked(
@@ -991,8 +995,12 @@ def wait_running(project: str, node: str, timeout: float = 180.0, root: Path | N
     raise JournalError("timed out waiting for running")
 
 
+def _herdr_proc(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["herdr", *args], text=True, capture_output=True, check=False)
+
+
 def _herdr_json(args: list[str]) -> dict:
-    proc = subprocess.run(["herdr", *args], text=True, capture_output=True, check=False)
+    proc = _herdr_proc(args)
     if proc.returncode != 0:
         raise JournalError(proc.stderr.strip() or proc.stdout.strip() or f"herdr {' '.join(args)} failed")
     raw = proc.stdout.strip()
@@ -1014,8 +1022,93 @@ def _focused_workspace() -> str:
 
 
 def _pane_alive(pane_id: str) -> bool:
-    proc = subprocess.run(["herdr", "pane", "get", pane_id], text=True, capture_output=True, check=False)
+    if not pane_id:
+        return False
+    proc = _herdr_proc(["pane", "get", pane_id])
     return proc.returncode == 0
+
+
+def _pi_work_finished(line: dict) -> bool:
+    """True when the pi pane has nothing left to host."""
+    if line.get("state") in {"accepted", "rejected", "blocked"}:
+        return True
+    if line.get("type") != "packet":
+        return False
+    parts = str(line.get("note") or "").split(" ", 1)
+    kind = parts[1] if len(parts) == 2 else ""
+    return kind in {"verdict", "acceptance"}
+
+
+def _tab_rows() -> list[dict]:
+    data = _herdr_json(["tab", "list"])
+    return [tab for tab in data.get("result", {}).get("tabs", []) if isinstance(tab, dict)]
+
+
+def _close_tab(tab_id: str) -> None:
+    if tab_id:
+        _herdr_proc(["tab", "close", tab_id])
+
+
+def _close_gdad_tabs(node: str, *, keep: str | None) -> None:
+    label = f"gdad-{node}"
+    try:
+        rows = _tab_rows()
+    except JournalError:
+        return
+    for tab in rows:
+        if str(tab.get("label") or "") != label:
+            continue
+        tab_id = str(tab.get("tab_id") or "")
+        if keep and tab_id == keep:
+            continue
+        _close_tab(tab_id)
+
+
+def _pi_pids(pane_id: str) -> list[int]:
+    proc = _herdr_proc(["pane", "process-info", "--pane", pane_id])
+    if proc.returncode != 0:
+        return []
+    raw = proc.stdout or ""
+    start = raw.find("{")
+    if start < 0:
+        return []
+    try:
+        data = json.loads(raw[start:])
+    except json.JSONDecodeError:
+        return []
+    info = data.get("result", {}).get("process_info", {})
+    pids: list[int] = []
+    for item in info.get("foreground_processes") or []:
+        if not isinstance(item, dict):
+            continue
+        argv = item.get("argv") or []
+        name = str(item.get("name") or "")
+        if name != "pi" and not (argv and argv[0] == "pi"):
+            continue
+        try:
+            pid = int(item.get("pid") or 0)
+        except (TypeError, ValueError):
+            continue
+        if pid > 1 and pid != os.getpid():
+            pids.append(pid)
+    return pids
+
+
+def _stop_pi(pane_id: str) -> None:
+    for pid in _pi_pids(pane_id):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
+def live_pane_id(project: str, node: str, root: Path | None = None) -> str:
+    root = root or runtime_root()
+    recorded = _load_pane(project, node, root)
+    pane_id = str(recorded.get("pane_id") or "")
+    if pane_id and _pane_alive(pane_id):
+        return pane_id
+    return "none"
 
 
 def _load_pane(project: str, node: str, root: Path) -> dict:
@@ -1077,22 +1170,39 @@ def _pi_pane_command(session_id: str) -> list[str]:
     ]
 
 
-def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None = None, session_id: str | None = None, root: Path | None = None) -> dict:
+def release_pi_pane(project: str, node: str, root: Path | None = None) -> None:
+    """Close this node's gdad tab and stop its pi process. No-op without pane.json."""
     root = root or runtime_root()
-    cfg = config_root()
-    _prepare_prompt(project, node, run_id, root, cfg)
-    session_id = session_id or str(uuid.uuid4())
-    # Keep the pi cwd empty so the orchestrator does not treat prompt.txt as its task.
+    recorded = _load_pane(project, node, root)
+    if not recorded:
+        return
+    pane_id = str(recorded.get("pane_id") or "")
+    if pane_id and _pane_alive(pane_id):
+        _stop_pi(pane_id)
+    _close_gdad_tabs(node, keep=None)
+    _close_tab(str(recorded.get("tab_id") or ""))
+    (node_dir(project, node, root) / "pane.json").unlink(missing_ok=True)
+
+
+def _run_pi_in_pane(pane_id: str, session_id: str) -> None:
+    command = _pi_pane_command(session_id)
+    proc = _herdr_proc(["pane", "run", pane_id, *command])
+    if proc.returncode != 0:
+        raise JournalError(proc.stderr.strip() or "herdr pane run failed")
+
+
+def _create_pi_pane(project: str, node: str, run_id: str, session_id: str, root: Path) -> dict:
+    _close_gdad_tabs(node, keep=None)
+    _prepare_prompt(project, node, run_id, root, config_root())
     cwd_path = node_dir(project, node, root) / "pi-cwd"
     cwd_path.mkdir(parents=True, exist_ok=True)
     cwd = str(cwd_path)
-    workspace = _focused_workspace()
     env_args: list[str] = []
     for key, value in _pi_env(project, node, run_id, root).items():
         env_args.extend(["--env", f"{key}={value}"])
     created = _herdr_json([
         "tab", "create",
-        "--workspace", workspace,
+        "--workspace", _focused_workspace(),
         "--cwd", cwd,
         "--label", f"gdad-{node}",
         "--no-focus",
@@ -1101,15 +1211,34 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
     pane = created["result"]["root_pane"]
     tab = created["result"]["tab"]
     if pane.get("focused") is True or tab.get("focused") is True:
-        _herdr_json(["tab", "close", tab["tab_id"]])
+        _close_tab(str(tab["tab_id"]))
         raise JournalError("herdr focused the new tab; closed it")
-    command = _pi_pane_command(session_id)
-    proc = subprocess.run(["herdr", "pane", "run", pane["pane_id"], *command], text=True, capture_output=True, check=False)
-    if proc.returncode != 0:
-        raise JournalError(proc.stderr.strip() or "herdr pane run failed")
+    _run_pi_in_pane(str(pane["pane_id"]), session_id)
     record = {"tab_id": tab["tab_id"], "pane_id": pane["pane_id"], "pi_session_id": session_id, "cwd": cwd}
     _save_pane(project, node, root, record)
     return record
+
+
+def ensure_pi_pane(project: str, node: str, run_id: str, *, session_id: str | None = None, root: Path | None = None) -> dict:
+    """Reuse pane.json's live pane. Otherwise close any older gdad tab and create one."""
+    root = root or runtime_root()
+    recorded = _load_pane(project, node, root)
+    pane_id = str(recorded.get("pane_id") or "")
+    tab_id = str(recorded.get("tab_id") or "")
+    if pane_id and _pane_alive(pane_id):
+        _close_gdad_tabs(node, keep=tab_id)
+        if not _pi_pids(pane_id):
+            session_id = str(recorded.get("pi_session_id") or session_id or uuid.uuid4())
+            _run_pi_in_pane(pane_id, session_id)
+            recorded["pi_session_id"] = session_id
+            _save_pane(project, node, root, recorded)
+        return _load_pane(project, node, root)
+    _close_tab(tab_id)
+    return _create_pi_pane(project, node, run_id, session_id or str(uuid.uuid4()), root)
+
+
+def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None = None, session_id: str | None = None, root: Path | None = None) -> dict:
+    return ensure_pi_pane(project, node, run_id, session_id=session_id, root=root)
 
 
 def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
@@ -1270,8 +1399,8 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
 def _launch_and_dispatch(project: str, node: str, run_id: str, root: Path) -> None:
     cfg = config_root()
     spec = _spec_for(project, node, run_id, root, cfg)
-    session_id = str(uuid.uuid4())
-    launch_pi(project, node, run_id, session_id=session_id, root=root)
+    pane = launch_pi(project, node, run_id, root=root)
+    session_id = str(pane["pi_session_id"])
     art = node_dir(project, node, root) / "runs" / run_id / "artifacts"
     request_id = f"{run_id}-{uuid.uuid4().hex[:6]}"
     proc = dsa_cmd(
@@ -1451,6 +1580,8 @@ def show_node(project: str, node: str, root: Path | None = None, cfg: Path | Non
     print("## status")
     status_path = directory / "status"
     print(status_path.read_text(encoding="utf-8") if status_path.is_file() else "(no status)\n")
+    print("## pane")
+    print(live_pane_id(project, node, root))
     print("## journal")
     journal_path = directory / "journal.jsonl"
     if not journal_path.is_file():
