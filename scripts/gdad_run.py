@@ -90,6 +90,17 @@ def node_dir(project: str, node: str, root: Path | None = None) -> Path:
     return (root or runtime_root()) / "gdad" / project / node
 
 
+def _runtime_node_dirs(project_dir: Path) -> list[Path]:
+    """Live node dirs only; demo resets keep ``line-pair.backup-*`` siblings."""
+    if not project_dir.is_dir():
+        return []
+    return [
+        path
+        for path in project_dir.iterdir()
+        if path.is_dir() and ".backup-" not in path.name
+    ]
+
+
 def definition_dir(project: str, node: str, root: Path | None = None) -> Path:
     return (root or config_root()) / "graphs" / project / "gdad" / node
 
@@ -640,7 +651,7 @@ def find_packet_node(packet_id: str, root: Path | None = None) -> tuple[str, str
     for project_dir in base.iterdir():
         if not project_dir.is_dir():
             continue
-        for node_path in project_dir.iterdir():
+        for node_path in _runtime_node_dirs(project_dir):
             candidate = node_path / "packets" / f"{packet_id}.json"
             if candidate.is_file():
                 return project_dir.name, node_path.name
@@ -656,7 +667,7 @@ def open_packets(project: str | None = None, node: str | None = None, root: Path
     for project_dir in projects:
         if not project_dir.is_dir():
             continue
-        nodes = [project_dir / node] if node else list(project_dir.iterdir())
+        nodes = [project_dir / node] if node else _runtime_node_dirs(project_dir)
         for node_path in nodes:
             folder = node_path / "packets"
             if not folder.is_dir():

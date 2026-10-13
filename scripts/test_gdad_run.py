@@ -447,6 +447,28 @@ class SafetyFixTests(unittest.TestCase):
         self.assertEqual(captured["argv"], gdad_run.claude_invocation_argv("opus", tools=""))
         self.assertNotIn(prompt, captured["argv"])
 
+    def test_open_packets_ignores_backup_node_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            os.environ["GDDP_RUNTIME_ROOT"] = str(root)
+            self.addCleanup(os.environ.pop, "GDDP_RUNTIME_ROOT", None)
+            live = root / "gdad" / "gdad-demo" / "line-pair" / "packets"
+            backup = root / "gdad" / "gdad-demo" / "line-pair.backup-20261013T000000Z" / "packets"
+            live.mkdir(parents=True)
+            backup.mkdir(parents=True)
+            (live / "pkt-1.json").write_text(
+                json.dumps({"packet_id": "pkt-1", "open": True, "kind": "ambiguity"}) + "\n",
+                encoding="utf-8",
+            )
+            (backup / "pkt-1.json").write_text(
+                json.dumps({"packet_id": "pkt-1", "open": False, "kind": "ambiguity"}) + "\n",
+                encoding="utf-8",
+            )
+            opened = gdad_run.open_packets("gdad-demo", "line-pair", root)
+            self.assertEqual([p["packet_id"] for p in opened], ["pkt-1"])
+            project, node = gdad_run.find_packet_node("pkt-1", root)
+            self.assertEqual((project, node), ("gdad-demo", "line-pair"))
+
     def test_pi_bin_expands_tilde_from_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp)
