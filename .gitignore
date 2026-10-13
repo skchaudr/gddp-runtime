@@ -3,6 +3,7 @@ db/
 jobs/*
 !jobs/context.md
 !jobs/AGENTS.md
+gdad/*
 events/*
 !events/context.md
 !events/AGENTS.md

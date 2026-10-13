@@ -1,0 +1,49 @@
+{
+  "state": "asking",
+  "wid": "01M4V6W8VSZTNKRS1NXV1E5C3M",
+  "request": "line-pair-1-003ea5",
+  "spec_digest": "f3dd472d06f240e0cb52d48326674c1a8c0cddfdd0a2bf9303f598436640f17c",
+  "status": "running",
+  "calls": [
+    {
+      "key": "a",
+      "gen": 1,
+      "phase": "sealed",
+      "agent": "scribe",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "status": "ok",
+      "ok": true,
+      "output": " Done. Wrote exactly two lines (`alpha`, `beta`) to `hello-a.txt` and no other file."
+    },
+    {
+      "key": "b",
+      "gen": 1,
+      "phase": "sealed",
+      "agent": "scribe",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "status": "ok",
+      "ok": true,
+      "output": " Done. Wrote `hello-b.txt` containing exactly the line `gamma`. No other file written."
+    },
+    {
+      "key": "gate",
+      "gen": 1,
+      "phase": "asking",
+      "agent": "scribe",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "waiting": {
+        "hibernated": true
+      }
+    }
+  ],
+  "questions": [
+    {
+      "qid": "b70de00c6d90b1a6a2900abd910a6342de876035d22353563af59af21a912f2b",
+      "rev": 1,
+      "to": "01M4V6W8VSZTNKRS1NXV1E5C3M/gate",
+      "call": "01M4V6W8VSZTNKRS1NXV1E5C3M@1/gate@1",
+      "text": "Workers finished. Resume to review?"
+    }
+  ],
+  "kind": "run"
+}
