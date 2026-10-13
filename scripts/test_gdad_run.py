@@ -447,6 +447,34 @@ class SafetyFixTests(unittest.TestCase):
         self.assertEqual(captured["argv"], gdad_run.claude_invocation_argv("opus", tools=""))
         self.assertNotIn(prompt, captured["argv"])
 
+    def test_advance_from_describe_uses_questions_when_state_still_running(self):
+        fixture_path = Path(__file__).resolve().parent / "fixtures" / "gdad-describe-asking-gate.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        fixture["state"] = "running"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            os.environ["GDDP_RUNTIME_ROOT"] = str(root)
+            self.addCleanup(os.environ.pop, "GDDP_RUNTIME_ROOT", None)
+            gdad_run.journal(
+                "gdad-demo", "line-pair", "dispatch",
+                request_id=fixture["request"], wid=fixture["wid"], root=root,
+            )
+            import subprocess
+            from unittest import mock
+
+            def fake_dsa(*args, **kwargs):
+                if args[:2] == ("describe", "--key"):
+                    return subprocess.CompletedProcess(args, 0, json.dumps(fixture), "")
+                return subprocess.CompletedProcess(args, 1, "", "unexpected")
+
+            with mock.patch.object(gdad_run, "dsa_cmd", side_effect=fake_dsa):
+                gdad_run._advance_from_describe("gdad-demo", "line-pair", root)
+            self.assertEqual(gdad_run.current_state("gdad-demo", "line-pair", root), "awaiting-decision")
+            pkt = json.loads(
+                (root / "gdad" / "gdad-demo" / "line-pair" / "packets" / "pkt-1.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(pkt["resume_handle"]["qid"], fixture["questions"][0]["qid"])
+
     def test_open_packets_ignores_backup_node_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

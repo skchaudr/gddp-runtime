@@ -1614,6 +1614,13 @@ def _questions(described: dict) -> list[dict]:
     return []
 
 
+def _describe_has_open_question(described: dict) -> bool:
+    """True when pi reports a subagent question (state can lag behind questions[])."""
+    if _questions(described):
+        return True
+    return str(described.get("state") or "") == "asking"
+
+
 def _advance_from_describe(project: str, node: str, root: Path) -> None:
     status = read_status(project, node, root)
     request_id = status.get("request_id") or ""
@@ -1623,8 +1630,7 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
     if proc.returncode != 0:
         return
     described = _dsa_json(proc)
-    state = str(described.get("state") or "")
-    if state == "asking":
+    if _describe_has_open_question(described):
         if any(pkt.get("kind") == "ambiguity" and pkt.get("open") for pkt in open_packets(project, node, root)):
             return
         questions = _questions(described)
@@ -1636,8 +1642,11 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
         text = str(question.get("question") or question.get("text") or "Workers finished. Resume to review?")
         _ambiguity_from_question(project, node, root, qid, rev, text, str(question.get("to") or ""))
         return
+    state = str(described.get("state") or "")
     if state == "sealed":
         calls = described.get("calls") or []
+        if any(isinstance(c, dict) and c.get("phase") == "asking" for c in calls):
+            return
         failed = [c for c in calls if isinstance(c, dict) and c.get("ok") is False]
         if failed:
             note = "; ".join(f"{c.get('key')}: {c.get('error') or c.get('status')}" for c in failed)
@@ -1735,6 +1744,11 @@ def run_node(project: str, node: str, *, decider: str = "none", timeout: float =
     elif state == "awaiting-decision" and decider == "none":
         inbox(project, node, root=root)
         return 0
+    if current_state(project, node, root) in {"running", "paused"}:
+        try:
+            _advance_from_describe(project, node, root)
+        except JournalError as exc:
+            print(exc, file=sys.stderr)
     final = follow(project, node, decider=decider, timeout=timeout, root=root)
     return 0 if final == "accepted" else 2 if final == "blocked" else 0
 
