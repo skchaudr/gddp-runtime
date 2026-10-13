@@ -294,5 +294,19 @@ class PaneLifecycleTests(unittest.TestCase):
             self.assertEqual(len(self.tabs), 1)
 
 
+class SafetyFixTests(unittest.TestCase):
+    def test_decider_argv_restricts_tools_and_skips_no_permissions_flag(self):
+        argv = gdad_run.claude_invocation_argv("claude-fable-5-1", "packet", tools="")
+        joined = " ".join(argv)
+        self.assertIn("--tools", argv)
+        self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertEqual(joined.find("dangerously-skip-permissions"), -1)
+
+    def test_reviewer_argv_restricts_tools_and_skips_no_permissions_flag(self):
+        argv = gdad_run.claude_invocation_argv("opus", "review", tools="")
+        self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertEqual(" ".join(argv).find("dangerously-skip-permissions"), -1)
+
+
 if __name__ == "__main__":
     unittest.main()

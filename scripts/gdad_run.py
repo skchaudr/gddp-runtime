@@ -580,9 +580,23 @@ def _artifact_lines(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _run_claude(model: str, prompt: str) -> tuple[int, str]:
+def claude_invocation_argv(model: str, prompt: str, *, tools: str) -> list[str]:
+    return [
+        "claude",
+        "-p",
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--tools",
+        tools,
+        prompt,
+    ]
+
+
+def _run_claude(model: str, prompt: str, *, tools: str) -> tuple[int, str]:
     proc = subprocess.run(
-        ["claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions", prompt],
+        claude_invocation_argv(model, prompt, tools=tools),
         text=True,
         capture_output=True,
         check=False,
@@ -650,7 +664,7 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
     }.items():
         prompt = prompt.replace("{" + key + "}", value)
     journal(project, node, "review", artifacts=[str(hello)] if hello.is_file() else [], root=runtime)
-    code, raw = _run_claude("opus", prompt)
+    code, raw = _run_claude("opus", prompt, tools="")
     raw_path = artifacts / "review-raw.txt"
     artifacts.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(raw, encoding="utf-8")
@@ -659,11 +673,7 @@ def review_node(project: str, node: str, root: Path | None = None, cfg: Path | N
         if code != 0:
             raise JournalError(f"claude exited {code}")
         obj = parse_verdict_object(parse_claude_envelope(raw))
-        if not verdict_path.is_file():
-            raise JournalError("reviewer did not write verdict.json")
-        on_disk = parse_verdict_object(json.loads(verdict_path.read_text(encoding="utf-8")))
-        if on_disk != obj:
-            raise JournalError("verdict.json does not match claude's result")
+        verdict_path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
     except (JournalError, json.JSONDecodeError, OSError) as exc:
         journal(project, node, "blocked", note=str(exc), artifacts=[str(raw_path)], root=runtime)
         raise
@@ -1272,7 +1282,7 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
 def prompt_fable(packet_md: str, cfg: Path | None = None) -> dict:
     cfg = cfg or config_root()
     template = (cfg / "schemas" / "gdad" / "decider-prompt.md").read_text(encoding="utf-8")
-    code, raw = _run_claude("claude-fable-5-1", template + "\n\n" + packet_md)
+    code, raw = _run_claude("claude-fable-5-1", template + "\n\n" + packet_md, tools="")
     if code != 0:
         raise JournalError(f"fable exited {code}")
     return parse_claude_envelope(raw)
