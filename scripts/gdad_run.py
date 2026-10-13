@@ -1040,7 +1040,7 @@ def _prepare_prompt(project: str, node: str, run_id: str, root: Path, cfg: Path)
 
 
 def _host_command() -> list[str]:
-    return ["node", str(Path(__file__).resolve().parent / "gdad_host.mjs")]
+    return ["/usr/bin/node", str(Path(__file__).resolve().parent / "gdad_host.mjs")]
 
 
 def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None = None, session_id: str | None = None, root: Path | None = None) -> dict:
