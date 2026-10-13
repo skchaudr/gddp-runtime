@@ -1123,13 +1123,14 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
     request = f"{packet['packet_id']}-answer"
     pane = _load_pane(project, node, root)
     if pane.get("pane_id") and not _pane_alive(str(pane["pane_id"])):
-        resumed = dsa_cmd("resume", wid, "--json", wait_ms=20000)
+        resumed = dsa_cmd("resume", wid)
         if resumed.returncode not in {0, 75}:
             raise JournalError(resumed.stderr.strip() or "resume was refused")
         if pane.get("pi_session_id"):
             launch_pi(project, node, packet["run_id"], session_id=str(pane["pi_session_id"]), root=root)
+    target = str(handle.get("to") or f"{wid}/gate")
     proc = dsa_cmd(
-        "send", "--request", request, "--to", wid, "--kind", "answer",
+        "send", "--request", request, "--to", target, "--kind", "answer",
         "--qid", qid, "--rev", str(rev), "--message", message, "--json",
         wait_ms=20000,
     )
@@ -1348,7 +1349,12 @@ def _ambiguity_from_question(project: str, node: str, root: Path, qid: str, rev:
         "options": [{"id": "resume", "label": "Resume", "consequence": "Answer the subagent and continue"}],
         "evidence": text,
         "artifacts": [],
-        "resume_handle": {"wid": status.get("wid") or "", "qid": qid, "rev": rev},
+        "resume_handle": {
+            "wid": status.get("wid") or "",
+            "qid": qid,
+            "rev": rev,
+            "to": str(question.get("to") or ""),
+        },
         "open": True,
     }
     rendered = _render_packet_md(packet, suggested)
