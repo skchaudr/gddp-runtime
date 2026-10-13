@@ -298,7 +298,7 @@ class PaneLifecycleTests(unittest.TestCase):
             for tab_id, pane_id in self.tabs.items():
                 rows.append({
                     "tab_id": tab_id,
-                    "label": "gdad-line-pair",
+                    "label": "gdad-gdad-demo-line-pair",
                     "workspace_id": "wN",
                     "focused": False,
                     "pane_id": pane_id,
@@ -499,6 +499,222 @@ class SafetyFixTests(unittest.TestCase):
         })
         self.assertIn("[truncated]", packet["question"])
         self.assertLessEqual(len(packet["question"].encode("utf-8")), gdad_run.MD_CAP_BYTES)
+
+class RobustnessTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        os.environ["GDDP_RUNTIME_ROOT"] = str(self.root)
+        self.addCleanup(self.tmp.cleanup)
+
+    def dispatch(self):
+        return gdad_run.journal(
+            "gdad-demo", "line-pair", "dispatch",
+            request_id="line-pair-1", wid="wid-1",
+            root=self.root,
+        )
+
+    def test_missing_pane_triggers_dsa_resume(self):
+        self.dispatch()
+        calls: list[list[str]] = []
+
+        def fake_dsa(*args, **kwargs):
+            calls.append(list(args))
+            # `send` must confirm the answer for qid q1 (gdad-fix-gate M5); other calls just succeed.
+            out = '{"applied": true, "request": "answer-q1"}' if "send" in args else "{}"
+            return subprocess.CompletedProcess(list(args), 0, stdout=out, stderr="")
+
+        with (
+            mock.patch.object(gdad_run, "dsa_cmd", side_effect=fake_dsa),
+            mock.patch.object(gdad_run, "launch_pi", return_value={"pane_id": "p1"}),
+        ):
+            gdad_run._perform_resume(
+                "gdad-demo",
+                "line-pair",
+                {
+                    "run_id": "line-pair-1",
+                    "question": "resume?",
+                    "resume_handle": {"wid": "wid-1", "qid": "q1", "rev": 0},
+                },
+                self.root,
+            )
+        self.assertTrue(any(c and c[0] == "resume" and c[1] == "wid-1" for c in calls))
+
+    def test_write_packet_keeps_journal_and_files_in_lock(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "pause", note="hold", root=self.root)
+        pkt = gdad_run.write_packet(
+            "gdad-demo", "line-pair",
+            kind="ambiguity",
+            question="q?",
+            done=["d"],
+            options=[{"id": "resume", "label": "Resume", "consequence": "go"}],
+            evidence="e",
+            artifacts=[],
+            checkpoint="",
+            suggested="{}",
+            root=self.root,
+        )
+        directory = gdad_run.node_dir("gdad-demo", "line-pair", self.root)
+        self.assertTrue((directory / "packets" / f"{pkt['packet_id']}.json").is_file())
+        lines = gdad_run._read_lines(directory)
+        self.assertEqual(lines[-1]["type"], "packet")
+        self.assertIn(pkt["packet_id"], lines[-1]["note"])
+
+    def test_open_packets_sort_by_number(self):
+        folder = gdad_run.node_dir("gdad-demo", "line-pair", self.root) / "packets"
+        folder.mkdir(parents=True)
+        for packet_id in ("pkt-10", "pkt-2"):
+            (folder / f"{packet_id}.json").write_text(
+                json.dumps({"packet_id": packet_id, "open": True, "kind": "ambiguity"}) + "\n",
+                encoding="utf-8",
+            )
+        rows = gdad_run.open_packets("gdad-demo", "line-pair", self.root)
+        self.assertEqual([row["packet_id"] for row in rows], ["pkt-2", "pkt-10"])
+
+    def test_watch_seeds_cursor_and_filters_wid(self):
+        directory = gdad_run.node_dir("gdad-demo", "line-pair", self.root)
+        directory.mkdir(parents=True)
+        (directory / "journal.jsonl").write_text("{}\n", encoding="utf-8")
+        (directory / "status").write_text(
+            "state: running\nwho: gdad-executor\nwhen: t\nrun_id: line-pair-1\n"
+            "request_id: line-pair-1\nwid: wid-1\n",
+            encoding="utf-8",
+        )
+        calls: list[list[str]] = []
+
+        def fake_dsa(*args, **kwargs):
+            calls.append(list(args))
+            body = "\n".join([
+                json.dumps({"type": "head", "cursor": "100:1"}),
+                json.dumps({"type": "question", "wid": "other-wid", "cursor": "100:2"}),
+                json.dumps({"type": "question", "wid": "wid-1", "cursor": "100:3"}),
+            ])
+            return subprocess.CompletedProcess(list(args), 0, stdout=body, stderr="")
+
+        with (
+            mock.patch.object(gdad_run, "dsa_cmd", side_effect=fake_dsa),
+            mock.patch.object(gdad_run.time, "sleep", side_effect=[None, StopIteration]),
+        ):
+            with self.assertRaises(StopIteration):
+                gdad_run.watch_node("gdad-demo", "line-pair", root=self.root)
+        self.assertNotIn("--all", calls[0])
+        self.assertNotIn("--since", calls[0])
+        self.assertIn("--since", calls[1])
+
+    def test_retry_budget_blocks_extra_redispatch(self):
+        cfg = self.root / "cfg"
+        graph = cfg / "graphs" / "gdad-demo"
+        graph.mkdir(parents=True)
+        (graph / "project.yaml").write_text("execution_policy:\n  retry_budget: 1\n", encoding="utf-8")
+        os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "review", root=self.root)
+        gdad_run.journal("gdad-demo", "line-pair", "verdict", verdict="reject", note="n", root=self.root)
+        first = gdad_run.write_packet(
+            "gdad-demo", "line-pair",
+            kind="verdict",
+            question="again?",
+            done=["rejected"],
+            options=[{"id": "redispatch", "label": "Redispatch", "consequence": "run"}],
+            evidence="e",
+            artifacts=[],
+            checkpoint="",
+            suggested="{}",
+            root=self.root,
+        )
+        gdad_run.journal(
+            "gdad-demo", "line-pair", "decision", who="fable",
+            reply={"reply": "redispatch", "packet_id": first["packet_id"], "changes": "fix"},
+            root=self.root,
+        )
+        gdad_run.journal(
+            "gdad-demo", "line-pair", "dispatch",
+            request_id="line-pair-2", wid="wid-2",
+            root=self.root,
+        )
+        gdad_run.journal("gdad-demo", "line-pair", "review", root=self.root)
+        gdad_run.journal("gdad-demo", "line-pair", "verdict", verdict="reject", note="n2", root=self.root)
+        second = gdad_run.write_packet(
+            "gdad-demo", "line-pair",
+            kind="verdict",
+            question="again?",
+            done=["rejected"],
+            options=[{"id": "redispatch", "label": "Redispatch", "consequence": "run"}],
+            evidence="e",
+            artifacts=[],
+            checkpoint="",
+            suggested="{}",
+            root=self.root,
+        )
+        with self.assertRaises(gdad_run.JournalError):
+            gdad_run.decide(
+                second["packet_id"],
+                {"reply": "redispatch", "packet_id": second["packet_id"], "changes": "fix again"},
+                root=self.root,
+            )
+        self.assertEqual(gdad_run.current_state("gdad-demo", "line-pair", self.root), "blocked")
+
+    def test_dispatch_from_rejected(self):
+        self.dispatch()
+        gdad_run.journal("gdad-demo", "line-pair", "review", root=self.root)
+        gdad_run.journal("gdad-demo", "line-pair", "verdict", verdict="reject", note="n", root=self.root)
+        packet = gdad_run.write_packet(
+            "gdad-demo", "line-pair",
+            kind="verdict",
+            question="Close?",
+            done=["rejected"],
+            options=[{"id": "close", "label": "Close", "consequence": "stop"}],
+            evidence="n",
+            artifacts=[],
+            checkpoint="",
+            suggested="{}",
+            root=self.root,
+        )
+        gdad_run.journal(
+            "gdad-demo", "line-pair", "decision", who="fable",
+            reply={"reply": "next", "packet_id": packet["packet_id"], "workflow": None},
+            root=self.root,
+        )
+        self.assertEqual(gdad_run.current_state("gdad-demo", "line-pair", self.root), "rejected")
+        line = gdad_run.journal(
+            "gdad-demo", "line-pair", "dispatch",
+            request_id="line-pair-2", wid="wid-2",
+            root=self.root,
+        )
+        self.assertEqual(line["state"], "running")
+
+
+class JournalSchemaTests(unittest.TestCase):
+    def test_demo_dispatch_line_matches_schema(self):
+        runtime_wt = Path(__file__).resolve().parents[1]
+        schema_path = (
+            runtime_wt.parent.parent.parent
+            / "gddp-config"
+            / ".worktrees"
+            / "gdad-fix-cleanup"
+            / "schemas"
+            / "gdad"
+            / "journal.schema.json"
+        )
+        env_cfg = os.environ.get("GDDP_CONFIG_PATH")
+        if not schema_path.is_file() and env_cfg:
+            schema_path = Path(env_cfg) / "schemas" / "gdad" / "journal.schema.json"
+        self.assertTrue(schema_path.is_file(), f"missing schema at {schema_path}")
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        allowed = set(schema["properties"])
+        required = set(schema["required"])
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        os.environ["GDDP_RUNTIME_ROOT"] = str(root)
+        line = gdad_run.journal(
+            "gdad-demo", "line-pair", "dispatch",
+            request_id="line-pair-1", wid="wid-1",
+            root=root,
+        )
+        self.assertTrue(required <= set(line))
+        self.assertTrue(set(line) <= allowed)
 
 
 if __name__ == "__main__":
