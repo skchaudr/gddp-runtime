@@ -22,6 +22,8 @@ from pathlib import Path
 
 JOURNAL_VERSION = 1
 MD_CAP_BYTES = 2048
+DEFAULT_DECIDER_MODEL = "claude-fable-5-1"
+DEFAULT_WORKER_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 WHO = {
     "dispatch": "gdad-executor",
     "pause": "pi-workflow",
@@ -900,6 +902,14 @@ def _gate_repo() -> Path:
     return config_root()
 
 
+def decider_model() -> str:
+    return _setting("GDAD_DECIDER_MODEL") or DEFAULT_DECIDER_MODEL
+
+
+def worker_model() -> str:
+    return _setting("GDAD_WORKER_MODEL") or DEFAULT_WORKER_MODEL
+
+
 def _setting(name: str) -> str:
     raw = os.environ.get(name, "")
     if raw:
@@ -1282,7 +1292,7 @@ def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
 def prompt_fable(packet_md: str, cfg: Path | None = None) -> dict:
     cfg = cfg or config_root()
     template = (cfg / "schemas" / "gdad" / "decider-prompt.md").read_text(encoding="utf-8")
-    code, raw = _run_claude("claude-fable-5-1", template + "\n\n" + packet_md, tools="")
+    code, raw = _run_claude(decider_model(), template + "\n\n" + packet_md, tools="")
     if code != 0:
         raise JournalError(f"fable exited {code}")
     return parse_claude_envelope(raw)
@@ -1365,7 +1375,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "If the task says to call ask, call ask and stop.\n",
         encoding="utf-8",
     )
-    model = "openrouter/deepseek/deepseek-v4-flash"
+    model = worker_model()
     worker_a = {
         "key": "a",
         "agent": "scribe",
