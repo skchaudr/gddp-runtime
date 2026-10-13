@@ -1211,6 +1211,7 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
         "name": "line-pair",
         "cwd": str(art),
         "agent": "worker",
+        "model": "openrouter/deepseek/deepseek-v4-flash",
         "writer": False,
         "tasks": [
             {
@@ -1238,8 +1239,9 @@ def _launch_and_dispatch(project: str, node: str, run_id: str, root: Path) -> No
     session_id = str(uuid.uuid4())
     launch_pi(project, node, run_id, session_id=session_id, root=root)
     art = node_dir(project, node, root) / "runs" / run_id / "artifacts"
+    request_id = f"{run_id}-{uuid.uuid4().hex[:6]}"
     proc = dsa_cmd(
-        "run", "--request", run_id, "--spec", str(spec), "--cwd", str(art),
+        "run", "--request", request_id, "--spec", str(spec), "--cwd", str(art),
         "--session", session_id, "--json",
         wait_ms=20000,
     )
@@ -1248,14 +1250,14 @@ def _launch_and_dispatch(project: str, node: str, run_id: str, root: Path) -> No
     payload = _dsa_json(proc)
     wid = str(payload.get("wid") or "")
     if not wid:
-        described = dsa_cmd("describe", "--key", run_id, "--json")
+        described = dsa_cmd("describe", "--key", request_id, "--json")
         if described.returncode == 0:
             wid = str(_dsa_json(described).get("wid") or "")
     if not wid:
         raise JournalError("pi-durable-subagents did not return a wid")
     journal(
         project, node, "dispatch",
-        request_id=run_id,
+        request_id=request_id,
         wid=wid,
         artifacts=[str(definition_dir(project, node, cfg) / "BRIEF.md")],
         root=root,
@@ -1294,6 +1296,12 @@ def _advance_from_describe(project: str, node: str, root: Path) -> None:
         _ambiguity_from_question(project, node, root, qid, rev, text)
         return
     if state == "sealed":
+        calls = described.get("calls") or []
+        failed = [c for c in calls if isinstance(c, dict) and c.get("ok") is False]
+        if failed:
+            note = "; ".join(f"{c.get('key')}: {c.get('error') or c.get('status')}" for c in failed)
+            journal(project, node, "blocked", note=note or "workflow sealed failed", root=root)
+            return
         _concat_and_review(project, node, root)
 
 
