@@ -1019,6 +1019,9 @@ def _pi_env(project: str, node: str, run_id: str, root: Path) -> dict[str, str]:
         "GDAD_PROMPT_FILE": str(prompt),
         "GDAD_ARTIFACTS": str(art),
         "GDAD_WORKER_SH": str(definition_dir(project, node) / "worker.sh"),
+        "GDAD_SCRIPT": str(definition_dir(project, node) / "workflow.js"),
+        "GDAD_REPLAY": str(node_dir(project, node, root) / "runs" / run_id / "replay.jsonl"),
+        "GDAD_RELEASE": str(node_dir(project, node, root) / "runs" / run_id / "release"),
     }
 
 
@@ -1036,21 +1039,8 @@ def _prepare_prompt(project: str, node: str, run_id: str, root: Path, cfg: Path)
     prompt_path.write_text(text, encoding="utf-8")
 
 
-def _pi_command(session_id: str, prompt: str) -> list[str]:
-    tool = workflow_tool_name()
-    command = ["pi", "-ne"]
-    for path in extensions():
-        command.extend(["-e", path])
-    # Only the workflow tools, so the orchestrator cannot explore or rewrite the script.
-    command.extend([
-        "--tools", f"{tool},workflow_respond,workflow_status",
-        "--append-system-prompt",
-        "Call the workflow tool with the scriptPath from the user message. Do not inline a different script.",
-        "--session-id", session_id,
-        "--approve",
-        prompt,
-    ])
-    return command
+def _host_command() -> list[str]:
+    return ["node", str(Path(__file__).resolve().parent / "gdad_host.mjs")]
 
 
 def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None = None, session_id: str | None = None, root: Path | None = None) -> dict:
@@ -1079,17 +1069,7 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
     if pane.get("focused") is True or tab.get("focused") is True:
         _herdr_json(["tab", "close", tab["tab_id"]])
         raise JournalError("herdr focused the new tab; closed it")
-    tool = workflow_tool_name()
-    script = definition_dir(project, node, cfg) / "workflow.js"
-    if resume_prompt:
-        prompt = resume_prompt
-    else:
-        prompt = (
-            f"Call the {tool} tool now, exactly once, and then stop. "
-            f"scriptPath={script} name={node} foreground=true. "
-            "Do not explore files and do not write files yourself."
-        )
-    command = _pi_command(session_id, prompt)
+    command = _host_command()
     proc = subprocess.run(["herdr", "pane", "run", pane["pane_id"], *command], text=True, capture_output=True, check=False)
     if proc.returncode != 0:
         raise JournalError(proc.stderr.strip() or "herdr pane run failed")
@@ -1099,42 +1079,21 @@ def launch_pi(project: str, node: str, run_id: str, *, resume_prompt: str | None
 
 
 def _perform_resume(project: str, node: str, packet: dict, root: Path) -> None:
-    handle = packet["resume_handle"]
-    session_id = handle.get("pi_session_id") or ""
-    workflow_run_id = handle.get("workflow_run_id") or ""
-    checkpoint = handle.get("checkpoint") or "after-workers"
+    checkpoint = (packet.get("resume_handle") or {}).get("checkpoint") or "after-workers"
+    release = node_dir(project, node, root) / "runs" / packet["run_id"] / "release"
+    release.parent.mkdir(parents=True, exist_ok=True)
+    release.write_text(checkpoint + "\n", encoding="utf-8")
     pane = _load_pane(project, node, root)
     alive = bool(pane.get("pane_id")) and _pane_alive(str(pane["pane_id"]))
-    instruction = (
-        f"Call the workflow_respond tool with runId {workflow_run_id} "
-        f"name {checkpoint} approved true. Do not start a new workflow."
-    )
     if not alive:
-        launch_pi(
-            project, node, packet["run_id"],
-            session_id=session_id,
-            resume_prompt=(
-                f"Cold-resume workflow run {workflow_run_id} on this session. "
-                f"If checkpoint {checkpoint} is pending, {instruction} "
-                "Finished parallel work must not be rerun."
-            ),
-            root=root,
-        )
-        pane = _load_pane(project, node, root)
+        launch_pi(project, node, packet["run_id"], session_id=pane.get("pi_session_id"), root=root)
     start_len = len(_read_lines(node_dir(project, node, root)))
-    deadline = time.time() + 90
+    deadline = time.time() + 300
     while time.time() < deadline:
-        if pane.get("pane_id"):
-            subprocess.run(
-                ["herdr", "agent", "prompt", str(pane["pane_id"]), instruction],
-                text=True, capture_output=True, check=False,
-            )
-        time.sleep(5)
         lines = _read_lines(node_dir(project, node, root))
-        if any(line.get("type") == "review" for line in lines[start_len:]):
+        if any(line.get("type") in {"review", "packet", "blocked"} for line in lines[start_len:]):
             return
-        if current_state(project, node, root) not in {"running", "awaiting-decision", "paused"}:
-            return
+        time.sleep(1)
 
 
 def prompt_fable(packet_md: str, cfg: Path | None = None) -> dict:
@@ -1199,22 +1158,11 @@ def follow(project: str, node: str, *, decider: str, timeout: float, root: Path 
 
 
 def _launch_and_dispatch(project: str, node: str, run_id: str, root: Path) -> None:
-    pane = launch_pi(project, node, run_id, root=root)
-    session_id = pane["pi_session_id"]
-    deadline = time.time() + 300
-    workflow_run_id = ""
-    while time.time() < deadline:
-        found = discover_workflow_run_ids(session_id)
-        if found:
-            workflow_run_id = found[-1]
-            break
-        time.sleep(1)
-    if not workflow_run_id:
-        journal(project, node, "blocked", note="pi workflow run id did not appear", root=root)
-        raise JournalError("pi workflow run id did not appear")
+    workflow_run_id = str(uuid.uuid4())
+    pane = launch_pi(project, node, run_id, session_id=workflow_run_id, root=root)
     journal(
         project, node, "dispatch",
-        pi_session_id=session_id,
+        pi_session_id=pane["pi_session_id"],
         workflow_run_id=workflow_run_id,
         artifacts=[str(definition_dir(project, node) / "BRIEF.md")],
         root=root,
