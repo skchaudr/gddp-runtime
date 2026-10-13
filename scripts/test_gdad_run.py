@@ -307,6 +307,34 @@ class SafetyFixTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--tools") + 1], "")
         self.assertEqual(" ".join(argv).find("dangerously-skip-permissions"), -1)
 
+    def test_pi_bin_expands_tilde_from_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp)
+            (cfg / "runtime").mkdir()
+            (cfg / "runtime" / "settings.env").write_text("GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n")
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            bindir = gdad_run.pi_bin()
+            self.assertEqual(bindir, Path("~/.local/pi-1.0.4/bin").expanduser())
+
+    def test_decider_and_worker_models_default_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp)
+            (cfg / "runtime").mkdir()
+            settings = cfg / "runtime" / "settings.env"
+            settings.write_text("GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n")
+            os.environ["GDDP_CONFIG_PATH"] = str(cfg)
+            self.addCleanup(os.environ.pop, "GDDP_CONFIG_PATH", None)
+            self.assertEqual(gdad_run.decider_model(), gdad_run.DEFAULT_DECIDER_MODEL)
+            self.assertEqual(gdad_run.worker_model(), gdad_run.DEFAULT_WORKER_MODEL)
+            settings.write_text(
+                "GDAD_PI_BIN=~/.local/pi-1.0.4/bin\n"
+                "GDAD_DECIDER_MODEL=custom-decider\n"
+                "GDAD_WORKER_MODEL=custom-worker\n"
+            )
+            self.assertEqual(gdad_run.decider_model(), "custom-decider")
+            self.assertEqual(gdad_run.worker_model(), "custom-worker")
+
 
 if __name__ == "__main__":
     unittest.main()
