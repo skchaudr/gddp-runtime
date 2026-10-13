@@ -22,7 +22,7 @@ class JournalTests(unittest.TestCase):
     def dispatch(self, node="line-pair"):
         return gdad_run.journal(
             "gdad-demo", node, "dispatch",
-            pi_session_id="sess-1", workflow_run_id="wf-1",
+            request_id="line-pair-1", wid="wid-1",
             root=self.root,
         )
 
@@ -33,13 +33,13 @@ class JournalTests(unittest.TestCase):
         self.assertIn("who: gdad-executor", status)
         self.assertIn(f"when: {line['ts']}", status)
         self.assertIn("run_id: line-pair-1", status)
-        self.assertIn("pi_session_id: sess-1", status)
-        self.assertIn("workflow_run_id: wf-1", status)
+        self.assertIn("request_id: line-pair-1", status)
+        self.assertIn("wid: wid-1", status)
         gdad_run.journal("gdad-demo", "line-pair", "pause", note="checkpoint after-workers", root=self.root)
         status = gdad_run.read_status("gdad-demo", "line-pair", self.root)
         self.assertEqual(status["state"], "paused")
-        self.assertEqual(status["pi_session_id"], "sess-1")
-        self.assertEqual(status["workflow_run_id"], "wf-1")
+        self.assertEqual(status["request_id"], "line-pair-1")
+        self.assertEqual(status["wid"], "wid-1")
 
     def test_illegal_transition_writes_nothing(self):
         self.dispatch()
@@ -82,7 +82,7 @@ class JournalTests(unittest.TestCase):
         self.assertNotEqual(decision["run_id"], "line-pair-1")
         nxt = gdad_run.journal(
             "gdad-demo", "line-pair", "dispatch",
-            pi_session_id="sess-2", workflow_run_id="wf-2",
+            request_id="line-pair-2", wid="wid-2",
             root=self.root,
         )
         self.assertEqual(nxt["run_id"], "line-pair-2")
