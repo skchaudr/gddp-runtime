@@ -1207,28 +1207,39 @@ def _spec_for(project: str, node: str, run_id: str, root: Path, cfg: Path) -> Pa
     run = node_dir(project, node, root) / "runs" / run_id
     art = run / "artifacts"
     prompt = (run / "prompt.txt").read_text(encoding="utf-8").rstrip()
-    spec = {
-        "name": "line-pair",
-        "cwd": str(art),
+    art_s = str(art)
+    model = "openrouter/deepseek/deepseek-v4-flash"
+    worker_a = {
+        "key": "a",
         "agent": "worker",
-        "model": "openrouter/deepseek/deepseek-v4-flash",
+        "model": model,
+        "tools": ["write"],
         "writer": False,
-        "tasks": [
-            {
-                "key": "a",
-                "tools": ["write", "ask"],
-                "task": (
-                    f"Do not read the repository. Write {art / 'hello-a.txt'} now with exactly these two lines and nothing else:\nalpha\nbeta\n"
-                    "Then call ask with exactly this question and wait: Workers finished. Resume to review?"
-                ),
-            },
-            {
-                "key": "b",
-                "tools": ["write"],
-                "task": f"Do not read the repository. Write {art / 'hello-b.txt'} now with exactly this one line and nothing else:\ngamma\n",
-            },
-        ],
+        "cwd": art_s,
+        "task": f"Do not read the repository. Write {art / 'hello-a.txt'} now with exactly these two lines and nothing else:\nalpha\nbeta\nThen stop.",
     }
+    worker_b = {
+        "key": "b",
+        "agent": "worker",
+        "model": model,
+        "tools": ["write"],
+        "writer": False,
+        "cwd": art_s,
+        "task": f"Do not read the repository. Write {art / 'hello-b.txt'} now with exactly this one line and nothing else:\ngamma\nThen stop.",
+    }
+    gate = {
+        "agent": "worker",
+        "model": model,
+        "tools": ["ask"],
+        "writer": False,
+        "cwd": art_s,
+        "task": "Call the ask tool now with exactly this question and then stop: Workers finished. Resume to review?",
+    }
+    source = (
+        f"await runs.all([{json.dumps(worker_a)}, {json.dumps(worker_b)}]);\n"
+        f"await runs.run(\"gate\", {json.dumps(gate)});\n"
+    )
+    spec = {"name": "line-pair", "cwd": art_s, "source": source}
     path = run / "spec.json"
     path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     return path
