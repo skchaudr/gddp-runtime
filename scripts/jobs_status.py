@@ -446,14 +446,9 @@ def _apply_resolved_state_change(con, job, state: str, reason: str) -> int:
         return 0
 
     con.execute(
-        "UPDATE jobs SET queue_state = ? WHERE job_id = ?",
-        (state, job["job_id"]),
+        "UPDATE jobs SET status = ?, queue_state = ? WHERE job_id = ?",
+        (state, state, job["job_id"]),
     )
-    if state in JOB_STATUSES:
-        con.execute(
-            "UPDATE jobs SET status = ? WHERE job_id = ?",
-            (state, job["job_id"]),
-        )
     con.execute(
         "UPDATE queue_records SET queue = ? WHERE job_id = ?",
         (state, job["job_id"]),
