@@ -63,7 +63,7 @@ def rollback(job_id: str):
 
     # Revert job and queue record
     con.execute(
-        "UPDATE jobs SET status='failed', queue_state='cancelled' WHERE job_id=?",
+        "UPDATE jobs SET status='failed', queue_state='failed' WHERE job_id=?",
         (job_id,)
     )
     if queue:
