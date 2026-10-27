@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""
+gddp — Simple, human-friendly GDDP evaluation & execution CLI.
+
+Usage:
+  gddp eval <node_id> [--project <project_id>]
+  gddp status [<project_id>]
+
+No manually remembered paths, flags, or commit SHAs required.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# Paths
+SYNC_RUNNER_ROOT = Path(__file__).resolve().parent
+DEFAULT_CONFIG_ROOT = Path(os.environ.get("GDDP_CONFIG_PATH", str(SYNC_RUNNER_ROOT.parent / "gddp-config")))
+
+
+def _git(repo: Path, args: list[str]) -> str:
+    res = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return res.stdout.strip()
+
+
+def find_project_and_node(node_id: str, project_hint: str | None, config_root: Path) -> tuple[Path, Path, Path]:
+    """Find (project_yaml, node_yaml, project_dir) for a given node_id."""
+    graphs_dir = config_root / "graphs"
+    if not graphs_dir.is_dir():
+        print(f"Error: gddp-config graphs directory not found at {graphs_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    matches = []
+    for proj_dir in graphs_dir.iterdir():
+        if not proj_dir.is_dir() or proj_dir.name.startswith(("_", ".")):
+            continue
+        if project_hint and proj_dir.name != project_hint:
+            continue
+        nodes_dir = proj_dir / "nodes"
+        if not nodes_dir.is_dir():
+            continue
+        
+        # Look for exact or prefixed node_id matching
+        for node_file in nodes_dir.glob("*.yaml"):
+            stem = node_file.stem
+            if stem == node_id or stem.startswith(f"{node_id}-") or node_id in stem:
+                matches.append((proj_dir / "project.yaml", node_file, proj_dir))
+
+    if not matches:
+        hint_msg = f" (in project '{project_hint}')" if project_hint else ""
+        print(f"Error: Node '{node_id}' not found in any project graph{hint_msg}.", file=sys.stderr)
+        sys.exit(1)
+
+    if len(matches) > 1:
+        print(f"Ambiguous node '{node_id}'. Matches found across multiple projects/nodes:", file=sys.stderr)
+        for py, ny, pd in matches:
+            print(f"  - Project: {pd.name} -> Node: {ny.name}", file=sys.stderr)
+        print("Please specify --project <project_id>", file=sys.stderr)
+        sys.exit(1)
+
+    return matches[0]
+
+
+def cmd_eval(args: argparse.Namespace) -> None:
+    config_root = Path(args.config_root).expanduser().resolve()
+    project_yaml, node_yaml, proj_dir = find_project_and_node(args.node_id, args.project, config_root)
+
+    # Read project.yaml to get repo path
+    import yaml
+    try:
+        pdata = yaml.safe_load(project_yaml.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        print(f"Error reading project.yaml at {project_yaml}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    repo_str = pdata.get("repo")
+    if not repo_str:
+        print(f"Error: project.yaml at {project_yaml} missing 'repo' key.", file=sys.stderr)
+        sys.exit(1)
+
+    repo = Path(repo_str).expanduser().resolve()
+    if not repo.is_dir():
+        print(f"Error: Target repo directory not found at {repo}", file=sys.stderr)
+        sys.exit(1)
+
+    # Determine base commit automatically
+    base_sha = _git(repo, ["rev-parse", "HEAD~1"]) or _git(repo, ["rev-parse", "HEAD"])
+
+    # Determine deepseek / model credentials
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SYNC_RUNNER_ROOT)
+    if "DEEPSEEK_API_KEY" not in env:
+        # Best effort attempt to fetch from pass or ambient tool if command is set
+        cmd = env.get("GDDP_DEEPSEEK_KEY_CMD", "pass show api/deepseek 2>/dev/null")
+        try:
+            key = subprocess.check_output(cmd, shell=True, text=True).strip()
+            if key:
+                env["DEEPSEEK_API_KEY"] = key
+        except Exception:
+            pass
+
+    receipt_dir = config_root / "verification" / proj_dir.name
+    receipt_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Evaluating Node : {node_yaml.stem}")
+    print(f"Project       : {proj_dir.name}")
+    print(f"Target Repo   : {repo}")
+    print(f"Base Commit   : {base_sha[:8]}")
+    print("=" * 60)
+
+    cli_script = SYNC_RUNNER_ROOT / "scripts" / "runtime" / "verification" / "cli.py"
+    cmd_args = [
+        sys.executable,
+        str(cli_script),
+        "--node-yaml", str(node_yaml),
+        "--project-yaml", str(project_yaml),
+        "--repo", str(repo),
+        "--config-root", str(config_root),
+        "--receipt-dir", str(receipt_dir),
+        "--base", base_sha,
+        "--semantic-mode", "live",
+        "--semantic-harness", "pi",
+        "--semantic-provider", "deepseek",
+        "--semantic-pi-model", "deepseek-v4-flash",
+        "--semantic-thinking", "medium",
+    ]
+
+    # Run verifier CLI
+    res = subprocess.run(cmd_args, env=env, text=True)
+    sys.exit(res.returncode)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="gddp", description="Human-friendly GDDP CLI")
+    parser.add_argument("--config-root", default=str(DEFAULT_CONFIG_ROOT), help="Path to gddp-config repo")
+
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    # eval subcommand
+    eval_parser = subparsers.add_parser("eval", help="Run human-friendly evaluation on a node")
+    eval_parser.add_argument("node_id", help="Node ID (e.g. node-05, node-05-validate-decision-set)")
+    eval_parser.add_argument("--project", "-p", help="Optional project ID filter (e.g. myapi-part1)")
+    eval_parser.set_defaults(func=cmd_eval)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
